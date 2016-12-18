@@ -1,0 +1,108 @@
+Xft.dpi:                    96
+Xft.antialias:              true 
+Xft.rgba:                   rgb
+Xft.hinting:                true
+Xft.hintstyle:              hintslight
+
+## Rofi
+rofi.modi: combi,window,run,ssh
+rofi.combi-modi: window,run,ssh
+rofi.show: combi
+rofi.lines: 24
+rofi.width: 60
+rofi.padding: 10
+rofi.font: Ubuntu Mono 12
+rofi.color-enabled: true
+rofi.fake-transparent: true
+rofi.fullscreen: false
+
+## solarized.theme
+# rofi.color-window: #002b37, #002b37, #003642
+# rofi.color-normal: #002b37, #819396, #002b37, #003642, #819396
+# rofi.color-active: #002b37, #008ed4, #002b37, #003642, #008ed4
+# rofi.color-urgent: #002b37, #da4281, #002b37, #003642, #da4281
+
+## solarized_alternate.theme
+# rofi.color-window: #002b37, #002b37, #003642
+# rofi.color-normal: #002b37, #819396, #003643, #008ed4, #ffffff
+# rofi.color-active: #002b37, #008ed4, #003643, #008ed4, #66c6ff
+# rofi.color-urgent: #002b37, #da4281, #003643, #008ed4, #890661
+
+## numix.theme
+rofi.color-window: #2d2d2d, #333333, #333333
+rofi.color-normal: #2d2d2d, #819396, #333333, #d64937, #dedede
+rofi.color-active: #2d2d2d, #dedede, #333333, #d64937, #f9f9f9
+rofi.color-urgent: #2d2d2d, #dedede, #333333, #d64937, #f9f9f9
+
+URxvt.depth:                32
+URxvt.geometry:             90x30
+URxvt.fading:               0
+! URxvt.urgentOnBell:       true
+! URxvt.visualBell:         true
+URxvt.loginShell:           true
+URxvt.saveLines:            50
+URxvt.internalBorder:       3
+URxvt.lineSpace:            0
+
+URxvt.allow_bold:           true
+URxvt*font: xft:Ubuntu Mono:pixelsize=16:antialias=true
+URxvt*boldFont: xft:Ubuntu Mono:pixelsize=16:antialias=true
+URxvt*letterSpace: -1
+
+URxvt.scrollStyle:          rxvt
+URxvt.scrollBar:            false
+
+URxvt.perl-ext-common:      default,matcher
+URxvt.matcher.button:       1
+! URxvt.urlLauncher:          firefox
+URxvt.urlLauncher:          google-chrome-stable
+
+URxvt.cursorBlink:          true
+URxvt.cursorColor:          #657b83
+URxvt.cursorUnderline:      false
+
+URxvt.pointerBlank:         true
+
+! URxvt.tintColor:            #657b83
+! URxvt.inheritPixmap:        true
+! URxvt.transparent:          true
+! URxvt.shading:              50
+
+*background: #002b36
+*foreground: #9cb0b3
+*fadeColor: #002b36
+*cursorColor: #596466
+*pointerColorBackground: #586e75
+*pointerColorForeground: #93a1a1
+
+!! black dark/light
+*color0: #073642
+*color8: #002b36
+
+!! red dark/light
+*color1: #dc322f
+*color9: #cb4b16
+
+!! green dark/light
+*color2: #9bb300
+*color10: #586e75
+
+!! yellow dark/light
+*color3: #b58900
+*color11: #657b83
+
+!! blue dark/light
+*color4: #268bd2
+*color12: #839496
+
+!! magenta dark/light
+*color5: #d33682
+*color13: #6c71c4
+
+!! cyan dark/light
+*color6: #2aa198
+*color14: #93a1a1
+
+!! white dark/light
+*color7: #eee8d5
+*color15: #fdf6e3

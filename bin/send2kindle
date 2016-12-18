@@ -1,0 +1,35 @@
+#!/bin/bash
+NarouRb="$HOME/.gem/ruby/2.3.0/bin/narou"
+NarouRbWorkingDir="$HOME/dev/kindle/work/"
+SendToKindleAddress="mindle2015@kindle.com"
+cd $NarouRbWorkingDir
+
+function github {
+    local url = "https://github.com/whiteleaf7/narou/wiki#how_to_install"
+    google-chrome-stable $url
+}
+
+function callNarouRb {
+    $NarouRb s device=kindle
+    $NarouRb download $1
+}
+
+function send {
+    $NarouRb mail $1
+}
+
+case $1 in
+    "--help")
+        github
+        ;;
+    "--get" | "-g")
+        callNarouRb $2
+        ;;
+    "--send" | "-s")
+        send $1
+        ;;
+    *)
+        callNarouRb $1
+        send $1
+        ;;
+esac

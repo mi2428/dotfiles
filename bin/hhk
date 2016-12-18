@@ -1,0 +1,6 @@
+#!/bin/bash
+# xinput -float 12
+xset r rate 180 50
+xmodmap -e "keycode 47 = semicolon apostrophe"
+xmodmap -e "keycode 48 = colon at"
+xmodmap -e "keycode 11 = 2 quotedbl"

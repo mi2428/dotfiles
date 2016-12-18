@@ -1,0 +1,4 @@
+sp https://startpage.com/do/search?q=XXX
+wp https://en.wikipedia.org/w/index.php?search=XXX&title=Special:Search
+aw https://wiki.archlinux.org/index.php?title=Special:Search&search=XXX
+rfc http://www.rfc-editor.org/search/rfc_search_detail.php?rfc=&title=XXX

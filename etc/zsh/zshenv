@@ -1,0 +1,28 @@
+# zmodload zsh/zprof
+export TERM=xterm-256color
+export HGENCODING='utf-8'
+
+export LANG=en_US.UTF-8
+# export LANG=ja_JP.UTF-8
+export LANGUAGE=$LANG
+export LC_ALL=$LANG
+
+if whence -p nvim > /dev/null ; then
+    export EDITOR="nvim"
+elif whence -p vim > /dev/null ; then
+    export EDITOR="vim"
+elif whence -p vi > /dev/null ; then
+    export EDITOR="vi"
+fi
+
+# Options for less
+# -xn (--tabs=n): Set tabstops.
+# -X (--no-init): Disable sending the termcap initialization and
+#                 deinitialization string to the terminal.
+# -M (--LONG-PROMPT): Causes less to prompt even more verbosely than `more`.
+# -i (--ignore-case): Causes searches to ignore case except when a search
+#                     pattern contains uppercase letters.
+# -I (--IGNORE-CASE): Like -i, but always ignore case.
+# -R (--RAW-CONTROL-CHARS): Causes ANSI color escape sequences are output in "raw" form.
+export PAGER=less
+export LESS='-x4 -XMiR'

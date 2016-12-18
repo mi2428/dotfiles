@@ -1,0 +1,83 @@
+set t_CO=256
+set encoding=utf-8
+set fileencoding=utf-8
+
+set number
+set cursorline
+set clipboard+=unnamedplus,unnamed
+set cinkeys-=:
+set nf=alpha
+set showmatch
+set matchtime=1
+"set mouse=a
+set hidden
+set wildmenu
+" set wildmode=list:longest
+" set list
+" set listchars=tab:>-,trail:-,nbsp:%,eol:$
+
+set autoindent
+set smartindent
+set tabstop=2
+set shiftwidth=2
+" set expandtab
+set backspace=2
+ 
+set showtabline=2
+set laststatus=2
+set statusline="%f%m%=%3l,%3c"
+ 
+set hlsearch
+set incsearch
+set wrapscan
+set smartcase
+
+set omnifunc=htmlcomplete#CompleteTags
+set omnifunc=javascriptcomplete#CompleteJS
+set omnifunc=csscomplete#CompleteCSS
+
+inoremap <C-j> <ESC>
+noremap <silent><S-Tab> :tabnew<CR>
+noremap <Tab>j gT
+noremap <Tab>k gt
+noremap <C-n> :set relativenumber!<CR>
+noremap <ESC><ESC> :nohlsearch<CR>
+noremap <C-e> :Explore<CR>
+noremap x "_x
+" noremap <C-j> :bnext<CR>
+" noremap <C-k> :bprevious<CR>
+" inoremap { {}<Left>
+" inoremap [ []<Left>
+" inoremap ( ()<Left>
+" inoremap {<ENTER> {}<Left><CR><ESC><S-o>
+" inoremap [<ENTER> []<Left><CR><ESC><S-o>
+" inoremap (<ENTER> ()<Left><CR><ESC><S-o>
+
+autocmd Filetype xml inoremap <buffer> </ </<C-x><C-o>
+autocmd Filetype html inoremap <buffer> </ </<C-x><C-o>
+
+abbr clog console.log();<ESC>1hi
+abbr sysout System.out.println();<ESC>1hi
+abbr syserr System.out.println();<ESC>1hi
+
+set background=dark
+
+highlight Normal ctermbg=NONE
+highlight LineNr ctermfg=244 ctermbg=NONE
+highlight CursorLineNr term=bold ctermfg=220 ctermbg=NONE
+highlight Comment ctermfg=244
+highlight NonText ctermfg=239 ctermbg=NONE
+highlight SpecialKey ctermfg=239 ctermbg=NONE
+
+autocmd ColorScheme * highlight Normal ctermbg=NONE
+autocmd ColorScheme * highlight LineNr ctermfg=244 ctermbg=NONE
+autocmd ColorScheme solarized highlight CursorLineNr term=bold ctermfg=220 ctermbg=NONE
+autocmd ColorScheme solarized highlight Comment ctermfg=244
+autocmd ColorScheme solarized highlight NonText ctermfg=239 ctermbg=NONE
+autocmd ColorScheme solarized highlight SpecialKey ctermfg=239 ctermbg=NONE
+
+" let g:solarized_termcolos=256
+" colorscheme solarized
+colorscheme default
+
+syntax enable

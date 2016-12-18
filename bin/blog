@@ -1,0 +1,50 @@
+#!/bin/bash -x
+
+set -e
+
+declare -r SCRIPT_NAME=$(basename $0)
+
+declare -r BASE_DIR="/home/taichi/dev/blog-mi2428-net/"
+cd $BASE_DIR
+
+declare -r SERVER_BASE_DIR="/var/local/docker/20-running.d/blog-mi2428-net/www/"
+declare -r IMG_BASE_DIR="/var/local/docker/20-running.d/img-mi2428-net/www/blog/"
+
+usage() {
+cat <<-EOT
+% blog -t タグ1 -t タグ2 記事タイトル sample.md
+EOT
+exit 1
+}
+
+declare -a TAGS=()
+while getopts :t: OPT; do
+    case $OPT in
+        t)
+            TAGS=(${TAGS[@]} "$OPTARG") ;;
+        \?)
+            usage ;;
+    esac
+done
+
+str="tags = ["
+for tag in ${TAGS[@]}; do
+    str="$str\"$tag\","
+done
+str="$(echo $str | sed -e "s/,$//")]"
+declare -r TAG_STR=$str
+
+shift $(($OPTIND - 1))
+declare -r TITLE=$1
+declare -r FILE_NAME=$2
+
+hugo new post/${FILE_NAME}
+declare -r FILE="$BASE_DIR/content/post/$FILE_NAME"
+sed -i -e "s/^tags.*$/$TAG_STR/" $FILE
+sed -i -e "s/^title.*$/title = \"$TITLE\"/" $FILE
+
+hugo server --port 61313 --watch 1>/dev/null 2>/dev/null &
+google-chrome-stable http://localhost:61313/ 1>/dev/null 2>/dev/null &
+ssh sakura mkdir -p $IMG_BASE_DIR$TITLE && \
+$EDITOR $FILE && \
+killall hugo

@@ -1,0 +1,9 @@
+#!/bin/bash
+case "$1" in
+"")
+    tmux new-session ;;
+"ls")
+    tmux list-sessions ;;
+*)
+    tmux attach -t $1 ;;
+esac

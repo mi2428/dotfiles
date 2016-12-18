@@ -1,0 +1,12 @@
+#!/bin/bash
+if ip link show enp0s20u1 2> /dev/null 1> /dev/null; then
+    sudo ip link set enp0s20u1 down
+    sudo ip link set enp0s20u1 address 0e:48:12:f4:17:ea
+    sudo ip link set enp0s20u1 up
+fi
+
+if ip link show enp0s20u2 2> /dev/null 1> /dev/null; then
+    sudo ip link set enp0s20u2 down
+    sudo ip link set enp0s20u2 address 0e:48:12:f4:17:ea
+    sudo ip link set enp0s20u2 up
+fi

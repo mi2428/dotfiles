@@ -1,0 +1,32 @@
+bg_color = #00002b2a3636
+fg_color = #9c7fb0cfb333
+use_transbg = true
+alpha = 223
+scrollbar_mode = none
+blink_cursor = true
+
+only_use_unicode_font = false
+use_antialias = true
+fontsize = 15
+
+static_backscroll_mode = true
+wall_picture = 
+use_anti_alias = true
+letter_space = 0
+encoding = auto
+tabsize = 4
+logsize = unlimited
+bel_mode = none
+scrollbar_view_name = next
+use_auto_detect = false
+auto_detect_encodings = UTF-8,EUC-JP,SJIS
+not_use_unicode_font = false
+vertical_mode = none
+use_extended_scroll_shortcut = false
+cursor_bg_color = 
+cursor_fg_color = 
+fade_ratio = 100
+regard_uri_as_word = true
+input_method = xim
+word_separators = . ,:
+/|@()[]{}- = 

@@ -1,0 +1,36 @@
+#!/bin/bash
+set -eu
+cd $(dirname $0)
+
+declare -r BACKLIGHT="/sys/class/backlight/intel_backlight/brightness"
+declare -r CURRENT="$HOME/.cache/backlight/brightness"
+
+[[ -e $CURRENT ]] && echo $CURRENT > $BACKLIGHT ||\
+mkdir -p $(dirname $CURRENT) && cat $BACKLIGHT > $CURRENT
+
+inc() {
+    echo $(($(cat $CURRENT) + $1)) > $BACKLIGHT
+    cat $BACKLIGHT > $CURRENT
+}
+
+dec() {
+    echo $(($(cat $CURRENT) - $1)) > $BACKLIGHT ||\
+    echo 0 > $BACKLIGHT
+    cat $BACKLIGHT > $CURRENT
+}
+
+
+while getopts d:i:g OPT; do
+    case $OPT in
+    "g")
+        cat $CURRENT ;;
+    "d")
+        [[ $UID != 0 ]] && sudo $0 $@
+        dec $OPTARG 2> /dev/null
+        ;;
+    "i")
+        [[ $UID != 0 ]] && sudo $0 $@
+        inc $OPTARG 2> /dev/null
+        ;;
+    esac
+done

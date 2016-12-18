@@ -1,0 +1,7 @@
+etc/vim/.*
+etc/vim/bundle/
+etc/nvim/bundle/
+etc/hosts/linux/mlterm/*.log
+etc/hosts/linux/mlterm/challenge
+etc/zsh/zsh/zplug
+etc/zsh/zsh/plugin

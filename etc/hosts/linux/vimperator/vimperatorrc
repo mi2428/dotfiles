@@ -1,0 +1,34 @@
+colorscheme numix
+set ignorecase
+set smartcase
+set defsearch=google
+set complete=sl
+set focuscontent
+set hintchars=ifjklasdhguonmerwc
+
+noremap <C-n> :winopen<CR>
+noremap <C-p> :winopen<Space>-private<CR>
+map R :source ~/.vimperatorrc<CR>
+map J <C-PageUp>
+map K <C-PageDown>
+map H <A-Left>
+map L <A-Right>
+noremap j 5<C-e>
+noremap k 5<C-y>
+noremap u <NOP>
+noremap s :open<Space>google<Space>
+noremap ,s :tabopen<Space>google<Space>
+
+javascript <<EOM
+liberator.modules.commands.addUserCommand(["togglepin"], "add pin to current tab",
+function(){
+    var currentTab = gBrowser.mCurrentTab
+    if(currentTab.pinned){
+        gBrowser.unpinTab(currentTab)
+    }
+    else{
+        gBrowser.pinTab(currentTab)
+    }
+});
+EOM
+nnoremap p :togglepin<CR>

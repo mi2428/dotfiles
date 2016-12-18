@@ -1,0 +1,1 @@
+/home/taichi/dotfiles/etc/nvim/bundle/vimproc.vim

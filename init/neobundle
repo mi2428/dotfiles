@@ -1,0 +1,32 @@
+#!/bin/bash
+set -eu
+cd $(dirname $0)
+
+declare -r neobundle="https://github.com/Shougo/neobundle.vim"
+declare -r nvim_base="${HOME}/.config/nvim/bundle"
+declare -r vim_base="${HOME}/.vim/bundle"
+
+get() {
+    local base=$1
+    local force=$2
+    [[ "$force" == "true" ]] && rm -Rf $base
+    mkdir -p $base
+    git clone $neobundle "$base/neobundle.vim"
+    return $?
+}
+
+declare force_opt="false"
+while getopts fv: OPT; do
+    case $OPT in
+    "f")
+        force_opt="true" ;;
+    "v")
+        case "$OPTARG" in
+        "nvim")
+            get $nvim_base $force_opt && exit $? ;;
+        "vim")
+            get $vim_base $force_opt && exit $? ;;
+        esac
+        ;;
+    esac
+done
