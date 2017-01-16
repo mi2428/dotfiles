@@ -31,8 +31,9 @@ set incsearch
 set smartcase
 set expandtab
 
-" set foldmethod=indent
+" set foldmethod=syntax
 set foldmethod=marker
-set foldlevel=10
+set foldlevel=1
+set foldnestmax=2
 set foldcolumn=2
 set foldclose=all

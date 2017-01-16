@@ -13,12 +13,15 @@ NeoBundle 'Shougo/neosnippet-snippets'
 NeoBundle 'davidhalter/jedi-vim'
 NeoBundle 'Shougo/unite.vim'
 NeoBundle 'plasticboy/vim-markdown'
+NeoBundle 'vim-syntastic/syntastic'
 
 NeoBundle 'itchyny/lightline.vim'
 " NeoBundle 'vim-airline/vim-airline'
 NeoBundle 'miyakogi/seiya.vim'
 NeoBundle 'scrooloose/nerdtree'
+NeoBundle 'Shougo/vimfiler'
 NeoBundle 'sudo.vim'
+" NeoBundle 'haya14busa/incsearch.vim'
 
 NeoBundle 'altercation/vim-colors-solarized'
 " NeoBundle 'w0ng/vim-hybrid'
@@ -33,17 +36,22 @@ NeoBundle 'lervag/vimtex'
 NeoBundle 'thinca/vim-quickrun'
 NeoBundle 'mattn/emmet-vim'
 NeoBundle 'tomtom/tcomment_vim'
-NeoBundle 'fatih/vim-go'
+NeoBundle 'majutsushi/tagbar'
 " NeoBundle 'mrtazz/simplenote.vim'
+
+" NeoBundle 'vim-jp/vim-go-extra'
+NeoBundle 'fatih/vim-go'
+NeoBundle 'garyburd/go-explorer'
+NeoBundle 'zchee/deoplete-go'
 
 NeoBundle 'szw/vim-tags'
 " NeoBundle 'alvan/vim-closetag'
 NeoBundle 'othree/html5.vim'
-NeoBundle 'hali2u/vim-css3-syntax'
+" NeoBundle 'hali2u/vim-css3-syntax'
 NeoBundle 'jelera/vim-javascript-syntax'
 NeoBundle 'kchmck/vim-coffee-script'
 NeoBundle 'tpope/vim-fugitive'
-NeoBundle 'airblad/vim-gitgutter'
+" NeoBundle 'airblad/vim-gitgutter'
 
 " NeoBundle 'vimtaku/hl_matchit.vim'
 " NeoBundle 'thinca/vim-splash'
@@ -65,9 +73,10 @@ NeoBundle 'Shougo/vimproc.vim', {
 \    },
 \ }
 
-" NeoBundleCheck
+NeoBundleCheck
 
 if has('vim_starting')
     call neobundle#end()
 endif
 
+filetype plugin indent on

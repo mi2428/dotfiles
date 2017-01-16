@@ -1,2 +1,56 @@
 #!/bin/bash
+cd $(dirname $0)
+set -e
 
+declare -r scriptname=$(basename $0)
+declare -ar SUBVOLUMES=("/mnt/RingoPC-2nd/@home")
+declare -r SSH_NAME="middle-1.js.miya-family.com"
+declare -r REMOTE_PATH="/home/localadm/RingoPC-2nd.snapshot"
+
+(( ${EUID:-${UID}} > 0 )) && printf "Run with sudo\n" && exit 0
+
+timestamp() {
+    printf $(date +%y-%m-%d-%H:%M:%S)
+}
+
+ssh() {
+    local cmd=$1
+    ssh $SSH_NAME "$cmd"
+}
+
+_notify()  {
+    local title="$scriptname $1" message="$2" urgency=$3
+    notify-send "$title" "$message" -u $urgency
+}
+
+notify-normal() {
+    _notify "$1" "$2" "low"
+}
+
+notify-critical() {
+    _notify "$1" "$2 has exited with non-zero status. Aborted!" "critical"
+}
+
+take_snapshot() {
+    local subvolume=$1
+    local snapshot="$subvolume/.btrfs-snapshots/$(basename $subvolume)_$(timestamp)"
+    printf $snapshot && btrfs subvolume snapshot -r $subvolume $snapshot 1> /dev/null
+    return $?
+}
+
+send_snapshot() {
+    local subvolume=$1 snapshot=$2
+    ssh "mkdir -p $REMOTE_PATH/$(basename $subvolume)" && \
+    btrfs send $snapshot | ssh "cat > $REMOTE_PATH/$(basename $subvolume)/$(basename $snapshot)" 1> /dev/null
+    return $?
+}
+
+for subvolume in "${SUBVOLUMES[@]}"; do
+    notify-normal $(basename $subvolume) "taking new snaoshot..."
+    snapshot=$(take_snapshot $subvolume)
+    (( $? > 0 )) && notify-critical $(basename $subvolume) "take_snapshot()" && exit 1
+    notify-normal $(basename $snapshot) "sending new snapshot $(basename $snapshot)..."
+    send_snapshot $subvolume $snapshot
+    (( $? > 0 )) && notify-critical $(basename $subvolume) "send_snapshot()" && exit 2
+    notify-normal $(basename snapshot) "snapshot has been successfully sent to remote storage."
+done

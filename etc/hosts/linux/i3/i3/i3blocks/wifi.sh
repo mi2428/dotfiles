@@ -1,6 +1,6 @@
 #!/bin/bash
-# INTERFACE=$(ip link show | grep -o "wlp0s20u[1-2]")
-INTERFACE="wlp3s0"
+USB_INTERFACE=$(ip link show | grep -o "wlp0s20u[1-2]")
+INTERFACE=${USB_INTERFACE:-wlp30}
 ESSID=$(iw dev "$INTERFACE" link | grep "SSID" | awk '{print $2}')
 if [ "$ESSID" == "" ]; then
     # echo -e "Not-Associated\n\n#FE2E2E"
