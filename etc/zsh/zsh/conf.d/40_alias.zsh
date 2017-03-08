@@ -1,7 +1,7 @@
 ##
 # デフォルトで色を付ける
 ##
-alias grep="grep -n --color=auto"
+alias grep="grep -n --color=auto --exclude-dir=.git"
 
 function man() {
     env \

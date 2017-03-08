@@ -42,10 +42,8 @@ export PATH=$DOT_BIN:/usr/local/bin:$PATH:$GOPATH/bin:$RIAKPATH:$GEMPATH:$ECLIPS
 ##
 REPORTTIME=30
 TIMEFMT="job: %J
-User: %U
-Kernel: %S
-Elapsed: %E
-CPU: %P"
+time: %E (user: %U kernel: %S)
+cpu: %P"
 
 ##
 ## Completion
