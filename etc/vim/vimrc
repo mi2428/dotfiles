@@ -38,8 +38,8 @@ set omnifunc=csscomplete#CompleteCSS
 
 inoremap <C-j> <ESC>
 noremap <silent><S-Tab> :tabnew<CR>
-noremap <Tab>j gT
-noremap <Tab>k gt
+noremap <Tab>j gt
+noremap <Tab>k gT
 noremap <C-n> :set relativenumber!<CR>
 noremap <ESC><ESC> :nohlsearch<CR>
 noremap <C-e> :Explore<CR>

@@ -14,7 +14,7 @@ done
 
 
 # use ctrl+f to accept a suggested word
-bindkey '^N' autosuggest-accept
+bindkey '^O' autosuggest-accept
 
 # Color to use when highlighting suggestion
 ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=004'

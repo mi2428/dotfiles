@@ -1,3 +1,5 @@
+if [[ -n "$(echo $TTY | \grep pts)" ]]; then
+
 local blue1=${COLFG256[069]}
 local blue2=${COLFG256[075]}
 local blue3=${COLFG256[045]}
@@ -33,3 +35,5 @@ function root_prompt() {
 RPROMPT='[$(current_git_status)%*|Ret:%(?,%{${blue1}%}%?,%F{red}%B%?%b%f)%f]'
 PROMPT='${blue1}[%B${blue2}%n%b${blue1}@%M:${blue3}%~${blue1}]%f$(ssh_prompt)$(nspawn_prompt)$(root_prompt)
 %# '
+
+fi
