@@ -1,6 +1,6 @@
 #!/bin/bash
 STATUS=$(cat /sys/class/power_supply/BAT0/status)
-REMAIN=$(echo "scale=1; $(cat /sys/class/power_supply/BAT0/capacity)*100/88" | bc -l)
+REMAIN=$(echo "scale=1; $(cat /sys/class/power_supply/BAT0/capacity)*100/86" | bc -l)
 LOG="/tmp/i3blocks-battery.log"
 
 if [[ -f $NOTIFY ]]; then

@@ -2,6 +2,7 @@
 case "$1" in
     "auth")
         curl -F "username=$2" -F "password=$3" -F "buttonClicked=4" -s https://wlanauth.noc.titech.ac.jp/login.html -o /dev/null -w "%{http_code}\n"
+        ;;
     "up")
         echo -n "setting proxy..."
         export http_proxy="131.112.125.238:3128"
