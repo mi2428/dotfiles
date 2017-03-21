@@ -31,10 +31,10 @@ function fh() {
 }
 
 alias :q="exit"
-alias py="python"
-alias py3="python3"
+alias ZQ="exit"
+alias py="python3"
 alias ipy="ipython"
-alias sss="source ~/.zshrc"
+alias sss="exec zsh"
 alias lg="cd /var/log"
 alias l="ls"
 alias ll="ls -l"
@@ -60,4 +60,3 @@ fi
 alias ls="ls --color=auto"
 
 alias gcc32="gcc -m32 -O0 -fno-asynchronous-unwind-tables"
-

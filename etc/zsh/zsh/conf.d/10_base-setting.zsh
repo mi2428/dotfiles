@@ -66,5 +66,4 @@ zstyle ':completion:*' group-name ''
 zstyle ':completion:*' list-separator '-->'
 zstyle ':completion:*:manuals' separate-sections true
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
-
 zstyle ':completion:*:sudo:*' command-path $path

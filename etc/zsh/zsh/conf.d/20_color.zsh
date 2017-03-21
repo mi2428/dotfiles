@@ -14,6 +14,8 @@ function colortest {
     echo
 }
 
+
+## solarized-dark
 man() {
     env \
         LESS_TERMCAP_mb=$(printf "\e[1;31m") \
