@@ -33,5 +33,5 @@ if [[ -n "$(echo $TTY | \grep pts)" ]]; then
 
     RPROMPT='[$(current_git_status)%*|Ret:%(?,%{${blue1}%}%?,%F{red}%B%?%b%f)%f]'
     PROMPT='${blue1}[%B${blue2}%n%b${blue1}@%M:${blue3}%~${blue1}]%f$(ssh_prompt)$(nspawn_prompt)$(root_prompt)
-    %# '
+%# '
 fi

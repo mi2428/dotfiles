@@ -8,7 +8,7 @@ declare -r fzf="https://github.com/junegunn/fzf"
 install() {
     local force=$1
     [[ "$force" == "true" ]] && rm -Rf "$fzfbase"
-    [[ -d $fzfbase ]] && echo "skipped install fzf" || \
+    [[ -d $fzfbase ]] && echo "skipped fzf installation" || \
     (git clone $fzf $fzfbase && $fzfbase/install)
     return $?
 }
