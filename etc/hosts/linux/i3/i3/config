@@ -197,9 +197,9 @@ bindsym $mod+Control+o exec ~/bin/comptoggle
 bindsym $mod+Control+l exec i3lock -ef -c 000000
 
 ## take screenshots
-bindsym $mod+Control+3 exec scrot 'screen_%Y%m%d_%I:%M:%S_%p.png' -e 'mv $f ~/Pictures/screenshots/'
-bindsym --release $mod+Control+4 exec scrot -s 'screen_%Y%m%d_%I:%M:%S_%p.png' -e 'mv $f ~/Pictures/screenshots/'
-bindsym $mod+Control+5 exec scrot -u 'screen_%Y%m%d_%I:%M:%S_%p.png' -e 'mv $f ~/Pictures/screenshots/'
+bindsym $mod+Control+3 exec scrot --no-startup-id -e 'mv $f ~/Pictures/screenshots/' 'screen_%Y%m%d_%I:%M:%S_%p.png' 
+bindsym --release $mod+Control+4 exec --no-startup-id scrot -s -e 'mv $f ~/Pictures/screenshots/' 'screen_%Y%m%d_%I:%M:%S_%p.png'
+bindsym $mod+Control+5 exec --no-startup-id scrot -u -e 'mv $f ~/Pictures/screenshots/' 'screen_%Y%m%d_%I:%M:%S_%p.png'
 
 ## Happy Hacking Keyboard (US layout)
 bindsym $mod+Control+k exec ~/bin/hhk

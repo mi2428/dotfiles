@@ -1,2 +1,2 @@
 #!/bin/bash
-echo $(date '+%y-%m-%d %T (%a)')
+echo $(date '+%a-%b-%d %T %Y')
