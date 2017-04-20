@@ -1,7 +1,7 @@
 alignment top_right
 
 background yes
-own_window no  ## set 'yes' to use with compton
+own_window yes  ## set 'yes' to use with compton
 own_window_type override
 own_window_class Conky
 own_window_transparent yes
