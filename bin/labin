@@ -1,0 +1,6 @@
+#!/bin/sh
+xrandr --output DP-2 --auto --output DP-1 --auto --right-of DP-2 --output eDP-1 --auto --right-of DP-1
+~/Pictures/.wallpapers/ctrl.sh 1> /dev/null 2>&1 &
+pkill conky && conky 1> /dev/null 2>&1 &
+sudo ip addr add 131.112.21.21/25 dev enp0s20u2 1> /dev/null 2>&1
+sudo dhclient enp0s20u2 1> /dev/null 2>&1
