@@ -185,7 +185,8 @@ bindsym $mod+f exec firefox
 bindsym $mod+Shift+f exec firefox --private-window
 
 ## Spacefm
-bindsym $mod+Shift+s exec spacefm
+# bindsym $mod+Shift+s exec spacefm
+bindsym $mod+Shift+s exec nautilus
 
 ## assign some applications
 # assign [class="Firefox"] 2:www
@@ -209,6 +210,6 @@ bindsym $mod+Control+q exec systemctl hibernate
 
 ## start applications
 exec \
-conky -d && \
+# conky -d && \
 sleep 0.1 && \
 mlterm -e zsh --login

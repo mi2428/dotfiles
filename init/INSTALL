@@ -87,6 +87,8 @@ while getopts dt: OPT; do
             basic_install $dry ;;
         "linux")
             basic_install $dry && patch_install "linux" $dry ;;
+        "lab")
+            basic_install $dry && patch_install "lab" $dry ;;
         "linux-server")
             basic_install $dry && patch_install "linux-server" $dry ;;
         "pi")
