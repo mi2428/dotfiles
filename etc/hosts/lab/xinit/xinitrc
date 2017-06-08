@@ -12,23 +12,16 @@ if [[ -e $CONKYRC ]]; then
     sed -i -e "s/own_window yes/own_window no/g" $CONKYRC &
 fi
 
-## pulseaudio
-# if [[ $(pgrep pulseaudio) != "" ]]; then
-#     killall pulseaudio &
-# fi
-
-## Backlight
-# $HOME/dotfiles/bin/backlight -g &
-
 ## Wallpaper
-# if [[ -e $WALLPAPER ]]; then
-#     ${WALLPAPER}/ctrl.sh &
-# fi
+${WALLPAPER}/ctrl.sh &
 
 xbindkeys &
 xset r rate 180 50 &
+xmodmap -e "keycode 11 = 2 quotedbl"
+xmodmap -e "keycode 47 = semicolon apostrophe"
+xmodmap -e "keycode 48 = colon at"
 fcitx &
 dunst &
 xsetroot -cursor_name left-ptr &
-# pulseaudio --start &
+xrandr --output VGA-1 --left-of HDMI-1 --output HDMI-1 --primary &
 exec i3
