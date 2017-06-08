@@ -4,7 +4,9 @@ background yes
 own_window yes  ## set 'yes' to use with compton
 own_window_type override
 own_window_class Conky
-own_window_transparent yes
+# own_window_transparent yes
+own_window_transparent no
+own_window_colour black
 own_window_hints undecorated,below,sticky,skip_taskbar,skip_pager
 own_window_argb_visual yes
 own_window_argb_value 100
@@ -14,10 +16,10 @@ use_xft yes
 # xftfont Mono:style=Regular:size=11
 xftfont Ubuntu Mono:style=Regular:size=11
 
-# gap_x 20
-# gap_y 220
 gap_x 20
-gap_y 60
+gap_y 135
+# gap_x 20
+# gap_y 60
 double_buffer yes
 uppercase no
 maximum_width 430
