@@ -12,8 +12,10 @@ font pango:Ubuntu Regular 9
 floating_modifier $mod
 
 ## start a terminal
-bindsym $Mod+Return exec mlterm
-bindsym $mod+Shift+Return exec mlterm -e zsh --login
+# bindsym $Mod+Return exec mlterm
+# bindsym $mod+Shift+Return exec mlterm -e zsh --login
+bindsym $Mod+Return exec terminator
+bindsym $mod+Shift+Return exec terminator -e "zsh --login"
 bindsym $mod+Shift+p exec ~/.rofi/rofi-tmux.sh
 
 ## kill focused window
@@ -26,7 +28,8 @@ bindsym $mod+shift+c kill
 ## bindsym $mod+d exec --no-startup-id i3-dmenu-desktop
 
 # bindsym $mod+d exec dmenu_run -nb "#2d2d2d" -nf "#dedede" -sb "#d64937" -sf "#dedede"
-bindsym $mod+d exec rofi -show combi -terminal mlterm -location 0 -sidebar-mode
+# bindsym $mod+d exec rofi -show combi -terminal mlterm -location 0 -sidebar-mode
+bindsym $mod+d exec rofi -show combi -terminal terminator -location 0 -sidebar-mode
 bindsym $mod+Shift+d exec ~/.rofi/launch.sh
 
 ## change focus
@@ -210,5 +213,4 @@ bindsym $mod+Control+q exec systemctl hibernate
 ## start applications
 exec \
 conky -d && \
-sleep 0.1 && \
-mlterm -e zsh --login
+comptoggle

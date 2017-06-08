@@ -4,7 +4,7 @@ set -e
 
 declare -r SCRIPT_NAME=$(basename $0)
 
-declare -r BASE_DIR="/home/taichi/dev/projects/10_public/blog-mi2428-net"
+declare -r BASE_DIR="/home/taichi/dev/projects/public/blog-mi2428-net"
 cd $BASE_DIR
 
 declare -r SERVER_BASE_DIR="/var/local/docker/20-running.d/blog-mi2428-net/www/"

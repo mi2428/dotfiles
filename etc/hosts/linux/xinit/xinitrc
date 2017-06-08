@@ -25,7 +25,6 @@ if [[ -e $WALLPAPER ]]; then
     ${WALLPAPER}/ctrl.sh &
 fi
 
-
 xbindkeys &
 xset r rate 180 50 &
 fcitx &

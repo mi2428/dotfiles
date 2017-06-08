@@ -7,7 +7,7 @@ if has('vim_starting')
   NeoBundleFetch 'Shougo/neobundle.vim'
 endif
 
-NeoBundle 'Shougo/deoplete.nvim'
+" NeoBundle 'Shougo/deoplete.nvim'
 NeoBundle 'Shougo/neosnippet'
 NeoBundle 'Shougo/neosnippet-snippets'
 NeoBundle 'davidhalter/jedi-vim'

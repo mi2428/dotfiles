@@ -1,7 +1,7 @@
 alignment top_right
 
 background yes
-own_window no  ## set 'yes' to use with compton
+own_window yes  ## set 'yes' to use with compton
 own_window_type override
 own_window_class Conky
 own_window_transparent yes
@@ -14,6 +14,8 @@ use_xft yes
 # xftfont Mono:style=Regular:size=11
 xftfont Ubuntu Mono:style=Regular:size=11
 
+# gap_x 20
+# gap_y 220
 gap_x 20
 gap_y 60
 double_buffer yes
@@ -58,13 +60,13 @@ ${alignc}${diskiograph_read /dev/sda 30,420}
 ${color #d8d8d8}Write:${color} ${alignr}${diskio_write /dev/sda}
 ${alignc}${diskiograph_write /dev/sda 30,420}
 
-${color #e6e6e6}SD Usage $hr${color}
-${color #d8d8d8}sdb1: ${alignr}N/A 
-${color #d8d8d8}Read:${color} ${alignr}${diskio_read /dev/sdb}
-${alignc}${diskiograph_read /dev/sdb 30,420}
-${color #d8d8d8}Write:${color} ${alignr}${diskio_write /dev/sdb}
-${alignc}${diskiograph_write /dev/sdb 30,420}
-
+# ${color #e6e6e6}SD Usage $hr${color}
+# ${color #d8d8d8}sdb1: ${alignr}N/A 
+# ${color #d8d8d8}Read:${color} ${alignr}${diskio_read /dev/sdb}
+# ${alignc}${diskiograph_read /dev/sdb 30,420}
+# ${color #d8d8d8}Write:${color} ${alignr}${diskio_write /dev/sdb}
+# ${alignc}${diskiograph_write /dev/sdb 30,420}
+# 
 ${color #e6e6e6}System Load $hr${color}
 ${color #d8d8d8}Processes:${color} ${alignr} ${processes} (Running: ${running_processes})
 ${color #e6e6e6}TopProcesses(name/pid/cpu/mem/time) ${stippled_hr}${color}
@@ -75,6 +77,9 @@ ${top name 4} ${alignr} ${top pid 4}${top cpu 4}%${top mem 4}%${top time 4}
 ${top name 5} ${alignr} ${top pid 5}${top cpu 5}%${top mem 5}%${top time 5}
 ${top name 6} ${alignr} ${top pid 6}${top cpu 6}%${top mem 6}%${top time 6}
 ${top name 7} ${alignr} ${top pid 7}${top cpu 7}%${top mem 7}%${top time 7}
+${top name 5} ${alignr} ${top pid 8}${top cpu 8}%${top mem 8}%${top time 8}
+${top name 6} ${alignr} ${top pid 9}${top cpu 9}%${top mem 9}%${top time 9}
+${top name 7} ${alignr} ${top pid 10}${top cpu 10}%${top mem 10}%${top time 10}
 ${alignc}${loadgraph 30,420}
 
 ${color #e6e6e6}Network ${hr}${color}

@@ -1,5 +1,10 @@
 #!/bin/bash
 
+function driver_reset(){
+    sudo rmmod wl
+    sudo modprobe wl
+}
+
 if [[ -z $@ ]]; then
     OPTIONS=""
     for inactive in $(netctl list | grep -v '*' | awk '{print $1}'); do
@@ -23,7 +28,7 @@ else
     if netctl is-active "$PROFILE" 1> /dev/null 2> /dev/null; then
         exec sudo netctl stop "$PROFILE" 1> /dev/null 2> /dev/null &
     else
-        sudo rmmod wl && sudo modprobe wl && \
+        driver_reset && \
         exec sudo netctl switch-to "$PROFILE" 1> /dev/null 2> /dev/null &
     fi
 fi
