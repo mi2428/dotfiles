@@ -1,5 +1,5 @@
 #!/bin/bash
-INTERFACE=$(ip link show | grep -o "eno[1-2]")
+INTERFACE=$(ip link show | grep -m 1 -o "eno[1-2]")
 ADDR=$(ip addr show dev $INTERFACE | grep "global" | awk '{print $2}')
 if [[ "$ADDR" == "" ]]; then
     # echo -e "Not-Connected\n\n#FE2E2E"

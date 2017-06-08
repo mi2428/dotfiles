@@ -22,6 +22,8 @@ xmodmap -e "keycode 47 = semicolon apostrophe"
 xmodmap -e "keycode 48 = colon at"
 fcitx &
 dunst &
+mate-volume-control-applet &
+mate-screensaver &
 xsetroot -cursor_name left-ptr &
 xrandr --output VGA-1 --left-of HDMI-1 --output HDMI-1 --primary &
 exec i3
