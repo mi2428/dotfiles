@@ -66,7 +66,6 @@ URxvt.pointerBlank:         true
 ! URxvt.tintColor:            #657b83
 ! URxvt.inheritPixmap:        true
 ! URxvt.transparent:          true
-<<<<<<< HEAD
 ! URxvt.shading:              50
 
 *background: [90]#002b36
@@ -75,16 +74,6 @@ URxvt.pointerBlank:         true
 *cursorColor: #596466
 *pointerColorBackground: #586e75
 *pointerColorForeground: #93a1a1
-=======
-! URxvt.shading:              20
-
-URxvt*background: [90]#002b36
-URxvt*foreground: #9cb0b3
-URxvt*fadeColor: #002b36
-URxvt*cursorColor: #596466
-URxvt*pointerColorBackground: #586e75
-URxvt*pointerColorForeground: #93a1a1
->>>>>>> 970b0c32c4f8e8ee1e0b496d8840e445e6e7df1c
 
 !! black dark/light
 *color0: #073642

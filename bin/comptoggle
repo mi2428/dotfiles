@@ -8,13 +8,13 @@ if pgrep compton &> /dev/null; then
     echo "Restarting Conky"
     pkill conky
     sed -i -e "s/own_window yes/own_window no/g" $CONKYRC
-    # conky -d &> /dev/null
+    conky -d &> /dev/null
 else
     echo "Turning compton ON"
     compton -b --config $HOME/.config/compton/compton.conf
     echo "Restarting Conky"
     pkill conky
     sed -i -e "s/own_window no/own_window yes/g" $CONKYRC
-    # conky -d &> /dev/null
+    conky -d &> /dev/null
 fi
 exit 0

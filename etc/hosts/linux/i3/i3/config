@@ -212,5 +212,4 @@ bindsym $mod+Control+q exec systemctl hibernate
 
 ## start applications
 exec \
-conky -d && \
 comptoggle

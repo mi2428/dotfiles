@@ -13,22 +13,22 @@ if [[ -e $CONKYRC ]]; then
 fi
 
 ## pulseaudio
-# if [[ $(pgrep pulseaudio) != "" ]]; then
-#     killall pulseaudio &
-# fi
+if [[ $(pgrep pulseaudio) != "" ]]; then
+    killall pulseaudio &
+fi
 
 ## Backlight
-# $HOME/dotfiles/bin/backlight -g &
+$HOME/dotfiles/bin/backlight -g &
 
 ## Wallpaper
-# if [[ -e $WALLPAPER ]]; then
-#     ${WALLPAPER}/ctrl.sh &
-# fi
+if [[ -e $WALLPAPER ]]; then
+    ${WALLPAPER}/ctrl.sh &
+fi
 
 xbindkeys &
 xset r rate 180 50 &
 fcitx &
 dunst &
 xsetroot -cursor_name left-ptr &
-# pulseaudio --start &
+pulseaudio --start &
 exec i3

@@ -1,32 +1,32 @@
-alignment top_right
+conky.config = {
+    alignment = 'top_right',
+    background = true,
+    own_window = true,--# set 'yes' to use with compton
+    own_window_type = 'override',
+    own_window_class = 'Conky',
+    -- own_window_transparent yes
+    own_window_transparent = false,
+    own_window_colour = 'black',
+    own_window_hints = 'undecorated,below,sticky,skip_taskbar,skip_pager',
+    own_window_argb_visual = true,
+    own_window_argb_value = 100,
+    update_interval = 1,
+    use_xft = true,
+    -- xftfont VLGothic:style=Regular:size=11
+    -- xftfont Mono:style=Regular:size=11
+    font = 'Ubuntu Mono:style=Regular:size=11',
+    -- gap_x = 20,
+    -- gap_y = 135,
+    gap_x = 20,
+    gap_y = 42,
+    double_buffer = true,
+    uppercase = false,
+    maximum_width = 430,
+    default_shade_color = 'black',
+    draw_shades = true,
+};
 
-background yes
-own_window yes  ## set 'yes' to use with compton
-own_window_type override
-own_window_class Conky
-# own_window_transparent yes
-own_window_transparent no
-own_window_colour black
-own_window_hints undecorated,below,sticky,skip_taskbar,skip_pager
-own_window_argb_visual yes
-own_window_argb_value 100
-update_interval 1
-use_xft yes
-# xftfont VLGothic:style=Regular:size=11
-# xftfont Mono:style=Regular:size=11
-xftfont Ubuntu Mono:style=Regular:size=11
-
-gap_x 20
-gap_y 135
-# gap_x 20
-# gap_y 60
-double_buffer yes
-uppercase no
-maximum_width 430
-default_shade_color black
-draw_shades yes
-
-TEXT
+conky.text = [[
 ${color #e6e6e6}Summary$hr${color}
 ${color #d8d8d8}Kernel:${color}${alignr} $sysname $kernel $machine
 ${color #d8d8d8}JST:${color} ${alignr} ${time %Y/%m/%d %H:%M:%S (%a)}
@@ -108,29 +108,30 @@ ${color #d8d8d8}DownloadSize:${color} ${alignr} ${totaldown enp0s20u2}
 ${alignc}${downspeedgraph enp0s20u2 30,420}
 ${endif}
 ${color #e6e6e6}Wi-Fi ${stippled_hr}${color}
-${if_up wlp0s20u2}${color #d8d8d8}Address:${color} ${alignr}${if_up wlp0s20u2}${addr wlp0s20u2}${else}N/A${endif}
-${color #d8d8d8}Gateway:${color} ${alignr}${if_up wlp0s20u2}${gw_ip wlp0s20u2}${else}N/A${endif}
-${color #d8d8d8}Mode:${color} ${alignr} ${if_up wlp0s20u2}${wireless_mode wlp0s20u2}${else}N/A${endif}
-${color #d8d8d8}ESSID:${color} ${alignr} ${if_up wlp0s20u2}${wireless_essid wlp0s20u2}${else}N/A${endif}
-${color #d8d8d8}BSSID:${color} ${alignr} ${if_up wlp0s20u2}${wireless_ap wlp0s20u2}${else}N/A${endif}
-#${color #d8d8d8}${if_up wlp0s20u2}Quality:${color}${alignr} ${wireless_link_qual_perc wlp0s20u2}%${else}${color #d8d8d8}Quality:${color}${alignr} N/A${endif}
-#${if_up wlp0s20u2}${alignc}${wireless_link_bar 10,420 wlp0s20u2}${else}${alignr}N/A${endif}
-${color #d8d8d8}UplinkSpeed:${color} ${alignr} ${upspeedf wlp0s20u2}KB
-${color #d8d8d8}UploadSize:${color} ${alignr} ${totalup wlp0s20u2}
-${alignc}${upspeedgraph wlp0s20u2 30,420}
-${color #d8d8d8}DownlinkSpeed:${color} ${alignr} ${downspeedf wlp0s20u2}KB
-${color #d8d8d8}DownloadSize:${color} ${alignr} ${totaldown wlp0s20u2}
-${alignc}${downspeedgraph wlp0s20u2 30,420}
+${if_up wifi1}${color #d8d8d8}Address:${color} ${alignr}${if_up wifi1}${addr wifi1}${else}N/A${endif}
+${color #d8d8d8}Gateway:${color} ${alignr}${if_up wifi1}${gw_ip wifi1}${else}N/A${endif}
+${color #d8d8d8}Mode:${color} ${alignr} ${if_up wifi1}${wireless_mode wifi1}${else}N/A${endif}
+${color #d8d8d8}ESSID:${color} ${alignr} ${if_up wifi1}${wireless_essid wifi1}${else}N/A${endif}
+${color #d8d8d8}BSSID:${color} ${alignr} ${if_up wifi1}${wireless_ap wifi1}${else}N/A${endif}
+#${color #d8d8d8}${if_up wifi1}Quality:${color}${alignr} ${wireless_link_qual_perc wifi1}%${else}${color #d8d8d8}Quality:${color}${alignr} N/A${endif}
+#${if_up wifi1}${alignc}${wireless_link_bar 10,420 wifi1}${else}${alignr}N/A${endif}
+${color #d8d8d8}UplinkSpeed:${color} ${alignr} ${upspeedf wifi1}KB
+${color #d8d8d8}UploadSize:${color} ${alignr} ${totalup wifi1}
+${alignc}${upspeedgraph wifi1 30,420}
+${color #d8d8d8}DownlinkSpeed:${color} ${alignr} ${downspeedf wifi1}KB
+${color #d8d8d8}DownloadSize:${color} ${alignr} ${totaldown wifi1}
+${alignc}${downspeedgraph wifi1 30,420}
 ${else}${color #d8d8d8}Address:${color} ${alignr}${if_up wlp3s0}${addr wlp3s0}${else}N/A${endif}
 ${color #d8d8d8}Gateway:${color} ${alignr}${if_up wlp3s0}${gw_ip wlp3s0}${else}N/A${endif}
 ${color #d8d8d8}Mode:${color} ${alignr} ${if_up wlp3s0}${wireless_mode wlp3s0}${else}N/A${endif}
 ${color #d8d8d8}ESSID:${color} ${alignr} ${if_up wlp3s0}${wireless_essid wlp3s0}${else}N/A${endif}
 ${color #d8d8d8}BSSID:${color} ${alignr} ${if_up wlp3s0}${wireless_ap wlp3s0}${else}N/A${endif}
 #${color #d8d8d8}${if_up wlp3s0}Quality:${color}${alignr} ${wireless_link_qual_perc wlp3s0}%${else}${color #d8d8d8}Quality:${color}${alignr} N/A${endif}
-#${if_up wlp3s0}${alignc}${wireless_link_bar 10,420 wlp3s0}${else}${alignr}N/A${endif}
+#${if_up wlp3s0}${alignc}${wireless_link_bar 10,420 wlp3s0}${else}${alignr}N/A$
 ${color #d8d8d8}UplinkSpeed:${color} ${alignr} ${upspeedf wlp3s0}KB
 ${color #d8d8d8}UploadSize:${color} ${alignr} ${totalup wlp3s0}
-${alignc}${upspeedgraph wlp0s20u2 30,420}${endif}
+${alignc}${upspeedgraph wifi1 30,420}
 ${color #d8d8d8}DownlinkSpeed:${color} ${alignr} ${downspeedf wlp3s0}KB
 ${color #d8d8d8}DownloadSize:${color} ${alignr} ${totaldown wlp3s0}
-${alignc}${downspeedgraph wlp3s0 30,420}
+${alignc}${downspeedgraph wlp3s0 30,420}${endif}
+]];

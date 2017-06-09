@@ -50,6 +50,27 @@
 #"xterm"
 #  control + b:2
 
+# Backlight DOWN
+# "/usr/bin/xbacklight -dec 5"
+"/home/taichi/bin/backlight -d 25"
+  m:0x0 + c:232
+  XF86MonBrightnessDown
+
+# Backlight UP
+"/home/taichi/bin/backlight -i 25"
+  m:0x0 + c:233
+  XF86MonBrightnessUp
+
+# KeyboadBacklightDOWN
+"/usr/bin/kbdlight down 10"
+  m:0x0 + c:237
+  XF86KbdBrightnessDown
+
+# KeyboadBacklightUP
+"/usr/bin/kbdlight up 10"
+  m:0x0 + c:238
+  XF86KbdBrightnessUp
+
 # VolumeControl Mute
 "/usr/bin/pulseaudio-ctl mute"
   m:0x0 + c:121

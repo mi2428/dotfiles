@@ -5,7 +5,7 @@ cd $(dirname $0)
 declare -r BACKLIGHT="/sys/class/backlight/intel_backlight/brightness"
 declare -r CURRENT="$HOME/.cache/backlight/brightness"
 
-[[ -e $CURRENT ]] && echo $CURRENT > $BACKLIGHT ||\
+[[ -e $CURRENT ]] && cat $CURRENT > $BACKLIGHT ||\
 mkdir -p $(dirname $CURRENT) && cat $BACKLIGHT > $CURRENT
 
 inc() {
