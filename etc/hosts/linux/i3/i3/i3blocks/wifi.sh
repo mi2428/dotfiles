@@ -5,7 +5,7 @@ declare -r INTERFACE="${USB_INTERFACE:-wlp3s0}"
 
 st="$(iwconfig)"
 bssid="$(echo $st | grep -A 1 $INTERFACE | grep -E -o '[[:xdigit:]]{2}(:[[:xdigit:]]{2}){5}')"
-[[ -z "$bssid" ]] && echo -e "N/A\n\n#FE2E2E" && exit 1
+[[ -z "$bssid" ]] && echo -e "N/A\n\n#FE2E2E" && exit 0
 
 essid="$(echo $st | grep $INTERFACE | sed -e "s/^.*ESSID:\"\([^\"]*\).*$/\1/g")"
 # quality="$(echo $st | grep -A 5 $INTERFACE | sed -e "s/^.*Link Quality=\([0-9]*\/[0-9]*\).*$/\1/g")"

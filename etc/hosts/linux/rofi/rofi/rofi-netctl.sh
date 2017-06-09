@@ -1,34 +1,27 @@
 #!/bin/bash
 
-function driver_reset(){
-    sudo rmmod wl
-    sudo modprobe wl
+args="$@"
+options=""
+
+add_option() {
+    local profile="$1" prefix="$2" description
+    _file="/etc/netctl/$profile"
+    description="$(grep "Description" $_file | sed -e "s/Description='\([^']*\)'/\1/g")"
+    [[ -n $options ]] && options="$prefix$profile\t\"$description\"\n$options" || options="$prefix$profile\t\"$description\""
 }
 
-if [[ -z $@ ]]; then
-    OPTIONS=""
-    for inactive in $(netctl list | grep -v '*' | awk '{print $1}'); do
-        description=$(cat /etc/netctl/$inactive | grep "Description" | sed -e "s/^Description='\(.*\)'$/\1/")
-        profile=$(printf "%-16s" $inactive)
-        if [[ $OPTIONS == "" ]]; then
-            OPTIONS="$profile\"$description\""
-        else
-            OPTIONS="$OPTIONS\n$profile\"$description\""
-        fi
+if [[ -z "$args" ]]; then
+    for profile in $(netctl list | grep -v '*' | tr -d ' '); do
+        add_option "$profile"
     done
-    active=$(netctl list | grep '*' | awk '{print $2}')
-    if [[ $active != "" ]]; then
-        description=$(cat /etc/netctl/$active | grep "Description" | sed -e "s/^Description='\(.*\)'$/\1/")
-        profile=$(printf "%-16s" "$active*")
-        OPTIONS="$profile\"$description\"\n$OPTIONS"
-    fi
-    echo -e "$OPTIONS"
+    active="$(netctl list | grep '*' | tr -d '*' | tr -d ' ')"
+    [[ -n "$active" ]] && add_option "$active" "!"
+    echo -e $options | expand -t 16
 else
-    PROFILE=$(echo $@ | awk '{print $1}' | sed -e "s/\(.*\)\*/\1/g")
-    if netctl is-active "$PROFILE" 1> /dev/null 2> /dev/null; then
-        exec sudo netctl stop "$PROFILE" 1> /dev/null 2> /dev/null &
+    profile=$(echo $args | tr -d '!' | awk '{print $1}')
+    if netctl is-active "$profile" 2> /dev/null 1>&2; then
+        sudo netctl stop "$profile" 2> /dev/null 1>&2 &
     else
-        driver_reset && \
-        exec sudo netctl switch-to "$PROFILE" 1> /dev/null 2> /dev/null &
+        sudo netctl switch-to "$profile" 2> /dev/null 1>&2 &
     fi
 fi
