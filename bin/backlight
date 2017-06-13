@@ -21,16 +21,13 @@ dec() {
 
 
 while getopts d:i:g OPT; do
+    [[ $UID != 0 ]] && sudo $0 $@
     case $OPT in
     "g")
-        cat $CURRENT ;;
+        cat $CURRENT > $BACKLIGHT ;;
     "d")
-        [[ $UID != 0 ]] && sudo $0 $@
-        dec $OPTARG 2> /dev/null
-        ;;
+        dec $OPTARG 2> /dev/null ;;
     "i")
-        [[ $UID != 0 ]] && sudo $0 $@
-        inc $OPTARG 2> /dev/null
-        ;;
+        inc $OPTARG 2> /dev/null ;;
     esac
 done

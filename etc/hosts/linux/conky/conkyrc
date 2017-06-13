@@ -47,16 +47,16 @@ ${color #d8d8d8}SSD0:${color} ${alignr} ${execi 1 sensors | \grep "TH0A" | awk '
 ${color #d8d8d8}Conky:${color} ${alignr} ${conky_version} (${conky_build_arch})
 
 ${color #e6e6e6}CPU Usage $hr${color}
-${color #d8d8d8}CPU1:${color} ${cpubar cpu1 10,250} ${cpu cpu1}% ${alignr}${freq_g 0}GHz
-${color #d8d8d8}CPU2:${color} ${cpubar cpu2 10,250} ${cpu cpu2}% ${alignr}${freq_g 1}GHz
-${color #d8d8d8}CPU3:${color} ${cpubar cpu3 10,250} ${cpu cpu3}% ${alignr}${freq_g 2}GHz
-${color #d8d8d8}CPU4:${color} ${cpubar cpu4 10,250} ${cpu cpu4}% ${alignr}${freq_g 3}GHz
+${color #d8d8d8}CPU1:${color} ${cpubar cpu1 10,280} ${cpu cpu1}% ${alignr}${freq_g 0}GHz
+${color #d8d8d8}CPU2:${color} ${cpubar cpu2 10,280} ${cpu cpu2}% ${alignr}${freq_g 1}GHz
+${color #d8d8d8}CPU3:${color} ${cpubar cpu3 10,280} ${cpu cpu3}% ${alignr}${freq_g 2}GHz
+${color #d8d8d8}CPU4:${color} ${cpubar cpu4 10,280} ${cpu cpu4}% ${alignr}${freq_g 3}GHz
 
 ${color #e6e6e6}RAM Usage $hr${color}
-${color #d8d8d8}RAM:${color} ${membar 10,250} ${memperc}% ${alignr}${mem}
+${color #d8d8d8}RAM:${color}  ${membar 10,280} ${memperc}% ${alignr}${mem}
 
 ${color #e6e6e6}SSD Usage $hr${color}
-${color #d8d8d8}sda7:${color} ${fs_bar 10,250 /} ${fs_free_perc /}%${alignr}${fs_free /}
+${color #d8d8d8}sda7:${color} ${fs_bar 10,280 /} ${fs_free_perc /}%${alignr}${fs_free /}
 ${color #d8d8d8}Read:${color} ${alignr}${diskio_read /dev/sda}
 ${alignc}${diskiograph_read /dev/sda 30,420}
 ${color #d8d8d8}Write:${color} ${alignr}${diskio_write /dev/sda}

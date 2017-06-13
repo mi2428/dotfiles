@@ -4,6 +4,8 @@ case "$1" in
     tmux new-session ;;
 "ls")
     tmux list-sessions ;;
+"kill")
+    tmux kill-server ;;
 *)
     tmux attach -t $1 ;;
 esac

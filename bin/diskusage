@@ -1,0 +1,14 @@
+#!/bin/bash
+
+cd $(dirname $0)
+set -eu
+
+(( $EUID > 0 )) && sudo -u root $0 && exit 0
+
+declare -a index=("/etc" "/opt" "/root" "/usr" "/var" "/home/taichi")
+for dir in ${index[@]}; do
+    pushd $dir 1> /dev/null
+    total=$(du -csPh0 | awk '{print $1}')
+    popd 1> /dev/null
+    echo -e "$dir -> $total"
+done
