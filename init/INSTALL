@@ -6,10 +6,6 @@ declare -r DOTBASE=$(cd "../"; pwd)
 [[ -z "$XDG_CONFIG_HOME" ]] && \
 declare -r XDGBASE="$HOME/.config" || declare -r XDGBASE=$XDG_CONFIG_HOME
 
-#
-# CAUTION: This uses GNU Findutils, maybe does not work on OSX/Solaris.
-#
-
 linker() {
     local pkg="$1"
     local item="$2"
@@ -24,7 +20,7 @@ linker() {
         ;;
     "false")
         if [[ -d "$base/$item" ]]; then
-            for subitem in $(cd "$base/$item"; find -maxdepth 1 -not -name "."); do
+            for subitem in $(cd "$base/$item"; find . -maxdepth 1 -not -name "."); do
                 local subitem=$(basename $subitem)
                 [[ $dry == "true" ]] && echo "ln -snf $base/$item/$subitem $HOME/.$item/$subitem" || \
                 (mkdir -p "$HOME/.$item" && ln -snf "$base/$item/$subitem" "$HOME/.$item/$subitem")
@@ -41,17 +37,14 @@ installer() {
     local pkgbase=$1
     local excluded=$2
     local dry=$3
-    for pkg in $(cd "$pkgbase"; find -maxdepth 1 -type d -not -name "$excluded" -not -name "."); do
+    for pkg in $(cd "$pkgbase"; find . -maxdepth 1 -type d -not -name "$excluded" -not -name "."); do
         local pkg=$(basename $pkg)
         local xdg_option="false"
         [[ "$pkg" == "nvim" ]] && xdg_option="true"
         [[ "$pkg" == "xfce4" ]] && xdg_option="true"
         [[ "$pkg" == "dwb" ]] && xdg_option="true"
         [[ "$pkg" == "compton" ]] && xdg_option="true"
-        [[ "$pkg" == "dunst" ]] && xdg_option="true"
-        [[ "$pkg" == "gtk-3.0" ]] && xdg_option="true"
-        [[ "$pkg" == "psd" ]] && xdg_option="true"
-        for item in $(cd "$pkgbase/$pkg"; find -maxdepth 1 -not -name "."); do
+        for item in $(cd "$pkgbase/$pkg"; find . -maxdepth 1 -not -name "."); do
             local item=$(basename $item)
             linker $pkg $item $xdg_option $pkgbase $dry
         done
@@ -66,14 +59,7 @@ basic_install() {
 patch_install() {
     local patchtype="$1"
     local dry="$2"
-    case $patchtype in
-    "detect")
-        [[ $(uname) == "Linux" ]] && patch_install "linux" $dry
-        [[ $(uname) == "Darwin" ]] && patch_install "osx" $dry
-        ;;
-    *)
-        installer "$DOTBASE/etc/hosts/$patchtype" "." $dry ;;
-    esac
+    installer "$DOTBASE/etc/hosts/$patchtype" "." $dry
 }
 
 declare dry="false"
@@ -87,18 +73,16 @@ while getopts dt: OPT; do
             basic_install $dry ;;
         "linux")
             basic_install $dry && patch_install "linux" $dry ;;
-        "lab")
-            basic_install $dry && patch_install "lab" $dry ;;
         "linux-server")
             basic_install $dry && patch_install "linux-server" $dry ;;
         "pi")
             basic_install $dry && patch_install "pi" $dry ;;
-        "osx")
-            basic_install $dry && patch_install "osx" $dry ;;
+        "mac")
+            basic_install $dry && patch_install "mac" $dry ;;
         "")
-            basic_install $dry && patch_install "detect" $dry ;;
+            # basic_install $dry && patch_install "detect" $dry ;;
+            echo "./INSTALL [-d] -t [basic|linux|linux-server|pi|mac|uninstall]"
         esac
         ;;
     esac
 done
-

@@ -10,3 +10,6 @@ install:
 	${PWD}/init/zsh-plugin -f
 	${PWD}/init/fzf -f
 	ln -snf ${PWD}/bin ${HOME}/bin
+
+uninstall:
+	${PWD}/init/UNINSTALL

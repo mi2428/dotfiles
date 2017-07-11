@@ -1,0 +1,21 @@
+#!/bin/bash
+set -e
+cd $(dirname $0)
+declare -r DOTBASE=$(cd "../"; pwd)
+
+uninstall() {
+    find $HOME -maxdepth 3 -type l -print0 | while IFS= read -r -d '' symlink; do
+        if [[ -n "$(ls -l "$symlink" | awk '{print $NF}' | grep $DOTBASE)" ]]; then
+            [[ $dry == "true" ]] && echo "unlink $symlink" || unlink "$symlink"
+        fi
+    done
+}
+
+declare dry="false"
+while getopts d OPT; do
+    case $OPT in
+    "d")
+        dry="true" ;;
+    esac
+done
+uninstall $dry
