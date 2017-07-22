@@ -31,6 +31,7 @@ set hlsearch
 set incsearch
 set smartcase
 set expandtab
+set ignorecase
 
 " set foldmethod=syntax
 set foldmethod=marker

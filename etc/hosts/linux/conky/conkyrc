@@ -88,6 +88,7 @@ ${color #e6e6e6}Network ${hr}${color}
 ${color #d8d8d8}NameServer:${color} ${alignr}${nameserver}
 ${color #d8d8d8}OpenPort(TCP):${color} ${alignr}${tcp_portmon 1 65535 count} 
 ${color #d8d8d8}RemoteLogin:${color} ${alignr}${tcp_portmon 22 22 rip 0}
+${color #d8d8d8}Global:${color} ${alignr}${execi 1 curl https://mi2428.net/myip}
 ${if_up enp0s20u1}${color #e6e6e6}Ethernet ${stippled_hr}${color}
 ${color #d8d8d8}Address:${color} ${alignr}${if_up enp0s20u1}${addr enp0s20u1}${else}N/A${endif}
 ${color #d8d8d8}Gateway:${color} ${alignr}${if_up enp0s20u1}${gw_ip enp0s20u1}${else}N/A${endif}
