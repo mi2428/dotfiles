@@ -23,10 +23,6 @@ function mcd() {
     mkdir -p $1 && cd $1
 }
 
-function open() {
-    spacefm $1 2> /dev/null 1> /dev/null &
-}
-
 function fe() {
     local file
     file="$(fzf --query="$1" --select-1 --exit-0)"
