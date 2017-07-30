@@ -13,8 +13,8 @@ for plugin in ${plugins[@]}; do
 done
 
 
-# use ctrl+f to accept a suggested word
-bindkey '^N' autosuggest-accept
+# use ctrl+o to accept a suggested word
+bindkey '^O' autosuggest-accept
 
 # Color to use when highlighting suggestion
 ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=004'
