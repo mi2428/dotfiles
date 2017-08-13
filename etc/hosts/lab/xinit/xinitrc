@@ -22,6 +22,7 @@ xmodmap -e "keycode 47 = semicolon apostrophe"
 xmodmap -e "keycode 48 = colon at"
 fcitx &
 dunst &
+mate-settings-daemon &
 mate-volume-control-applet &
 mate-screensaver &
 xsetroot -cursor_name left-ptr &
