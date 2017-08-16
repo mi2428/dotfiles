@@ -52,7 +52,7 @@ alias ff="fzf"
 alias ptr="paris-traceroute"
 alias grep="grep -n --color=auto"
 
-[ -x `which colordiff` ] && alias diff='colordiff'
+whence colordiff 1> /dev/null 2>&1 && alias diff='colordiff'
 
 alias vi="vim"
 if whence -p nvim 1> /dev/null; then
