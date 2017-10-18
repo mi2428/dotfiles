@@ -1,20 +1,3 @@
-##
-# デフォルトで色を付ける
-##
-alias grep="grep -n --color=auto"
-
-function man() {
-    env \
-    LESS_TERMCAP_mb=$(printf "\e[1;31m") \
-    LESS_TERMCAP_md=$(printf "\e[1;31m") \
-    LESS_TERMCAP_me=$(printf "\e[0m") \
-    LESS_TERMCAP_se=$(printf "\e[0m") \
-    LESS_TERMCAP_so=$(printf "\e[1;44;33m") \
-    LESS_TERMCAP_ue=$(printf "\e[0m") \
-    LESS_TERMCAP_us=$(printf "\e[1;32m") \
-    man "$@"
-}
-
 function cd() {
     builtin cd $1 && ls
 }
@@ -44,10 +27,10 @@ function fh() {
 }
 
 alias :q="exit"
-alias py="python"
-alias py3="python3"
+alias ZQ="exit"
+alias py="python3"
 alias ipy="ipython"
-alias sss="source ~/.zshrc"
+alias sss="exec zsh"
 alias lg="cd /var/log"
 alias l="ls"
 alias ll="ls -l"
@@ -57,10 +40,13 @@ alias cl="clear"
 alias x="startx"
 alias zz="mlterm -L true > /dev/null 2>&1 &"
 alias gosh="rlwrap -p gosh"
-alias p8="ping 8.8.8.8"
+alias ping8="ping 8.8.8.8"
+alias pingg="ping www.google.com"
 alias sshv="ssh -v"
 alias pd="popd"
 alias ff="fzf"
+alias ptr="paris-traceroute"
+alias grep="grep -n --color=auto"
 
 alias vi="vim"
 if whence -p nvim 1> /dev/null; then
@@ -70,4 +56,3 @@ fi
 alias ls="ls -G"
 
 alias gcc32="gcc -m32 -O0 -fno-asynchronous-unwind-tables"
-

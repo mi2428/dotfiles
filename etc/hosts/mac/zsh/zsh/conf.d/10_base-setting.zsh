@@ -1,34 +1,60 @@
-bindkey -e                          # Emacsバインド
+export HISTSIZE=1000000
+export SAVEHIST=1000000
+export HISTFILE=$HOME/.zhistory
+setopt BANG_HIST                    ## use csh extended history
+# setopt HIST_IGNORE_DUPS
+setopt HIST_IGNORE_ALL_DUPS
+setopt HIST_IGNORE_SPACE
+setopt HIST_REDUCE_BLANKS
+setopt SHARE_HISTORY
+setopt ALWAYS_TO_END
+setopt NO_BEEP
+setopt AUTO_CD
+setopt AUTOPUSHD
+setopt PUSHD_IGNORE_DUPS
+setopt CORRECT
+# setopt CORRECT_ALL
+setopt MAGIC_EQUAL_SUBST
+setopt PROMPT_SUBST
+setopt NOTIFY
+setopt AUTO_LIST
+setopt AUTO_MENU
+setopt LIST_PACKED
+setopt LIST_TYPES
+setopt NO_LIST_BEEP
+setopt IGNORE_EOF                   ## ignore <C-d>
+setopt NO_AUTOREMOVESLASH
 
-export HISTSIZE=10000               # 10000行の履歴を記録
-export SAVEHIST=10000
-export HISTFILE=$HOME/.zhistory     # ヒストリファイルの指定
-setopt BANG_HIST                    # cshのヒストリ拡張を使う
-#setopt HIST_IGNORE_DUPS            # 重複するコマンドを記憶しない
-setopt HIST_IGNORE_ALL_DUPS         # 重複するコマンドが来たら古いものを削除
-setopt HIST_IGNORE_SPACE            # 先頭スペースは記憶しない
-setopt HIST_REDUCE_BLANKS           # 空白は削除して記憶
-setopt SHARE_HISTORY                # 履歴の共有
+##
+## Path
+##
+export XDG_CONFIG_HOME=$HOME/.config
+export ZPLUG_HOME=$HOME/.zsh/zplug
+export GEMPATH=$HOME/.gem/ruby/2.3.0/bin
+export DOT_BIN=$HOME/bin
+export ECLIPSE=$HOME/eclipse/java-neon/eclipse
+export GOPATH=$HOME/.go
+export HEROKU=/usr/local/heroku/bin
+export RUBYGEM=/home/taichi/.gem/ruby/2.4.0/bin
+export PATH=$DOT_BIN:/usr/local/bin:$PATH:$GOPATH/bin:$RIAKPATH:$GEMPATH:$ECLIPSE:$HEROKU:$RUBYGEM
 
-setopt ALWAYS_TO_END                # 補完時にカーソルを末尾に移動させる
-setopt NO_BEEP                      # 端末ベルを使用しない
-setopt AUTO_CD                      # ディレクトリ名で移動
-setopt AUTOPUSHD                    # cdするときpushdする
-setopt PUSHD_IGNORE_DUPS            # 同じディレクトリはpushdしない
-setopt CORRECT                      # コマンドの入力ミスを指摘させる
-#setopt CORRECT_ALL                 # 全引数に修正を加えさせる
-setopt MAGIC_EQUAL_SUBST            # =以降も補完させる
-setopt PROMPT_SUBST                 # プロンプトで変数拡張 コマンド置換 計算拡張を実行
-setopt NOTIFY                       # バックグラウンドジョブの状態を通知する
-setopt AUTO_LIST                    # 曖昧入力時にリストを表示する
-setopt AUTO_MENU                    # 
-setopt LIST_PACKED                  # 補完候補をなるべく短く表示
-setopt LIST_TYPES                   # 補完候補を種類別表示する
-setopt NO_LIST_BEEP                 # 曖昧補完時にビープ音を鳴らさない
-setopt IGNORE_EOF                   # <C-d>でログアウトしない
+##
+## time
+##
+REPORTTIME=30
+TIMEFMT="job: %J
+time: %E (user: %U kernel: %S)
+cpu: %P"
 
-autoload -U compinit                # 補完機能をロード
-compinit -u
+##
+## Completion
+##
+
+# `-C` is for faster boot.
+# -C: skip security check (see http://zsh.sourceforge.net/Doc/Release/Completion-System.html#index-compinit )
+autoload -Uz compinit
+compinit -C
+
 zstyle ':completion:*:default' menu select=2
 zstyle ':completion:*' verbose yes
 zstyle ':completion:*' completer _expand _complete _match _prefix _approximate _list _history
@@ -41,3 +67,4 @@ zstyle ':completion:*' group-name ''
 zstyle ':completion:*' list-separator '-->'
 zstyle ':completion:*:manuals' separate-sections true
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
+zstyle ':completion:*:sudo:*' command-path $path

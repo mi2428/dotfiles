@@ -1,5 +1,5 @@
 all:
-	${PWD}/init/INSTALL -t linux
+	${PWD}/init/INSTALL -t mac
 	ln -snf ${PWD}/bin ${HOME}/bin
 
 install:

@@ -13,8 +13,8 @@ function current_git_status() {
     color="%F{red}%B"
     [[ -n $(echo "$st" | grep "^nothing to") ]] && color="$blue1"
     [[ -n $(echo "$st" | grep "^nothing added") ]] && color="$COLFG256[226]"
-    #gitdir=$(git rev-parse --git-dir 2> /dev/null)
-    #action=$(VCS_INFO_git_getaction "${gitdir}") && action=${action}
+    # gitdir=$(git rev-parse --git-dir 2> /dev/null)
+    # action=$(VCS_INFO_git_getaction "${gitdir}") && action=${action}
     echo "%{${color}%}${name}%f%b|"
 }
 

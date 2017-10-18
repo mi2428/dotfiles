@@ -9,11 +9,11 @@ plugins+=("zsh-syntax-highlighting/zsh-syntax-highlighting.zsh")
 # load plugins
 for plugin in ${plugins[@]}; do
     [[ -f "$pluginbase/$plugin" ]] && source "$pluginbase/$plugin" || \
-    echo "\e[31mFailed to load \"$plugin\"\e[m"
+    echo "\e[31mFailed to load \"$plugin\""
 done
 
 
-# use ctrl+o to accept a suggested word
+# use ctrl+f to accept a suggested word
 bindkey '^O' autosuggest-accept
 
 # Color to use when highlighting suggestion
@@ -59,3 +59,4 @@ ZSH_AUTOSUGGEST_PARTIAL_ACCEPT_WIDGETS=(
     vi-forward-blank-word
     vi-forward-blank-word-end
 )
+

@@ -10,7 +10,7 @@ bssid="$(echo $st | grep -A 1 $INTERFACE | grep -E -o '[[:xdigit:]]{2}(:[[:xdigi
 essid="$(echo $st | grep $INTERFACE | sed -e "s/^.*ESSID:\"\([^\"]*\).*$/\1/g")"
 # quality="$(echo $st | grep -A 5 $INTERFACE | sed -e "s/^.*Link Quality=\([0-9]*\/[0-9]*\).*$/\1/g")"
 quality="$(echo $st | grep -A 5 $INTERFACE | sed -e "s/^.*Link Quality=\([0-9]*\)\/.*$/\1/g")%"
-ip="$(ip addr show dev $INTERFACE | grep "scope global" | sed -e "s/^.* inet \(\S*\) .*$/\1/g")"
+ip="$(ip addr show dev $INTERFACE | grep "scope global" | grep -v "inet6" | sed -e "s/^.* inet \(\S*\) .*$/\1/g")"
 
 if [[ -z "$ip" ]]; then 
     echo -e "No Address | $essid | $quality\n\n#FFFF00"
