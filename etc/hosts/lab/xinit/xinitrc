@@ -7,9 +7,9 @@ export DefaultIMModule=fcitx
 export WALLPAPER="$HOME/Pictures/.wallpapers"
 
 ## comptoggle
-CONKYRC=$HOME/dotfiles/etc/hosts/linux/conky/conkyrc
+CONKYRC=$HOME/.conkyrc
 if [[ -e $CONKYRC ]]; then
-    sed -i -e "s/own_window yes/own_window no/g" $CONKYRC &
+    sed -i -e "s/own_window yes/own_window no/g" $CONKYRC
 fi
 
 ## Wallpaper
