@@ -22,43 +22,43 @@ conky.config = {
 };
 
 conky.text = [[
-${color #e6e6e6}Summary$hr${color}
-${color #d8d8d8}Kernel:${color}${alignr} $sysname $kernel $machine
-${color #d8d8d8}JST:${color} ${alignr} ${time %Y/%m/%d %H:%M:%S (%a)}
-${color #d8d8d8}UNIX:${color} ${alignr} ${time %s}
-${color #d8d8d8}Uptime:${color} ${alignr} $uptime
-${color #d8d8d8}LoadAverage:${color} ${alignr} ${loadavg 1 2 3}
-${color #d8d8d8}Workspace:${color} ${alignr}${desktop_name} 
-${color #d8d8d8}Volume:${color} ${alignr}${execi 1 ~/.i3/i3blocks/volume.sh}
-${color #d8d8d8}CPU1:${color} ${alignr} ${execi 1 sensors | \grep "Core 0" | awk '{print $3}'}
-${color #d8d8d8}CPU2:${color} ${alignr} ${execi 1 sensors | \grep "Core 1" | awk '{print $3}'}
-${color #d8d8d8}CPU3:${color} ${alignr} ${execi 1 sensors | \grep "Core 2" | awk '{print $3}'}
-${color #d8d8d8}CPU4:${color} ${alignr} ${execi 1 sensors | \grep "Core 3" | awk '{print $3}'}
-${color #d8d8d8}Conky:${color} ${alignr} ${conky_version} (${conky_build_arch})
+${color #ffffff}Summary$hr${color}
+${color #ffffff}Kernel:${color}${alignr} $sysname $kernel $machine
+${color #ffffff}JST:${color} ${alignr} ${time %Y/%m/%d %H:%M:%S (%a)}
+${color #ffffff}UNIX:${color} ${alignr} ${time %s}
+${color #ffffff}Uptime:${color} ${alignr} $uptime
+${color #ffffff}LoadAverage:${color} ${alignr} ${loadavg 1 2 3}
+${color #ffffff}Workspace:${color} ${alignr}${desktop_name} 
+${color #ffffff}Volume:${color} ${alignr}${execi 1 ~/.i3/i3blocks/volume.sh}
+${color #ffffff}CPU1:${color} ${alignr} ${execi 1 sensors | \grep "Core 0" | awk '{print $3}'}
+${color #ffffff}CPU2:${color} ${alignr} ${execi 1 sensors | \grep "Core 1" | awk '{print $3}'}
+${color #ffffff}CPU3:${color} ${alignr} ${execi 1 sensors | \grep "Core 2" | awk '{print $3}'}
+${color #ffffff}CPU4:${color} ${alignr} ${execi 1 sensors | \grep "Core 3" | awk '{print $3}'}
+${color #ffffff}Conky:${color} ${alignr} ${conky_version} (${conky_build_arch})
 
-${color #e6e6e6}CPU Usage $hr${color}
-${color #d8d8d8}CPU1:${color} ${cpubar cpu1 10,250} ${cpu cpu1}% ${alignr}${freq_g 0}GHz
-${color #d8d8d8}CPU2:${color} ${cpubar cpu2 10,250} ${cpu cpu2}% ${alignr}${freq_g 1}GHz
-${color #d8d8d8}CPU3:${color} ${cpubar cpu3 10,250} ${cpu cpu3}% ${alignr}${freq_g 2}GHz
-${color #d8d8d8}CPU4:${color} ${cpubar cpu4 10,250} ${cpu cpu4}% ${alignr}${freq_g 3}GHz
-${color #d8d8d8}CPU5:${color} ${cpubar cpu5 10,250} ${cpu cpu5}% ${alignr}${freq_g 4}GHz
-${color #d8d8d8}CPU6:${color} ${cpubar cpu6 10,250} ${cpu cpu6}% ${alignr}${freq_g 5}GHz
-${color #d8d8d8}CPU7:${color} ${cpubar cpu7 10,250} ${cpu cpu7}% ${alignr}${freq_g 6}GHz
-${color #d8d8d8}CPU8:${color} ${cpubar cpu8 10,250} ${cpu cpu8}% ${alignr}${freq_g 7}GHz
+${color #ffffff}CPU Usage $hr${color}
+${color #ffffff}CPU1:${color} ${cpubar cpu1 10,250} ${cpu cpu1}% ${alignr}${freq_g 0}GHz
+${color #ffffff}CPU2:${color} ${cpubar cpu2 10,250} ${cpu cpu2}% ${alignr}${freq_g 1}GHz
+${color #ffffff}CPU3:${color} ${cpubar cpu3 10,250} ${cpu cpu3}% ${alignr}${freq_g 2}GHz
+${color #ffffff}CPU4:${color} ${cpubar cpu4 10,250} ${cpu cpu4}% ${alignr}${freq_g 3}GHz
+${color #ffffff}CPU5:${color} ${cpubar cpu5 10,250} ${cpu cpu5}% ${alignr}${freq_g 4}GHz
+${color #ffffff}CPU6:${color} ${cpubar cpu6 10,250} ${cpu cpu6}% ${alignr}${freq_g 5}GHz
+${color #ffffff}CPU7:${color} ${cpubar cpu7 10,250} ${cpu cpu7}% ${alignr}${freq_g 6}GHz
+${color #ffffff}CPU8:${color} ${cpubar cpu8 10,250} ${cpu cpu8}% ${alignr}${freq_g 7}GHz
 
-${color #e6e6e6}RAM Usage $hr${color}
-${color #d8d8d8}RAM:${color}  ${membar 10,250} ${memperc}% ${alignr}${mem}
+${color #ffffff}RAM Usage $hr${color}
+${color #ffffff}RAM:${color}  ${membar 10,250} ${memperc}% ${alignr}${mem}
 
-${color #e6e6e6}HDD Usage $hr${color}
-${color #d8d8d8}sdb2:${color} ${fs_bar 10,250 /} ${fs_free_perc /}%${alignr}${fs_free /}
-${color #d8d8d8}Read:${color} ${alignr}${diskio_read /dev/sdb}
+${color #ffffff}HDD Usage $hr${color}
+${color #ffffff}sdb2:${color} ${fs_bar 10,250 /} ${fs_free_perc /}%${alignr}${fs_free /}
+${color #ffffff}Read:${color} ${alignr}${diskio_read /dev/sdb}
 ${alignc}${diskiograph_read /dev/sdb 30,380}
-${color #d8d8d8}Write:${color} ${alignr}${diskio_write /dev/sdb}
+${color #ffffff}Write:${color} ${alignr}${diskio_write /dev/sdb}
 ${alignc}${diskiograph_write /dev/sdb 30,380}
 
-${color #e6e6e6}System Load $hr${color}
-${color #d8d8d8}Processes:${color} ${alignr} ${processes} (Running: ${running_processes})
-${color #e6e6e6}TopProcesses(name/pid/cpu/mem/time) ${stippled_hr}${color}
+${color #ffffff}System Load $hr${color}
+${color #ffffff}Processes:${color} ${alignr} ${processes} (Running: ${running_processes})
+${color #ffffff}TopProcesses(name/pid/cpu/mem/time) ${stippled_hr}${color}
 ${top name 1} ${alignr} ${top pid 1}${top cpu 1}%${top mem 1}%${top time 1}
 ${top name 2} ${alignr} ${top pid 2}${top cpu 2}%${top mem 2}%${top time 2}
 ${top name 3} ${alignr} ${top pid 3}${top cpu 3}%${top mem 3}%${top time 3}
@@ -71,17 +71,17 @@ ${top name 6} ${alignr} ${top pid 9}${top cpu 9}%${top mem 9}%${top time 9}
 ${top name 7} ${alignr} ${top pid 10}${top cpu 10}%${top mem 10}%${top time 10}
 ${alignc}${loadgraph 30,380}
 
-${color #e6e6e6}Network ${hr}${color}
-${color #d8d8d8}NameServer:${color} ${alignr}${nameserver}
-${color #d8d8d8}OpenPort(TCP):${color} ${alignr}${tcp_portmon 1 65535 count} 
-${color #d8d8d8}RemoteLogin:${color} ${alignr}${tcp_portmon 22 22 rip 0}
-${color #d8d8d8}Ethernet ${stippled_hr}${color}
-${color #d8d8d8}Address:${color} ${alignr}${if_up eno1}${addr eno1}${else}N/A${endif}
-${color #d8d8d8}Gateway:${color} ${alignr}${if_up eno1}${gw_ip eno1}${else}N/A${endif}
-${color #d8d8d8}UplinkSpeed:${color} ${alignr} ${upspeedf eno1}KB
-${color #d8d8d8}UploadSize:${color} ${alignr} ${totalup eno1}
-${color #d8d8d8}DownlinkSpeed:${color} ${alignr} ${downspeedf eno1}KB
-${color #d8d8d8}DownloadSize:${color} ${alignr} ${totaldown eno1}
+${color #ffffff}Network ${hr}${color}
+${color #ffffff}NameServer:${color} ${alignr}${nameserver}
+${color #ffffff}OpenPort(TCP):${color} ${alignr}${tcp_portmon 1 65535 count} 
+${color #ffffff}RemoteLogin:${color} ${alignr}${tcp_portmon 22 22 rip 0}
+${color #ffffff}Ethernet ${stippled_hr}${color}
+${color #ffffff}Address:${color} ${alignr}${if_up eno1}${addr eno1}${else}N/A${endif}
+${color #ffffff}Gateway:${color} ${alignr}${if_up eno1}${gw_ip eno1}${else}N/A${endif}
+${color #ffffff}UplinkSpeed:${color} ${alignr} ${upspeedf eno1}KB
+${color #ffffff}UploadSize:${color} ${alignr} ${totalup eno1}
+${color #ffffff}DownlinkSpeed:${color} ${alignr} ${downspeedf eno1}KB
+${color #ffffff}DownloadSize:${color} ${alignr} ${totaldown eno1}
 ${alignc}${downspeedgraph eno1 30,380}
 ${alignc}${upspeedgraph eno1 30,380}
 ]];
