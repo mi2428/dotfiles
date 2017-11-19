@@ -7,24 +7,25 @@ export DefaultIMModule=fcitx
 export WALLPAPER="$HOME/Pictures/.wallpapers"
 
 ## comptoggle
-CONKYRC=$HOME/dotfiles/etc/hosts/linux/conky/conkyrc
+CONKYRC=$HOME/.conkyrc
 if [[ -e $CONKYRC ]]; then
-    sed -i -e "s/own_window yes/own_window no/g" $CONKYRC &
+    sed -i -e "s/own_window yes/own_window no/g" $CONKYRC
 fi
 
 ## Wallpaper
 ${WALLPAPER}/ctrl.sh &
 
 xbindkeys &
-xset r rate 180 50 &
+xset r rate 180 50
 xmodmap -e "keycode 11 = 2 quotedbl"
 xmodmap -e "keycode 47 = semicolon apostrophe"
 xmodmap -e "keycode 48 = colon at"
 fcitx &
 dunst &
-mate-settings-daemon &
 mate-volume-control-applet &
 mate-screensaver &
 xsetroot -cursor_name left-ptr &
 xrandr --output VGA-1 --left-of HDMI-1 --output HDMI-1 --primary &
+conky -d &
+compton &
 exec i3
