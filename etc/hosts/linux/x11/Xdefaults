@@ -69,6 +69,7 @@ URxvt.pointerBlank:         true
 ! URxvt.shading:              50
 
 *background: [90]#002b36
+! *background: #002b36
 *foreground: #9cb0b3
 *fadeColor: #002b36
 *cursorColor: #596466
