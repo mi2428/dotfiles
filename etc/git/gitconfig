@@ -1,7 +1,7 @@
-[user]
-    name = mi2428
-    email = mi2428782020@gmail.com
-    sign = 85AB6867E2147DDA
+[core]
+    excludesfile = ~/.gitignore
+    autocrlf = input
+    pager = less -r
 
 [color]
     status = auto
@@ -10,12 +10,9 @@
     interactive = auto
     grep = auto
 
-[core]
-    excludesfile = ~/.gitignore
-    autocrlf = input
-
 [alias]
     st = status
+    ss = status -s
     sh = show
     so = remote show origin
     ft = fetch
@@ -23,11 +20,28 @@
     ad = add
     cc = commit -s
     br = branch
-    log-graph = log --graph --date=short --pretty=format:'%Cgreen%h %cd %Cblue%cn %Creset%s'
-    log-all = log --graph --all --color --pretty='%x09%h %cn%x09%s %Cred%d%Creset'
+    d = diff
+    dd = diff HEAD~
+    d3 = diff HEAD~2
+    d4 = diff HEAD~3
+    l = log --decorate --oneline
+    ls = log --decorate --oneline --stat
+    lg = log --decorate --oneline --stat --graph
+    unstage = reset HEAD --
+    cancel = reset --soft HEAD^
+    url = config --get remote.origin.url
 
 [http "https://gopkg.in"]
     followRedirects = true
 
 [gpg]
     program = gpg
+
+[commit]
+    gpgsign = true
+
+[user]
+    name = mi2428
+    email = mi2428782020@gmail.com
+    signingkey = 85AB6867E2147DDA
+
