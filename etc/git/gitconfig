@@ -1,28 +1,33 @@
 [user]
-	name = miya
-	email = miya@net.ict.e.titech.ac.jp
+    name = mi2428
+    email = mi2428782020@gmail.com
+    sign = 85AB6867E2147DDA
 
 [color]
-status = auto
-diff = auto
-branch = auto
-interactive = auto
-grep = auto
+    status = auto
+    diff = auto
+    branch = auto
+    interactive = auto
+    grep = auto
 
 [core]
-excludesfile = ~/.gitignore
-autocrlf = input
+    excludesfile = ~/.gitignore
+    autocrlf = input
 
 [alias]
-st = status
-sh = show
-so = remote show origin
-ft = fetch
-up = pull --rebase
-ad = add
-cc = commit -s
-br = branch
-log-graph = log --graph --date=short --pretty=format:'%Cgreen%h %cd %Cblue%cn %Creset%s'
-log-all = log --graph --all --color --pretty='%x09%h %cn%x09%s %Cred%d%Creset'
+    st = status
+    sh = show
+    so = remote show origin
+    ft = fetch
+    up = pull --rebase
+    ad = add
+    cc = commit -s
+    br = branch
+    log-graph = log --graph --date=short --pretty=format:'%Cgreen%h %cd %Cblue%cn %Creset%s'
+    log-all = log --graph --all --color --pretty='%x09%h %cn%x09%s %Cred%d%Creset'
+
 [http "https://gopkg.in"]
-	followRedirects = true
+    followRedirects = true
+
+[gpg]
+    program = gpg
