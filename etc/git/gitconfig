@@ -38,7 +38,7 @@
     program = gpg
 
 [commit]
-    gpgsign = true
+    gpgsign = false
 
 [user]
     name = mi2428
