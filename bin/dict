@@ -1,5 +1,0 @@
-#!/bin/bash
-set -e
-
-declare -r GENE="$HOME/Documents/gene.txt"
-grep "$1" $GENE -A 1 -wi --color
