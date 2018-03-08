@@ -1,0 +1,8 @@
+#!/bin/bash
+
+case $1 in
+    "true")
+        su taichi -c "systemctl --user start --no-block i3lock.service" ;;
+    "false")
+        su taichi -c "systemctl --user stop --no-block i3lock.service" ;;
+esac

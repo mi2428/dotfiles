@@ -197,7 +197,8 @@ bindsym $mod+Shift+s exec nautilus
 bindsym $mod+Control+o exec ~/bin/comptoggle
 
 ## lock screen
-bindsym $mod+Control+l exec i3lock -ef -c 000000
+# bindsym $mod+Control+l exec i3lock -ef -c 000000
+bindsym $mod+Control+l exec systemctl --user start --no-block i3lock.service
 # bindsym $mod+Control+l exec mate-screensaver-command -l
 
 ## take screenshots

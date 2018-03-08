@@ -44,6 +44,7 @@ installer() {
         [[ "$pkg" == "xfce4" ]] && xdg_option="true"
         [[ "$pkg" == "dwb" ]] && xdg_option="true"
         [[ "$pkg" == "compton" ]] && xdg_option="true"
+        [[ "$pkg" == "systemd" ]] && xdg_option="true"
         for item in $(cd "$pkgbase/$pkg"; find . -maxdepth 1 -not -name "."); do
             local item=$(basename $item)
             linker $pkg $item $xdg_option $pkgbase $dry

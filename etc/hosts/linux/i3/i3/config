@@ -197,7 +197,8 @@ bindsym $mod+Shift+s exec spacefm
 bindsym $mod+Control+o exec ~/bin/comptoggle
 
 ## lock screen
-bindsym $mod+Control+l exec i3lock -ef -c 000000
+# bindsym $mod+Control+l exec i3lock -ef -c 000000
+bindsym $mod+Control+l exec systemctl start --no-block i3lock.service
 
 ## take screenshots
 bindsym $mod+Control+3 exec scrot --no-startup-id -e 'mv $f ~/Pictures/screenshots/' 'screen_%Y%m%d_%I:%M:%S_%p.png' 
