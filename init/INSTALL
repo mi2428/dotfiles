@@ -45,6 +45,7 @@ installer() {
         [[ "$pkg" == "dwb" ]] && xdg_option="true"
         [[ "$pkg" == "compton" ]] && xdg_option="true"
         [[ "$pkg" == "systemd" ]] && xdg_option="true"
+        [[ "$pkg" == "rofi" ]] && xdg_option="true"
         for item in $(cd "$pkgbase/$pkg"; find . -maxdepth 1 -not -name "."); do
             local item=$(basename $item)
             linker $pkg $item $xdg_option $pkgbase $dry
@@ -80,6 +81,8 @@ while getopts dt: OPT; do
             basic_install $dry && patch_install "pi" $dry ;;
         "lab")
             basic_install $dry && patch_install "lab" $dry ;;
+        "yoga")
+            basic_install $dry && patch_install "yoga" $dry ;;
         "mac")
             basic_install $dry && patch_install "mac" $dry ;;
         "")

@@ -1,0 +1,28 @@
+#!/bin/bash
+
+export GTK_IM_MODULE=fcitx
+export QT_IM_MODULE=fcitx
+export XMODIFIERS='@im=fcitx'
+export DefaultIMModule=fcitx
+export WALLPAPER="$HOME/Pictures/.wallpapers"
+
+## comptoggle
+CONKYRC=$HOME/.conkyrc
+if [[ -e $CONKYRC ]]; then
+    sed -i -e "s/own_window yes/own_window no/g" $CONKYRC
+fi
+
+## Wallpaper
+${WALLPAPER}/ctrl.sh &
+
+xbindkeys &
+xset r rate 180 50
+fcitx &
+dunst -config ~/.dunstrc &
+mate-volume-control-applet &
+mate-screensaver &
+xsetroot -cursor_name left-ptr &
+xrandr --output VGA-1 --left-of HDMI-1 --output HDMI-1 --primary &
+conky -d &
+compton &
+exec i3
