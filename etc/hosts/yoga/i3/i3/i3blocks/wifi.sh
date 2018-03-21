@@ -1,7 +1,5 @@
 #!/bin/bash
-
-declare -r USB_INTERFACE="$(ip link show | grep -o "wifi1")"
-declare -r INTERFACE="${USB_INTERFACE:-wlp3s0}"
+declare -r INTERFACE="wlp4s0"
 
 st="$(iwconfig)"
 bssid="$(echo $st | grep -A 1 $INTERFACE | grep -E -o '[[:xdigit:]]{2}(:[[:xdigit:]]{2}){5}')"

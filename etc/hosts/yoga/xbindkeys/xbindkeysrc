@@ -72,17 +72,17 @@
   XF86KbdBrightnessUp
 
 # VolumeControl Mute
-"/usr/bin/pulseaudio-ctl mute"
+".i3/i3blocks/audioctl.sh mute"
   m:0x0 + c:121
   XF86AudioMute
 
 # VolumeControl Down"
-"/usr/bin/pulseaudio-ctl down"
+".i3/i3blocks/audioctl.sh down"
   m:0x0 + c:122
   XF86AudioLowerVolume
 
 # VolumeControl Up"
-"/usr/bin/pulseaudio-ctl up"
+".i3/i3blocks/audioctl.sh up"
   m:0x0 + c:123
   XF86AudioRaiseVolume
 

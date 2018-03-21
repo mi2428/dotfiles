@@ -12,10 +12,10 @@ font pango:Ubuntu Regular 9
 floating_modifier $mod
 
 ## start a terminal
-# bindsym $Mod+Return exec mlterm
-# bindsym $mod+Shift+Return exec mlterm -e zsh --login
-bindsym $Mod+Return exec terminator
-bindsym $mod+Shift+Return exec terminator -e "zsh --login"
+# bindsym $Mod+Return exec urxvt -depth 32 -bg "[90]#002b36" -fg "[100]#9cb0b3" +ls
+# bindsym $mod+Shift+Return exec urxvt -depth 32 -bg "[90]#002b36" -fg "[100]#9cb0b3" -ls
+bindsym $Mod+Return exec urxvt +ls
+bindsym $mod+Shift+Return exec urxvt -ls
 bindsym $mod+Shift+p exec ~/.rofi/rofi-tmux.sh
 
 ## kill focused window
@@ -28,8 +28,7 @@ bindsym $mod+shift+c kill
 ## bindsym $mod+d exec --no-startup-id i3-dmenu-desktop
 
 # bindsym $mod+d exec dmenu_run -nb "#2d2d2d" -nf "#dedede" -sb "#d64937" -sf "#dedede"
-# bindsym $mod+d exec rofi -show combi -terminal mlterm -location 0 -sidebar-mode
-bindsym $mod+d exec rofi -show combi -terminal terminator -location 0 -sidebar-mode
+bindsym $mod+d exec rofi -show combi -terminal urxvt -location 0 -sidebar-mode
 bindsym $mod+Shift+d exec ~/.rofi/launch.sh
 
 ## change focus
@@ -188,7 +187,8 @@ bindsym $mod+f exec firefox
 bindsym $mod+Shift+f exec firefox --private-window
 
 ## Spacefm
-bindsym $mod+Shift+s exec spacefm
+# bindsym $mod+Shift+s exec spacefm
+bindsym $mod+Shift+s exec nautilus
 
 ## assign some applications
 # assign [class="Firefox"] 2:www
@@ -198,7 +198,8 @@ bindsym $mod+Control+o exec ~/bin/comptoggle
 
 ## lock screen
 # bindsym $mod+Control+l exec i3lock -ef -c 000000
-bindsym $mod+Control+l exec systemctl start --no-block i3lock.service
+bindsym $mod+Control+l exec systemctl --user start --no-block i3lock.service
+# bindsym $mod+Control+l exec mate-screensaver-command -l
 
 ## take screenshots
 bindsym $mod+Control+3 exec scrot --no-startup-id -e 'mv $f ~/Pictures/screenshots/' 'screen_%Y%m%d_%I:%M:%S_%p.png' 
@@ -212,5 +213,8 @@ bindsym $mod+Control+k exec ~/bin/hhk
 bindsym $mod+Control+q exec systemctl hibernate
 
 ## start applications
-exec \
-comptoggle
+# exec \
+# compton && \
+# conky -d
+# sleep 0.1 && \
+# mlterm -e zsh --login
