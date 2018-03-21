@@ -15,9 +15,8 @@ fi
 ## Wallpaper
 ${WALLPAPER}/ctrl.sh &
 
-xbindkeys &
 xset r rate 180 50
-xinput set-prop 315 1
+xinput set-prop 13 315 1
 fcitx &
 dunst -config ~/.dunstrc &
 mate-volume-control-applet &

@@ -201,6 +201,19 @@ bindsym $mod+Control+o exec ~/bin/comptoggle
 bindsym $mod+Control+l exec systemctl --user start --no-block i3lock.service
 # bindsym $mod+Control+l exec mate-screensaver-command -l
 
+## Backlight
+bindsym XF86MonBrightnessUp exec backlight -i 50
+bindsym XF86MonBrightnessDown exec backlight -d 50
+
+## Keyboard Backlight
+bindsym Shift+XF86MonBrightnessUp exec ~/.i3/i3blocks/kbdbacklightctl.sh up
+bindsym Shift+XF86MonBrightnessDown exec ~/.i3/i3blocks/kbdbacklightctl.sh down
+
+## Audio
+bindsym XF86AudioRaiseVolume exec ~/.i3/i3blocks/audioctl.sh up
+bindsym XF86AudioLowerVolume exec ~/.i3/i3blocks/audioctl.sh down
+bindsym XF86AudioMute exec ~/.i3/i3blocks/audioctl.sh mute
+
 ## take screenshots
 bindsym $mod+Control+3 exec scrot --no-startup-id -e 'mv $f ~/Pictures/screenshots/' 'screen_%Y%m%d_%I:%M:%S_%p.png' 
 bindsym --release $mod+Control+4 exec --no-startup-id scrot -s -e 'mv $f ~/Pictures/screenshots/' 'screen_%Y%m%d_%I:%M:%S_%p.png'

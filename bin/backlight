@@ -2,6 +2,8 @@
 set -eu
 cd $(dirname $0)
 
+(( $EUID > 0 )) && sudo $0 $@ && exit 0
+
 declare -r BACKLIGHT="/sys/class/backlight/intel_backlight/brightness"
 declare -r CURRENT="$HOME/.cache/backlight/brightness"
 
@@ -21,7 +23,6 @@ dec() {
 
 
 while getopts d:i:g OPT; do
-    [[ $UID != 0 ]] && sudo $0 $@
     case $OPT in
     "g")
         cat $CURRENT > $BACKLIGHT ;;
