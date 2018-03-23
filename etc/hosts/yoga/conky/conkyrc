@@ -18,7 +18,7 @@ conky.config = {
     -- gap_x = 20,
     -- gap_y = 135,
     gap_x = 20,
-    gap_y = 60,
+    gap_y = 65,
     double_buffer = true,
     uppercase = false,
     maximum_width = 430,
@@ -35,7 +35,6 @@ ${color #d8d8d8}Uptime:${color} ${alignr} $uptime
 ${color #d8d8d8}LoadAverage:${color} ${alignr} ${loadavg 1 2 3}
 ${color #d8d8d8}Battery:${color} ${alignr} ${battery BAT0}
 ${alignc}${battery_bar 10,420}
-${color #d8d8d8}Workspace:${color} ${alignr}${desktop_name} 
 ${color #d8d8d8}Backlight:${color} ${alignr} ${execi 1 echo "scale=3; `cat /sys/class/backlight/intel_backlight/brightness`/852*100" | bc -l }%
 ${color #d8d8d8}KbdBacklight:${color} ${alignr} ${execi 1 echo "scale=3; `cat /sys/class/leds/tpacpi::kbd_backlight/brightness`/2*100" | bc -l}%
 ${color #d8d8d8}Volume:${color} ${alignr}${execi 1 ~/.i3/i3blocks/volume.sh}
