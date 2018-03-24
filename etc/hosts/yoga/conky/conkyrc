@@ -32,7 +32,6 @@ ${color #d8d8d8}Kernel:${color}${alignr} $sysname $kernel $machine
 ${color #d8d8d8}JST:${color} ${alignr} ${time %Y/%m/%d %H:%M:%S (%a)}
 ${color #d8d8d8}UNIX:${color} ${alignr} ${time %s}
 ${color #d8d8d8}Uptime:${color} ${alignr} $uptime
-${color #d8d8d8}LoadAverage:${color} ${alignr} ${loadavg 1 2 3}
 ${color #d8d8d8}Battery:${color} ${alignr} ${battery BAT0}
 ${alignc}${battery_bar 10,420}
 ${color #d8d8d8}Backlight:${color} ${alignr} ${execi 1 echo "scale=3; `cat /sys/class/backlight/intel_backlight/brightness`/852*100" | bc -l }%
@@ -68,6 +67,7 @@ ${alignc}${diskiograph_write /dev/sda 30,420}
 # ${alignc}${diskiograph_write /dev/sdb 30,420}
 # 
 ${color #e6e6e6}System Load $hr${color}
+${color #d8d8d8}LoadAverage:${color} ${alignr} ${loadavg 1 2 3}
 ${color #d8d8d8}Processes:${color} ${alignr} ${processes} (Running: ${running_processes})
 ${color #e6e6e6}TopProcesses(name/pid/cpu/mem/time) ${stippled_hr}${color}
 ${top name 1} ${alignr} ${top pid 1}${top cpu 1}%${top mem 1}%${top time 1}
