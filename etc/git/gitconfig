@@ -45,3 +45,8 @@
 	email = mi2428782020@gmail.com
 	signingkey = E8D3009C6341BDEAF038009685AB6867E2147DDA
 
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
