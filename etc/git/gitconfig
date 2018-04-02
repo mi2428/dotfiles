@@ -38,12 +38,14 @@
     program = gpg
 
 [commit]
-    gpgsign = false
+	gpgsign = true
+	signing = true
 
 [user]
 	name = mi2428
 	email = mi2428782020@gmail.com
 	signingkey = E8D3009C6341BDEAF038009685AB6867E2147DDA
+	signkey = E8D3009C6341BDEAF038009685AB6867E2147DDA
 
 [filter "lfs"]
 	clean = git-lfs clean -- %f
