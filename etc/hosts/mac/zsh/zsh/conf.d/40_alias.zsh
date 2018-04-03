@@ -48,6 +48,7 @@ alias ff="fzf"
 alias ptr="paris-traceroute"
 alias grep="grep -n --color=auto"
 alias updatedb="/usr/libexec/locate.updatedb"
+alias atom="/Applications/Atom.app/Contents/MacOS/Atom"
 
 alias vi="vim"
 if whence -p nvim 1> /dev/null; then
