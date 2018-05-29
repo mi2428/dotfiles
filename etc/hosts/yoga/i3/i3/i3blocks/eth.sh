@@ -5,7 +5,7 @@ if [[ -z $INTERFACES ]]; then
 else
     IP=""
     for interface in ${INTERFACES[@]}; do
-        ipaddr=$(ip addr show dev $interface | grep -E -o '([[:digit:]]{1,3}.){3}[[:digit:]]{1,3}/[[:digit:]]{1,2}' | tr '\n' ' ')
+        ipaddr=$(ip addr show dev $interface | grep -E -o '([[:digit:]]{1,3}\.){3}[[:digit:]]{1,3}/[[:digit:]]{1,2}' | tr '\n' ' ')
         IP="$ipaddr $IP"
     done
     echo -e "${IP}\n\n#8CFF2D"
