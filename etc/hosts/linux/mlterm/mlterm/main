@@ -1,6 +1,6 @@
 bg_color = #00002b2a3636
 fg_color = #9c7fb0cfb333
-use_transbg = true
+use_transbg = false
 alpha = 223
 scrollbar_mode = none
 blink_cursor = true

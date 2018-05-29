@@ -33,8 +33,10 @@ URxvt.internalBorder:       3
 URxvt.lineSpace:            0
 
 URxvt.allow_bold:           true
-URxvt.font: xft:Ubuntu Mono:pixelsize=15:antialias=true
-URxvt.boldFont: xft:Ubuntu Mono:pixelsize=15:antialias=true
+! URxvt.font: xft:Ubuntu Mono:pixelsize=13:antialias=true
+! URxvt.boldFont: xft:Ubuntu Mono:pixelsize=13:antialias=true
+URxvt.font: xft:Cica:pixelsize=15:antialias=true
+URxvt.boldFont: xft:Cica:pixelsize=15:antialias=true
 URxvt.letterSpace: -1
 
 URxvt.scrollStyle:          rxvt
