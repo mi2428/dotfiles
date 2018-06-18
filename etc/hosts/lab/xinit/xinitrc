@@ -25,7 +25,10 @@ dunst -config ~/.dunstrc &
 mate-volume-control-applet &
 mate-screensaver &
 xsetroot -cursor_name left-ptr &
-xrandr --output VGA-1 --left-of HDMI-1 --output HDMI-1 --primary &
+xrandr --output VGA-1 --left-of DP-2 --output DP-2 --primary &
 conky -d &
 compton &
+
 exec i3
+# DISPLAY=:0.0 i3 &
+# DISPLAY=:0.1 i3

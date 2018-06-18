@@ -14,8 +14,8 @@ conky.config = {
 	use_xft = true,
 	font = 'Ubuntu Mono:style=Regular:size=10',
 
-	gap_x = 1520,
-	gap_y = 20,
+	gap_x = 2150,
+	gap_y = 30,
 	double_buffer = true,
 	uppercase = false,
 	maximum_width = 380,

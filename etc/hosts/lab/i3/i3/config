@@ -182,11 +182,6 @@ hide_edge_borders vertical
 bindsym Control+Shift+x [class="^.*"] border toggle
 for_window [class="^.*"] border pixel 1
 
-## Firefox
-bindsym $mod+f exec firefox
-bindsym $mod+Shift+f exec firefox --private-window
-
-## Spacefm
 # bindsym $mod+Shift+s exec spacefm
 bindsym $mod+Shift+s exec nautilus
 
@@ -211,6 +206,8 @@ bindsym $mod+Control+k exec ~/bin/hhk
 
 ## hibernation
 bindsym $mod+Control+q exec systemctl hibernate
+
+force-xinerama yes
 
 ## start applications
 # exec \
