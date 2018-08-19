@@ -12,11 +12,14 @@ if [[ -e $CONKYRC ]]; then
     sed -i -e "s/own_window yes/own_window no/g" $CONKYRC
 fi
 
+## Natural scrolling
+touchpad_id=$(xinput | grep 'Synaptics TouchPad' | cut -f 2 | cut -d '=' -f 2)
+xinput set-prop $touchpad_id 316 1
+
 ## Wallpaper
 ${WALLPAPER}/ctrl.sh &
 
 xset r rate 180 50
-xinput set-prop 13 315 1
 fcitx &
 dunst -config ~/.dunstrc &
 mate-volume-control-applet &
@@ -25,4 +28,5 @@ xsetroot -cursor_name left-ptr &
 xrandr --output VGA-1 --left-of HDMI-1 --output HDMI-1 --primary &
 conky -d &
 compton &
+dropbox start &
 exec i3

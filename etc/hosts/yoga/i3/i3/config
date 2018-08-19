@@ -16,6 +16,8 @@ floating_modifier $mod
 # bindsym $mod+Shift+Return exec urxvt -depth 32 -bg "[90]#002b36" -fg "[100]#9cb0b3" -ls
 bindsym $Mod+Return exec urxvt +ls
 bindsym $mod+Shift+Return exec urxvt -ls
+# bindsym $Mod+Return exec mlterm -e zsh
+# bindsym $Mod+Shift+Return exec mlterm -e zsh --login
 bindsym $mod+Shift+p exec ~/.rofi/rofi-tmux.sh
 
 ## kill focused window
@@ -202,12 +204,12 @@ bindsym $mod+Control+l exec systemctl --user start --no-block i3lock.service
 # bindsym $mod+Control+l exec mate-screensaver-command -l
 
 ## Backlight
-bindsym XF86MonBrightnessUp exec backlight -i 50
-bindsym XF86MonBrightnessDown exec backlight -d 50
+bindsym XF86MonBrightnessUp exec /home/mi/bin/backlight -i 50
+bindsym XF86MonBrightnessDown exec /home/mi/bin/backlight -d 50
 
 ## Keyboard Backlight
-bindsym Shift+XF86MonBrightnessUp exec ~/.i3/i3blocks/kbdbacklightctl.sh up
-bindsym Shift+XF86MonBrightnessDown exec ~/.i3/i3blocks/kbdbacklightctl.sh down
+bindsym Shift+XF86MonBrightnessUp exec /home/mi/.i3/i3blocks/kbdbacklightctl.sh up
+bindsym Shift+XF86MonBrightnessDown exec /home/mi/.i3/i3blocks/kbdbacklightctl.sh down
 
 ## Audio
 bindsym XF86AudioRaiseVolume exec ~/.i3/i3blocks/audioctl.sh up

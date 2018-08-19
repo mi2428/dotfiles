@@ -7,7 +7,7 @@ function mcd() {
 }
 
 function open() {
-    spacefm $1 2> /dev/null 1> /dev/null &
+    nautilus $1 2> /dev/null 1> /dev/null &
 }
 
 function fe() {
