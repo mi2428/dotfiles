@@ -36,7 +36,7 @@ export ECLIPSE=$HOME/eclipse/java-neon/eclipse
 export GOPATH=$HOME/.go
 export HEROKU=/usr/local/heroku/bin
 export RUBYGEM=/home/taichi/.gem/ruby/2.4.0/bin
-export PATH=$DOT_BIN:/usr/local/bin:$PATH:$GOPATH/bin:$RIAKPATH:$GEMPATH:$ECLIPSE:$HEROKU:$RUBYGEM
+export PATH=$DOT_BIN:/usr/local/bin:/usr/local/sbin:$PATH:$GOPATH/bin:$RIAKPATH:$GEMPATH:$ECLIPSE:$HEROKU:$RUBYGEM
 export GPG_TTY=$(tty)
 
 ##
