@@ -28,6 +28,7 @@ xsetroot -cursor_name left-ptr &
 xrandr --output VGA-1 --left-of DP-2 --output DP-2 --primary &
 conky -d &
 compton &
+dropbox start -i &
 
 exec i3
 # DISPLAY=:0.0 i3 &
