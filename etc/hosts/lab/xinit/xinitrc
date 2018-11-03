@@ -27,7 +27,7 @@ mate-screensaver &
 xsetroot -cursor_name left-ptr &
 xrandr --output VGA-1 --left-of DP-2 --output DP-2 --primary &
 conky -d &
-compton &
+compton -b --unredir-if-possible --config $HOME/.config/compton/compton.conf &
 dropbox start -i &
 
 exec i3
