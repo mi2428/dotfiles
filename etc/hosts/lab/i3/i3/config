@@ -207,6 +207,9 @@ bindsym $mod+Control+k exec ~/bin/hhk
 ## hibernation
 bindsym $mod+Control+q exec systemctl hibernate
 
+## Kill google-chrome
+bindsym $mod+Control+Shift+c exec killall -9 chrome
+
 force-xinerama yes
 
 ## start applications
