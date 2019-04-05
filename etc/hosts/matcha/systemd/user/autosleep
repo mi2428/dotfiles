@@ -1,0 +1,13 @@
+#!/bin/bash
+
+SEC=1200
+
+case $1 in
+    1)
+        xset +dpms dpms $SEC $SEC $SEC
+        ;;
+    0)
+        xset dpms 0 0 0
+        xset s off -dpms
+        ;;
+esac

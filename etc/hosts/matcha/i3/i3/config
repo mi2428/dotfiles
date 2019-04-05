@@ -1,7 +1,7 @@
 ## g3 config file (v4)
 ## Please see http://i3wm.org/docs/userguide.html for a complete reference!
 
-set $mod Mod4
+set $mod mod4
 
 ## Font for window titles. Will also be used by the bar unless a different font
 ## is used in the bar {} block below.
@@ -12,10 +12,10 @@ font pango:Ubuntu Regular 9
 floating_modifier $mod
 
 ## start a terminal
-# bindsym $Mod+Return exec mlterm
-# bindsym $mod+Shift+Return exec mlterm -e zsh --login
-bindsym $Mod+Return exec terminator
-bindsym $mod+Shift+Return exec terminator -e "zsh --login"
+# bindsym $Mod+Return exec urxvt -depth 32 -bg "[90]#002b36" -fg "[100]#9cb0b3" +ls
+# bindsym $mod+Shift+Return exec urxvt -depth 32 -bg "[90]#002b36" -fg "[100]#9cb0b3" -ls
+bindsym $Mod+Return exec urxvt +ls
+bindsym $mod+Shift+Return exec urxvt -ls
 bindsym $mod+Shift+p exec ~/.rofi/rofi-tmux.sh
 
 ## kill focused window
@@ -28,8 +28,7 @@ bindsym $mod+shift+c kill
 ## bindsym $mod+d exec --no-startup-id i3-dmenu-desktop
 
 # bindsym $mod+d exec dmenu_run -nb "#2d2d2d" -nf "#dedede" -sb "#d64937" -sf "#dedede"
-# bindsym $mod+d exec rofi -show combi -terminal mlterm -location 0 -sidebar-mode
-bindsym $mod+d exec rofi -show combi -terminal terminator -location 0 -sidebar-mode
+bindsym $mod+d exec rofi -show combi -terminal urxvt -location 0 -sidebar-mode
 bindsym $mod+Shift+d exec ~/.rofi/launch.sh
 
 ## change focus
@@ -183,22 +182,19 @@ hide_edge_borders vertical
 bindsym Control+Shift+x [class="^.*"] border toggle
 for_window [class="^.*"] border pixel 1
 
-## Firefox
-bindsym $mod+f exec firefox
-bindsym $mod+Shift+f exec firefox --private-window
-
-## Spacefm
-bindsym $mod+Shift+s exec spacefm
+# bindsym $mod+Shift+s exec spacefm
+bindsym $mod+Shift+s exec nautilus
 
 ## assign some applications
 # assign [class="Firefox"] 2:www
 
 ## enable / disable compton
-bindsym $mod+Control+o exec ~/bin/comptoggle
+# bindsym $mod+Control+o exec ~/bin/comptoggle
 
 ## lock screen
 # bindsym $mod+Control+l exec i3lock -ef -c 000000
-bindsym $mod+Control+l exec systemctl start --no-block i3lock.service
+bindsym $mod+Control+l exec systemctl --user start --no-block i3lock.service
+# bindsym $mod+Control+l exec mate-screensaver-command -l
 
 ## take screenshots
 bindsym $mod+Control+3 exec scrot --no-startup-id -e 'mv $f ~/Pictures/screenshots/' 'screen_%Y%m%d_%I:%M:%S_%p.png' 
@@ -211,6 +207,9 @@ bindsym $mod+Control+k exec ~/bin/mykeyboard
 ## hibernation
 bindsym $mod+Control+q exec systemctl hibernate
 
+## Kill google-chrome
+bindsym $mod+Control+Shift+c exec killall -9 chrome
+
+force-xinerama yes
+
 ## start applications
-exec \
-comptoggle

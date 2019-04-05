@@ -1,0 +1,36 @@
+#!/bin/bash
+
+export GTK_IM_MODULE=fcitx
+export QT_IM_MODULE=fcitx
+export XMODIFIERS='@im=fcitx'
+export DefaultIMModule=fcitx
+export WALLPAPER="$HOME/Pictures/.wallpapers"
+
+## comptoggle
+CONKYRC=$HOME/.conkyrc
+if [[ -e $CONKYRC ]]; then
+    sed -i -e "s/own_window yes/own_window no/g" $CONKYRC
+fi
+
+## Wallpaper
+nitrogen --restore &
+
+xset s off -dpms
+
+xbindkeys &
+xset r rate 180 50
+xmodmap -e "keycode 11 = 2 quotedbl"
+xmodmap -e "keycode 47 = semicolon apostrophe"
+xmodmap -e "keycode 48 = colon at"
+fcitx &
+dunst -config ~/.dunstrc &
+xsetroot -cursor_name left-ptr &
+xrandr --output HDMI-1 --auto --output DP-1 --right-of HDMI-1
+conky -d
+compton -b --unredir-if-possible
+
+synergys
+
+exec i3
+# DISPLAY=:0.0 i3 &
+# DISPLAY=:0.1 i3

@@ -83,6 +83,8 @@ while getopts dt: OPT; do
             basic_install $dry && patch_install "pi" $dry ;;
         "lab")
             basic_install $dry && patch_install "lab" $dry ;;
+        "matcha")
+            basic_install $dry && patch_install "matcha" $dry ;;
         "yoga")
             basic_install $dry && patch_install "yoga" $dry ;;
         "mac")

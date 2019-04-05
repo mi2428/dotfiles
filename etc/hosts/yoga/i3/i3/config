@@ -222,7 +222,7 @@ bindsym --release $mod+Control+4 exec --no-startup-id scrot -s -e 'mv $f ~/Pictu
 bindsym $mod+Control+5 exec --no-startup-id scrot -u -e 'mv $f ~/Pictures/screenshots/' 'screen_%Y%m%d_%I:%M:%S_%p.png'
 
 ## Happy Hacking Keyboard (US layout)
-bindsym $mod+Control+k exec ~/bin/hhk
+bindsym $mod+Control+k exec ~/bin/mykeyboard
 
 ## hibernation
 bindsym $mod+Control+q exec systemctl hibernate
