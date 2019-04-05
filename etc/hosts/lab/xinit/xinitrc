@@ -12,9 +12,6 @@ if [[ -e $CONKYRC ]]; then
     sed -i -e "s/own_window yes/own_window no/g" $CONKYRC
 fi
 
-## Wallpaper
-${WALLPAPER}/ctrl.sh &
-
 xset s off -dpms
 
 xbindkeys &
@@ -24,14 +21,13 @@ xmodmap -e "keycode 47 = semicolon apostrophe"
 xmodmap -e "keycode 48 = colon at"
 fcitx &
 dunst -config ~/.dunstrc &
-mate-volume-control-applet &
-mate-screensaver &
 xsetroot -cursor_name left-ptr &
-xrandr --output VGA-1 --left-of DP-2 --output DP-2 --primary &
-conky -d &
-compton -b --unredir-if-possible --config $HOME/.config/compton/compton.conf &
-dropbox start -i &
+xrandr --output HDMI-1 --rotate left --left-of HDMI-3 --output HDMI-3 --auto --primary
+conky -c .conkyclockrc -d
+
+## Wallpaper
+nitrogen --restore &
+
+synergyc 131.112.21.31
 
 exec i3
-# DISPLAY=:0.0 i3 &
-# DISPLAY=:0.1 i3
