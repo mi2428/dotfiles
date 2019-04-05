@@ -2,15 +2,15 @@
 
 case $1 in
     "true")
-        su mi -c "systemctl --user stop --no-block i3lock.service"
+        su mi -c "systemctl --user stop --force i3lock.service"
         su mi -c "systemctl --user start --no-block i3lock.service"
-        su mi -c "ssh gaprao systemctl --user stop --no-block i3lock.service"
+        su mi -c "ssh gaprao systemctl --user stop --force i3lock.service"
         su mi -c "ssh gaprao systemctl --user start --no-block i3lock.service"
         ;;
     "false")
         su mi -c "xte 'key Return'"
-        su mi -c "systemctl --user stop --no-block i3lock.service"
-        su mi -c "ssh gaprao systemctl --user stop --no-block i3lock.service"
+        su mi -c "systemctl --user stop --force i3lock.service"
+        su mi -c "ssh gaprao systemctl --user stop --force i3lock.service"
         ;;
 esac
 
