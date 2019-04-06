@@ -15,7 +15,7 @@ conky.config = {
     double_buffer = true,
     uppercase = false,
 
-    gap_x = 0,
+    gap_x = 10,
     gap_y = -50,
 
     default_color='FFFFFF',
@@ -31,8 +31,8 @@ ${font Poiret One:weight=0:size=96}${color0}\
 ${alignc}${time :%S}\
 ${font}${color}
 
-${font Poiret One:weight=100:size=64}${color1}\
-${alignr}${time %d }\
+${alignr}${font Poiret One:weight=100:size=64}${color1}\
+${time %d }\
 ${font Poiret One:weight=0:size=64}${color0}\
 ${time %B, %A}\
 ${font}${color}
