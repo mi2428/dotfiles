@@ -10,7 +10,7 @@ endif
 " NeoBundle 'Shougo/deoplete.nvim'
 NeoBundle 'Shougo/neosnippet'
 NeoBundle 'Shougo/neosnippet-snippets'
-NeoBundle 'davidhalter/jedi-vim'
+" NeoBundle 'davidhalter/jedi-vim'
 NeoBundle 'hdima/python-syntax'
 NeoBundle 'Shougo/unite.vim'
 " NeoBundle 'plasticboy/vim-markdown'

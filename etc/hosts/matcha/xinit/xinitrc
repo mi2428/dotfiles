@@ -26,7 +26,8 @@ fcitx &
 dunst -config ~/.dunstrc &
 xsetroot -cursor_name left-ptr &
 xrandr --output HDMI-1 --auto --output DP-1 --right-of HDMI-1
-conky -d
+conky -d ~/.conkyrc
+conky -d ~/.conkyclockrc
 compton -b --unredir-if-possible
 
 synergys
