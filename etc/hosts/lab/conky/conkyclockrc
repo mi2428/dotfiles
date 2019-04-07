@@ -15,7 +15,7 @@ conky.config = {
     double_buffer = true,
     uppercase = false,
 
-    gap_x = 10,
+    gap_x = 20,
     gap_y = -50,
 
     default_color='FFFFFF',

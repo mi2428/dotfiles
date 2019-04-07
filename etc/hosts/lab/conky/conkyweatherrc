@@ -1,0 +1,77 @@
+--
+-- Pre-requirement: sudo apt install conky-all
+--
+
+conky.config = {
+    background = true,
+    own_window = true,
+    own_window_type = 'override',
+    own_window_class = 'Conky',
+
+    own_window_transparent = true,
+
+    own_window_hints = 'undecorated,below,sticky,skip_taskbar,skip_pager',
+    own_window_argb_visual = true,
+    own_window_argb_value = 100,
+    update_interval = 1,
+    use_xft = true,
+
+    double_buffer = true,
+    uppercase = false,
+
+    gap_x = 1150,
+    gap_y = 20,
+    minimum_height = 250,
+    minimum_width = 800,
+
+    default_color='FFFFFF',
+    color0='FFFFFF',
+    color1='FF8C00'
+};
+
+conky.text = [[
+\
+${execi 300 ~/.weather/weather.py --update-weather} \
+${execi 60 cp -f ~/.weather/png/$(~/.weather/weather.py --parse --attr weather_id --day 1).png ~/.cache/conky-weather/day1.png} \
+${execi 60 cp -f ~/.weather/png/$(~/.weather/weather.py --parse --attr weather_id --day 2).png ~/.cache/conky-weather/day2.png} \
+${execi 60 cp -f ~/.weather/png/$(~/.weather/weather.py --parse --attr weather_id --day 3).png ~/.cache/conky-weather/day3.png} \
+${execi 60 cp -f ~/.weather/png/$(~/.weather/weather.py --parse --attr weather_id --day 4).png ~/.cache/conky-weather/day4.png} \
+\
+${image ~/.cache/conky-weather/day1.png -p 0,20 -s 160x160} \
+${image ~/.cache/conky-weather/day2.png -p 180,20 -s 160x160} \
+${image ~/.cache/conky-weather/day3.png -p 360,20 -s 160x160} \
+${image ~/.cache/conky-weather/day4.png -p 540,20 -s 160x160} \
+\
+${voffset 0} \
+${font Poiret One:weight=Light:size=16} \
+${goto 0}${execi 60 ~/.weather/weather.py --calendar --day 1} \
+${goto 180}${execi 60 ~/.weather/weather.py --calendar --day 2} \
+${goto 360}${execi 60 ~/.weather/weather.py --calendar --day 3} \
+${goto 540}${execi 60 ~/.weather/weather.py --calendar --day 4} \
+${font} \
+\
+${voffset 130} \
+${font Poiret One:weight=Light:size=18}
+${goto 0}${execi 60 ~/.weather/weather.py --parse --attr weather_name --day 1} \
+${goto 180}${execi 60 ~/.weather/weather.py --parse --attr weather_name --day 2} \
+${goto 360}${execi 60 ~/.weather/weather.py --parse --attr weather_name --day 3} \
+${goto 540}${execi 60 ~/.weather/weather.py --parse --attr weather_name --day 4} \
+${font} \
+\
+${voffset 20} \
+${font Poiret One:weight=Light:size=10} \
+${goto 0}${execi 60 ~/.weather/weather.py --parse --attr weather_desc --day 1} \
+${goto 180}${execi 60 ~/.weather/weather.py --parse --attr weather_desc --day 2} \
+${goto 360}${execi 60 ~/.weather/weather.py --parse --attr weather_desc --day 3} \
+${goto 540}${execi 60 ~/.weather/weather.py --parse --attr weather_desc --day 4} \
+${font} \
+\
+${voffset 20} \
+${font Poiret One:weight=Light:size=14} \
+${goto 0}${execi 60 ~/.weather/weather.py --parse --attr temp_day --day 1} ℃ / ${execi 1 ~/.weather/weather.py --parse --attr humidity --day 1} % \
+${goto 180}${execi 60 ~/.weather/weather.py --parse --attr temp_day --day 2} ℃ / ${execi 1 ~/.weather/weather.py --parse --attr humidity --day 2} % \
+${goto 360}${execi 60 ~/.weather/weather.py --parse --attr temp_day --day 3} ℃ / ${execi 1 ~/.weather/weather.py --parse --attr humidity --day 3} % \
+${goto 540}${execi 60 ~/.weather/weather.py --parse --attr temp_day --day 4} ℃ / ${execi 1 ~/.weather/weather.py --parse --attr humidity --day 4} % \
+${font} \
+\
+]];
