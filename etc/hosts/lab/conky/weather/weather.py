@@ -74,8 +74,12 @@ class Parser:
     def calendar(self, day):
         dt_now = datetime.datetime.now()
         dt = dt_now + datetime.timedelta(days=int(day))
+        # week = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+        week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
         # return "{month}/{day}".format(month=str(dt.month).zfill(2), day=str(dt.day).zfill(2))
-        return "{month}/{day}".format(month=str(dt.month), day=str(dt.day))
+        # return "{month}/{day}".format(month=str(dt.month), day=str(dt.day))
+        # return "{weekday}".format(weekday=week[dt.weekday()])
+        return "{day}, {weekday}".format(day=str(dt.day).zfill(2), weekday=week[dt.weekday()])
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

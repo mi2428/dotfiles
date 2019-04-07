@@ -43,14 +43,14 @@ ${image ~/.cache/conky-weather/day3.png -p 360,20 -s 160x160} \
 ${image ~/.cache/conky-weather/day4.png -p 540,20 -s 160x160} \
 \
 ${voffset 0} \
-${font Poiret One:weight=Light:size=16} \
+${font Poiret One:weight=Light:size=15} \
 ${goto 0}${execi 60 ~/.weather/weather.py --calendar --day 1} \
 ${goto 180}${execi 60 ~/.weather/weather.py --calendar --day 2} \
 ${goto 360}${execi 60 ~/.weather/weather.py --calendar --day 3} \
 ${goto 540}${execi 60 ~/.weather/weather.py --calendar --day 4} \
 ${font} \
 \
-${voffset 130} \
+${voffset 140} \
 ${font Poiret One:weight=Light:size=18}
 ${goto 0}${execi 60 ~/.weather/weather.py --parse --attr weather_name --day 1} \
 ${goto 180}${execi 60 ~/.weather/weather.py --parse --attr weather_name --day 2} \
@@ -59,7 +59,7 @@ ${goto 540}${execi 60 ~/.weather/weather.py --parse --attr weather_name --day 4}
 ${font} \
 \
 ${voffset 20} \
-${font Poiret One:weight=Light:size=10} \
+${font Poiret One:weight=Light:size=11} \
 ${goto 0}${execi 60 ~/.weather/weather.py --parse --attr weather_desc --day 1} \
 ${goto 180}${execi 60 ~/.weather/weather.py --parse --attr weather_desc --day 2} \
 ${goto 360}${execi 60 ~/.weather/weather.py --parse --attr weather_desc --day 3} \
@@ -67,7 +67,7 @@ ${goto 540}${execi 60 ~/.weather/weather.py --parse --attr weather_desc --day 4}
 ${font} \
 \
 ${voffset 20} \
-${font Poiret One:weight=Light:size=14} \
+${font Poiret One:weight=Light:size=13} \
 ${goto 0}${execi 60 ~/.weather/weather.py --parse --attr temp_day --day 1} ℃ / ${execi 1 ~/.weather/weather.py --parse --attr humidity --day 1} % \
 ${goto 180}${execi 60 ~/.weather/weather.py --parse --attr temp_day --day 2} ℃ / ${execi 1 ~/.weather/weather.py --parse --attr humidity --day 2} % \
 ${goto 360}${execi 60 ~/.weather/weather.py --parse --attr temp_day --day 3} ℃ / ${execi 1 ~/.weather/weather.py --parse --attr humidity --day 3} % \
