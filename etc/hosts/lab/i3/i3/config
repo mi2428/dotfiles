@@ -146,12 +146,12 @@ client.urgent #383a3b #383a3b #ee0000
 
 bar {
     status_command i3blocks -c ~/.i3/i3blocks/i3blocks.conf
-    mode dock
     position top
     workspace_buttons yes
     font pango:Ubuntu Regular 9
-    # tray_output primary
+    tray_output primary
     tray_padding 1
+    mode hide
 
     ## Numix color scheme
     colors {
@@ -163,17 +163,6 @@ bar {
         inactive_workspace #2d2d2d #2d2d2d #888888
         urgent_workspace   #333333 #900000 #ffffff
     }
-
-    ## customized Solarized color scheme
-    # olors {
-    #    separator #586E75
-    #    background #002B36
-    #    statusline #dddddd
-    #    focused_workspace #268BD2 #268BD2 #dddddd
-    #    active_workspace #268BD2 #268BD2 #dddddd
-    #    inactive_workspace #002b36 #002b36 #888888
-    #    urgent_workspace #2f343a #900000 #ffffff
-    # 
 }
 
 ## border / titlebar
@@ -213,4 +202,3 @@ bindsym $mod+Control+Shift+c exec killall -9 chrome
 force-xinerama yes
 
 ## start applications
-exec urxvt

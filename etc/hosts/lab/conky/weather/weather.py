@@ -49,7 +49,7 @@ class Parser:
             self.forecasts = json.load(fd)
 
     def value(self, day, attr):
-        forecast = self.forecasts[int(day)-1]
+        forecast = self.forecasts[int(day)]
         if attr == 'weather_id':
             return forecast['weather'][0]['id']
         if attr == 'weather_name':
@@ -78,8 +78,9 @@ class Parser:
         week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
         # return "{month}/{day}".format(month=str(dt.month).zfill(2), day=str(dt.day).zfill(2))
         # return "{month}/{day}".format(month=str(dt.month), day=str(dt.day))
-        # return "{weekday}".format(weekday=week[dt.weekday()])
-        return "{day}, {weekday}".format(day=str(dt.day).zfill(2), weekday=week[dt.weekday()])
+        return "{weekday}".format(weekday=week[dt.weekday()])
+        # return "{weekday} ({month}/{day})".format(month=str(dt.month), day=str(dt.day), weekday=week[dt.weekday()])
+        # return "{day}, {weekday}".format(day=str(dt.day).zfill(2), weekday=week[dt.weekday()])
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

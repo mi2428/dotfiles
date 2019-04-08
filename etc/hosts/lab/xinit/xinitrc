@@ -16,14 +16,12 @@ xset s off -dpms
 
 xbindkeys &
 xset r rate 180 50
-xmodmap -e "keycode 11 = 2 quotedbl"
-xmodmap -e "keycode 47 = semicolon apostrophe"
-xmodmap -e "keycode 48 = colon at"
 fcitx &
 dunst -config ~/.dunstrc &
 xsetroot -cursor_name left-ptr &
 xrandr --output HDMI-1 --rotate left --left-of HDMI-3 --output HDMI-3 --auto --primary
 conky -c .conkyclockrc -d
+conky -c .conkyweatherrc -d
 
 ## Wallpaper
 nitrogen --restore &
