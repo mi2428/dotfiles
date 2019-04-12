@@ -4,7 +4,7 @@ Description=i3lock
 [Service]
 Type=forking
 Environment=DISPLAY=:0
-ExecStart=/usr/local/src/i3lock-fancy-multimonitor/lock -p -n
+ExecStart=/usr/local/bin/i3lock-wrapper
 ExecStartPost=/usr/local/bin/autosleep 1
 ExecStopPost=/usr/local/bin/autosleep 0
 
