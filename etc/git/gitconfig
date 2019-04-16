@@ -19,6 +19,7 @@
     up = pull --rebase
     ad = add
     cc = commit -s
+    ck = checkout
     br = branch
     d = diff
     dd = diff HEAD~
