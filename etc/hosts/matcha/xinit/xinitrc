@@ -30,6 +30,7 @@ xrandr --output HDMI-1 --auto --output DP-1 --right-of HDMI-1
 # conky -c ~/.conkyclockrc -d &
 ~/.restartconky
 compton -b --unredir-if-possible
+~/.dropbox-dist/dropboxd &
 
 synergys
 
