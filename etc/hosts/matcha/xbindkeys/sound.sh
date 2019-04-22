@@ -2,7 +2,7 @@
 cd $(dirname $0)
 
 pacmd="/usr/bin/pacmd"
-device="alsa_output.pci-0000_04_00.1.hdmi-stereo-extra2"
+device=$(pacmd list-sinks | grep alsa_output | cut -d ' ' -f 2 | sed -e 's/>//g' -e 's/<//g')
 
 current=$(pacmd list-sinks | grep -E -o "front-left: [[:digit:]]*" | cut -d ' ' -f 2)
 
