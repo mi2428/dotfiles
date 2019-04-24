@@ -1,11 +1,11 @@
 #!/bin/bash
 
 while true; do
+    sleep 1
     systemctl --user is-active i3lock && continue
     conkypid=$(ps -ef | grep ".conkyrc" | grep -v "grep")
     conkyclockpid=$(ps -ef | grep ".conkyclockrc" | grep -v "grep")
     [[ -z "$conkypid" ]] && conky --config ~/.conkyrc --daemonize
     [[ -z "$conkyclockpid" ]] && conky --config ~/.conkyclockrc --daemonize
-    sleep 1
 done
 
