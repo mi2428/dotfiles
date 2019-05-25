@@ -31,6 +31,7 @@ xrandr --output HDMI-1 --auto --output DP-1 --right-of HDMI-1 &
 ~/.restartconky &
 compton -b --unredir-if-possible --config ~/.config/compton/compton.conf &
 ~/.dropbox-dist/dropboxd &
+bitcoind -daemon &
 
 synergys &
 
