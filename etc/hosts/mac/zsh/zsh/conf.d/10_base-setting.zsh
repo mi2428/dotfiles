@@ -24,6 +24,7 @@ setopt LIST_TYPES
 setopt NO_LIST_BEEP
 setopt IGNORE_EOF                   ## ignore <C-d>
 setopt NO_AUTOREMOVESLASH
+setopt nonomatch
 
 ##
 ## Path
