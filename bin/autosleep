@@ -1,10 +1,11 @@
 #!/bin/bash
 
-SEC=120
+SEC=1200
 
 case $1 in
     1)
         xset +dpms dpms $SEC $SEC $SEC
+        sleep $SEC && xset dpms force off
         ;;
     0)
         xset dpms 0 0 0
