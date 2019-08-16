@@ -39,9 +39,10 @@ alias la="ls -alr"
 if whence -p exa 1> /dev/null; then
     alias l="exa"
     alias ll="exa -l"
-    alias la="exa -l  -arbghi@ --git"
-    alias lr="exa -lR -arbghi@ --git -I .git"
-    alias lt="exa -lT -arbghi@ --git -I .git"
+    alias la="exa -l  -arbghi --git"
+    alias lr="exa -lR -arbghi  --git -I .git"
+    alias lt="exa -lT -arbghi  --git -I .git"
+    alias laa="exa -l -arbghi@ --git"
 fi
 
 alias df="df -h"
