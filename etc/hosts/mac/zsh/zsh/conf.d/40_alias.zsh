@@ -41,7 +41,7 @@ if whence -p exa 1> /dev/null; then
     alias ll="exa -l"
     alias la="exa -l  -arbghi@ --git"
     alias lr="exa -lR -arbghi@ --git"
-    alias lr="exa -lT -arbghi@ --git"
+    alias lt="exa -lT -arbghi@ --git"
 fi
 
 alias df="df -h"
