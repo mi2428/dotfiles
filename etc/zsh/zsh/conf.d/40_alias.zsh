@@ -36,9 +36,18 @@ alias py="python3"
 alias ipy="ipython"
 alias sss="exec zsh"
 alias lg="cd /var/log"
+
 alias l="ls"
 alias ll="ls -l"
 alias la="ls -alr"
+if whence -p exa 1> /dev/null; then
+    alias l="exa"
+    alias ll="exa -l"
+    alias la="exa -l  -arbghi@ --git"
+    alias lr="exa -lR -arbghi@ --git"
+    alias lr="exa -lT -arbghi@ --git"
+fi
+
 alias df="df -h"
 alias cl="clear"
 alias x="startx"
