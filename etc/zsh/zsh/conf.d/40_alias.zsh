@@ -61,6 +61,8 @@ alias pd="popd"
 alias ff="fzf"
 alias ptr="paris-traceroute"
 alias grep="grep -n --color=auto"
+alias dk="docker"
+alias dc="docker-compose"
 alias kc="kubectl"
 
 whence colordiff 1> /dev/null 2>&1 && alias diff='colordiff'

@@ -61,6 +61,8 @@ alias ptr="paris-traceroute"
 alias grep="grep -n --color=auto"
 alias updatedb="/usr/libexec/locate.updatedb"
 #alias atom="/Applications/Atom.app/Contents/MacOS/Atom"
+alias dk="docker"
+alias dc="docker-compose"
 alias kc="kubectl"
 
 alias vi="vim"
