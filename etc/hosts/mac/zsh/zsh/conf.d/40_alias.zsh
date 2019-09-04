@@ -32,9 +32,19 @@ alias py="python3"
 alias ipy="ipython"
 alias sss="exec zsh"
 alias lg="cd /var/log"
+
 alias l="ls"
 alias ll="ls -l"
 alias la="ls -alr"
+if whence -p exa 1> /dev/null; then
+    alias l="exa"
+    alias ll="exa -l"
+    alias la="exa -l  -arbghi --git"
+    alias lr="exa -lR -arbghi  --git -I .git"
+    alias lt="exa -lT -arbghi  --git -I .git"
+    alias laa="exa -l -arbghi@ --git"
+fi
+
 alias df="df -h"
 alias cl="clear"
 alias x="startx"
@@ -51,6 +61,9 @@ alias ptr="paris-traceroute"
 alias grep="grep -n --color=auto"
 alias updatedb="/usr/libexec/locate.updatedb"
 #alias atom="/Applications/Atom.app/Contents/MacOS/Atom"
+alias dk="docker"
+alias dc="docker-compose"
+alias kc="kubectl"
 
 alias vi="vim"
 if whence -p nvim 1> /dev/null; then
