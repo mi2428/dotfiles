@@ -1,5 +1,5 @@
 #!/bin/bash
-ADDR=$(ip addr show | grep "wireless@eno1" -A 5 | grep "scope global dynamic wireless" | awk '{print $2}')
+ADDR=$(ip addr show | grep "wireless@enp6s0" -A 5 | grep "scope global dynamic wireless" | awk '{print $2}')
 if [[ "$ADDR" == "" ]]; then
     # echo -e "Not-Connected\n\n#FE2E2E"
     echo -e "N/A\n\n#FE2E2E"
