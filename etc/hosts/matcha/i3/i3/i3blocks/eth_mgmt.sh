@@ -1,5 +1,5 @@
 #!/bin/bash
-ADDR=$(ip addr show | grep "internal@enp6s0" -A 5 | grep "scope global internal" | awk '{print $2}')
+ADDR=$(ip addr show | grep "management@enp6s0" -A 5 | grep "scope global management" | awk '{print $2}')
 if [[ "$ADDR" == "" ]]; then
     # echo -e "Not-Connected\n\n#FE2E2E"
     echo -e "N/A\n\n#FE2E2E"
