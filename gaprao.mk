@@ -1,5 +1,5 @@
 all:
-	${PWD}/init/INSTALL -t lab
+	${PWD}/init/INSTALL -t gaprao
 	ln -snf ${PWD}/bin ${HOME}/bin
 
 install:

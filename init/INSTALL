@@ -81,8 +81,8 @@ while getopts dt: OPT; do
             basic_install $dry && patch_install "linux-server" $dry ;;
         "pi")
             basic_install $dry && patch_install "pi" $dry ;;
-        "lab")
-            basic_install $dry && patch_install "lab" $dry ;;
+        "gaprao")
+            basic_install $dry && patch_install "gaprao" $dry ;;
         "matcha")
             basic_install $dry && patch_install "matcha" $dry ;;
         "yoga")
@@ -91,7 +91,7 @@ while getopts dt: OPT; do
             basic_install $dry && patch_install "mac" $dry ;;
         "")
             # basic_install $dry && patch_install "detect" $dry ;;
-            echo "./INSTALL [-d] -t [basic|linux|linux-server|pi|lab|mac|uninstall]"
+            echo "./INSTALL [-d] -t [basic|linux|linux-server|pi|gaprao|mac|uninstall]"
         esac
         ;;
     esac
