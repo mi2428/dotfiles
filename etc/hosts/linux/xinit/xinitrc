@@ -6,16 +6,10 @@ export XMODIFIERS='@im=fcitx'
 export DefaultIMModule=fcitx
 export WALLPAPER="$HOME/Pictures/.wallpapers"
 
-## comptoggle
-CONKYRC=$HOME/.conkyrc
-if [[ -e $CONKYRC ]]; then
-    sed -i -e "s/own_window yes/own_window no/g" $CONKYRC
-fi
-
-## Wallpaper
-nitrogen --restore &
-
 xset s off -dpms &
+xsetroot -cursor_name left-ptr &
+xrandr --output DP-2 --auto --output DP-4 --right-of DP-2 --output HDMI-0 --right-of DP-4 &
+nitrogen --restore &
 
 xbindkeys &
 xset r rate 180 50 &
@@ -23,15 +17,14 @@ xmodmap -e "keycode 11 = 2 quotedbl" &
 xmodmap -e "keycode 47 = semicolon apostrophe" &
 xmodmap -e "keycode 48 = colon at" &
 fcitx &
-dunst -config ~/.dunstrc &
-xsetroot -cursor_name left-ptr &
-xrandr --output HDMI-1 --auto --output DP-1 --right-of HDMI-1 &
-# conky -c ~/.conkyrc -d &
+
+conky -c ~/.conkyrc -d &
 conky -c ~/.conkyclockrc -d &
-#~/.restartconky &
+~/.restartconky &
 
-picom -b --unredir-if-possible
+dunst -config ~/.dunstrc &
+# dropbox &
 
-#~/.dropbox-dist/dropboxd &
+picom -b --unredir-if-possible &
 
 exec i3

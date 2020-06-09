@@ -6,6 +6,10 @@ function mcd() {
     mkdir -p $1 && cd $1
 }
 
+function psgrep() {
+    ps aux | grep $@
+}
+
 function open() {
     nautilus $1 2> /dev/null 1> /dev/null &
 }
