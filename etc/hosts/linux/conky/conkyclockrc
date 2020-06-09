@@ -25,15 +25,15 @@ conky.config = {
 
 conky.text = [[
 
-${font Poiret One:weight=0:size=192}${color0}\
+${font Ubuntu:weight=0:size=192}${color0}\
 ${alignc}${time %H:%M}\
-${font Poiret One:weight=0:size=96}${color0}\
+${font Ubuntu:weight=0:size=96}${color0}\
 ${alignc}${time :%S}\
 ${font}${color}
 
-${alignr}${font Poiret One:weight=100:size=48}${color1}\
+${alignr}${font Ubuntu:weight=100:size=48}${color1}\
 ${time %d }\
-${font Poiret One:weight=0:size=48}${color0}\
+${font Ubuntu:weight=0:size=48}${color0}\
 ${time %B, %A}\
 ${font}${color}
 
