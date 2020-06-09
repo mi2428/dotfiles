@@ -7,28 +7,34 @@ export DefaultIMModule=fcitx
 export WALLPAPER="$HOME/Pictures/.wallpapers"
 
 ## comptoggle
-CONKYRC=$HOME/dotfiles/etc/hosts/linux/conky/conkyrc
+CONKYRC=$HOME/.conkyrc
 if [[ -e $CONKYRC ]]; then
-    sed -i -e "s/own_window yes/own_window no/g" $CONKYRC &
+    sed -i -e "s/own_window yes/own_window no/g" $CONKYRC
 fi
-
-## pulseaudio
-if [[ $(pgrep pulseaudio) != "" ]]; then
-    killall pulseaudio &
-fi
-
-## Backlight
-$HOME/dotfiles/bin/backlight -g &
 
 ## Wallpaper
-if [[ -e $WALLPAPER ]]; then
-    ${WALLPAPER}/ctrl.sh &
-fi
+nitrogen --restore &
+
+xset s off -dpms &
 
 xbindkeys &
 xset r rate 180 50 &
+xmodmap -e "keycode 11 = 2 quotedbl" &
+xmodmap -e "keycode 47 = semicolon apostrophe" &
+xmodmap -e "keycode 48 = colon at" &
 fcitx &
-dunst &
+dunst -config ~/.dunstrc &
 xsetroot -cursor_name left-ptr &
-pulseaudio --start &
+xrandr --output HDMI-1 --auto --output DP-1 --right-of HDMI-1 &
+# conky -c ~/.conkyrc -d &
+# conky -c ~/.conkyclockrc -d &
+~/.restartconky &
+compton -b --unredir-if-possible --config ~/.config/compton/compton.conf &
+~/.dropbox-dist/dropboxd &
+bitcoind -daemon &
+
+synergys &
+
 exec i3
+# DISPLAY=:0.0 i3 &
+# DISPLAY=:0.1 i3

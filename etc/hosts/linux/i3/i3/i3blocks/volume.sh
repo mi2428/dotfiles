@@ -1,8 +1,10 @@
 #!/bin/bash
-VOL=`pulseaudio-ctl current`
-MUTE=`pulseaudio-ctl full-status | awk '{print $2}'`
-if [ "$MUTE" = "yes" ]; then
-    echo -n "$VOL (muted)"
-else
-    echo -n "$VOL"
-fi
+
+_vol="$(pacmd list-sinks | grep -E -o "front-left: [[:digit:]]*" | cut -d ' ' -f 2)"
+muted="$(pacmd list-sinks | grep "muted: yes")"
+
+vol=$(($_vol * 100 / 65535))
+
+[[ -n "$muted" ]] && \
+    echo -n "$vol% (muted)" || \
+    echo -n "$vol%"
