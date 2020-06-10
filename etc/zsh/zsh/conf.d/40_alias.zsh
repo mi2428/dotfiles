@@ -7,6 +7,7 @@ function mcd() {
 }
 
 function psgrep() {
+    ps aux | head -n 1
     ps aux | grep $@
 }
 
