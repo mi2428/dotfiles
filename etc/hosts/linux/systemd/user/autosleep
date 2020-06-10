@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SEC=1200
+SEC=60
 
 case $1 in
     1)
