@@ -23,7 +23,7 @@ conky -c ~/.conkyclockrc -d &
 ~/.restartconky &
 
 dunst -config ~/.dunstrc &
-# dropbox &
+dropbox &
 
 picom -b --unredir-if-possible &
 

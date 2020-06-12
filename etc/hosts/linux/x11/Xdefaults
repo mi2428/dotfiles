@@ -4,6 +4,8 @@ Xft.rgba:                   rgb
 Xft.hinting:                true
 Xft.hintstyle:              hintslight
 
+Xcursor.size: 16
+
 !! Rofi
 rofi.modi: combi,window,run,ssh
 rofi.combi-modi: window,run,ssh
