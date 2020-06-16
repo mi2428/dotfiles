@@ -1,22 +1,35 @@
 #!/bin/bash
 
+mountcheck(){
+    mount | grep /home/mi/Archive || return 1
+    mount | grep /home/mi/Archive/.snapshots || return 1
+    mount | grep /home/mi/Dropbox || return 1
+    mount | grep /home/mi/vdisk || return 1
+    return 0
+}
+
+if ! mountcheck; then
+    echo "Aborted. Home directory is not ready."
+    exit 1
+fi
+
 export GTK_IM_MODULE=fcitx
 export QT_IM_MODULE=fcitx
 export XMODIFIERS='@im=fcitx'
 export DefaultIMModule=fcitx
 export WALLPAPER="$HOME/Pictures/.wallpapers"
 
-xset s off -dpms &
-xsetroot -cursor_name left-ptr &
 xrandr --output DP-2 --auto --output DP-4 --right-of DP-2 --output HDMI-0 --right-of DP-4 &
 nitrogen --restore &
 
 xbindkeys &
+xset s off -dpms &
 xset r rate 180 50 &
 xmodmap -e "keycode 11 = 2 quotedbl" &
 xmodmap -e "keycode 47 = semicolon apostrophe" &
 xmodmap -e "keycode 48 = colon at" &
 fcitx &
+xsetroot -cursor_name left-ptr 16 &
 
 conky -c ~/.conkyrc -d &
 conky -c ~/.conkyclockrc -d &
