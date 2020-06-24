@@ -39,5 +39,6 @@ dunst -config ~/.dunstrc &
 dropbox &
 
 picom -b --unredir-if-possible &
+pasystray &
 
 exec i3
