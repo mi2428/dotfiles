@@ -31,9 +31,9 @@ xmodmap -e "keycode 48 = colon at" &
 fcitx &
 xsetroot -cursor_name left-ptr 16 &
 
-conky -c ~/.conkyrc -d &
+# conky -c ~/.conkyrc -d &
 conky -c ~/.conkyclockrc -d &
-~/.restartconky &
+# ~/.restartconky &
 
 dunst -config ~/.dunstrc &
 dropbox &
