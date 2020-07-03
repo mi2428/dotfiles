@@ -19,7 +19,7 @@ export XMODIFIERS='@im=fcitx'
 export DefaultIMModule=fcitx
 export WALLPAPER="$HOME/Pictures/.wallpapers"
 
-xrandr --output HDMI-0 --auto --output DP-2 --right-of HDMI-0 --output DP-4 --right-of DP-2 &
+xrandr --output HDMI-0 --rotate left --output DP-2 --right-of HDMI-0 --output DP-4 --right-of DP-2 &
 nitrogen --restore &
 
 xbindkeys &
