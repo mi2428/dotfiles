@@ -210,6 +210,9 @@ bindsym $mod+Control+q exec systemctl hibernate
 ## Kill google-chrome
 bindsym $mod+Control+Shift+c exec killall -9 chrome
 
+## Open Ghost Window
+bindsym $mod+g exec ~/bin/gw
+
 force-xinerama yes
 
 ## start applications
