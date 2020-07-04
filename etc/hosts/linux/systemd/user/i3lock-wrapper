@@ -1,11 +1,15 @@
 #!/bin/bash
 
 # i3lock="/usr/local/src/i3lock-fancy-multimonitor/lock"
-i3lock="i3lock-fancy-multimonitor"
+i3lock="/usr/bin/i3lock-fancy-multimonitor"
 options="-p -n"
+
+# $i3lock $options
 
 while true; do
     $i3lock $options
     (( $? == 0 )) && break
+    sleep 10
+    pkill i3lock
 done
 
