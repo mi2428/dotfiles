@@ -1,5 +1,6 @@
 #!/usr/bin/perl
-$latex = 'platex -kanji=utf-8 -synctex=1 %S';
+# $latex = 'uplatex -synctex=1 %S';
+$latex = 'platex -synctex=1 %S';
 $dvipdf = 'dvipdfmx %S';
 $bibtex = 'pbibtex';
 $pdf_mode = 3;
