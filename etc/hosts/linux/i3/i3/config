@@ -212,6 +212,7 @@ bindsym $mod+Control+Shift+c exec killall -9 chrome
 
 ## Open google-chrome
 bindsym $mod+g exec google-chrome-beta
+bindsym $mod+i exec google-chrome-beta --incognito
 
 ## Open Ghost Window
 bindsym $mod+Shift+g exec ~/bin/gw
