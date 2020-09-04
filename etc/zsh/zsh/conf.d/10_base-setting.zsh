@@ -25,6 +25,7 @@ setopt NO_LIST_BEEP
 setopt IGNORE_EOF                   ## ignore <C-d>
 setopt NO_AUTOREMOVESLASH
 setopt nonomatch
+setopt noflowcontrol
 
 ##
 ## Path
