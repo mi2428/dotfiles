@@ -31,9 +31,14 @@ function fkill() {
     ps -ef | sed 1d | fzf -m | awk '{print $2}' | xargs kill -${1:-9}
 }
 
+function gi() {
+    curl -sLw "\n" https://www.toptal.com/developers/gitignore/api/$@
+}
+
 function fh() {
     eval $(([ -n "$ZSH_NAME" ] && fc -l 1 || history) | fzf +s | sed 's/ *[0-9]* *//')
 }
+
 
 alias :q="exit"
 alias ZQ="exit"
