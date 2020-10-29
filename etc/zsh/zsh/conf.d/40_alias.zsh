@@ -74,6 +74,7 @@ alias grep="grep -n --color=auto"
 alias dk="docker"
 alias dc="docker-compose"
 alias kc="kubectl"
+alias pbcopy="xsel --clipboard --input"
 
 whence colordiff 1> /dev/null 2>&1 && alias diff='colordiff'
 
