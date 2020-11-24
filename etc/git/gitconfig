@@ -48,11 +48,11 @@
 	signingkey = 85AB6867E2147DDA
 	signkey = E8D3009C6341BDEAF038009685AB6867E2147DDA
 
-[filter "lfs"]
-	clean = git-lfs clean -- %f
-	smudge = git-lfs smudge -- %f
-	process = git-lfs filter-process
-	required = true
+#[filter "lfs"]
+#	clean = git-lfs clean -- %f
+#	smudge = git-lfs smudge -- %f
+#	process = git-lfs filter-process
+#	required = true
 
 [filter "clean_ipynb"]
     clean = jq '{ cells: [.cells[] | . + { metadata: {} } + if .cell_type == \"code\" then { outputs: [], execution_count: null } else {} end ] } + delpaths([[\"cells\"]])'
