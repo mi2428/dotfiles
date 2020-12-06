@@ -49,6 +49,7 @@ installer() {
         [[ "$pkg" == "gtk-3.0" ]] && xdg_option="true"
         [[ "$pkg" == "karabiner" ]] && xdg_option="true"
         [[ "$pkg" == "psd" ]] && xdg_option="true"
+        [[ "$pkg" == "dunst" ]] && xdg_option="true"
         for item in $(cd "$pkgbase/$pkg"; find . -maxdepth 1 -not -name "."); do
             local item=$(basename $item)
             linker $pkg $item $xdg_option $pkgbase $dry
