@@ -6,6 +6,7 @@ Type=forking
 Environment=DISPLAY=:0
 ExecStart=/usr/local/bin/i3lock-wrapper
 ExecStartPost=/usr/local/bin/autosleep 1
+# ExecStartPost=ssh azuki gnome-screensaver-command -l -a
 ExecStopPost=/usr/local/bin/autosleep 0
 KillMode=control-group
 TimeoutStopSec=10
