@@ -41,4 +41,6 @@ dropbox &
 picom -b --unredir-if-possible &
 pasystray &
 
+synergys &
+
 exec i3
