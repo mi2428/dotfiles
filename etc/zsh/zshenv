@@ -26,3 +26,4 @@ fi
 # -R (--RAW-CONTROL-CHARS): Causes ANSI color escape sequences are output in "raw" form.
 export PAGER=less
 export LESS='-x4 -XMiR'
+source "$HOME/.cargo/env"
