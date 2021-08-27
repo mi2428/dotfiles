@@ -1,3 +1,5 @@
+[[ -e /usr/local/etc/grc.zsh ]] && source /usr/local/etc/grc.zsh
+
 local pluginbase="$HOME/.zsh/plugin"
 
 local -a plugins
