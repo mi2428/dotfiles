@@ -1,0 +1,129 @@
+/**
+ * Original: https://gitlab.jaytaala.com/j.taala/jt-config-repo/-/blob/c45a1d0589d5b7b8d3627e23cc76bdff17350344/rofi/themes/lb-numix.rasi
+ */
+
+* {
+    selected-normal-foreground:  @foreground;
+    text-color:                  #CCCCCC;
+    font:                        "Ubuntu Mono 12";
+    foreground:                  #FFFFFF;
+    normal-foreground:           @foreground;
+    alternate-normal-background: rgba ( 255, 255, 255, 7 % );
+    red:                         rgba ( 220, 50, 47, 100 % );
+    selected-urgent-foreground:  rgba ( 51, 51, 51, 100 % );
+    blue:                        rgba ( 38, 139, 210, 100 % );
+    urgent-foreground:           rgba ( 255, 153, 153, 100 % );
+    alternate-urgent-background: rgba ( 255, 255, 255, 7 % );
+    active-foreground:           @bordercolor;
+    lightbg:                     rgba ( 238, 232, 213, 100 % );
+    selected-active-foreground:  @foreground;
+    alternate-active-background: rgba ( 255, 255, 255, 7 % );
+    background:                  rgba ( 51, 51, 51, 100 % );
+    bordercolor:                 rgba ( 235, 86, 77, 100 % );
+    alternate-normal-foreground: @foreground;
+    normal-background:           rgba ( 0, 0, 0, 0 % );
+    lightfg:                     rgba ( 88, 104, 117, 100 % );
+    selected-normal-background:  @bordercolor;
+    border-color:                @bordercolor;
+    spacing:                     2;
+    separatorcolor:              @bordercolor;
+    urgent-background:           rgba ( 0, 0, 0, 0 % );
+    selected-urgent-background:  rgba ( 255, 153, 153, 100 % );
+    alternate-urgent-foreground: @urgent-foreground;
+    background-color:            rgba ( 0, 0, 0, 0 % );
+    alternate-active-foreground: @active-foreground;
+    active-background:           rgba ( 0, 0, 0, 0 % );
+    selected-active-background:  @bordercolor;
+}
+#window {
+    background-color: @background;
+    border:           1;
+    padding:          10;
+}
+#mainbox {
+    border:  0;
+    padding: 0;
+}
+#message {
+    border:       1px dash 0px 0px ;
+    border-color: @separatorcolor;
+    padding:      1px;
+}
+#textbox {
+    text-color: @foreground;
+}
+#listview {
+    fixed-height: 0;
+    border:       2px solid 0px 0px ;
+    border-color: @separatorcolor;
+    spacing:      2px ;
+    scrollbar:    true;
+    padding:      2px 0px 0px ;
+}
+#element {
+    border:  0;
+    padding: 1px;
+}
+#element.normal.normal {
+    background-color: @normal-background;
+}
+#element.normal.urgent {
+    background-color: @urgent-background;
+}
+#element.normal.active {
+    background-color: @active-background;
+}
+#element.selected.normal {
+    background-color: @selected-normal-background;
+}
+#element.selected.urgent {
+    background-color: @selected-urgent-background;
+}
+#element.selected.active {
+    background-color: @selected-active-background;
+}
+#element.alternate.normal {
+    background-color: @alternate-normal-background;
+}
+#element.alternate.urgent {
+    background-color: @alternate-urgent-background;
+}
+#element.alternate.active {
+    background-color: @alternate-active-background;
+}
+#scrollbar {
+    width:        4px ;
+    border:       0;
+    handle-width: 8px ;
+    padding:      0;
+    handle-color: @bordercolor;
+}
+#sidebar {
+    border:       2px dash 0px 0px ;
+    border-color: @separatorcolor;
+}
+#button.selected {
+    background-color: @selected-normal-background;
+}
+#inputbar {
+    spacing:    0;
+    padding:    1px ;
+}
+#case-indicator {
+    spacing:    0;
+}
+#entry {
+    spacing:    0;
+}
+#prompt {
+    spacing:    0;
+}
+#inputbar {
+    children:   [ prompt,textbox-prompt-colon,entry,case-indicator ];
+}
+#textbox-prompt-colon {
+    expand:     false;
+    str:        ":";
+    margin:     0px 0.3em 0em 0em ;
+}
+

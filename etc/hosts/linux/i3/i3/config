@@ -28,7 +28,7 @@ bindsym $mod+shift+c kill
 ## bindsym $mod+d exec --no-startup-id i3-dmenu-desktop
 
 # bindsym $mod+d exec dmenu_run -nb "#2d2d2d" -nf "#dedede" -sb "#d64937" -sf "#dedede"
-bindsym $mod+d exec rofi -show combi -terminal urxvt -location 0 -sidebar-mode
+bindsym $mod+d exec rofi -show combi
 bindsym $mod+Shift+d exec ~/.rofi/launch.sh
 
 ## change focus
