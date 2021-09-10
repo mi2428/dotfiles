@@ -1,5 +1,3 @@
-[[ -e /usr/local/etc/grc.zsh ]] && source /usr/local/etc/grc.zsh
-
 local pluginbase="$HOME/.zsh/plugin"
 
 local -a plugins
@@ -61,4 +59,6 @@ ZSH_AUTOSUGGEST_PARTIAL_ACCEPT_WIDGETS=(
     vi-forward-blank-word
     vi-forward-blank-word-end
 )
+
+#[[ -e /usr/local/etc/grc.zsh ]] && source /usr/local/etc/grc.zsh
 
