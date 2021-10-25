@@ -35,7 +35,7 @@ xsetroot -cursor_name left-ptr 16 &
 conky -c ~/.conkyclockrc -d &
 # ~/.restartconky &
 
-dunst &
+dunst -c ~/.config/dunst/dunstrc &
 dropbox &
 
 picom -b --unredir-if-possible &
