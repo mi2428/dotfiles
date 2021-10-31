@@ -86,3 +86,5 @@ fi
 alias ls="ls --color=auto"
 
 alias gcc32="gcc -m32 -O0 -fno-asynchronous-unwind-tables"
+
+alias tn="/home/mi/dev/tinet/bin/tn"
