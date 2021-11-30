@@ -55,7 +55,7 @@ cmds=(
   lsmod
   lsof
   lspci
-  make
+  #make
   mount
   mtr
   mvn
