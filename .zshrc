@@ -478,9 +478,11 @@ main_prompt() {
   local width=$(tput cols)
   local corner_top="${prompts[margin]}${PROMPT_PALETTE[normal]}${PROMPT_SYMBOL[corner.top]}"
   local corner_bottom="${PROMPT_PALETTE[reset]}${PROMPT_PALETTE[normal]}${PROMPT_SYMBOL[corner.bottom]}"
-  local left_part="${corner_top}${prompts[host]}${prompts[user]}${prompts[path]}${prompts[git]}"
+  #local left_part="${corner_top}${prompts[host]}${prompts[user]}${prompts[path]}${prompts[git]}"
+  local left_part="${corner_top}${prompts[host]}${prompts[path]}${prompts[git]}"
   local right_part="${prompts[time]}${prompts[elapsed]}"
-  local prompt_len=$(( prompts_len[host] + prompts_len[user] + prompts_len[path] + prompts_len[git] + prompts_len[time] + prompts_len[elapsed] ))
+  #local prompt_len=$(( prompts_len[host] + prompts_len[user] + prompts_len[path] + prompts_len[git] + prompts_len[time] + prompts_len[elapsed] ))
+  local prompt_len=$(( prompts_len[host] + prompts_len[path] + prompts_len[git] + prompts_len[time] + prompts_len[elapsed] ))
   local padding="$(( width - prompt_len - 3))"
   if (( padding > 0 )); then
     echo "${left_part}${(r:${padding}:)""}${right_part}"
