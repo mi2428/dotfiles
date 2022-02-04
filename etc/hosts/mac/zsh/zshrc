@@ -28,10 +28,12 @@ export HISTFILE=$HOME/.zhistory
 export TERM=xterm-256color
 
 export FPATH=/opt/homebrew/share/zsh-completions:$FPATH
+export ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=242'
 export ZSH_HIGHLIGHT_HIGHLIGHTERS_DIR=/opt/homebrew/share/zsh-syntax-highlighting/highlighters
 source /opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh
 source /opt/homebrew/opt/zsh-git-prompt/zshrc.sh
 source /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+source $HOME/.fzf.zsh
 
 autoload -Uz colors && colors
 autoload -Uz compinit && compinit
@@ -51,6 +53,7 @@ zstyle ':completion:*:descriptions' format '%F{yellow}Completing %B%d%b%f'$DEFAU
 zstyle ':completion:*:manuals'      separate-sections true
 zstyle ':completion:*:sudo:*'       command-path $path
 
+bindkey -e
 bindkey '^O' autosuggest-accept
 
 
@@ -160,6 +163,18 @@ xx() {
 }
 
 
+::() {
+  local session="$1"
+  if [[ -z ${session} ]]; then
+    tmux
+  elif [[ -n $(tmux ls -F "#{session_name}" | grep -x "${session}") ]]; then
+    tmux attach -t "${session}"
+  else
+    tmux $@
+  fi
+}
+
+
 colortest() {
   for c in {000..255}; do
     echo -n "\e[38;5;${c}m $c"
@@ -191,6 +206,7 @@ alias ..3='cd ../../..'
 alias ..4='cd ../../../..'
 alias ..5='cd ../../../../..'
 
+alias b='brew'
 alias c='pbcopy'
 alias g='git'
 alias m='move'
@@ -205,10 +221,9 @@ alias dc='docker-compose'
 alias dk='docker'
 alias kc='kubectl'
 alias pp='ping6'
-alias ::='tmux'
 
-alias mkd='mkdir -p'
 alias :::='tmuxinator'
+alias mkd='mkdir -p'
 
 
 if (( $+commands[arch] )); then
@@ -240,12 +255,14 @@ fi
 
 
 if whence -p vim 1> /dev/null; then
+  export EDITOR=vim
   alias vi='vim'
   alias emacs='vim'
 fi
 
 
 if whence -p nvim 1> /dev/null; then
+  export EDITOR=nvim
   alias vi='nvim'
   alias vim='nvim'
   alias emacs='nvim'
@@ -315,24 +332,24 @@ typeset -gA PROMPT_SYMBOL=(
 
 
 typeset -gA PROMPT_PALETTE=(
-  host         '%b%F{157}'
-  user         '%b%F{253}'
-  path         '%B%F{228}'
-  venv         '%b%F{081}'
-  time         '%b%F{254}'
-  elapsed      '%b%F{222}'
-  exit.mark    '%b%F{246}'
-  exit.code    '%B%F{203}'
-  git.commited '%b%F{159}'
-  git.staged   '%b%F{253}'
-  git.modified '%b%F{253}'
-  git.other    '%b%F{253}'
-  conj         '%b%F{102}'
-  typing       '%b%F{252}'
-  normal       '%b%F{252}'
-  success      '%b%F{040}'
-  error        '%b%F{203}'
-  reset        '%{\e[00m%}'
+  host          '%b%F{157}'
+  user          '%b%F{253}'
+  path          '%B%F{229}'
+  venv          '%b%F{081}'
+  time          '%b%F{247}'
+  elapsed       '%b%F{222}'
+  exit.mark     '%b%F{246}'
+  exit.code     '%B%F{203}'
+  git.commited  '%b%F{002}'
+  git.staged    '%b%F{226}'
+  git.modified  '%b%F{009}'
+  git.untracked '%b%F{136}'
+  conj          '%b%F{102}'
+  typing        '%b%F{252}'
+  normal        '%b%F{252}'
+  success       '%b%F{034}'
+  error         '%b%F{203}'
+  reset         '%{\e[00m%}'
 )
 
 
@@ -405,23 +422,23 @@ set_current_path() {
 }
 
 
+set_current_time() {
+  local current_time=${(%):-%D{%H:%M:%S}}
+  prompts[time]="${PROMPT_PALETTE[time]}${current_time}"
+  prompts_len[time]=${#current_time}
+}
+
+
 set_elapsed_time() {
   if (( exec_timestamp > 0 )); then
     local exec_seconds=" +$(( $(date +%s) - exec_timestamp ))sec"
-    prompts[elapsed]="${exec_seconds}"
+    prompts[elapsed]="${PROMPT_PALETTE[elapsed]}${exec_seconds}"
     prompts_len[elapsed]=${#exec_seconds}
     exec_timestamp=0
   else
     prompts[elapsed]=""
     prompts_len[elapsed]=0
   fi
-}
-
-
-set_current_time() {
-  local current_time=${(%):-%D{%H:%M:%S}}
-  prompts[time]="${PROMPT_PALETTE[time]}${current_time}"
-  prompts_len[time]=${#current_time}
 }
 
 
@@ -436,8 +453,6 @@ set_git_info() {
       color="${PROMPT_PALETTE[git.modified]}"
     elif [[ ${git_status} =~ "Untracked files:" ]]; then
       color="${PROMPT_PALETTE[git.untracked]}"
-    else
-      color="${PROMPT_PALETTE[git.other]}"
     fi
     prompts[git]=" ${PROMPT_PALETTE[conj]}on ${PROMPT_PALETTE[normal]}(${color}${git_branch}${PROMPT_PALETTE[normal]})"
     prompts_len[git]=$(( ${#git_branch} + 6 ))
@@ -462,10 +477,10 @@ set_venv_info() {
 set_last_status() {
   local last_code=$?
   if (( ${last_code} == 0 )); then
-    prompts[exit]="${PROMPT_SYMBOL[exit.success]}"
+    prompts[exit]="${PROMPT_PALETTE[success]}${PROMPT_SYMBOL[exit.success]}"
     prompts_len[exit]=${#PROMPT_SYMBOL[exit.success]}
   else
-    prompts[exit]="${PROMPT_PALETTE[exit.mark]}exit:${PROMPT_PALETTE[exit]}${last_code}"
+    prompts[exit]="${PROMPT_PALETTE[exit.mark]}exit:${PROMPT_PALETTE[exit.code]}${last_code}"
     prompts_len[exit]=$(( ${#last_code} + 5 ))
   fi
 }
@@ -480,9 +495,11 @@ main_prompt() {
   local width=$(tput cols)
   local corner_top="${prompts[margin]}${PROMPT_PALETTE[normal]}${PROMPT_SYMBOL[corner.top]}"
   local corner_bottom="${PROMPT_PALETTE[reset]}${PROMPT_PALETTE[normal]}${PROMPT_SYMBOL[corner.bottom]}"
-  local left_part="${corner_top}${prompts[host]}${prompts[user]}${prompts[path]}${prompts[git]}"
+  #local left_part="${corner_top}${prompts[host]}${prompts[user]}${prompts[path]}${prompts[git]}"
+  local left_part="${corner_top}${prompts[host]}${prompts[path]}${prompts[git]}"
   local right_part="${prompts[time]}${prompts[elapsed]}"
-  local prompt_len=$(( prompts_len[host] + prompts_len[user] + prompts_len[path] + prompts_len[git] + prompts_len[time] + prompts_len[elapsed] ))
+  #local prompt_len=$(( prompts_len[host] + prompts_len[user] + prompts_len[path] + prompts_len[git] + prompts_len[time] + prompts_len[elapsed] ))
+  local prompt_len=$(( prompts_len[host] + prompts_len[path] + prompts_len[git] + prompts_len[time] + prompts_len[elapsed] ))
   local padding="$(( width - prompt_len - 3))"
   if (( padding > 0 )); then
     echo "${left_part}${(r:${padding}:)""}${right_part}"
@@ -532,3 +549,5 @@ CPU:  %P'
 
 
 source ~/30_grc.zsh
+
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
