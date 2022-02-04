@@ -1,3 +1,4 @@
+set termguicolors
 set background=dark
 if !has('gui_running')
   set t_Co=256
@@ -51,8 +52,15 @@ Plug 'kaicataldo/material.vim', { 'branch': 'main' }
 "" https://github.com/itchyny/lightline.vim
 Plug 'itchyny/lightline.vim'
 
-call plug#end()
+"" This plugin adds indentation guides to all lines (including empty lines).
+"" https://github.com/lukas-reineke/indent-blankline.nvim
+Plug 'lukas-reineke/indent-blankline.nvim'
 
+
+"Plug 'kyazdani42/nvim-web-devicons'
+"Plug 'romgrk/barbar.nvim'
+
+call plug#end()
 
 
 let g:material_terminal_italics = 0
@@ -64,21 +72,22 @@ if !has('nvim')
   let &t_ZR="\e[23m"
 endif
 
-autocmd ColorScheme * highlight CursorLineNr term=bold ctermfg=255 ctermbg=009
-autocmd ColorScheme * highlight Comment ctermfg=244
-autocmd ColorScheme * highlight NonText ctermfg=239 ctermbg=NONE
-autocmd ColorScheme * highlight SpecialKey ctermfg=239 ctermbg=NONE
+autocmd ColorScheme * highlight Normal ctermbg=NONE guibg=NONE
+autocmd ColorScheme * highlight LineNr ctermfg=246 guifg=#949494
+autocmd ColorScheme * highlight CursorLineNr ctermfg=255 ctermbg=009 cterm=bold guifg=#eeeeee guibg=#ff0000 gui=bold
+autocmd ColorScheme * highlight Comment ctermfg=244 guifg=#808080
+autocmd ColorScheme * highlight NonText ctermfg=239 ctermbg=NONE guifg=#4e4e4e guibg=NONE
+autocmd ColorScheme * highlight SpecialKey ctermfg=239 guifg=#4e4e4e
 
 colorscheme material
 syntax enable
-
 
 autocmd InsertEnter * :set norelativenumber
 autocmd InsertLeave * :set relativenumber
 
 
 let g:lightline = {
-  \ 'colorscheme': 'material_vim',
+  \ 'colorscheme': 'material',
   \ 'active': {
   \   'left': [ [ 'mode', 'paste' ],
   \             [ 'gitbranch', 'readonly', 'filename', 'modified' ] ]

@@ -26,6 +26,7 @@ export SAVEHIST=1000000
 export HISTFILE=$HOME/.zhistory
 
 export TERM=xterm-256color
+#export TERM=screen-256color
 
 export FPATH=/opt/homebrew/share/zsh-completions:$FPATH
 export ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=242'
