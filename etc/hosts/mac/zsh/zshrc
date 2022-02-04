@@ -224,6 +224,7 @@ alias kc='kubectl'
 alias pp='ping6'
 
 alias :::='tmuxinator'
+alias ipy='ipython3'
 alias mkd='mkdir -p'
 
 
