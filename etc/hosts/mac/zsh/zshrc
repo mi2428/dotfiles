@@ -294,37 +294,6 @@ fi
 
 
 
-
-
-
-git_prompt() {
-  if [[ "$(git rev-parse --is-inside-work-tree 2> /dev/null)" == "true" ]]; then
-    return 0
-  else
-    return 0
-  fi
-}
-
-
-ssh_prompt() {
-  if [[ -n $SSH_CLIENT ]]; then
-    return 0
-  else
-    return 0
-  fi
-}
-
-
-privileged_prompt() {
-  if (( $EUID == 0 )); then
-    return 0
-  else
-    return 0
-  fi
-}
-
-
-
 typeset -gA PROMPT_SYMBOL=(
   corner.top     '╭─'
   corner.bottom  '╰─'
@@ -338,6 +307,7 @@ typeset -gA PROMPT_PALETTE=(
   user          '%b%F{253}'
   path          '%B%F{229}'
   venv          '%b%F{081}'
+  sshagent      '%b%F{081}'
   time          '%b%F{247}'
   elapsed       '%b%F{222}'
   exit.mark     '%b%F{246}'
@@ -349,36 +319,38 @@ typeset -gA PROMPT_PALETTE=(
   conj          '%b%F{102}'
   typing        '%b%F{252}'
   normal        '%b%F{252}'
-  success       '%b%F{034}'
+  success       '%b%F{013}'
   error         '%b%F{203}'
   reset         '%{\e[00m%}'
 )
 
 
 typeset -gA prompts=(
-  margin   ""
-  host     ""
-  user     ""
-  path     ""
-  venv     ""
-  git      ""
-  time     ""
-  elapsed  ""
-  typing   ""
-  exit     ""
+  margin    ""
+  host      ""
+  user      ""
+  path      ""
+  venv      ""
+  sshagent  ""
+  git       ""
+  time      ""
+  elapsed   ""
+  typing    ""
+  exit      ""
 )
 
 
 typeset -gA prompts_len=(
-  margin   0
-  host     0
-  user     0
-  path     0
-  venv     0
-  git      0
-  time     0
-  elapsed  0
-  exit     0
+  margin    0
+  host      0
+  user      0
+  path      0
+  venv      0
+  sshagent  0
+  git       0
+  time      0
+  elapsed   0
+  exit      0
 )
 
 
@@ -456,8 +428,9 @@ set_git_info() {
     elif [[ ${git_status} =~ "Untracked files:" ]]; then
       color="${PROMPT_PALETTE[git.untracked]}"
     fi
-    prompts[git]=" ${PROMPT_PALETTE[conj]}on ${PROMPT_PALETTE[normal]}(${color}${git_branch}${PROMPT_PALETTE[normal]})"
-    prompts_len[git]=$(( ${#git_branch} + 6 ))
+    #prompts[git]=" ${PROMPT_PALETTE[conj]}on ${PROMPT_PALETTE[normal]}(${color}${git_branch}${PROMPT_PALETTE[normal]})"
+    prompts[git]=" ${PROMPT_PALETTE[conj]}on ${color}${git_branch}"
+    prompts_len[git]=$(( ${#git_branch} + 4 ))
   else
     prompts[git]=""
     prompts_len[git]=0
@@ -472,6 +445,17 @@ set_venv_info() {
   else
     prompts[venv]=""
     prompts_len[venv]=0
+  fi
+}
+
+
+set_ssh_agent_info() {
+  if [[ -n ${SSH_AGENT_PID} ]]; then
+    prompts[sshagent]=" ${PROMPT_PALETTE[conj]}on ${PROMPT_PALETTE[normal]}${PROMPT_PALETTE[sshagent]}ssh-agent${PROMPT_PALETTE[normal]}"
+    prompts_len[sshagent]=13
+  else
+    prompts[sshagent]=""
+    prompts_len[sshagent]=0
   fi
 }
 
@@ -497,11 +481,10 @@ main_prompt() {
   local width=$(tput cols)
   local corner_top="${prompts[margin]}${PROMPT_PALETTE[normal]}${PROMPT_SYMBOL[corner.top]}"
   local corner_bottom="${PROMPT_PALETTE[reset]}${PROMPT_PALETTE[normal]}${PROMPT_SYMBOL[corner.bottom]}"
-  #local left_part="${corner_top}${prompts[host]}${prompts[user]}${prompts[path]}${prompts[git]}"
-  local left_part="${corner_top}${prompts[host]}${prompts[path]}${prompts[git]}"
+  local left_part="${corner_top}${prompts[host]}${prompts[path]}${prompts[git]}${prompts[sshagent]}"
   local right_part="${prompts[time]}${prompts[elapsed]}"
-  #local prompt_len=$(( prompts_len[host] + prompts_len[user] + prompts_len[path] + prompts_len[git] + prompts_len[time] + prompts_len[elapsed] ))
-  local prompt_len=$(( prompts_len[host] + prompts_len[path] + prompts_len[git] + prompts_len[time] + prompts_len[elapsed] ))
+  local prompt_len=$(( prompts_len[host] + prompts_len[path] + prompts_len[git] + prompts_len[sshagent] ))
+  local prompt_len=$(( prompt_len + prompts_len[time] + prompts_len[elapsed] ))
   local padding="$(( width - prompt_len - 3))"
   if (( padding > 0 )); then
     echo "${left_part}${(r:${padding}:)""}${right_part}"
@@ -532,6 +515,7 @@ precmd() {
   set_elapsed_time
   set_git_info
   set_venv_info
+  set_ssh_agent_info
   set_typing_pointer
 }
 
