@@ -56,6 +56,11 @@ Plug 'itchyny/lightline.vim'
 "" https://github.com/lukas-reineke/indent-blankline.nvim
 Plug 'lukas-reineke/indent-blankline.nvim'
 
+
+"" Defx is a dark powered plugin for Neovim/Vim to browse files. It replaces the deprecated vimfiler plugin.
+"" https://github.com/Shougo/defx.nvim
+Plug 'Shougo/defx.nvim', { 'do': ':UpdateRemotePlugins' }
+
 call plug#end()
 
 
@@ -72,11 +77,13 @@ autocmd ColorScheme * highlight Normal ctermbg=NONE guibg=NONE
 autocmd ColorScheme * highlight LineNr ctermfg=246 guifg=#949494
 autocmd ColorScheme * highlight CursorLineNr ctermfg=255 ctermbg=009 cterm=bold guifg=#eeeeee guibg=#ff5f00 gui=bold
 autocmd ColorScheme * highlight Comment ctermfg=244 guifg=#808080
+autocmd ColorScheme * highlight Visual ctermbg=033 guibg=#0087ff
 autocmd ColorScheme * highlight NonText ctermfg=239 ctermbg=NONE guifg=#4e4e4e guibg=NONE
 autocmd ColorScheme * highlight SpecialKey ctermfg=239 guifg=#4e4e4e
 
 colorscheme material
 syntax enable
+
 
 autocmd InsertEnter * :set norelativenumber
 autocmd InsertLeave * :set relativenumber
