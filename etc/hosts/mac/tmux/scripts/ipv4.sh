@@ -3,5 +3,5 @@ src=$(ip r get 1.1.1.1 | \grep -Eo "([0-9]{1,3}[\.]){3}[0-9]{1,3}" | sed -n "3,3
 if [[ -n $src ]]; then
   echo "$src"
 else
-  echo "offline"
+  echo "no ipv4"
 fi
