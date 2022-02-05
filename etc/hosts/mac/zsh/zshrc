@@ -69,9 +69,6 @@ if [[ -d ~/.ssh ]]; then
   fi
 fi
 
-
-
-
 bindkey -e
 bindkey '^O' autosuggest-accept
 
@@ -114,10 +111,10 @@ arm64*)
 esac
 
 
-
-
-
-
+if [[ -n ${SSH_AGENT_PID} ]] && ! ssh-add -l 1> /dev/null; then
+  ssh-add $HOME/.ssh/MASTER_KEY/mi2428.master.id_ed25519
+  echo
+fi
 
 
 
@@ -243,6 +240,7 @@ alias pp='ping6'
 
 alias :::='tmuxinator'
 alias ipy='ipython3'
+alias ssa='ssh-agent zsh'
 alias mkd='mkdir -p'
 
 
