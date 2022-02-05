@@ -95,8 +95,8 @@ set_user() {
 
 calc_path_length() {
   local current_path="$1"
-  local total_chars=$(echo ${current_path} | wc -m)
-  local total_bytes=$(echo ${current_path} | wc -c)
+  local total_chars=$(echo ${current_path} | LC_CTYPE=ja_JP.UTF-8 wc -m)
+  local total_bytes=$(echo ${current_path} | LC_CTYPE=ja_JP.UTF-8 wc -c)
   local zenkaku_bytes=3
   local zenkaku_width=2
   local n_hankaku=$(( (zenkaku_bytes * total_chars - total_bytes ) / 2 ))
@@ -106,7 +106,7 @@ calc_path_length() {
 
 
 set_current_path() {
-  local current_path=${(%):-%~}
+  LC_CTYPE=ja_JP.UTF-8 local current_path=${(%):-%~}
   prompts[path]=" ${PROMPT_PALETTE[conj]}in ${PROMPT_PALETTE[path]}${current_path}"
   prompts_len[path]=$(( $(calc_path_length ${current_path}) + 4 ))
 }
