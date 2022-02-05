@@ -93,10 +93,22 @@ set_user() {
 }
 
 
+calc_path_length() {
+  local current_path="$1"
+  local total_chars=$(echo ${current_path} | wc -m)
+  local total_bytes=$(echo ${current_path} | wc -c)
+  local zenkaku_bytes=3
+  local zenkaku_width=2
+  local n_hankaku=$(( (zenkaku_bytes * total_chars - total_bytes ) / 2 ))
+  local n_zenkaku=$(( (total_bytes - total_chars) / 2 ))
+  echo $(( n_hankaku + zenkaku_width * n_zenkaku ))
+}
+
+
 set_current_path() {
   local current_path=${(%):-%~}
   prompts[path]=" ${PROMPT_PALETTE[conj]}in ${PROMPT_PALETTE[path]}${current_path}"
-  prompts_len[path]=$(( ${#current_path} + 4 ))
+  prompts_len[path]=$(( $(calc_path_length ${current_path}) + 4 ))
 }
 
 
@@ -189,7 +201,7 @@ main_prompt() {
   local right_part="${prompts[time]}${prompts[elapsed]}"
   local prompt_len=$(( prompts_len[host] + prompts_len[path] + prompts_len[git] + prompts_len[sshagent] ))
   local prompt_len=$(( prompt_len + prompts_len[time] + prompts_len[elapsed] ))
-  local padding="$(( width - prompt_len - 3))"
+  local padding="$(( width - prompt_len - 2))"
   if (( padding > 0 )); then
     echo "${left_part}${(r:${padding}:)""}${right_part}"
   else
