@@ -12,3 +12,4 @@ git clone https://github.com/tmux-plugins/tpm /Users/mi/.tmux/plugins/tpm
 sudo pip3 install neovim pynvim
 brew install trash
 brew install ipinfo
+brew install pv
