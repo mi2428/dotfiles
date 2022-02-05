@@ -250,6 +250,11 @@ if (( $+commands[arch] )); then
 fi
 
 
+if whence -p trash 1> /dev/null; then
+  alias rm='trash'
+fi
+
+
 if whence -p exa 1> /dev/null; then
   export EXA_ICON_SPACING=1
   alias l='exa --icons'
