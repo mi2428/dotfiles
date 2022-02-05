@@ -59,6 +59,7 @@ zstyle ':completion:*:descriptions' format '%F{yellow}Completing %B%d%b%f'$DEFAU
 zstyle ':completion:*:manuals'      separate-sections true
 zstyle ':completion:*:sudo:*'       command-path $path
 
+
 if [[ -d ~/.ssh ]]; then
   local h=()
   if [[ -r ~/.ssh/config ]]; then
@@ -74,9 +75,11 @@ if [[ -d ~/.ssh ]]; then
   fi
 fi
 
+
 export EDITOR="vi"
 bindkey -e  # set explicitly, or zsh use vi-mode binding
 bindkey '^O' autosuggest-accept
+
 
 case $(arch) in
 x86_64)
@@ -114,6 +117,9 @@ arm64*)
   )
   ;;
 esac
+
+
+export GOPATH="$HOME/dev/gocode"
 
 
 if [[ -n ${SSH_AGENT_PID} ]] && ! ssh-add -l 1> /dev/null; then
