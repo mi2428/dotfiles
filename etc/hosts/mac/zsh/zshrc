@@ -204,10 +204,10 @@ alias -s jl=julia
 alias -s {gz,tgz,zip,lzh,bz2,tbz,Z,tar,arj,xz}=xx
 alias -s {png,jpg,bmp,PNG,JPG,BMP}=preview
 
-alias -g C='| pbcopy'
-alias -g H='| head'
-alias -g T='| tail'
-alias -g X='| xargs'
+#alias -g C='| pbcopy'
+#alias -g H='| head'
+#alias -g T='| tail'
+#alias -g X='| xargs'
 
 alias :q='exit'
 alias ..='cd ..'
