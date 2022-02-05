@@ -243,6 +243,8 @@ alias ipy='ipython3'
 alias ssa='ssh-agent zsh'
 alias mkd='mkdir -p'
 
+alias http='python3 -m http.server'
+
 
 if (( $+commands[arch] )); then
   alias x64='exec arch -arch x86_64 "$SHELL"'
