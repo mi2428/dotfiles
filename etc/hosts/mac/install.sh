@@ -13,3 +13,4 @@ sudo pip3 install neovim pynvim
 brew install trash
 brew install ipinfo
 brew install pv
+brew install deno

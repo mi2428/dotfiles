@@ -95,4 +95,20 @@ Plug 'kristijanhusak/defx-icons'
 Plug 'ryanoasis/vim-devicons'
 Plug 'kristijanhusak/defx-git'
 
+"" Dark deno-powered completion framework for neovim/Vim8
+"" https://github.com/Shougo/ddc.vim
+Plug 'Shougo/ddc.vim'
+Plug 'vim-denops/denops.vim'
+Plug 'Shougo/ddc-around'
+Plug 'Shougo/ddc-matcher_head'
+Plug 'Shougo/ddc-sorter_rank'
+
+
+"" VimTeX is a modern Vim and Neovim filetype and syntax plugin for LaTeX files.
+"" https://github.com/lervag/vimtex
+Plug 'lervag/vimtex'
+
 call plug#end()
+
+
+filetype plugin indent on
