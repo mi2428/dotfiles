@@ -133,9 +133,16 @@ set_elapsed_time() {
 
 
 set_git_info() {
-  if [[ -n $(git rev-parse --git-dir 2> /dev/null) ]]; then
+  local timeout_sec=0.03
+  local git_branch=${$( timeout ${timeout_sec} git branch --show-current 2>&1 ):-?}
+  if [[ ${git_branch} == "?" ]]; then
+    prompts[git]=" ${PROMPT_PALETTE[conj]}with ${PROMPT_PALETTE[git.commited]}git"
+    prompts_len[git]=9
+  elif [[ -z ${git_branch} ]] || [[ ${git_branch} =~ " a git repository" ]]; then
+    prompts[git]=""
+    prompts_len[git]=0
+  else
     local git_status="$(git status 2> /dev/null)"
-    local git_branch="${$(git branch --show-current 2> /dev/null):-???}"
     local color="${PROMPT_PALETTE[git.commited]}"
     if [[ ${git_status} =~ "Changes to be committed:" ]]; then
       color="${PROMPT_PALETTE[git.staged]}"
@@ -147,9 +154,6 @@ set_git_info() {
     #prompts[git]=" ${PROMPT_PALETTE[conj]}on ${PROMPT_PALETTE[normal]}(${color}${git_branch}${PROMPT_PALETTE[normal]})"
     prompts[git]=" ${PROMPT_PALETTE[conj]}on ${color}${git_branch}"
     prompts_len[git]=$(( ${#git_branch} + 4 ))
-  else
-    prompts[git]=""
-    prompts_len[git]=0
   fi
 }
 

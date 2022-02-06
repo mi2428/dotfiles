@@ -14,3 +14,5 @@ brew install trash
 brew install ipinfo
 brew install pv
 brew install deno
+brew install coreutils
+sudo ln -s /usr/local/bin/gtimeout /usr/local/bin/timeout
