@@ -81,6 +81,14 @@ bindkey -e  # set explicitly, or zsh use vi-mode binding
 bindkey '^O' autosuggest-accept
 
 
+backward-kill-dir() {
+  local WORDCHARS=${WORDCHARS/\/}
+  zle backward-kill-word
+}
+zle -N backward-kill-dir
+bindkey '^F' backward-kill-dir
+
+
 export GOPATH="$HOME/dev/gocode"
 
 
