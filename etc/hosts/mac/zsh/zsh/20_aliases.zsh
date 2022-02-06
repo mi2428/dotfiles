@@ -38,6 +38,14 @@ f() {
   open -a Finder ${$1:-'.'}
 }
 
+ghc() {
+  local repo="$1"
+  if (( $# == 2 )); then
+    repo="${1}/${2}"
+  fi
+  git clone --recursive git@github.com:${repo}
+}
+
 
 xx() {
   case $1 in
@@ -126,7 +134,6 @@ alias rc='bundle exec rails c'
 
 alias dot='cd $HOME/dotfiles'
 alias gco='git checkout'
-alias ghc='git clone git@github.com:'
 alias gpp='git pull'
 alias ipy='ipython3'
 alias mkd='mkdir -p'
