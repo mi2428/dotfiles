@@ -81,6 +81,9 @@ bindkey -e  # set explicitly, or zsh use vi-mode binding
 bindkey '^O' autosuggest-accept
 
 
+export GOPATH="$HOME/dev/gocode"
+
+
 case $(arch) in
 x86_64)
   export VOLTA_HOME="$HOME/.volta_x64"
@@ -100,11 +103,13 @@ x86_64)
 arm64*)
   export CARGO_HOME="$HOME/.cargo"
   export VOLTA_HOME="$HOME/.volta"
+  export TEXLIVE_BIN="/usr/local/texlive/2021/bin/universal-darwin/bin"
   typeset -U path PATH
   path=(
     $HOME/bin
     $CARGO_HOME/bin
     $VOLTA_HOME/bin
+    $TEXLIVE_BIN
     /opt/homebrew/bin(N-/)
     /opt/homebrew/sbin(N-/)
     /usr/bin
@@ -117,9 +122,6 @@ arm64*)
   )
   ;;
 esac
-
-
-export GOPATH="$HOME/dev/gocode"
 
 
 if [[ -n ${SSH_AGENT_PID} ]] && ! ssh-add -l 1> /dev/null; then
