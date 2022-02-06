@@ -104,6 +104,7 @@ alias o='open'
 alias p='ping'
 alias r='rm -i'
 alias s='sudo'
+alias x='chmod +x'
 alias y='yes'
 
 alias an='ansible'
