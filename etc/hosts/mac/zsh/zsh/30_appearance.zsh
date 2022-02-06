@@ -11,7 +11,8 @@ typeset -gA PROMPT_PALETTE=(
   user          '%b%F{253}'
   path          '%B%F{229}'
   venv          '%b%F{081}'
-  sshagent      '%b%F{081}'
+  ssh.via       '%b%F{222}'
+  ssh.agent     '%b%F{081}'
   time          '%b%F{247}'
   elapsed       '%b%F{222}'
   exit.mark     '%b%F{246}'
@@ -30,31 +31,33 @@ typeset -gA PROMPT_PALETTE=(
 
 
 typeset -gA prompts=(
-  margin    ""
-  host      ""
-  user      ""
-  path      ""
-  venv      ""
-  sshagent  ""
-  git       ""
-  time      ""
-  elapsed   ""
-  typing    ""
-  exit      ""
+  margin     ""
+  host       ""
+  user       ""
+  path       ""
+  venv       ""
+  ssh.via    ""
+  ssh.agent  ""
+  git        ""
+  time       ""
+  elapsed    ""
+  typing     ""
+  exit       ""
 )
 
 
 typeset -gA prompts_len=(
-  margin    0
-  host      0
-  user      0
-  path      0
-  venv      0
-  sshagent  0
-  git       0
-  time      0
-  elapsed   0
-  exit      0
+  margin     0
+  host       0
+  user       0
+  path       0
+  venv       0
+  ssh.via    0
+  ssh.agent  0
+  git        0
+  time       0
+  elapsed    0
+  exit       0
 )
 
 
@@ -170,13 +173,33 @@ set_venv_info() {
 }
 
 
+mask_ip() {
+  local rawip="$1"
+  [[ ${rawip} =~ '\.' ]] && echo "***.$(echo ${rawip} | awk -F'.' '{print $NF}')"
+  [[ ${rawip} =~ ':' ]] && echo "****:$(echo ${rawip} | awk -F':' '{print $NF}')"
+}
+
+
+set_via_ssh_info() {
+  local srcip=$(echo ${SSH_CLIENT} | awk '{print $1}')
+  if [[ -n ${srcip} ]]; then
+    local maskedip=$(mask_ip ${srcip})
+    prompts[ssh.via]=" ${PROMPT_PALETTE[conj]}via ${PROMPT_PALETTE[ssh.via]}${maskedip} (SSH)${PROMPT_PALETTE[normal]}"
+    prompts_len[ssh.via]=$(( ${#maskedip} + 11 ))
+  else
+    prompts[ssh.via]=""
+    prompts_len[ssh.via]=0
+  fi
+}
+
+
 set_ssh_agent_info() {
   if [[ -n ${SSH_AGENT_PID} ]]; then
-    prompts[sshagent]=" ${PROMPT_PALETTE[conj]}on ${PROMPT_PALETTE[normal]}${PROMPT_PALETTE[sshagent]}ssh-agent${PROMPT_PALETTE[normal]}"
-    prompts_len[sshagent]=13
+    prompts[ssh.agent]=" ${PROMPT_PALETTE[conj]}on ${PROMPT_PALETTE[ssh.agent]}ssh-agent${PROMPT_PALETTE[normal]}"
+    prompts_len[ssh.agent]=13
   else
-    prompts[sshagent]=""
-    prompts_len[sshagent]=0
+    prompts[ssh.agent]=""
+    prompts_len[ssh.agent]=0
   fi
 }
 
@@ -202,9 +225,9 @@ main_prompt() {
   local width=$(tput cols)
   local corner_top="${prompts[margin]}${PROMPT_PALETTE[normal]}${PROMPT_SYMBOL[corner.top]}"
   local corner_bottom="${PROMPT_PALETTE[reset]}${PROMPT_PALETTE[normal]}${PROMPT_SYMBOL[corner.bottom]}"
-  local left_part="${corner_top}${prompts[host]}${prompts[path]}${prompts[git]}${prompts[sshagent]}"
+  local left_part="${corner_top}${prompts[host]}${prompts[path]}${prompts[git]}${prompts[ssh.agent]}${prompts[ssh.via]}"
   local right_part="${prompts[time]}${prompts[elapsed]}"
-  local prompt_len=$(( prompts_len[host] + prompts_len[path] + prompts_len[git] + prompts_len[sshagent] ))
+  local prompt_len=$(( prompts_len[host] + prompts_len[path] + prompts_len[git] + prompts_len[ssh.agent] + prompts_len[ssh.via] ))
   local prompt_len=$(( prompt_len + prompts_len[time] + prompts_len[elapsed] ))
   local padding="$(( width - prompt_len - 2))"
   if (( padding > 0 )); then
@@ -236,6 +259,7 @@ precmd() {
   set_elapsed_time
   set_git_info
   set_venv_info
+  set_via_ssh_info
   set_ssh_agent_info
   set_typing_pointer
 }
