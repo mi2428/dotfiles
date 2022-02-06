@@ -28,10 +28,10 @@ export HISTFILE=$HOME/.zhistory
 export TERM=xterm-256color
 #export TERM=screen-256color
 
-#export LANG=ja_JP.UTF-8
-#export LC_CTYPE=ja_JP.UTF-8
-export LANG=en_JP.UTF-8
-export LC_CTYPE=en_JP.UTF-8
+export LANG=en_US.UTF-8
+export LC_CTYPE=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+export LC_TERMINAL=iTerm2
 
 export FPATH=/opt/homebrew/share/zsh-completions:$FPATH
 export ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=242'
