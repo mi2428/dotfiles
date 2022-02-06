@@ -2,7 +2,15 @@ typeset -gA PROMPT_SYMBOL=(
   corner.top     '╭─'
   corner.bottom  '╰─'
   arrow          '─▶'
-  exit.success   '(๑˃̵ᴗ˂̵)و'
+)
+
+
+typeset -g KAWAII_EMOJI=(
+  '(๑˃̵ᴗ˂̵)و'
+  '(๑•̀ㅂ•́)و'
+  '(๑°ω°๑)و'
+  '(๑•ㅂ•)و'
+  '(๑ᵒᗜ ᵒ)و'
 )
 
 
@@ -207,8 +215,9 @@ set_ssh_agent_info() {
 set_last_status() {
   local last_code=$?
   if (( ${last_code} == 0 )); then
-    prompts[exit]="${PROMPT_PALETTE[success]}${PROMPT_SYMBOL[exit.success]}"
-    prompts_len[exit]=${#PROMPT_SYMBOL[exit.success]}
+    local emoji=${KAWAII_EMOJI[$(( $RANDOM % ${#KAWAII_EMOJI[@]} + 1 ))]}
+    prompts[exit]="${PROMPT_PALETTE[success]}${emoji}"
+    prompts_len[exit]=$#emoji
   else
     prompts[exit]="${PROMPT_PALETTE[exit.mark]}exit:${PROMPT_PALETTE[exit.code]}${last_code}"
     prompts_len[exit]=$(( ${#last_code} + 5 ))
