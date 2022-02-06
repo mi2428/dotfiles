@@ -130,6 +130,7 @@ alias gp='git push'
 alias gs='git status'
 alias kc='kubectl'
 alias pp='ping6'
+alias py='python3'
 alias rc='bundle exec rails c'
 
 alias dot='cd $HOME/dotfiles'
