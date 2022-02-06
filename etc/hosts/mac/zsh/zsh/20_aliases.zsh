@@ -126,6 +126,7 @@ alias rc='bundle exec rails c'
 
 alias dot='cd $HOME/dotfiles'
 alias gco='git checkout'
+alias ghc='git clone git@github.com:'
 alias gpp='git pull'
 alias ipy='ipython3'
 alias mkd='mkdir -p'
