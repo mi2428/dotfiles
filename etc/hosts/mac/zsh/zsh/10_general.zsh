@@ -103,7 +103,7 @@ x86_64)
 arm64*)
   export CARGO_HOME="$HOME/.cargo"
   export VOLTA_HOME="$HOME/.volta"
-  export TEXLIVE_BIN="/usr/local/texlive/2021/bin/universal-darwin/bin"
+  export TEXLIVE_BIN="/usr/local/texlive/2021/bin/universal-darwin"
   typeset -U path PATH
   path=(
     $HOME/bin
