@@ -133,8 +133,9 @@ set_elapsed_time() {
 
 
 set_git_info() {
-  local timeout_sec=0.03
-  local git_branch=${$( timeout ${timeout_sec} git branch --show-current 2>&1 ):-?}
+  local timeout_sec=0.01
+  #local git_branch=${$( timeout ${timeout_sec} git branch --show-current 2>&1 ):-?}
+  local git_branch=${$( git branch --show-current 2>&1 ):-?}
   if [[ ${git_branch} == "?" ]]; then
     prompts[git]=" ${PROMPT_PALETTE[conj]}with ${PROMPT_PALETTE[git.commited]}git"
     prompts_len[git]=9
