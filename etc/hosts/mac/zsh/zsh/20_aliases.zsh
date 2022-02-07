@@ -51,7 +51,7 @@ ghc() {
 sshsocks() {
   local host="$1"
   local port="$2"
-  ssh -D ${port} -f -N ${host}
+  ssh -C -D ${port} -f -N ${host}
 }
 
 
