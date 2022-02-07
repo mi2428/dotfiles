@@ -86,7 +86,7 @@ backward-kill-dir() {
   zle backward-kill-word
 }
 zle -N backward-kill-dir
-bindkey '^F' backward-kill-dir
+bindkey '^D' backward-kill-dir
 
 
 export GOPATH="$HOME/dev/gocode"
