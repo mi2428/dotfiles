@@ -87,7 +87,6 @@ Plug 'itchyny/lightline.vim'
 "" https://github.com/lukas-reineke/indent-blankline.nvim
 Plug 'lukas-reineke/indent-blankline.nvim'
 
-
 "" Defx is a dark powered plugin for Neovim/Vim to browse files. It replaces the deprecated vimfiler plugin.
 "" https://github.com/Shougo/defx.nvim
 Plug 'Shougo/defx.nvim', { 'do': ':UpdateRemotePlugins' }
@@ -103,10 +102,13 @@ Plug 'Shougo/ddc-around'
 Plug 'Shougo/ddc-matcher_head'
 Plug 'Shougo/ddc-sorter_rank'
 
-
 "" VimTeX is a modern Vim and Neovim filetype and syntax plugin for LaTeX files.
 "" https://github.com/lervag/vimtex
 Plug 'lervag/vimtex'
+
+"" This is the latest version of the Jinja2 syntax file for vim with the ability to detect either HTML or Jinja.
+"" https://github.com/Glench/Vim-Jinja2-Syntax
+Plug 'Glench/Vim-Jinja2-Syntax'
 
 call plug#end()
 
