@@ -18,7 +18,7 @@ typeset -gA PROMPT_PALETTE=(
   host          '%b%u%F{157}'
   user          '%b%u%F{253}'
   path          '%B%u%F{229}'
-  path.shrinked '%B%U%F{229}'
+  path.shrinked '%B%u%F{226}'
   venv          '%b%u%F{081}'
   ssh.via       '%b%u%F{222}'
   ssh.agent     '%b%u%F{081}'
@@ -130,6 +130,7 @@ shrink_path() {
   local level="$2"
   local elements
   local shrinked=""
+  local len=0
 
   IFS='/' read -rA elements <<< "${fullpath}"
   for e in "${elements[@]}"; do
@@ -137,23 +138,25 @@ shrink_path() {
       continue
     fi
     if [[ "$e" == "~" ]]; then
-      shrinked="${e}"
+      shrinked="~"
+      len=$(( len + 1 ))
       continue
     fi
     if [[ -z ${shrinked} ]]; then
       shrinked="/${e}"
+      len=$(( len + $#e + 1 ))
       continue
     fi
     if (( level > 0 )); then
-      #shrinked="${shrinked}/${PROMPT_PALETTE[path.shrinked]}${e:0:1}${PROMPT_PALETTE[path]}"
-      shrinked="${shrinked}/${e:0:1}"
+      shrinked="${shrinked}${PROMPT_PALETTE[path]}/${PROMPT_PALETTE[path.shrinked]}${e:0:1}${PROMPT_PALETTE[path]}"
       level=$(( level - 1 ))
+      len=$(( len + 2 ))
     else
-      #shrinked="${shrinked}/${PROMPT_PALETTE[path]}${e}"
-      shrinked="${shrinked}/${e}"
+      shrinked="${shrinked}${PROMPT_PALETTE[path]}/${e}"
+      len=$(( len + $#e + 1 ))
     fi
   done
-  echo "${shrinked}"
+  echo "${shrinked} ${len}"
 }
 
 
@@ -165,9 +168,9 @@ set_shrink_path() {
   local level=0
   local depth=$(awk '{count += (split($0, a, "/") - 1)} END{print count}' <<< $current_path)
   while (( level <= depth )) && (( l >= width_budget )); do
-    shrinked="$(shrink_path ${current_path} $level)"
+    read shrinked shrinked_len < <(shrink_path ${current_path} $level)
     p=" ${PROMPT_PALETTE[conj]}in ${PROMPT_PALETTE[path]}${shrinked}"
-    l=$(( $(calc_path_length ${shrinked}) + 4 ))
+    l=$(( shrinked_len + 4 ))
     level=$(( level + 1 ))
   done
   prompts[path]="$p"
