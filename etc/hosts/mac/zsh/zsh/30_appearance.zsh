@@ -289,7 +289,6 @@ main_prompt() {
   local prompt_len=$(( prompt_len_wo_path + prompts_len[path] ))
   local padding="$(( width - prompt_len - 2))"
 
-  echo $prompt_len $padding
   if (( padding > 0 )); then
     echo "${left_part}${(r:${padding}:)""}${right_part}"
   else
