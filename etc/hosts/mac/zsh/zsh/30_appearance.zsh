@@ -118,6 +118,13 @@ calc_path_length() {
 }
 
 
+set_current_path() {
+  LC_CTYPE=ja_JP.UTF-8 local current_path=${(%):-%~}
+  prompts[path]=" ${PROMPT_PALETTE[conj]}in ${PROMPT_PALETTE[path]}${current_path}"
+  prompts_len[path]=$(( $(calc_path_length "$current_path") + 4 ))
+}
+
+
 shrink_path() {
   local fullpath="$1"
   local level="$2"
@@ -150,13 +157,6 @@ shrink_path() {
 }
 
 
-set_current_path() {
-  LC_CTYPE=ja_JP.UTF-8 local current_path=${(%):-%~}
-  prompts[path]=" ${PROMPT_PALETTE[conj]}in ${PROMPT_PALETTE[path]}${current_path}"
-  prompts_len[path]=$(( $(calc_path_length "$current_path") + 4 ))
-}
-
-
 set_shrink_path() {
   local width_budget="$1"
   LC_CTYPE=ja_JP.UTF-8 local current_path=${(%):-%~}
@@ -164,7 +164,7 @@ set_shrink_path() {
   local l=${prompts_len[path]}
   local level=0
   local depth=$(awk '{count += (split($0, a, "/") - 1)} END{print count}' <<< $current_path)
-  while (( level < depth - 2 )) && (( l > width_budget )); do
+  while (( level <= depth )) && (( l >= width_budget )); do
     shrinked="$(shrink_path ${current_path} $level)"
     p=" ${PROMPT_PALETTE[conj]}in ${PROMPT_PALETTE[path]}${shrinked}"
     l=$(( $(calc_path_length ${shrinked}) + 4 ))
