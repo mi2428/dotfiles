@@ -142,14 +142,15 @@ alias mkd='mkdir -p'
 alias ssa='ssh-agent zsh'
 alias :::='tmuxinator'
 
+alias egrep='egrep -n --color=auto'
+alias fgrep='fgrep -n --color=auto'
 alias free='free -h'
 alias grep='grep -n --color=auto'
 alias http='python3 -m http.server'
 alias less='less --no-init --quit-if-one-screen'
 alias myip='curl -s ipinfo.io | jq'
-alias egrep='egrep -n --color=auto'
-alias fgrep='fgrep -n --color=auto'
 alias preview='open -a Preview'
+alias sshh='sshuttle'
 
 
 if (( $+commands[arch] )); then
