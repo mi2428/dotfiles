@@ -38,12 +38,20 @@ f() {
   open -a Finder ${$1:-'.'}
 }
 
+
 ghc() {
   local repo="$1"
   if (( $# == 2 )); then
     repo="${1}/${2}"
   fi
   git clone --recursive git@github.com:${repo}
+}
+
+
+sshsocks() {
+  local host="$1"
+  local port="$2"
+  ssh -D ${port} -f -N ${host}
 }
 
 
