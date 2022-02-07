@@ -108,8 +108,8 @@ set_user() {
 
 calc_path_length() {
   local current_path="$1"
-  local total_chars=$(echo ${current_path} | LC_CTYPE=ja_JP.UTF-8 wc -m)
-  local total_bytes=$(echo ${current_path} | LC_CTYPE=ja_JP.UTF-8 wc -c)
+  local total_chars=$(LC_CTYPE=ja_JP.UTF-8 wc -m <<< ${current_path})
+  local total_bytes=$(LC_CTYPE=ja_JP.UTF-8 wc -c <<< ${current_path})
   local zenkaku_bytes=3
   local zenkaku_width=2
   local n_hankaku=$(( (zenkaku_bytes * total_chars - total_bytes ) / 2 ))
@@ -126,16 +126,24 @@ shrink_path() {
 
   IFS='/' read -rA elements <<< "${fullpath}"
   for e in "${elements[@]}"; do
-    if [[ -n ${shrinked} ]]; then
-      shrinked="${shrinked}/"
+    if [[ -z $e ]]; then
+      continue
     fi
-    if (( level > 0 )) && [[ "${e}" != "~" ]]; then
-      #shrinked="${shrinked}${PROMPT_PALETTE[path.shrinked]}${e:0:1}${PROMPT_PALETTE[path]}"
-      shrinked="${shrinked}${e:0:1}"
+    if [[ "$e" == "~" ]]; then
+      shrinked="${e}"
+      continue
+    fi
+    if [[ -z ${shrinked} ]]; then
+      shrinked="/${e}"
+      continue
+    fi
+    if (( level > 0 )); then
+      #shrinked="${shrinked}/${PROMPT_PALETTE[path.shrinked]}${e:0:1}${PROMPT_PALETTE[path]}"
+      shrinked="${shrinked}/${e:0:1}"
       level=$(( level - 1 ))
     else
-      #shrinked="${shrinked}${PROMPT_PALETTE[path]}${e}"
-      shrinked="${shrinked}${e}"
+      #shrinked="${shrinked}/${PROMPT_PALETTE[path]}${e}"
+      shrinked="${shrinked}/${e}"
     fi
   done
   echo "${shrinked}"
@@ -152,10 +160,10 @@ set_current_path() {
 set_shrink_path() {
   local width_budget="$1"
   LC_CTYPE=ja_JP.UTF-8 local current_path=${(%):-%~}
-  local p=""
-  local l=10000
+  local p=${prompts[path]}
+  local l=${prompts_len[path]}
   local level=0
-  local depth=$(echo $current_path | awk '{count += (split($0, a, "/") - 1)} END{print count}')
+  local depth=$(awk '{count += (split($0, a, "/") - 1)} END{print count}' <<< $current_path)
   while (( level < depth - 2 )) && (( l > width_budget )); do
     shrinked="$(shrink_path ${current_path} $level)"
     p=" ${PROMPT_PALETTE[conj]}in ${PROMPT_PALETTE[path]}${shrinked}"
@@ -227,13 +235,13 @@ set_venv_info() {
 
 mask_ip() {
   local rawip="$1"
-  [[ ${rawip} =~ '\.' ]] && echo "***.$(echo ${rawip} | awk -F'.' '{print $NF}')"
-  [[ ${rawip} =~ ':' ]] && echo "****:$(echo ${rawip} | awk -F':' '{print $NF}')"
+  [[ ${rawip} =~ '\.' ]] && echo "***.$(awk -F'.' '{print $NF}' <<< ${rawip})"
+  [[ ${rawip} =~ ':' ]] && echo "****:$(awk -F':' '{print $NF}' <<< ${rawip})"
 }
 
 
 set_via_ssh_info() {
-  local srcip=$(echo ${SSH_CLIENT} | awk '{print $1}')
+  local srcip=$(awk '{print $1}' <<< ${SSH_CLIENT})
   if [[ -n ${srcip} ]]; then
     local maskedip=$(mask_ip ${srcip})
     prompts[ssh.via]=" ${PROMPT_PALETTE[conj]}via ${PROMPT_PALETTE[ssh.via]}${maskedip} (SSH)${PROMPT_PALETTE[normal]}"
