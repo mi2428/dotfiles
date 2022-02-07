@@ -15,25 +15,27 @@ typeset -g KAWAII_EMOJI=(
 
 
 typeset -gA PROMPT_PALETTE=(
-  host          '%b%F{157}'
-  user          '%b%F{253}'
-  path          '%B%F{229}'
-  venv          '%b%F{081}'
-  ssh.via       '%b%F{222}'
-  ssh.agent     '%b%F{081}'
-  time          '%b%F{247}'
-  elapsed       '%b%F{222}'
-  exit.mark     '%b%F{246}'
-  exit.code     '%B%F{203}'
-  git.commited  '%b%F{002}'
-  git.staged    '%b%F{226}'
-  git.modified  '%b%F{009}'
-  git.untracked '%b%F{136}'
-  conj          '%b%F{102}'
-  typing        '%b%F{252}'
-  normal        '%b%F{252}'
-  success       '%b%F{013}'
-  error         '%b%F{203}'
+  host          '%b%u%F{157}'
+  user          '%b%u%F{253}'
+  path          '%B%u%F{229}'
+  path.shrinked '%B%U%F{229}'
+  venv          '%b%u%F{081}'
+  ssh.via       '%b%u%F{222}'
+  ssh.agent     '%b%u%F{081}'
+  time          '%b%u%F{247}'
+  elapsed       '%b%u%F{222}'
+  exit.mark     '%b%u%F{246}'
+  exit.code     '%B%u%F{203}'
+  git.commited  '%b%u%F{002}'
+  git.staged    '%b%u%F{226}'
+  git.modified  '%b%u%F{009}'
+  git.untracked '%b%u%F{136}'
+  conj          '%b%u%F{102}'
+  typing        '%b%u%F{252}'
+  normal        '%b%u%F{252}'
+  underline     '%b%U%F{252}'
+  success       '%b%u%F{013}'
+  error         '%b%u%F{203}'
   reset         '%{\e[00m%}'
 )
 
@@ -116,10 +118,52 @@ calc_path_length() {
 }
 
 
+shrink_path() {
+  local fullpath="$1"
+  local level="$2"
+  local elements
+  local shrinked=""
+
+  IFS='/' read -rA elements <<< "${fullpath}"
+  for e in "${elements[@]}"; do
+    if [[ -n ${shrinked} ]]; then
+      shrinked="${shrinked}/"
+    fi
+    if (( level > 0 )) && [[ "${e}" != "~" ]]; then
+      #shrinked="${shrinked}${PROMPT_PALETTE[path.shrinked]}${e:0:1}${PROMPT_PALETTE[path]}"
+      shrinked="${shrinked}${e:0:1}"
+      level=$(( level - 1 ))
+    else
+      #shrinked="${shrinked}${PROMPT_PALETTE[path]}${e}"
+      shrinked="${shrinked}${e}"
+    fi
+  done
+  echo "${shrinked}"
+}
+
+
 set_current_path() {
   LC_CTYPE=ja_JP.UTF-8 local current_path=${(%):-%~}
   prompts[path]=" ${PROMPT_PALETTE[conj]}in ${PROMPT_PALETTE[path]}${current_path}"
-  prompts_len[path]=$(( $(calc_path_length ${current_path}) + 4 ))
+  prompts_len[path]=$(( $(calc_path_length "$current_path") + 4 ))
+}
+
+
+set_shrink_path() {
+  local width_budget="$1"
+  LC_CTYPE=ja_JP.UTF-8 local current_path=${(%):-%~}
+  local p=""
+  local l=10000
+  local level=0
+  local depth=$(echo $current_path | awk '{count += (split($0, a, "/") - 1)} END{print count}')
+  while (( level < depth - 2 )) && (( l > width_budget )); do
+    shrinked="$(shrink_path ${current_path} $level)"
+    p=" ${PROMPT_PALETTE[conj]}in ${PROMPT_PALETTE[path]}${shrinked}"
+    l=$(( $(calc_path_length ${shrinked}) + 4 ))
+    level=$(( level + 1 ))
+  done
+  prompts[path]="$p"
+  prompts_len[path]="$l"
 }
 
 
@@ -232,13 +276,20 @@ set_typing_pointer() {
 
 main_prompt() {
   local width=$(tput cols)
+  local prompt_len_wo_path=$(( prompts_len[host] + prompts_len[git] + prompts_len[ssh.agent] + prompts_len[ssh.via] ))
+  local prompt_len_wo_path=$(( prompt_len_wo_path + prompts_len[time] + prompts_len[elapsed] ))
+  local path_len_budget="$(( width - prompt_len_wo_path - 2))"
+
+  set_shrink_path ${path_len_budget}
+
   local corner_top="${prompts[margin]}${PROMPT_PALETTE[normal]}${PROMPT_SYMBOL[corner.top]}"
   local corner_bottom="${PROMPT_PALETTE[reset]}${PROMPT_PALETTE[normal]}${PROMPT_SYMBOL[corner.bottom]}"
   local left_part="${corner_top}${prompts[host]}${prompts[path]}${prompts[git]}${prompts[ssh.agent]}${prompts[ssh.via]}"
   local right_part="${prompts[time]}${prompts[elapsed]}"
-  local prompt_len=$(( prompts_len[host] + prompts_len[path] + prompts_len[git] + prompts_len[ssh.agent] + prompts_len[ssh.via] ))
-  local prompt_len=$(( prompt_len + prompts_len[time] + prompts_len[elapsed] ))
+  local prompt_len=$(( prompt_len_wo_path + prompts_len[path] ))
   local padding="$(( width - prompt_len - 2))"
+
+  echo $prompt_len $padding
   if (( padding > 0 )); then
     echo "${left_part}${(r:${padding}:)""}${right_part}"
   else
