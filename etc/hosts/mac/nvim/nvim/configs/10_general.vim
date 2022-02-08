@@ -113,6 +113,11 @@ Plug 'Glench/Vim-Jinja2-Syntax'
 "" fzf is a general-purpose command-line fuzzy finder.
 "" https://github.com/junegunn/fzf
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
+Plug 'junegunn/fzf.vim'
+
+"" Highlight columns in CSV and TSV files and run queries in SQL-like language
+"" https://github.com/mechatroner/rainbow_csv
+Plug 'mechatroner/rainbow_csv'
 
 call plug#end()
 
