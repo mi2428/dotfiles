@@ -136,7 +136,7 @@ if [[ -n ${SSH_AGENT_PID} ]] && ! ssh-add -l 1> /dev/null; then
 fi
 
 
-REPORTTIME=30
+REPORTTIME=300
 TIMEFMT='JOB:  %J
 TIME: %E (user: %U, kernel: %S)
 CPU:  %P'
@@ -145,10 +145,11 @@ CPU:  %P'
 source /opt/homebrew/opt/fzf/shell/completion.zsh
 source /opt/homebrew/opt/fzf/shell/key-bindings.zsh
 export FZF_COMPLETION_TRIGGER='**'
-export FZF_COMPLETION_OPTS='--border --info=inline'
-export FZF_DEFAULT_OPTS='--height 20% --reverse --border'
+export FZF_DEFAULT_COMMAND="fd"
+export FZF_DEFAULT_OPTS='--height 60% --border --inline-info --preview-window=right:60%:wrap'
+export FZF_COMPLETION_OPTS="${FZF_DEFAULT_OPTS}"
 export FZF_TMUX=1
-export FZF_TMUX_HEIGHT=12
+export FZF_TMUX_HEIGHT=20
 
 # Use fd (https://github.com/sharkdp/fd) instead of the default find
 # command for listing path candidates.
@@ -171,7 +172,13 @@ _fzf_comprun() {
   shift
 
   case "$command" in
-    cd)           fzf "$@" --preview 'tree -C {} | head -200' ;;
+    cd)           fzf "$@" --preview 'tree -C {} | head -L 3 -200' ;;
+    vi|vim|nvim)  fzf "$@" --preview '[[ $(file --mime {}) =~ directory ]] \
+                                      && tree -L 3 -C {} | head -200 \
+                                      || bat --style=numbers --color=always --line-range :500 {}' ;;
+    cot|code)     fzf "$@" --preview '[[ $(file --mime {}) =~ directory ]] \
+                                      && tree -L 3 -C {} | head -200 \
+                                      || bat --style=numbers --color=always --line-range :500 {}' ;;
     export|unset) fzf "$@" --preview "eval 'echo \$'{}" ;;
     ssh)          fzf "$@" --preview 'dig {}' ;;
     *)            fzf "$@" ;;
