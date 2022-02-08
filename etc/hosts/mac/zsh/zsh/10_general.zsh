@@ -172,7 +172,7 @@ _fzf_comprun() {
   shift
 
   case "$command" in
-    cd|pushd)     fzf "$@" --preview 'tree -C {} | head -L 3 -200' ;;
+    cd|pushd)     fzf "$@" --preview 'tree -L 3 -C {} | head -200' ;;
     vi|vim|nvim)  fzf "$@" --preview '[[ $(file --mime {}) =~ directory ]] \
                                       && tree -L 3 -C {} | head -200 \
                                       || bat --style=numbers --color=always --line-range :500 {}' ;;
