@@ -16,3 +16,4 @@ brew install pv
 brew install deno
 brew install coreutils
 sudo ln -s /usr/local/bin/gtimeout /usr/local/bin/timeout
+brew install expect
