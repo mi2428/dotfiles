@@ -106,9 +106,13 @@ Plug 'Shougo/ddc-sorter_rank'
 "" https://github.com/lervag/vimtex
 Plug 'lervag/vimtex'
 
-"" This is the latest version of the Jinja2 syntax file for vim with the ability to detect either HTML or Jinja.
+"" the latest version of the Jinja2 syntax file for vim with the ability to detect either HTML or Jinja.
 "" https://github.com/Glench/Vim-Jinja2-Syntax
 Plug 'Glench/Vim-Jinja2-Syntax'
+
+"" fzf is a general-purpose command-line fuzzy finder.
+"" https://github.com/junegunn/fzf
+Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
 
 call plug#end()
 
