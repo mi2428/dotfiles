@@ -84,13 +84,29 @@ xx() {
 }
 
 
-function gadd() {
+gadd() {
   local selected
   selected=$(unbuffer git status -s | fzf -m --ansi --preview="echo {} | awk '{print \$2}' | xargs git diff --color" | awk '{print $2}')
   if [[ -n "${selected}" ]]; then
     selected=$(tr '\n' ' ' <<< "${selected}")
     git add ${selected}
     echo "Completed: git add ${selected}"
+  fi
+}
+
+
+fe() {
+  local files
+  IFS=$'\n' files=($(fzf-tmux --query="$1" --multi --select-1 --exit-0))
+  [[ -n "$files" ]] && ${EDITOR:-vim} "${files[@]}"
+}
+
+
+fkill() {
+  local pid
+  pid=$(ps -ef | sed 1d | fzf -m | awk '{print $2}')
+  if [ "x$pid" != "x" ]; then
+    echo $pid | xargs kill -${1:-9}
   fi
 }
 
