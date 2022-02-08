@@ -146,7 +146,7 @@ source /opt/homebrew/opt/fzf/shell/completion.zsh
 source /opt/homebrew/opt/fzf/shell/key-bindings.zsh
 export FZF_COMPLETION_TRIGGER='**'
 export FZF_DEFAULT_COMMAND="fd"
-export FZF_DEFAULT_OPTS='--height 60% --border --inline-info --preview-window=right:60%:wrap'
+export FZF_DEFAULT_OPTS='--height 60% --border --inline-info --preview-window=right:60%:wrap --color=fg:252,fg+:233,bg+:002,preview-fg:252,prompt:226,pointer:007,info:247,spinner:011,header:009,gutter:237,hl:220,hl+:231'
 export FZF_COMPLETION_OPTS="${FZF_DEFAULT_OPTS}"
 export FZF_TMUX=1
 export FZF_TMUX_HEIGHT=20
@@ -172,7 +172,7 @@ _fzf_comprun() {
   shift
 
   case "$command" in
-    cd)           fzf "$@" --preview 'tree -C {} | head -L 3 -200' ;;
+    cd|pushd)     fzf "$@" --preview 'tree -C {} | head -L 3 -200' ;;
     vi|vim|nvim)  fzf "$@" --preview '[[ $(file --mime {}) =~ directory ]] \
                                       && tree -L 3 -C {} | head -200 \
                                       || bat --style=numbers --color=always --line-range :500 {}' ;;
@@ -180,7 +180,7 @@ _fzf_comprun() {
                                       && tree -L 3 -C {} | head -200 \
                                       || bat --style=numbers --color=always --line-range :500 {}' ;;
     export|unset) fzf "$@" --preview "eval 'echo \$'{}" ;;
-    ssh)          fzf "$@" --preview 'dig {}' ;;
+    ssh)          fzf "$@" --preview 'curl -s https://ipinfo.io/{} | bat -l json --color=always' ;;
     *)            fzf "$@" ;;
   esac
 }
