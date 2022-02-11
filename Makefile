@@ -20,20 +20,24 @@ ubuntu-server: install.ubuntu link.linux
 
 .PHONY: install.arch
 install.arch:
-	sudo pacman -S - < $(pkgdir)/pacman.txt
-	sudo -H pip3 install --upgrade -r $(pkgdir)/python3-pip.txt
+	xargs sudo pacman -S < $(pkgdir)/pacman.txt
+	xargs sudo -H pip3 install --upgrade < $(pkgdir)/python3-pip.txt
+	xargs sudo -H cargo install < $(pkgdir)/cargo.txt
 
 .PHONY: install.mac
 install.mac:
 	curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash
 	chmod -R go-w /opt/homebrew/share
 	/opt/homebrew/brew bundle --file=/dev/stdin < $(pkgdir)/Brewfile
-	sudo -H pip3 install --upgrade -r $(pkgdir)/python3-pip.txt
 	sudo ln -s /usr/local/bin/gtimeout /usr/local/bin/timeout
+	xargs sudo -H pip3 install --upgrade < $(pkgdir)/python3-pip.txt
+	xargs sudo -H cargo install < $(pkgdir)/cargo.txt
 
 .PHONY: install.ubuntu
 install.ubuntu:
-	sudo -H pip3 install --upgrade -r $(pkgdir)/python3-pip.txt
+	xargs sudo apt install -y --no-install-recommends < $(pkgdir)/apt.txt
+	xargs sudo -H pip3 install --upgrade < $(pkgdir)/python3-pip.txt
+	xargs sudo -H cargo install < $(pkgdir)/cargo.txt
 
 
 .PHONY: link.linux
