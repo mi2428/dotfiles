@@ -46,3 +46,14 @@
 % make install.ubuntu
 % make link.linux
 ```
+
+## Hints
+
+### Import GPG key
+
+```
+% gpg --import mi2428.public.key
+% gpg --import mi2428.secret.key
+% gpg --edit-key E8D3009C6341BDEAF038009685AB6867E2147DDA trust quit
+% gpgconf --kill gpg-agent
+```
