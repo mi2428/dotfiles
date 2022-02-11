@@ -17,14 +17,19 @@ ubuntu: install.ubuntu link.linux-desktop
 .PHONY: ubuntu-server
 ubuntu-server: install.ubuntu link.linux
 
+.PHONY: install.common
+install.common:
+	@sh -c 'curl -fLo "${XDG_DATA_HOME:-$HOME/.local/share}"/nvim/site/autoload/plug.vim --create-dirs \
+		https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
+
 .PHONY: install.arch
-install.arch:
+install.arch: install.common
 	@xargs sudo pacman -S < $(pkgdir)/pacman.txt
 	@xargs pip3 install --upgrade < $(pkgdir)/python3-pip.txt
 	@xargs cargo install < $(pkgdir)/cargo.txt
 
 .PHONY: install.macos
-install.macos:
+install.macos: install.common
 	@chmod -R go-w /opt/homebrew/share
 	@brew bundle --file=/dev/stdin < $(pkgdir)/Brewfile
 	@sudo ln -sf /usr/local/bin/gtimeout /usr/local/bin/timeout
@@ -32,7 +37,7 @@ install.macos:
 	@xargs cargo install < $(pkgdir)/cargo.txt
 
 .PHONY: install.ubuntu
-install.ubuntu:
+install.ubuntu: install.common
 	@xargs sudo apt-get install -y --no-install-recommends < $(pkgdir)/apt.txt
 	@xargs pip3 install --upgrade < $(pkgdir)/python3-pip.txt
 	@xargs cargo install < $(pkgdir)/cargo.txt
