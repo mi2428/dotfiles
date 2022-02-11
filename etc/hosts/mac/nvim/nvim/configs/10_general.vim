@@ -9,6 +9,7 @@ set fileencoding=utf-8
 set ttimeout
 set ttimeoutlen=0
 set history=1000
+set clipboard+=unnamedplus
 
 set number
 set relativenumber
