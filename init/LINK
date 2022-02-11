@@ -72,9 +72,9 @@ while getopts dt: OPT; do
   "t")
     case "$OPTARG" in
     "basic")
-      basic_install $dry ;;
+      basic_setup $dry ;;
     *)
-      basic_install $dry && patch_install "$OPTARG" $dry ;;
+      basic_setup $dry && patch_setup "$OPTARG" $dry ;;
     esac
     ;;
   esac
