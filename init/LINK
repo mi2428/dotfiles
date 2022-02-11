@@ -1,0 +1,82 @@
+#!/bin/bash
+set -e
+cd $(dirname $0)
+declare -r DOTBASE=$(cd "../"; pwd)
+
+[[ -z "$XDG_CONFIG_HOME" ]] && \
+declare -r XDGBASE="$HOME/.config" || declare -r XDGBASE=$XDG_CONFIG_HOME
+
+create_link() {
+  local pkg="$1"
+  local item="$2"
+  local xdg_option="$3"
+  local base="$4/$pkg"
+  local dry="$5"
+  case $xdg_option in
+  "true")
+    mkdir -p "$XDGBASE/$pkg"
+    echo "ln -snf $base/$item $XDGBASE/$pkg/$item"
+    [[ $dry == "false" ]] && ln -snf "$base/$item" "$XDGBASE/$pkg/$item"
+    ;;
+  "false")
+    if [[ -d "$base/$item" ]]; then
+      for subitem in $(cd "$base/$item"; find . -maxdepth 1 -not -name "."); do
+        local subitem=$(basename $subitem)
+        echo "ln -snf $base/$item/$subitem $HOME/.$item/$subitem"
+        [[ $dry == "false" ]] && mkdir -p "$HOME/.$item" && ln -snf "$base/$item/$subitem" "$HOME/.$item/$subitem"
+      done
+    elif [[ -f "$base/$item" ]]; then
+      echo "ln -snf $base/$item $HOME/.$item"
+      [[ $dry == "false" ]] && ln -snf "$base/$item" "$HOME/.$item"
+    fi
+    ;;
+  esac
+}
+
+linker() {
+  local pkgbase=$1
+  local excluded=$2
+  local dry=$3
+  for pkg in $(cd "$pkgbase"; find . -maxdepth 1 -type d -not -name "$excluded" -not -name "."); do
+    local pkg=$(basename $pkg)
+    local xdg_option="false"
+    [[ "$pkg" == "compton" ]]   && xdg_option="true"
+    [[ "$pkg" == "dunst" ]]     && xdg_option="true"
+    [[ "$pkg" == "gtk-3.0" ]]   && xdg_option="true"
+    [[ "$pkg" == "karabiner" ]] && xdg_option="true"
+    [[ "$pkg" == "nvim" ]]      && xdg_option="true"
+    [[ "$pkg" == "psd" ]]       && xdg_option="true"
+    [[ "$pkg" == "rofi" ]]      && xdg_option="true"
+    [[ "$pkg" == "systemd" ]]   && xdg_option="true"
+    for item in $(cd "$pkgbase/$pkg"; find . -maxdepth 1 -not -name "."); do
+      create_link $pkg $(basename $item) $xdg_option $pkgbase $dry
+    done
+  done
+}
+
+basic_setup() {
+  local dry="$1"
+  linker "$DOTBASE/etc" "hosts" $dry
+}
+
+patch_setup() {
+  local patchtype="$1"
+  local dry="$2"
+  linker "$DOTBASE/etc/hosts/$patchtype" "." $dry
+}
+
+declare dry="false"
+while getopts dt: OPT; do
+  case $OPT in
+  "d")
+    dry="true" ;;
+  "t")
+    case "$OPTARG" in
+    "basic")
+      basic_setup $dry ;;
+    *)
+      basic_setup $dry && patch_setup "$OPTARG" $dry ;;
+    esac
+    ;;
+  esac
+done

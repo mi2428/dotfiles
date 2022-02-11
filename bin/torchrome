@@ -1,4 +1,0 @@
-#!/bin/bash
-
-#/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --incognito --proxy-server="socks://127.0.0.1:9050" https://duckduckgo.com/
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --incognito --proxy-server="socks://127.0.0.1:9050" http://ichidanv34wrx7m7.onion/

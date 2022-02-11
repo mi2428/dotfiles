@@ -1,2 +1,3 @@
-set runtimepath+=$HOME/.config/nvim/
-runtime! conf.d/*.vim
+for f in glob('$HOME/.config/nvim/configs/*.vim', 0, 1)
+  execute 'source' f
+endfor
