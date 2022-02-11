@@ -17,7 +17,6 @@ ubuntu: install.ubuntu link.linux-desktop
 .PHONY: ubuntu-server
 ubuntu-server: install.ubuntu link.linux
 
-
 .PHONY: install.arch
 install.arch:
 	@xargs sudo pacman -S < $(pkgdir)/pacman.txt
@@ -38,7 +37,6 @@ install.ubuntu:
 	@xargs pip3 install --upgrade < $(pkgdir)/python3-pip.txt
 	@xargs cargo install < $(pkgdir)/cargo.txt
 
-
 .PHONY: link.linux
 link.linux:
 	@$(linker) -t basic
@@ -50,13 +48,6 @@ link.linux-desktop:
 .PHONY: link.macos
 link.macos:
 	@$(linker) -t macos
-
-
-.PHONY: update
-update:
-	@which brew 1> /dev/null 2>&1 && brew update && brew upgrade -y || true
-	@xargs pip3 install --upgrade < $(pkgdir)/python3-pip.txt
-
 
 .PHONY: unlink
 unlink:
