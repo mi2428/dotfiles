@@ -13,9 +13,9 @@ unlink() {
 
 declare dry="false"
 while getopts d OPT; do
-    case $OPT in
-    "d")
-        dry="true" ;;
-    esac
+  case $OPT in
+  "d")
+    dry="true" ;;
+  esac
 done
 unlink $dry
