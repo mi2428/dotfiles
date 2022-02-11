@@ -15,19 +15,19 @@ create_link() {
   case $xdg_option in
   "true")
     mkdir -p "$XDGBASE/$pkg"
-    [[ $dry == "true" ]] && echo "ln -snf $base/$item $XDGBASE/$pkg/$item" || \
-    ln -snf "$base/$item" "$XDGBASE/$pkg/$item"
+    echo "ln -snf $base/$item $XDGBASE/$pkg/$item"
+    [[ $dry == "false" ]] && ln -snf "$base/$item" "$XDGBASE/$pkg/$item"
     ;;
   "false")
     if [[ -d "$base/$item" ]]; then
       for subitem in $(cd "$base/$item"; find . -maxdepth 1 -not -name "."); do
         local subitem=$(basename $subitem)
-        [[ $dry == "true" ]] && echo "ln -snf $base/$item/$subitem $HOME/.$item/$subitem" || \
-        mkdir -p "$HOME/.$item" && ln -snf "$base/$item/$subitem" "$HOME/.$item/$subitem"
+        echo "ln -snf $base/$item/$subitem $HOME/.$item/$subitem"
+        [[ $dry == "false" ]] && mkdir -p "$HOME/.$item" && ln -snf "$base/$item/$subitem" "$HOME/.$item/$subitem"
       done
     elif [[ -f "$base/$item" ]]; then
-      [[ $dry == "true" ]] && echo "ln -snf $base/$item $HOME/.$item" || \
-      ln -snf "$base/$item" "$HOME/.$item"
+      echo "ln -snf $base/$item $HOME/.$item"
+      [[ $dry == "false" ]] && ln -snf "$base/$item" "$HOME/.$item"
     fi
     ;;
   esac

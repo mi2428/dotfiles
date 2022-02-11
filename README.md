@@ -7,6 +7,7 @@
 * https://www.nerdfonts.com/
 
 ```
+% bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 % sudo softwareupdate -i -a
 % xcode-select --install
 ```

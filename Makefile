@@ -9,7 +9,7 @@ default: ubuntu-server
 archlinux: install.arch link.linux-desktop
 
 .PHONY: macos
-macos: install.mac link.mac
+macos: install.macos link.macos
 
 .PHONY: ubuntu
 ubuntu: install.ubuntu link.linux-desktop
@@ -20,46 +20,45 @@ ubuntu-server: install.ubuntu link.linux
 
 .PHONY: install.arch
 install.arch:
-	xargs sudo pacman -S < $(pkgdir)/pacman.txt
-	xargs sudo -H pip3 install --upgrade < $(pkgdir)/python3-pip.txt
-	xargs sudo -H cargo install < $(pkgdir)/cargo.txt
+	@xargs sudo pacman -S < $(pkgdir)/pacman.txt
+	@xargs sudo -H pip3 install --upgrade < $(pkgdir)/python3-pip.txt
+	@xargs sudo -H cargo install < $(pkgdir)/cargo.txt
 
-.PHONY: install.mac
-install.mac:
-	curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash
+.PHONY: install.macos
+install.macos:
 	chmod -R go-w /opt/homebrew/share
-	/opt/homebrew/brew bundle --file=/dev/stdin < $(pkgdir)/Brewfile
+	brew bundle --file=/dev/stdin < $(pkgdir)/Brewfile
 	sudo ln -s /usr/local/bin/gtimeout /usr/local/bin/timeout
 	xargs sudo -H pip3 install --upgrade < $(pkgdir)/python3-pip.txt
 	xargs sudo -H cargo install < $(pkgdir)/cargo.txt
 
 .PHONY: install.ubuntu
 install.ubuntu:
-	xargs sudo apt-get install -y --no-install-recommends < $(pkgdir)/apt.txt
-	xargs sudo -H pip3 install --upgrade < $(pkgdir)/python3-pip.txt
-	xargs sudo -H cargo install < $(pkgdir)/cargo.txt
+	@xargs sudo apt-get install -y --no-install-recommends < $(pkgdir)/apt.txt
+	@xargs sudo -H pip3 install --upgrade < $(pkgdir)/python3-pip.txt
+	@xargs sudo -H cargo install < $(pkgdir)/cargo.txt
 
 
 .PHONY: link.linux
 link.linux:
-	$(linker) -t basic
+	@$(linker) -t basic
 
 .PHONY: link.linux-desktop
 link.linux-desktop:
-	$(linker) -t linux-desktop
+	@$(linker) -t linux-desktop
 
 .PHONY: link.macos
 link.macos:
-	$(linker) -t macos
+	@$(linker) -t macos
 
 
 .PHONY: update
 update:
-	which brew && brew update && brew upgrade -y || true
-	xargs sudo -H pip3 install --upgrade < $(pkgdir)/python3-pip.txt
+	@which brew 1> /dev/null 2>&1 && brew update && brew upgrade -y || true
+	@xargs sudo -H pip3 install --upgrade < $(pkgdir)/python3-pip.txt
 
 
 .PHONY: unlink
 unlink:
-	$(unlinker)
+	@$(unlinker)
 
