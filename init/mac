@@ -1,0 +1,2 @@
+chmod -R go-w /opt/homebrew/share
+sudo ln -s /usr/local/bin/gtimeout /usr/local/bin/timeout
