@@ -35,7 +35,7 @@ install.mac:
 
 .PHONY: install.ubuntu
 install.ubuntu:
-	xargs sudo apt install -y --no-install-recommends < $(pkgdir)/apt.txt
+	xargs sudo apt-get install -y --no-install-recommends < $(pkgdir)/apt.txt
 	xargs sudo -H pip3 install --upgrade < $(pkgdir)/python3-pip.txt
 	xargs sudo -H cargo install < $(pkgdir)/cargo.txt
 
@@ -55,7 +55,11 @@ link.macos:
 
 .PHONY: update
 update:
-	brew update && brew upgrade -y || true
-	pip3 update
-	cargo update
+	which brew && brew update && brew upgrade -y || true
+	xargs sudo -H pip3 install --upgrade < $(pkgdir)/python3-pip.txt
+
+
+.PHONY: unlink
+unlink:
+	$(unlinker)
 
