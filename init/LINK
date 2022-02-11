@@ -45,6 +45,7 @@ linker() {
     [[ "$pkg" == "gtk-3.0" ]]   && xdg_option="true"
     [[ "$pkg" == "karabiner" ]] && xdg_option="true"
     [[ "$pkg" == "nvim" ]]      && xdg_option="true"
+    [[ "$pkg" == "psd" ]]       && xdg_option="true"
     [[ "$pkg" == "rofi" ]]      && xdg_option="true"
     [[ "$pkg" == "systemd" ]]   && xdg_option="true"
     for item in $(cd "$pkgbase/$pkg"; find . -maxdepth 1 -not -name "."); do
