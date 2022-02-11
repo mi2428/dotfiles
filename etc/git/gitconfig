@@ -17,15 +17,8 @@
 [credential]
   helper = cache --timeout=86400
 
-[gpg]
-  program = gpg
-
 [init]
   defaultBranch = main
-
-[commit]
-  gpgsign = true
-  signing = true
 
 [pull]
   ff     = only
