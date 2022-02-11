@@ -27,10 +27,13 @@ export HISTFILE=$HOME/.zhistory
 
 export TERM=xterm-256color
 #export TERM=screen-256color
+export HGENCODING='utf-8'
+export GPG_TTY=$TTY
 
 export LANG=en_US.UTF-8
-export LC_CTYPE=en_US.UTF-8
-export LC_ALL=en_US.UTF-8
+export LANGUAGE=$LANG
+export LC_CTYPE=$LANG
+export LC_ALL=$LANG
 export LC_TERMINAL=iTerm2
 
 case $(arch) in
@@ -117,10 +120,9 @@ if [[ -d ~/.ssh ]]; then
 fi
 
 
-export GPG_TTY=$TTY
-
-
-export EDITOR="vi"
+export PAGER=less
+export LESS='-x4 -XMiR'
+export EDITOR="vim"
 bindkey -e  # set explicitly, or zsh use vi-mode binding by default
 bindkey '^O' autosuggest-accept
 
