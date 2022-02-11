@@ -2,6 +2,10 @@
 
 ## Installation
 
+* https://fonts.google.com/specimen/Ubuntu
+* https://fonts.google.com/specimen/Ubuntu+Mono
+* https://www.nerdfonts.com/
+
 ```
 % sudo softwareupdate -i -a
 % xcode-select --install
