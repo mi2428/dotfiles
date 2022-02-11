@@ -49,6 +49,8 @@
   l       = log --decorate --oneline
   lg      = log --decorate --oneline --stat --graph
   ls      = log --decorate --oneline --stat
+  pl      = pull
+  ps      = push
   sh      = show
   so      = remote show origin
   ss      = status -s
