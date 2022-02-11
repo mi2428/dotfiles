@@ -117,6 +117,9 @@ if [[ -d ~/.ssh ]]; then
 fi
 
 
+export GPG_TTY=$TTY
+
+
 export EDITOR="vi"
 bindkey -e  # set explicitly, or zsh use vi-mode binding by default
 bindkey '^O' autosuggest-accept
