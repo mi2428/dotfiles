@@ -125,19 +125,12 @@ if [[ -d ~/.ssh ]]; then
 fi
 
 
+export WORDCHARS='*?_-.[]~=&;!#$%^(){}<>'
 export PAGER=less
-export LESS='-x4 -XMiR'
+export LESS='-g -i -M -R -S -W -z-4 -x4'
 export EDITOR="vim"
 bindkey -e  # set explicitly, or zsh use vi-mode binding by default
 bindkey '^O' autosuggest-accept
-
-
-backward-kill-dir() {
-  local WORDCHARS=${WORDCHARS/\/}
-  zle backward-kill-word
-}
-zle -N backward-kill-dir
-bindkey '^W' backward-kill-dir  # remap
 
 
 if [[ -n ${SSH_AGENT_PID} ]] && ! ssh-add -l 1> /dev/null; then

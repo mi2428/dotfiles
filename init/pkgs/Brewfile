@@ -1,5 +1,6 @@
 tap "homebrew/cask-fonts"
 
+brew "ag"
 brew "bat"
 brew "cargo"
 brew "coreutils"

@@ -12,6 +12,11 @@ mcd() {
 }
 
 
+get() {
+  mv -i $@ .
+}
+
+
 man() {
   # env PAGER="most -s" man $@
   env \
@@ -196,6 +201,11 @@ fi
 
 if whence -p trash 1> /dev/null; then
   alias rm='trash'
+fi
+
+
+if whence -p ag 1> /dev/null; then
+  alias grep="ag"
 fi
 
 

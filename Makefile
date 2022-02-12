@@ -1,5 +1,8 @@
-linker := $(CURDIR)/init/LINK
-pkgdir := $(CURDIR)/init/pkgs
+LINKER := $(CURDIR)/init/LINK
+PKGDIR := $(CURDIR)/init/pkgs
+DOCKER_REPO := mi2428/dotfiles
+DOCKER_REV := latest
+DOCKER_TAG := $(DOCKER_REV)/$(DOCKER_TAG)
 
 .PHONY: default
 default: ubuntu-server
@@ -31,24 +34,24 @@ preinstall.common:
 
 .PHONY: pkginstall.archlinux
 pkginstall.archlinux:
-	@xargs sudo pacman -S < $(pkgdir)/pacman.txt
+	@xargs sudo pacman -S < $(PKGDIR)/pacman.txt
 
 .PHONY: pkginstall.ubuntu
 pkginstall.ubuntu:
-	@xargs sudo apt-get install -y --no-install-recommends < $(pkgdir)/apt.txt
+	@xargs sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends < $(PKGDIR)/apt.txt
 	@sudo ln -sf /usr/bin/batcat /usr/bin/bat || true
 
 .PHONY: pkginstall.macos
 pkginstall.macos:
 	@chmod -R go-w /opt/homebrew/share
-	@brew bundle --file=/dev/stdin < $(pkgdir)/Brewfile
+	@brew bundle --file=/dev/stdin < $(PKGDIR)/Brewfile
 	@sudo ln -sf /usr/local/bin/gtimeout /usr/local/bin/timeout
 
 .PHONY: postinstall.common
 postinstall.common:
 	@sh -c 'curl -fLo $(HOME)/.config/nvim/site/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
-	@xargs pip3 install --upgrade < $(pkgdir)/python3-pip.txt
-	@xargs cargo install < $(pkgdir)/cargo.txt
+	@xargs pip3 install --upgrade < $(PKGDIR)/python3-pip.txt
+	@xargs cargo install < $(PKGDIR)/cargo.txt
 
 .PHONY: postinstall.linux
 postinstall.linux:
@@ -60,17 +63,20 @@ postinstall.linux:
 
 .PHONY: link.linux
 link.linux:
-	@$(linker) --force
+	@$(LINKER) --force
 
 .PHONY: link.linux-desktop
 link.linux-desktop:
-	@$(linker) --patch linux-desktop --force
+	@$(LINKER) --patch linux-desktop --force
 
 .PHONY: link.macos
 link.macos:
-	@$(linker) --patch macos --force
+	@$(LINKER) --patch macos --force
 
 .PHONY: unlink
 unlink:
-	@$(linker) --unlink
+	@$(LINKER) --unlink
 
+.PHONY: docker
+docker:
+	@docker build -t $(DOCKER_TAG) .
