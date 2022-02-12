@@ -73,6 +73,7 @@ arm64*)
     /usr/local/bin
     /usr/local/sbin
     /Library/Apple/usr/bin
+    .
   )
   ;;
 esac
