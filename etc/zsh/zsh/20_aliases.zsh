@@ -188,6 +188,8 @@ alias mkd='mkdir -p'
 alias ssa='ssh-agent zsh'
 alias :::='tmuxinator'
 
+alias dorm='docker rm `docker ps -qa` 2>/dev/null'
+alias dormi='docker rmi `docker images --filter "dangling=true" -q`'
 alias egrep='egrep -n --color=auto'
 alias fgrep='fgrep -n --color=auto'
 alias free='free -h'
