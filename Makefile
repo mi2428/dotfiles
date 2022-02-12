@@ -35,6 +35,7 @@ pkginstall.archlinux: install.common
 .PHONY: pkginstall.ubuntu
 pkginstall.ubuntu: install.common
 	@xargs sudo apt-get install -y --no-install-recommends < $(pkgdir)/apt.txt
+	@sudo ln -sf /usr/bin/batcat /usr/bin/bat || true
 
 .PHONY: pkginstall.macos
 pkginstall.macos: install.common
@@ -44,14 +45,17 @@ pkginstall.macos: install.common
 
 .PHONY: postinstall.common
 postinstall.common:
-	@sh -c 'curl -fLo "${XDG_DATA_HOME:-$HOME/.local/share}"/nvim/site/autoload/plug.vim --create-dirs \
-		https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
+	@sh -c 'curl -fLo $(HOME)/.config/nvim/site/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
 	@xargs pip3 install --upgrade < $(pkgdir)/python3-pip.txt
 	@xargs cargo install < $(pkgdir)/cargo.txt
 
 .PHONY: postinstall.linux
 postinstall.linux:
 	@curl -fsSL https://deno.land/install.sh | sh
+	@mkdir -p $(HOME)/.local/share/zsh
+	@git clone --depth 1 https://github.com/zsh-users/zsh-syntax-highlighting $(HOME)/.local/share/zsh/zsh-syntax-highlighting
+	@git clone --depth 1 https://github.com/zsh-users/zsh-autosuggestions $(HOME)/.local/share/zsh/zsh-autosuggestions
+	@git clone --depth 1 https://github.com/zsh-users/zsh-completions $(HOME)/.local/share/zsh/zsh-completions
 
 .PHONY: link.linux
 link.linux:

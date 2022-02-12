@@ -1,0 +1,10 @@
+bat
+exa
+fzf
+grc
+hexyl
+pv
+ripgrep
+tmux
+tmuxinator
+zsh
