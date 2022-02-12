@@ -45,14 +45,14 @@ def get_symlinks(basedir, excludes=[]):
                 else:
                     dstpath = path.join(dstdir, f".{srcbase}")
 
-            links.append([srcpath, dstpath])
+            links.append([srcpath, dstdir, dstpath])
     return links
 
 
 def create_symlinks(basedir, excludes=[], force=False, dry=False):
     links = get_symlinks(basedir, excludes=excludes)
     for link in links:
-        srcpath, dstpath = link
+        srcpath, dstdir, dstpath = link
         print(f"ln -snf {srcpath} {dstpath}")
         if dry:
             continue
@@ -64,15 +64,33 @@ def create_symlinks(basedir, excludes=[], force=False, dry=False):
         symlink(srcpath, dstpath)
 
 
+def remove_symlinks(basedir, excludes=[], dry=False):
+    links = get_symlinks(basedir, excludes=excludes)
+    for link in links:
+        _, _, dstpath = link
+        print(f"unlink -f {dstpath}")
+        if dry:
+            continue
+        if path.exists(dstpath):
+            remove(dstpath)
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="create symbolic links to $HOME/dotfiles")
+    parser = argparse.ArgumentParser(description="create or remove symbolic links to $HOME/dotfiles")
     parser.add_argument("--patch", dest="patch", help="overwrite default configs", choices=get_avail_patches())
     parser.add_argument("--force", dest="force", help="force overwrite existing files", action="store_true")
+    parser.add_argument("--unlink", dest="unlink", help="unlink all symbolic links", action="store_true")
     parser.add_argument("--dry", dest="dryrun", help="show ln commands and exit (dryrun)", action="store_true")
     args = parser.parse_args()
 
-    create_symlinks(path.join(DOTFILES, "etc"), excludes=["hosts"], force=args.force, dry=args.dryrun)
-    if args.patch:
-        patchdir = path.join("etc", "hosts", args.patch)
-        create_symlinks(path.join(DOTFILES, patchdir), force=args.force, dry=args.dryrun)
+    if args.unlink:
+        remove_symlinks(path.join(DOTFILES, "etc"), dry=args.dryrun)
+        for patch in get_avail_patches():
+            patchdir = path.join("etc", "hosts", patch)
+            remove_symlinks(path.join(DOTFILES, patchdir), dry=args.dryrun)
+    else:
+        create_symlinks(path.join(DOTFILES, "etc"), excludes=["hosts"], force=args.force, dry=args.dryrun)
+        if args.patch:
+            patchdir = path.join("etc", "hosts", args.patch)
+            create_symlinks(path.join(DOTFILES, patchdir), force=True, dry=args.dryrun)
 
