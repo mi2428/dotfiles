@@ -1,21 +1,15 @@
 #!/bin/bash
 
-NICKNAME="$1"
 DOCKER_IMAGE="mi2428/dotfiles:latest"
 DOCKER_HOSTNAME="dotfiles"
-
-case $NICKNAME in
-ubuntu)
-  DOCKER_IMAGE="mi2428/ubuntu:latest"
-  DOCKER_HOSTNAME="ubuntu"
-  ;;
-esac
+WORKDIR="${1:-.}"
 
 docker run --rm -it \
   -w /work \
-  -v ${PWD}:/work \
+  -v $(cd $WORKDIR; pwd):/work \
   -e HOST_UID=$(id -u $USER) \
   -e HOST_GID=$(id -g $USER) \
+  --dns 9.9.9.9 \
   --hostname $DOCKER_HOSTNAME \
   --network host \
   $DOCKER_IMAGE
