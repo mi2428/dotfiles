@@ -2,7 +2,3 @@ source $HOME/.zsh/10_general.zsh
 source $HOME/.zsh/20_aliases.zsh
 source $HOME/.zsh/30_appearance.zsh
 source $HOME/.zsh/40_grc.zsh
-
-if [[ -f $HOME/.fzf.zsh ]]; then
-  source $HOME/.fzf.zsh
-fi
