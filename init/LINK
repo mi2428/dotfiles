@@ -12,13 +12,14 @@ XDG_SUPPORTED_PACKAGES = [
 ]
 
 
-def avail_patches():
+def get_avail_patches():
     hostsdir = path.join(CURDIR, "../etc/hosts")
     return listdir(hostsdir)
 
 
-def create_symlink(basedir, excludes=[], force=False, dry=False):
+def get_symlinks(basedir, excludes=[]):
     packages = [d for d in listdir(basedir) if d not in excludes]
+    links = []
 
     for package in packages:
         srcdir = path.join(basedir, package)
@@ -44,26 +45,34 @@ def create_symlink(basedir, excludes=[], force=False, dry=False):
                 else:
                     dstpath = path.join(dstdir, f".{srcbase}")
 
-            print(f"ln -snf {srcpath} {dstpath}")
-            if dry:
+            links.append([srcpath, dstpath])
+    return links
+
+
+def create_symlinks(basedir, excludes=[], force=False, dry=False):
+    links = get_symlinks(basedir, excludes=excludes)
+    for link in links:
+        srcpath, dstpath = link
+        print(f"ln -snf {srcpath} {dstpath}")
+        if dry:
+            continue
+        if path.exists(dstpath):
+            if not force:
                 continue
-            if path.exists(dstpath):
-                if not force:
-                    continue
-                remove(dstpath)
-            makedirs(dstdir, exist_ok=True)
-            symlink(srcpath, dstpath)
+            remove(dstpath)
+        makedirs(dstdir, exist_ok=True)
+        symlink(srcpath, dstpath)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="create symbolic links to $HOME/dotfiles")
-    parser.add_argument("--patch", dest="patch", help="overwrite default configs", choices=avail_patches())
+    parser.add_argument("--patch", dest="patch", help="overwrite default configs", choices=get_avail_patches())
     parser.add_argument("--force", dest="force", help="force overwrite existing files", action="store_true")
     parser.add_argument("--dry", dest="dryrun", help="show ln commands and exit (dryrun)", action="store_true")
     args = parser.parse_args()
 
-    create_symlink(path.join(DOTFILES, "etc"), excludes=["hosts"], force=args.force, dry=args.dryrun)
+    create_symlinks(path.join(DOTFILES, "etc"), excludes=["hosts"], force=args.force, dry=args.dryrun)
     if args.patch:
         patchdir = path.join("etc", "hosts", args.patch)
-        create_symlink(path.join(DOTFILES, patchdir), force=args.force, dry=args.dryrun)
+        create_symlinks(path.join(DOTFILES, patchdir), force=args.force, dry=args.dryrun)
 
