@@ -4,6 +4,7 @@ fzf
 grc
 pv
 python3-pip
+silversearcher-ag
 tmux
 tmuxinator
 unzip
