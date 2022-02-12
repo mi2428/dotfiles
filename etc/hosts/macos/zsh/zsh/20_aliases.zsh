@@ -116,6 +116,11 @@ fkill() {
 }
 
 
+dor() {
+  docker run -it $@ `docker images --format "{{.Repository}}:{{.Tag}}" --filter "dangling=false" | fzf`
+}
+
+
 colortest() {
   for c in {000..255}; do
     echo -n "\e[38;5;${c}m $c"

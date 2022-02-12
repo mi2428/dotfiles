@@ -39,4 +39,5 @@ RUN git clone --depth 1 https://github.com/junegunn/fzf.git .fzf \
  && ./.fzf/install --all \
  && echo 'source $HOME/.fzf.zsh' >> .zshrc
 
-ENTRYPOINT ["/bin/zsh", "--login"]
+ENTRYPOINT ["/bin/zsh"]
+CMD ["--login"]
