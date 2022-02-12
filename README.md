@@ -39,7 +39,7 @@
 ### For linux servers
 
 ```
-% curl -fsSL https://mi2428.github.io/dotfiles/init/kick.sh | bash
+% curl -fsSL https://raw.githubusercontent.com/mi2428/dotfiles/master/init/kick.sh | bash
 ```
 
 ```
