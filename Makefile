@@ -1,5 +1,4 @@
 linker := $(CURDIR)/init/LINK
-unlinker := $(CURDIR)/init/UNLINK
 pkgdir := $(CURDIR)/init/pkgs
 
 .PHONY: default
@@ -52,17 +51,17 @@ postinstall.common:
 
 .PHONY: link.linux
 link.linux:
-	@$(linker) -t basic
+	@$(linker) --force
 
 .PHONY: link.linux-desktop
 link.linux-desktop:
-	@$(linker) -t linux-desktop
+	@$(linker) --patch linux-desktop --force
 
 .PHONY: link.macos
 link.macos:
-	@$(linker) -t macos
+	@$(linker) --patch macos --force
 
 .PHONY: unlink
 unlink:
-	@$(unlinker)
+	@$(linker) --unlink
 
