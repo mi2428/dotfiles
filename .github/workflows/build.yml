@@ -18,7 +18,7 @@ jobs:
           fetch-depth: 1
       - uses: elgohr/Publish-Docker-Github-Action@master
         with:
-          name: mi2428/dotfiles/ubuntu
+          name: mi2428/dotfiles/dotfiles
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
           registry: docker.pkg.github.com
