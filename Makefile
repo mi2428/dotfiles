@@ -30,16 +30,16 @@ preinstall.common:
 	@git pull || true
 
 .PHONY: pkginstall.archlinux
-pkginstall.archlinux: install.common
+pkginstall.archlinux:
 	@xargs sudo pacman -S < $(pkgdir)/pacman.txt
 
 .PHONY: pkginstall.ubuntu
-pkginstall.ubuntu: install.common
+pkginstall.ubuntu:
 	@xargs sudo apt-get install -y --no-install-recommends < $(pkgdir)/apt.txt
 	@sudo ln -sf /usr/bin/batcat /usr/bin/bat || true
 
 .PHONY: pkginstall.macos
-pkginstall.macos: install.common
+pkginstall.macos:
 	@chmod -R go-w /opt/homebrew/share
 	@brew bundle --file=/dev/stdin < $(pkgdir)/Brewfile
 	@sudo ln -sf /usr/local/bin/gtimeout /usr/local/bin/timeout
