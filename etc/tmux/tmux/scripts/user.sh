@@ -1,2 +1,2 @@
 #!/bin/zsh
-w | head -n 1 | awk '{print $4}'
+w | awk '{for (I=NF-1;I>0;I--) if ($I == "users,") print $(I-1)}'
