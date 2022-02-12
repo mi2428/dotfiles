@@ -17,10 +17,10 @@ ubuntu: install.ubuntu link.linux-desktop
 ubuntu-server: install.ubuntu link.linux
 
 .PHONY: install.archlinux
-install.archlinux: preinstall.common pkginstall.archlinux postinstall.common
+install.archlinux: preinstall.common pkginstall.archlinux postinstall.common postinstall.linux
 
 .PHONY: install.ubuntu
-install.ubuntu: preinstall.common pkginstall.ubuntu postinstall.common
+install.ubuntu: preinstall.common pkginstall.ubuntu postinstall.common postinstall.linux
 
 .PHONY: install.macos
 install.macos: preinstall.common pkginstall.macos postinstall.common
@@ -48,6 +48,10 @@ postinstall.common:
 		https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
 	@xargs pip3 install --upgrade < $(pkgdir)/python3-pip.txt
 	@xargs cargo install < $(pkgdir)/cargo.txt
+
+.PHONY: postinstall.linux
+postinstall.common:
+	@curl -fsSL https://deno.land/install.sh | sh
 
 .PHONY: link.linux
 link.linux:
