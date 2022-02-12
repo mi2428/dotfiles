@@ -35,43 +35,22 @@ export LANGUAGE=$LANG
 export LC_CTYPE=$LANG
 export LC_ALL=$LANG
 
-case $(arch) in
-x86_64)
-  export VOLTA_HOME="$HOME/.volta_x64"
-  typeset -U path PATH
-  path=(
-    $HOME/bin
-    $HOME/dotfiles/bin
-    $VOLTA_HOME/bin
-    /usr/local/bin
-    /usr/local/sbin
-    /usr/bin
-    /usr/sbin
-    /bin
-    /sbin
-  )
-  ;;
-arm64*)
-  export CARGO_HOME="$HOME/.cargo"
-  export VOLTA_HOME="$HOME/.volta"
-  export TEXLIVE_BIN="/usr/local/texlive/2021/bin/universal-darwin"
-  typeset -U path PATH
-  path=(
-    $HOME/bin
-    $HOME/dotfiles/bin
-    $CARGO_HOME/bin
-    $VOLTA_HOME/bin
-    $TEXLIVE_BIN
-    /usr/bin
-    /usr/sbin
-    /bin
-    /sbin
-    /usr/local/bin
-    /usr/local/sbin
-    .
-  )
-  ;;
-esac
+export CARGO_HOME="$HOME/.cargo"
+export VOLTA_HOME="$HOME/.volta"
+typeset -U path PATH
+path=(
+  $HOME/bin
+  $HOME/dotfiles/bin
+  $CARGO_HOME/bin
+  $VOLTA_HOME/bin
+  /usr/bin
+  /usr/sbin
+  /bin
+  /sbin
+  /usr/local/bin
+  /usr/local/sbin
+  .
+)
 
 export GOPATH="$HOME/dev/gocode"
 export ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=242'
