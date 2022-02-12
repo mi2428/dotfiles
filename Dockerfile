@@ -1,5 +1,6 @@
 FROM ubuntu:21.10
 LABEL maintainer "mi2428 <mi2428782020@gmail.com>"
+LABEL org.opencontainers.image.source https://github.com/mi2428/dotfiles
 
 ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US:en
