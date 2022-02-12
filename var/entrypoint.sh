@@ -1,11 +1,8 @@
 #!/bin/bash
+export LC_ALL=en_US.UTF-8
 
-uid=$(stat -c "%u" .)
-gid=$(stat -c "%g" .)
+HOST_USER=${HOST_USER:-shizk}
+useradd -m -k /etc/skel -u $HOST_UID -g $HOST_GID -G wheel -s /bin/zsh ${HOST_USER}
+cd /home/${HOST_USER}
 
-usermod -u $uid $USER
-groupmod -g $gid $USER
-chown -R $uid:$gid $HOME
-
-/usr/bin/toilet -f mono12 -F metal 2428
-exec setpriv --reuid=$USER --regid=$USER --init-groups $@
+exec sudo -E -u ${HOST_USER} $@
