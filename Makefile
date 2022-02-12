@@ -16,8 +16,8 @@ ubuntu: install.ubuntu link.linux-desktop
 .PHONY: ubuntu-server
 ubuntu-server: install.ubuntu link.linux
 
-.PHONY: install.arch
-install.arch: preinstall.common pkginstall.arch postinstall.common
+.PHONY: install.archlinux
+install.archlinux: preinstall.common pkginstall.archlinux postinstall.common
 
 .PHONY: install.ubuntu
 install.ubuntu: preinstall.common pkginstall.ubuntu postinstall.common
@@ -27,11 +27,9 @@ install.macos: preinstall.common pkginstall.macos postinstall.common
 
 .PHONY: preinstall.common
 preinstall.common:
-	@sh -c 'curl -fLo "${XDG_DATA_HOME:-$HOME/.local/share}"/nvim/site/autoload/plug.vim --create-dirs \
-		https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
 
-.PHONY: pkginstall.arch
-pkginstall.arch: install.common
+.PHONY: pkginstall.archlinux
+pkginstall.archlinux: install.common
 	@xargs sudo pacman -S < $(pkgdir)/pacman.txt
 
 .PHONY: pkginstall.ubuntu
@@ -46,6 +44,8 @@ pkginstall.macos: install.common
 
 .PHONY: postinstall.common
 postinstall.common:
+	@sh -c 'curl -fLo "${XDG_DATA_HOME:-$HOME/.local/share}"/nvim/site/autoload/plug.vim --create-dirs \
+		https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
 	@xargs pip3 install --upgrade < $(pkgdir)/python3-pip.txt
 	@xargs cargo install < $(pkgdir)/cargo.txt
 
