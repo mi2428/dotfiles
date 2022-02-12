@@ -1,6 +1,7 @@
 FROM ubuntu:21.10
 LABEL maintainer "mi2428 <mi2428782020@gmail.com>"
 
+ENV HOSTNAME dotfiles
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
 ENV LC_ALL en_US.UTF-8
@@ -17,6 +18,7 @@ RUN apt-get update \
       gnupg-agent \
       locales \
       make \
+      iproute2 \
       software-properties-common \
       sudo
 
@@ -28,8 +30,13 @@ WORKDIR /root/dotfiles
 RUN add-apt-repository ppa:neovim-ppa/unstable \
  && apt-get update \
  && apt-get install -y neovim
+
 RUN make ubuntu-server
 
 WORKDIR /root
+
+RUN git clone --depth 1 https://github.com/junegunn/fzf.git .fzf \
+ && ./.fzf/install --all \
+ && echo 'source $HOME/.fzf.zsh' >> .zshrc
 
 ENTRYPOINT ["/bin/zsh", "--login"]

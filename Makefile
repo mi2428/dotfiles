@@ -2,7 +2,7 @@ LINKER := $(CURDIR)/init/LINK
 PKGDIR := $(CURDIR)/init/pkgs
 DOCKER_REPO := mi2428/dotfiles
 DOCKER_REV := latest
-DOCKER_TAG := $(DOCKER_REV)/$(DOCKER_TAG)
+DOCKER_TAG := $(DOCKER_REPO):$(DOCKER_REV)
 
 .PHONY: default
 default: ubuntu-server
@@ -49,7 +49,7 @@ pkginstall.macos:
 
 .PHONY: postinstall.common
 postinstall.common:
-	@sh -c 'curl -fLo $(HOME)/.config/nvim/site/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
+	@sh -c 'curl -fLo $(HOME)/.local/share/nvim/site/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
 	@xargs pip3 install --upgrade < $(PKGDIR)/python3-pip.txt
 	@xargs cargo install < $(PKGDIR)/cargo.txt
 
