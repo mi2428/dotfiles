@@ -20,7 +20,7 @@ jobs:
         with:
           name: mi2428/dotfiles/dotfiles
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.PERSONAL_TOKEN }}
           registry: ghcr.io
           snapshot: true
           tags: "latest"
