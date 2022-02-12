@@ -4,7 +4,7 @@ cd $HOME
 DIST=""
 
 if [[ -f /etc/lsb-release ]]; then
-  DIST=$(grep DISTRIBUTION_ID <<< /etc/lsb-release | cut -d '=' -f 2)
+  DIST=$(grep DISTRIB_ID /etc/lsb-release | cut -d '=' -f 2)
 fi
 
 case $DIST in
@@ -14,7 +14,7 @@ case $DIST in
     exit 127 ;;
 esac
 
-git clone --depth 1 https://github.com/mi2428/dotfiles -O $HOME/dotfiles
+git clone --depth 1 https://github.com/mi2428/dotfiles $HOME/dotfiles
 cd $HOME/dotfiles
 
 case $DIST in
