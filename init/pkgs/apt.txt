@@ -2,9 +2,7 @@ bat
 cargo
 fzf
 grc
-hexyl
 pv
-ripgrep
 tmux
 tmuxinator
 zsh
