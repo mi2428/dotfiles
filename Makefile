@@ -27,6 +27,7 @@ install.macos: preinstall.common pkginstall.macos postinstall.common
 
 .PHONY: preinstall.common
 preinstall.common:
+	@git pull || true
 
 .PHONY: pkginstall.archlinux
 pkginstall.archlinux: install.common
