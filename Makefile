@@ -50,7 +50,7 @@ postinstall.common:
 	@xargs cargo install < $(pkgdir)/cargo.txt
 
 .PHONY: postinstall.linux
-postinstall.common:
+postinstall.linux:
 	@curl -fsSL https://deno.land/install.sh | sh
 
 .PHONY: link.linux
