@@ -1,82 +1,69 @@
-#!/bin/bash
-set -e
-cd $(dirname $0)
-declare -r DOTBASE=$(cd "../"; pwd)
+#!/usr/bin/env python3
+from glob import glob
+from os import path, listdir, makedirs, symlink, remove
+import argparse
 
-[[ -z "$XDG_CONFIG_HOME" ]] && \
-declare -r XDGBASE="$HOME/.config" || declare -r XDGBASE=$XDG_CONFIG_HOME
+HOMEDIR = path.expanduser("~")
+CURDIR = path.dirname(path.abspath(__file__))
+DOTFILES = path.join("/", path.relpath(path.join(CURDIR, ".."), "/"))
 
-create_link() {
-  local pkg="$1"
-  local item="$2"
-  local xdg_option="$3"
-  local base="$4/$pkg"
-  local dry="$5"
-  case $xdg_option in
-  "true")
-    mkdir -p "$XDGBASE/$pkg"
-    echo "ln -snf $base/$item $XDGBASE/$pkg/$item"
-    [[ $dry == "false" ]] && ln -snf "$base/$item" "$XDGBASE/$pkg/$item"
-    ;;
-  "false")
-    if [[ -d "$base/$item" ]]; then
-      for subitem in $(cd "$base/$item"; find . -maxdepth 1 -not -name "."); do
-        local subitem=$(basename $subitem)
-        echo "ln -snf $base/$item/$subitem $HOME/.$item/$subitem"
-        [[ $dry == "false" ]] && mkdir -p "$HOME/.$item" && ln -snf "$base/$item/$subitem" "$HOME/.$item/$subitem"
-      done
-    elif [[ -f "$base/$item" ]]; then
-      echo "ln -snf $base/$item $HOME/.$item"
-      [[ $dry == "false" ]] && ln -snf "$base/$item" "$HOME/.$item"
-    fi
-    ;;
-  esac
-}
+XDG_SUPPORTED_PACKAGES = [
+    "compton", "dusnt", "gtk-3.0", "karabiner", "nvim", "psd", "rofi", "systemd"
+]
 
-linker() {
-  local pkgbase=$1
-  local excluded=$2
-  local dry=$3
-  for pkg in $(cd "$pkgbase"; find . -maxdepth 1 -type d -not -name "$excluded" -not -name "."); do
-    local pkg=$(basename $pkg)
-    local xdg_option="false"
-    [[ "$pkg" == "compton" ]]   && xdg_option="true"
-    [[ "$pkg" == "dunst" ]]     && xdg_option="true"
-    [[ "$pkg" == "gtk-3.0" ]]   && xdg_option="true"
-    [[ "$pkg" == "karabiner" ]] && xdg_option="true"
-    [[ "$pkg" == "nvim" ]]      && xdg_option="true"
-    [[ "$pkg" == "psd" ]]       && xdg_option="true"
-    [[ "$pkg" == "rofi" ]]      && xdg_option="true"
-    [[ "$pkg" == "systemd" ]]   && xdg_option="true"
-    for item in $(cd "$pkgbase/$pkg"; find . -maxdepth 1 -not -name "."); do
-      create_link $pkg $(basename $item) $xdg_option $pkgbase $dry
-    done
-  done
-}
 
-basic_setup() {
-  local dry="$1"
-  linker "$DOTBASE/etc" "hosts" $dry
-}
+def avail_patches():
+    hostsdir = path.join(CURDIR, "../etc/hosts")
+    return listdir(hostsdir)
 
-patch_setup() {
-  local patchtype="$1"
-  local dry="$2"
-  linker "$DOTBASE/etc/hosts/$patchtype" "." $dry
-}
 
-declare dry="false"
-while getopts dt: OPT; do
-  case $OPT in
-  "d")
-    dry="true" ;;
-  "t")
-    case "$OPTARG" in
-    "basic")
-      basic_setup $dry ;;
-    *)
-      basic_setup $dry && patch_setup "$OPTARG" $dry ;;
-    esac
-    ;;
-  esac
-done
+def create_symlink(basedir, excludes=[], force=False, dry=False):
+    packages = [d for d in listdir(basedir) if d not in excludes]
+
+    for package in packages:
+        srcdir = path.join(basedir, package)
+        srcpaths = [p for p in glob(path.join(srcdir, "**", "*"), recursive=True) if path.isfile(p)]
+
+        for srcpath in srcpaths:
+            relpath = path.relpath(srcpath, srcdir)
+            subdir = path.dirname(relpath)
+
+            is_xdg_supported = package in XDG_SUPPORTED_PACKAGES
+            dstdir = HOMEDIR
+            dstpath = None
+            if is_xdg_supported:
+                dstdir = path.join(dstdir, ".config", package)
+                if subdir:
+                    dstdir = path.join(dstdir, subdir)
+                dstpath = path.join(dstdir, path.basename(srcpath))
+            else:
+                srcbase = path.basename(srcpath)
+                if subdir:
+                    dstdir = path.join(dstdir, f".{subdir}")
+                    dstpath = path.join(dstdir, srcbase)
+                else:
+                    dstpath = path.join(dstdir, f".{srcbase}")
+
+            print(f"ln -snf {srcpath} {dstpath}")
+            if dry:
+                continue
+            if path.exists(dstpath):
+                if not force:
+                    continue
+                remove(dstpath)
+            makedirs(dstdir, exist_ok=True)
+            symlink(srcpath, dstpath)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="create symbolic links to $HOME/dotfiles")
+    parser.add_argument("--patch", dest="patch", help="overwrite default configs", choices=avail_patches())
+    parser.add_argument("--force", dest="force", help="force overwrite existing files", action="store_true")
+    parser.add_argument("--dry", dest="dryrun", help="show ln commands and exit (dryrun)", action="store_true")
+    args = parser.parse_args()
+
+    create_symlink(path.join(DOTFILES, "etc"), excludes=["hosts"], force=args.force, dry=args.dryrun)
+    if args.patch:
+        patchdir = path.join("etc", "hosts", args.patch)
+        create_symlink(path.join(DOTFILES, patchdir), force=args.force, dry=args.dryrun)
+
