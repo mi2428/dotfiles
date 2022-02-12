@@ -1,2 +1,2 @@
 #!/bin/zsh
-w | awk '{for (I=NF-1;I>0;I--) if ($I == "users,") print $(I-1)}'
+w | tail -n +3 | awk '{print $1}' | sort | uniq | wc -l
