@@ -1,34 +1,18 @@
-if whence -p tmux > /dev/null; then
-    if [[ -z "$TMUX" ]]; then
-        count=$(tmux list-session 2> /dev/null | wc -l)
-        if tmux has-session 2> /dev/null ; then
-            echo "Choose one of the tmux sessions below"
-            tmux list-session
-            echo "c: Create new tmux session"
-            echo "n: Without tmux"
-            echo -n "(default=c): "
-            read choose
-            case "$choose" in
-            "c")
-                exec tmux new-session ;;
-            "n")
-                ;;
-            "")
-                exec tmux new-session ;;
-            *)
-                exec tmux attach-session -t "$choose" ;;
-            esac
-        else
-            echo "c: Create new tmux session"
-            echo "n: Without tmux"
-            echo -n "(default=c): "
-            read choose
-            case "$choose" in
-                "n" )
-                    ;;
-                * )
-                    exec tmux new-session ;;
-            esac
-        fi
-    fi
+trap "echo -e '\n'; return 0" 2
+if whence -p tmux 1> /dev/null && [[ -z ${TMUX} ]]; then
+  if tmux has-session 2> /dev/null; then
+    echo "Hello, would you like to continue with an existing session or start a new one?"
+    tmux list-sessions
+  else
+    echo "Hello, would you like to start a new session?"
+  fi
+  echo "c: create new session"
+  echo "n: without tmux"
+  echo -n "> "
+  read opt
+  case ${opt} in
+    c|) exec tmux new-session ;;
+    n) echo ;;
+    *) exec tmux attach-session -t ${opt} ;;
+  esac
 fi

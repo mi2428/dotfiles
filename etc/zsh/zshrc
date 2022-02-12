@@ -1,11 +1,8 @@
-if [[ -d "$HOME/.zsh/conf.d" ]]; then
-    for conf in $(find -L ~/.zsh/conf.d/ -name "*.zsh" | sort); do
-        source $conf
-    done
+source $HOME/.zsh/10_general.zsh
+source $HOME/.zsh/20_aliases.zsh
+source $HOME/.zsh/30_appearance.zsh
+source $HOME/.zsh/40_grc.zsh
+
+if [[ -f $HOME/.fzf.zsh ]]; then
+  source $HOME/.fzf.zsh
 fi
-
-# automatically added by fzf
-[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
-
-autoload -U +X bashcompinit && bashcompinit
-complete -o nospace -C /usr/local/bin/mc mc

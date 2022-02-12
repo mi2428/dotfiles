@@ -1,16 +1,11 @@
-#!/usr/bin/env zsh
-
-if ! which grc 1>/dev/null 2>&1
-then
+if ! whence -p grc 1> /dev/null; then
     return
 fi
 
-if ! tty -s || [ ! -n "$TERM" ] || [ "$TERM" = dumb ] || (( ! $+commands[grc] ))
-then
+if ! tty -s || [ ! -n "$TERM" ] || [ "$TERM" = dumb ] || (( ! $+commands[grc] )); then
   return
 fi
 
-# Supported commands
 cmds=(
   as
   ant
@@ -55,7 +50,7 @@ cmds=(
   lsmod
   lsof
   lspci
-  #make
+  make
   mount
   mtr
   mvn
@@ -87,7 +82,6 @@ cmds=(
   whois
 )
 
-# Set alias for available commands.
 for cmd in $cmds ; do
   if (( $+commands[$cmd] )) ; then
     $cmd() {
@@ -96,5 +90,4 @@ for cmd in $cmds ; do
   fi
 done
 
-# Clean up variables
 unset cmds cmd
