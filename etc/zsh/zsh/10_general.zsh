@@ -42,6 +42,7 @@ x86_64)
   typeset -U path PATH
   path=(
     $HOME/bin
+    $HOME/dotfiles/bin
     $VOLTA_HOME/bin
     /usr/local/bin(N-/)   # use /usr/local/bin in preference to /usr/bin in Intel Mac
     /usr/local/sbin(N-/)  # use /usr/local/sbin in preference to /usr/sbin in Intel Mac
@@ -60,6 +61,7 @@ arm64*)
   typeset -U path PATH
   path=(
     $HOME/bin
+    $HOME/dotfiles/bin
     $CARGO_HOME/bin
     $VOLTA_HOME/bin
     $TEXLIVE_BIN
