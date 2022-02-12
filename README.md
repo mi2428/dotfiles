@@ -1,4 +1,4 @@
-# .files
+# .files [![GitHub CI/CD](https://github.com/mi2428/dotfiles/actions/workflows/build.yml/badge.svg)](https://github.com/mi2428/dotfiles/actions/workflows/build.yml)
 
 ### Fonts
 
