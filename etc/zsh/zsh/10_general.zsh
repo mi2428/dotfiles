@@ -34,7 +34,6 @@ export LANG=en_US.UTF-8
 export LANGUAGE=$LANG
 export LC_CTYPE=$LANG
 export LC_ALL=$LANG
-export LC_TERMINAL=iTerm2
 
 case $(arch) in
 x86_64)
@@ -44,20 +43,18 @@ x86_64)
     $HOME/bin
     $HOME/dotfiles/bin
     $VOLTA_HOME/bin
-    /usr/local/bin(N-/)   # use /usr/local/bin in preference to /usr/bin in Intel Mac
-    /usr/local/sbin(N-/)  # use /usr/local/sbin in preference to /usr/sbin in Intel Mac
+    /usr/local/bin
+    /usr/local/sbin
     /usr/bin
     /usr/sbin
     /bin
     /sbin
-    /Library/Apple/usr/bin
   )
   ;;
 arm64*)
   export CARGO_HOME="$HOME/.cargo"
   export VOLTA_HOME="$HOME/.volta"
   export TEXLIVE_BIN="/usr/local/texlive/2021/bin/universal-darwin"
-  export FZF_BIN="/opt/homebrew/opt/fzf/bin"
   typeset -U path PATH
   path=(
     $HOME/bin
@@ -65,28 +62,22 @@ arm64*)
     $CARGO_HOME/bin
     $VOLTA_HOME/bin
     $TEXLIVE_BIN
-    $FZF_BIN
-    /opt/homebrew/bin(N-/)
-    /opt/homebrew/sbin(N-/)
     /usr/bin
     /usr/sbin
     /bin
     /sbin
     /usr/local/bin
     /usr/local/sbin
-    /Library/Apple/usr/bin
     .
   )
   ;;
 esac
 
 export GOPATH="$HOME/dev/gocode"
-export FPATH=/opt/homebrew/share/zsh-completions:$FPATH
 export ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=242'
-export ZSH_HIGHLIGHT_HIGHLIGHTERS_DIR=/opt/homebrew/share/zsh-syntax-highlighting/highlighters
-source /opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh
-source /opt/homebrew/opt/zsh-git-prompt/zshrc.sh
-source /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+export ZSH_HIGHLIGHT_HIGHLIGHTERS_DIR=$HOME/.local/share/zsh/zsh-syntax-highlighting/highlighters
+source $HOME/.local/share/zsh/zsh-autosuggestions/zsh-autosuggestions.zsh
+source $HOME/.local/share/zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 
 autoload -Uz colors && colors
 autoload -Uz compinit && compinit
@@ -150,8 +141,8 @@ TIME: %E (user: %U, kernel: %S)
 CPU:  %P'
 
 
-source /opt/homebrew/opt/fzf/shell/completion.zsh
-source /opt/homebrew/opt/fzf/shell/key-bindings.zsh
+#source /opt/homebrew/opt/fzf/shell/completion.zsh
+#source /opt/homebrew/opt/fzf/shell/key-bindings.zsh
 export FZF_COMPLETION_TRIGGER='**'
 export FZF_DEFAULT_COMMAND="fd"
 export FZF_DEFAULT_OPTS='--height 60% --border --inline-info --preview-window=right:60%:wrap --color=fg:252,fg+:233,bg+:002,preview-fg:252,prompt:226,pointer:007,info:247,spinner:237,header:009,gutter:237,hl:220,hl+:231'
