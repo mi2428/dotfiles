@@ -26,7 +26,8 @@ RUN apt-get update \
     apt-get install -y --no-install-recommends neovim
 
 RUN groupadd wheel \
- && echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+ && echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers \
+ && locale-gen en_US.UTF-8 ja_JP.UTF-8
 
 WORKDIR /etc/skel
 RUN git clone --depth 1 https://github.com/mi2428/dotfiles \
