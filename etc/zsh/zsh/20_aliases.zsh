@@ -174,6 +174,7 @@ alias py='python3'
 alias rc='bundle exec rails c'
 
 alias dot='cd $HOME/dotfiles'
+alias dox='docker exec -it `docker ps --format "{{.Names}}" | fzf`'
 alias gco='git checkout'
 alias gpp='git pull'
 alias ipf='iperf3'
