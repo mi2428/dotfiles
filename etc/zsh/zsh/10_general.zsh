@@ -35,12 +35,14 @@ export LANGUAGE=$LANG
 export LC_CTYPE=$LANG
 export LC_ALL=$LANG
 
+export DENO_INSTALL=$HOME/.deno
 export CARGO_HOME="$HOME/.cargo"
 export VOLTA_HOME="$HOME/.volta"
 typeset -U path PATH
 path=(
   $HOME/bin
   $HOME/dotfiles/bin
+  $DENO_INSTALL/bin
   $CARGO_HOME/bin
   $VOLTA_HOME/bin
   /usr/bin

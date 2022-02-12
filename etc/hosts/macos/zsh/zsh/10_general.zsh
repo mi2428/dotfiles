@@ -54,6 +54,7 @@ x86_64)
   )
   ;;
 arm64*)
+  export DENO_INSTALL=$HOME/.deno
   export CARGO_HOME="$HOME/.cargo"
   export VOLTA_HOME="$HOME/.volta"
   export TEXLIVE_BIN="/usr/local/texlive/2021/bin/universal-darwin"
@@ -62,6 +63,7 @@ arm64*)
   path=(
     $HOME/bin
     $HOME/dotfiles/bin
+    $DENO_INSTALL/bin
     $CARGO_HOME/bin
     $VOLTA_HOME/bin
     $TEXLIVE_BIN
