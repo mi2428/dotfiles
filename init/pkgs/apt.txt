@@ -3,6 +3,8 @@ cargo
 fzf
 grc
 pv
+python3-pip
 tmux
 tmuxinator
+unzip
 zsh
