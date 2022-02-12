@@ -20,7 +20,8 @@ RUN apt-get update \
       make \
       iproute2 \
       software-properties-common \
-      sudo
+      sudo \
+      toilet
 
 RUN locale-gen en_US.UTF-8  
 RUN git clone --depth 1 https://github.com/mi2428/dotfiles
@@ -36,8 +37,10 @@ RUN make ubuntu-server
 WORKDIR /root
 
 RUN git clone --depth 1 https://github.com/junegunn/fzf.git .fzf \
- && ./.fzf/install --all \
- && echo 'source $HOME/.fzf.zsh' >> .zshrc
+ && ./.fzf/install --all
 
-ENTRYPOINT ["/bin/zsh"]
+RUN chsh -s /bin/zsh \
+ && cp dotfiles/var/entrypoint.sh /sbin/entrypoint.sh
+
+ENTRYPOINT ["/sbin/entrypoint.sh"]
 CMD ["--login"]
