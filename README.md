@@ -1,4 +1,4 @@
-# .files
+# dotfiles
 [![GitHub last commit](https://img.shields.io/github/last-commit/mi2428/dotfiles)](https://github.com/mi2428/dotfiles/commit/HEAD) [![GitHub commit activity](https://img.shields.io/github/commit-activity/y/mi2428/dotfiles)](https://github.com/mi2428/dotfiles/commits/master) [![GitHub CI/CD](https://github.com/mi2428/dotfiles/actions/workflows/build.yml/badge.svg)](https://github.com/mi2428/dotfiles/actions/workflows/build.yml)
 
 dotfiles since 2016
@@ -74,7 +74,7 @@ First run the software update and install [HomeBrew](https://brew.sh/) with:
 % bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-Then run `make macos` to complete setup.
+Then run `make macos` including the following to complete setup.
 
 ```
 % make install.macos  # install dependencies
