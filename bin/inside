@@ -30,7 +30,6 @@ argparse() {
   while (( "$#" )); do
     case $1 in
       --with|-w)
-        echo --with $2
         CONTAINER_IMAGE_CODE="$2"
         shift 2 ;;
       --update)
@@ -46,12 +45,10 @@ argparse() {
         PERSISTENT=1
         shift ;;
       --hostname|-H)
-        echo --hostname $2
         CONTAINER_HOSTNAME="$2"
         shift 2 ;;
       --name|-n)
         CONTAINER_NAME="$2"
-        echo --name $2
         shift 2 ;;
       --help|-h)
         usage
