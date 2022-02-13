@@ -1,16 +1,32 @@
-# : $[$[$$/$$]<<1/1<<$[]]$[1+$[$$/$$]<<1]$((1<<1))$[$?1$#>>$[]]
+# .files
 [![GitHub last commit](https://img.shields.io/github/last-commit/mi2428/dotfiles)](https://github.com/mi2428/dotfiles/commit/HEAD) [![GitHub commit activity](https://img.shields.io/github/commit-activity/y/mi2428/dotfiles)](https://github.com/mi2428/dotfiles/commits/master) [![GitHub CI/CD](https://github.com/mi2428/dotfiles/actions/workflows/build.yml/badge.svg)](https://github.com/mi2428/dotfiles/actions/workflows/build.yml)
 
-### Fonts
+### terminal color scheme
 
-* https://fonts.google.com/specimen/Ubuntu
-* https://fonts.google.com/specimen/Ubuntu+Mono
-* https://www.nerdfonts.com/
+Based on [Google's Material Design Color Palette](https://material.io/design/style/color.html)
+
+* https://www.martinseeler.com/iterm2-material-design
+
+### terminal fonts
+
+* **Ubuntu:** https://fonts.google.com/specimen/Ubuntu
+* **Ubuntu Mono:** https://fonts.google.com/specimen/Ubuntu+Mono
+* **Nerd Fonts:** https://www.nerdfonts.com/
+
+## Docker
+
+```
+% docker run -it --rm \
+  -w /work \
+  -v $PWD:/work \
+  -e HOST_UID=$(id -u $USER) \
+  -e HOST_GID=$(id -g $USER) \
+  ghcr.io/mi2428/dotfiles:latest
+```
 
 ## Installation
 
-### For Linux computers
-
+### for Linux computers
 
 `make ubuntu` do the following two commands:
 
@@ -19,12 +35,16 @@
 % make link.linux-desktop
 ```
 
+`make archlinux` do the following two commands:
+
 ```
 % make install.archlinux
 % make link.linux-desktop
 ```
 
-### For macOS computers
+### for macOS computers
+
+First run the software update and install [HomeBrew](https://brew.sh/).
 
 ```
 % sudo softwareupdate -i -a
@@ -32,12 +52,14 @@
 % bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
+`make macos` do the following:
+
 ```
 % make install.macos  # install dependencies
 % make link.macos     # create symbolic links
 ```
 
-### For linux servers
+### for Linux servers
 
 ```
 % curl -fsSL https://raw.githubusercontent.com/mi2428/dotfiles/master/init/kick.sh | bash
@@ -50,7 +72,7 @@
 
 ## Hints
 
-### Import GPG key
+### import GPG key pair to create signed commit
 
 ```
 % gpg --import mi2428.public.key
