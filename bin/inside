@@ -1,15 +1,88 @@
 #!/bin/bash
 
-DOCKER_IMAGE="mi2428/dotfiles:latest"
-DOCKER_HOSTNAME="dotfiles"
-WORKDIR="${1:-.}"
+CONTAINER_HOSTNAME="dotfiles"
+CONTAINER_IMAGE=""
+CONTAINER_IMAGE_CODE="ubuntu"
+CONTAINER_NAME=""
+WORKDIR=""
 
-docker run --rm -it \
-  -w /work \
-  -v $(cd $WORKDIR; pwd):/work \
-  -e HOST_UID=$(id -u $USER) \
-  -e HOST_GID=$(id -g $USER) \
-  --dns 9.9.9.9 \
-  --hostname $DOCKER_HOSTNAME \
-  --network host \
-  $DOCKER_IMAGE
+
+usage() {
+cat <<EOF
+usage: inside [-w dotfiles|ubuntu] [-H hostname] [path]
+ -w, --with {dotfiles, *ubuntu}  specify container image
+ -H, --hostname [hostname]       specify container hostname
+ -n, --name [name]               specify container name
+ -h, --help                      this help text
+EOF
+}
+
+
+argparse() {
+  while (( "$#" )); do
+    case $1 in
+      --with|-w)
+        echo --with $2
+        CONTAINER_IMAGE_CODE="$2"
+        shift 2 ;;
+      --hostname|-H)
+        echo --hostname $2
+        CONTAINER_HOSTNAME="$2"
+        shift 2 ;;
+      --name|-n)
+        CONTAINER_NAME="$2"
+        echo --name $2
+        shift 2 ;;
+      --help|-h)
+        usage
+        exit 0 ;;
+      --*|-*)
+        echo $opt
+        usage
+        exit 1 ;;
+      *)
+        WORKDIR="$1"
+        shift ;;
+    esac
+  done
+}
+
+
+main() {
+  local args="$@"
+
+  if (( $# == 0 )); then
+    usage
+    exit 0
+  fi
+
+  argparse $args
+
+  case "$CONTAINER_IMAGE_CODE" in
+    "ubuntu")
+      CONTAINER_IMAGE="mi2428/ubuntu:latest" ;;
+    "dotfiles")
+      CONTAINER_IMAGE="mi2428/dotfiles:latest" ;;
+    *)
+      usage
+      exit 127 ;;
+  esac
+
+  if [[ -z "$CONTAINER_NAME" ]]; then
+    CONTAINER_NAME="${CONTAINER_IMAGE_CODE}_$(date "+%Y-%m-%d-%H-%M-%S")"
+  fi
+
+  docker run --rm -it \
+    -w /work \
+    -v $(cd $WORKDIR; pwd):/work \
+    -e HOST_UID=$(id -u $USER) \
+    -e HOST_GID=$(id -g $USER) \
+    --dns 9.9.9.9 \
+    --name $CONTAINER_NAME \
+    --hostname $CONTAINER_HOSTNAME \
+    --network host \
+    $CONTAINER_IMAGE
+}
+
+
+main $@
