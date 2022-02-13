@@ -1,6 +1,6 @@
 LINKER := $(CURDIR)/init/LINK
 PKGDIR := $(CURDIR)/init/pkgs
-DOCKER_REPO := mi2428/dotfiles
+DOCKER_REPO := ghcr.io/mi2428/dotfiles
 DOCKER_REV := latest
 DOCKER_TAG := $(DOCKER_REPO):$(DOCKER_REV)
 
