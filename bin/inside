@@ -4,6 +4,7 @@ CONTAINER_HOSTNAME="dotfiles"
 CONTAINER_IMAGE=""
 CONTAINER_IMAGE_CODE="ubuntu"
 CONTAINER_NAME=""
+PERSISTENT=0
 WORKDIR=""
 
 
@@ -11,6 +12,7 @@ usage() {
 cat <<EOF
 usage: inside [-w dotfiles|ubuntu] [-H hostname] [path]
  -w, --with {dotfiles, *ubuntu}  specify container image
+ -p, --persist                   keep container persistent
  -H, --hostname [hostname]       specify container hostname
  -n, --name [name]               specify container name
  -h, --help                      this help text
@@ -25,6 +27,9 @@ argparse() {
         echo --with $2
         CONTAINER_IMAGE_CODE="$2"
         shift 2 ;;
+      --persist|-p)
+        PERSISTENT=1
+        shift ;;
       --hostname|-H)
         echo --hostname $2
         CONTAINER_HOSTNAME="$2"
@@ -72,7 +77,11 @@ main() {
     CONTAINER_NAME="${CONTAINER_IMAGE_CODE}_$(date "+%Y-%m-%d-%H-%M-%S")"
   fi
 
-  docker run --rm -it \
+  DOCKER_RUN_ARGS=""
+  (( $PERSISTENT == 0 )) && DOCKER_RUN_ARGS="${DOCKER_RUN_ARGS} --rm"
+
+  docker run -it \
+    ${DOCKER_RUN_ARGS} \
     -w /work \
     -v $(cd $WORKDIR; pwd):/work \
     -e HOST_UID=$(id -u $USER) \
