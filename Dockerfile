@@ -34,7 +34,7 @@ WORKDIR /etc/skel
 RUN git clone --depth 1 https://github.com/mi2428/dotfiles \
  && cd dotfiles \
  && HOME=/etc/skel \
-    make docker \
+    make ubuntu-docker \
  && cd .. \
  && git clone --depth 1 https://github.com/junegunn/fzf.git .fzf \
  && HOME=/etc/skel \
