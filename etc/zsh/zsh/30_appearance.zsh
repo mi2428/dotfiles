@@ -2,6 +2,9 @@ typeset -gA PROMPT_SYMBOL=(
   corner.top     '╭─'
   corner.bottom  '╰─'
   arrow          '─▶'
+  #arrow          '─▶▶'
+  #arrow          '─▷'
+  #arrow          '─▷▷'
 )
 
 
@@ -26,13 +29,19 @@ typeset -gA PROMPT_PALETTE=(
   elapsed       '%b%u%F{222}'
   exit.mark     '%b%u%F{246}'
   exit.code     '%B%u%F{203}'
-  git.commited  '%b%u%F{002}'
+  git.commited  '%b%u%F{038}'
   git.staged    '%b%u%F{226}'
   git.modified  '%b%u%F{009}'
-  git.untracked '%b%u%F{136}'
+  git.untracked '%b%u%F{208}'
   conj          '%b%u%F{102}'
   typing        '%b%u%F{252}'
   normal        '%b%u%F{252}'
+  cursor        '%b%u%F{252}'
+  level0        '%b%u%F{252}'
+  level1        '%b%u%F{014}'
+  level2        '%b%u%F{003}'
+  level3        '%b%u%F{208}'
+  level4        '%b%u%F{009}'
   underline     '%b%U%F{252}'
   success       '%b%u%F{013}'
   error         '%b%u%F{203}'
@@ -44,6 +53,7 @@ typeset -gA prompts=(
   margin     ""
   host       ""
   user       ""
+  level      ""
   path       ""
   venv       ""
   ssh.via    ""
@@ -61,6 +71,7 @@ typeset -gA prompts_len=(
   host       0
   user       0
   path       0
+  path       0
   venv       0
   ssh.via    0
   ssh.agent  0
@@ -72,6 +83,38 @@ typeset -gA prompts_len=(
 
 
 typeset -gi exec_timestamp=0
+
+
+set_severity_level() {
+  case ${PROMPT_SEVERITY} in
+    1)
+      PROMPT_PALETTE[cursor]=${PROMPT_PALETTE[level1]}
+      prompts[level]="${PROMPT_PALETTE[cursor]} ♨ "
+      prompts_len[level]=$(( 2 + 2 * 1 ))
+      ;;
+    2)
+      PROMPT_PALETTE[cursor]=${PROMPT_PALETTE[level2]}
+      prompts[level]="${PROMPT_PALETTE[cursor]} ♨ ♨ "
+      prompts_len[level]=$(( 2 + 2 * 2 ))
+      ;;
+    3)
+      PROMPT_PALETTE[cursor]=${PROMPT_PALETTE[level3]}
+      prompts[level]="${PROMPT_PALETTE[cursor]} ♨ ♨ ♨ "
+      prompts_len[level]=$(( 2 + 2 * 3 ))
+      ;;
+    4)
+      PROMPT_PALETTE[cursor]=${PROMPT_PALETTE[level4]}
+      prompts[level]="${PROMPT_PALETTE[cursor]} ♨ ♨ ♨ ♨ "
+      prompts_len[level]=$(( 2 + 2 * 4 ))
+      ;;
+    0|*)
+      PROMPT_PALETTE[cursor]=${PROMPT_PALETTE[level0]}
+      prompts[level]=""
+      prompts_len[level]=0
+      PROMPT_SEVERITY=0
+      ;;
+  esac
+}
 
 
 set_exec_timestamp() {
@@ -90,7 +133,7 @@ set_margin() {
 
 set_hostname() {
   local name=${(%):-%M}
-  prompts[host]="${PROMPT_PALETTE[normal]}[${PROMPT_PALETTE[host]}${name}${PROMPT_PALETTE[normal]}]"
+  prompts[host]="${PROMPT_PALETTE[cursor]}[${PROMPT_PALETTE[host]}${name}${PROMPT_PALETTE[cursor]}]"
   prompts_len[host]=$(( ${#name} + 2 ))
 }
 
@@ -287,15 +330,15 @@ set_typing_pointer() {
 
 main_prompt() {
   local width=$(tput cols)
-  local prompt_len_wo_path=$(( prompts_len[host] + prompts_len[git] + prompts_len[ssh.agent] + prompts_len[ssh.via] ))
+  local prompt_len_wo_path=$(( prompts_len[host] + prompts_len[level] + prompts_len[git] + prompts_len[ssh.agent] + prompts_len[ssh.via] ))
   local prompt_len_wo_path=$(( prompt_len_wo_path + prompts_len[time] + prompts_len[elapsed] ))
   local path_len_budget="$(( width - prompt_len_wo_path - 2))"
 
   set_shrink_path ${path_len_budget}
 
-  local corner_top="${prompts[margin]}${PROMPT_PALETTE[normal]}${PROMPT_SYMBOL[corner.top]}"
-  local corner_bottom="${PROMPT_PALETTE[reset]}${PROMPT_PALETTE[normal]}${PROMPT_SYMBOL[corner.bottom]}"
-  local left_part="${corner_top}${prompts[host]}${prompts[path]}${prompts[git]}${prompts[ssh.agent]}${prompts[ssh.via]}"
+  local corner_top="${prompts[margin]}${PROMPT_PALETTE[cursor]}${PROMPT_SYMBOL[corner.top]}"
+  local corner_bottom="${PROMPT_PALETTE[reset]}${PROMPT_PALETTE[cursor]}${PROMPT_SYMBOL[corner.bottom]}"
+  local left_part="${corner_top}${prompts[host]}${prompts[level]}${prompts[path]}${prompts[git]}${prompts[ssh.agent]}${prompts[ssh.via]}"
   local right_part="${prompts[time]}${prompts[elapsed]}"
   local prompt_len=$(( prompt_len_wo_path + prompts_len[path] ))
   local padding="$(( width - prompt_len - 2))"
@@ -321,6 +364,7 @@ preexec() {
 
 precmd() {
   set_last_status  # must be loaded at first!
+  set_severity_level
   set_margin
   set_hostname
   set_user

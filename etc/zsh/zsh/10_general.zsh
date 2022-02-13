@@ -57,6 +57,9 @@ zstyle ':completion:*:descriptions' format '%F{yellow}Completing %B%d%b%f'$DEFAU
 zstyle ':completion:*:manuals'      separate-sections true
 zstyle ':completion:*:sudo:*'       command-path $path
 
+autoload -Uz colors && colors
+autoload -Uz compinit && compinit
+
 if [[ -d ~/.ssh ]]; then
   local h=()
   if [[ -r ~/.ssh/config ]]; then
@@ -82,5 +85,35 @@ TIMEFMT='JOB:  %J
 TIME: %E (user: %U, kernel: %S)
 CPU:  %P'
 
-autoload -Uz colors && colors
-autoload -Uz compinit && compinit
+
+_severity_clear() {
+  export PROMPT_SEVERITY=0
+}
+
+_severity_level1() {
+  export PROMPT_SEVERITY=1
+}
+
+_severity_level2() {
+  export PROMPT_SEVERITY=2
+}
+
+_severity_level3() {
+  export PROMPT_SEVERITY=3
+}
+
+_severity_level4() {
+  export PROMPT_SEVERITY=4
+}
+
+zle -N severity_clear _severity_clear
+zle -N severity_level1 _severity_level1
+zle -N severity_level2 _severity_level2
+zle -N severity_level3 _severity_level3
+zle -N severity_level4 _severity_level4
+
+bindkey '^[0' severity_clear
+bindkey '^[1' severity_level1
+bindkey '^[2' severity_level2
+bindkey '^[3' severity_level3
+bindkey '^[4' severity_level4
