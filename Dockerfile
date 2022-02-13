@@ -24,7 +24,7 @@ RUN apt-get update \
  && add-apt-repository ppa:neovim-ppa/unstable \
  && apt-get update \
  && DEBIAN_FRONTEND=noninteractive \
-    apt-get install -y --no-install-recommends neovim
+    apt-get install -y neovim
 
 RUN groupadd wheel \
  && echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers \
