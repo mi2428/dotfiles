@@ -81,7 +81,7 @@ Then run `make macos` including the following to complete setup.
 % make link.macos     # create symbolic links
 ```
 
-### for Linux servers
+### Linux servers
 
 Paste the below line and wait until the terminal goes silent.
 
