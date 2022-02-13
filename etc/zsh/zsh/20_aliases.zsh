@@ -17,6 +17,23 @@ get() {
 }
 
 
+dk() {
+  if (( $# == 1 )) && [[ $1 == "pull" ]]; then
+    for image in $(docker images --format '{{.Repository}}:{{.Tag}}' --filter "dangling=false" | grep -v '<none>' | fzf --multi); do
+      docker pull ${image}
+    done
+    return 0
+  fi
+
+  if (( $# == 1 )) && [[ $1 == "rmi" ]]; then
+    docker rmi $(docker images --format '{{.Repository}}:{{.Tag}}' --filter "dangling=false" | grep -v '<none>' | fzf --multi)
+    return 0
+  fi
+
+  docker $@
+}
+
+
 man() {
   # env PAGER="most -s" man $@
   env \
@@ -166,7 +183,6 @@ alias be='bundle exec'
 alias bi='bundle install'
 alias bu='bundle update'
 alias dc='docker-compose'
-alias dk='docker'
 alias ga='git add'
 alias gb='git branch'
 alias gc='git commit'
