@@ -60,9 +60,9 @@ main() {
 
   case "$CONTAINER_IMAGE_CODE" in
     "ubuntu")
-      CONTAINER_IMAGE="mi2428/ubuntu:latest" ;;
+      CONTAINER_IMAGE="ghcr.io/mi2428/ubuntu:latest" ;;
     "dotfiles")
-      CONTAINER_IMAGE="mi2428/dotfiles:latest" ;;
+      CONTAINER_IMAGE="ghcr.io/mi2428/dotfiles:latest" ;;
     *)
       usage
       exit 127 ;;
