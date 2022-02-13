@@ -159,6 +159,7 @@ alias r='rm -i'
 alias s='sudo'
 alias x='chmod +x'
 alias y='yes'
+alias z='exec zsh --login'
 
 alias an='ansible'
 alias be='bundle exec'
