@@ -4,6 +4,7 @@ CONTAINER_HOSTNAME="dotfiles"
 CONTAINER_IMAGE=""
 CONTAINER_IMAGE_CODE="ubuntu"
 CONTAINER_NAME=""
+PULL_BEFORE_RUN=0
 PERSISTENT=0
 WORKDIR=""
 
@@ -15,6 +16,7 @@ usage: inside [-w dotfiles|ubuntu] [-H hostname] [path]
  -p, --persist                   keep container persistent
  -H, --hostname [hostname]       specify container hostname
  -n, --name [name]               specify container name
+     --update                    pull the latest image before use
  -h, --help                      this help text
 EOF
 }
@@ -27,6 +29,9 @@ argparse() {
         echo --with $2
         CONTAINER_IMAGE_CODE="$2"
         shift 2 ;;
+      --update)
+        PULL_BEFORE_RUN=1
+        shift ;;
       --persist|-p)
         PERSISTENT=1
         shift ;;
@@ -75,6 +80,11 @@ main() {
 
   if [[ -z "$CONTAINER_NAME" ]]; then
     CONTAINER_NAME="${CONTAINER_IMAGE_CODE}_$(date "+%Y-%m-%d-%H-%M-%S")"
+  fi
+
+
+  if (( $PULL_BEFORE_RUN == 1 )); then
+    docker pull $CONTAINER_IMAGE
   fi
 
   DOCKER_RUN_ARGS=""
