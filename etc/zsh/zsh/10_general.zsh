@@ -42,6 +42,7 @@ typeset -U path PATH
 path=(
   $HOME/bin
   $HOME/dotfiles/bin
+  $HOME/.local/bin
   $DENO_INSTALL/bin
   $CARGO_HOME/bin
   $VOLTA_HOME/bin

@@ -43,6 +43,7 @@ x86_64)
   path=(
     $HOME/bin
     $HOME/dotfiles/bin
+    $HOME/.local/bin
     $VOLTA_HOME/bin
     /usr/local/bin(N-/)   # use /usr/local/bin in preference to /usr/bin in Intel Mac
     /usr/local/sbin(N-/)  # use /usr/local/sbin in preference to /usr/sbin in Intel Mac
@@ -63,6 +64,7 @@ arm64*)
   path=(
     $HOME/bin
     $HOME/dotfiles/bin
+    $HOME/.local/bin
     $DENO_INSTALL/bin
     $CARGO_HOME/bin
     $VOLTA_HOME/bin
