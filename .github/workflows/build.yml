@@ -18,10 +18,9 @@ jobs:
           fetch-depth: 1
       - uses: elgohr/Publish-Docker-Github-Action@master
         with:
-          name: mi2428/dotfiles/dotfiles
+          name: mi2428/dotfiles
           username: ${{ github.actor }}
           password: ${{ secrets.PERSONAL_TOKEN }}
-          #registry: ghcr.io
-          registry: docker.pkg.github.com
+          registry: ghcr.io
           snapshot: true
           tags: "latest"
