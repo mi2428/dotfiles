@@ -344,16 +344,16 @@ main_prompt() {
   local padding="$(( width - prompt_len - 2))"
 
   if (( padding > 0 )); then
-    echo "${left_part}${(r:${padding}:)""}${right_part}"
+    echo "${left_part}${(r:${padding}:)""}${right_part}${PROMPT_PALETTE[normal]}"
   else
-    echo "${left_part}"
+    echo "${left_part}${PROMPT_PALETTE[reset]}"
   fi
-  echo "${corner_bottom}${prompts[venv]}${prompts[typing]} "
+  echo "${corner_bottom}${prompts[venv]}${prompts[typing]}${PROMPT_PALETTE[normal]} "
 }
 
 
 sub_prompt() {
-  echo "${prompts[exit]}"
+  echo "${prompts[exit]}${PROMPT_PALETTE[normal]}"
 }
 
 
