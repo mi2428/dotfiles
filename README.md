@@ -27,11 +27,11 @@ Type the following to open current directory with [mi2428/dotfiles](https://gith
 
 ```
 % docker run -it --rm \
-  -w /work \
-  -v $PWD:/work \
-  -e HOST_UID=$(id -u $USER) \
-  -e HOST_GID=$(id -g $USER) \
-  ghcr.io/mi2428/dotfiles:latest
+    -w /work \
+    -v $PWD:/work \
+    -e HOST_UID=$(id -u $USER) \
+    -e HOST_GID=$(id -g $USER) \
+    ghcr.io/mi2428/dotfiles:latest
 ```
 
 To shorten the above docker command, you can copy [bin/inside](https://github.com/mi2428/dotfiles/blob/master/bin/inside) and put it to your `$PATH`.
