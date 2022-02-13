@@ -19,6 +19,9 @@ ubuntu: install.ubuntu link.linux-desktop
 .PHONY: ubuntu-server
 ubuntu-server: install.ubuntu link.linux
 
+.PHONY: ubuntu-docker
+ubuntu-docker: install.ubuntu link.docker
+
 .PHONY: install.archlinux
 install.archlinux: preinstall.common pkginstall.archlinux postinstall.common postinstall.linux
 
@@ -72,6 +75,10 @@ link.linux-desktop:
 .PHONY: link.macos
 link.macos:
 	@$(LINKER) --patch macos --force
+
+.PHONY: link.docker
+link.docker:
+	@$(LINKER) --patch docker --force
 
 .PHONY: unlink
 unlink:
