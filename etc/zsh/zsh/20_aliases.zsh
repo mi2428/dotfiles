@@ -29,6 +29,21 @@ dk() {
       return 0
       ;;
 
+    ex)
+      docker exec ${@:2}
+      return 0
+      ;;
+
+    kl)
+      docker kill ${@:2}
+      return 0
+      ;;
+
+    lg)
+      docker logs ${@:2}
+      return 0
+      ;;
+
     pl)
       if (( $# == 1 )); then
         for image in $(docker images --format '{{.Repository}}:{{.Tag}}' --filter "dangling=false" | grep -v '<none>' | fzf --multi); do
@@ -40,6 +55,11 @@ dk() {
       return 0
       ;;
 
+    cc)
+      docker commit ${@:2}
+      return 0
+      ;;
+
     rmi)
       if (( $# == 1 )); then
         docker rmi $(docker images --format '{{.Repository}}:{{.Tag}}' --filter "dangling=false" | grep -v '<none>' | fzf --multi)
@@ -47,11 +67,6 @@ dk() {
       else
         docker rmi ${@:2}
       fi
-      ;;
-
-    cc)
-      docker commit ${@:2}
-      return 0
       ;;
 
     *)
