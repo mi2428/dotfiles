@@ -18,24 +18,41 @@ get() {
 
 
 dk() {
-  if (( $# == 1 )) && [[ $1 == "pull" ]]; then
-    for image in $(docker images --format '{{.Repository}}:{{.Tag}}' --filter "dangling=false" | grep -v '<none>' | fzf --multi); do
-      docker pull ${image}
-    done
-    return 0
-  fi
+  case $1 in
+    im)
+      docker images ${@:2}
+      return 0
+      ;;
 
-  if (( $# == 1 )) && [[ $1 == "rmi" ]]; then
-    docker rmi $(docker images --format '{{.Repository}}:{{.Tag}}' --filter "dangling=false" | grep -v '<none>' | fzf --multi)
-    return 0
-  fi
+    pl)
+      if (( $# == 1 )); then
+        for image in $(docker images --format '{{.Repository}}:{{.Tag}}' --filter "dangling=false" | grep -v '<none>' | fzf --multi); do
+          docker pull ${image}
+        done
+      else
+        docker pull ${@:2}
+      fi
+      return 0
+      ;;
 
-  if (( $# == 1 )) && [[ $1 == "im" ]]; then
-    docker images
-    return 0
-  fi
+    rmi)
+      if (( $# == 1 )); then
+        docker rmi $(docker images --format '{{.Repository}}:{{.Tag}}' --filter "dangling=false" | grep -v '<none>' | fzf --multi)
+        return 0
+      else
+        docker rmi ${@:2}
+      fi
+      ;;
 
-  docker $@
+    cc)
+      docker commit ${@:2}
+      return 0
+      ;;
+
+    *)
+      docker $@
+      ;;
+  esac
 }
 
 
