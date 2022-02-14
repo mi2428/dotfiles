@@ -42,6 +42,7 @@ pkginstall.archlinux:
 .PHONY: pkginstall.ubuntu
 pkginstall.ubuntu:
 	@xargs sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends < $(PKGDIR)/apt.txt
+	@sudo ./init/pkgs/neovim
 	@sudo ln -sf /usr/bin/batcat /usr/bin/bat || true
 
 .PHONY: pkginstall.macos
