@@ -8,7 +8,7 @@ on:
     paths-ignore:
       - '**.md'
   schedule:
-    - cron: '0 * * * *'
+    - cron: '*/6 * * * *'
 
 jobs:
   publish-docker:
