@@ -27,6 +27,7 @@ RUN apt-get update \
     apt-get install -y neovim
 
 RUN groupadd wheel \
+ && groupadd docker \
  && echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers \
  && locale-gen en_US.UTF-8 ja_JP.UTF-8
 
