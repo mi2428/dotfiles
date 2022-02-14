@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CONTAINER_HOSTNAME="$(hostname)"
+CONTAINER_HOSTNAME=""
 CONTAINER_IMAGE=""
 CONTAINER_IMAGE_CODE="ubuntu"
 CONTAINER_NAME=""
@@ -98,6 +98,7 @@ main() {
   (( $PERSISTENT == 0 ))    && ARGS="${ARGS} --rm"
   (( $COPY_SSHKEYS == 1 ))  && ARGS="${ARGS} -v $HOME/.ssh:/etc/skel/.ssh:ro"
   (( $ENABLE_D_IN_D == 1 )) && ARGS="${ARGS} --privileged --pid=host"
+  [[ -n $CONTAINER_HOSTNAME ]] && ARGS="${ARGS} --hostname ${CONTAINER_HOSTNAME}"
 
   docker run -it \
     ${ARGS} \
@@ -106,10 +107,9 @@ main() {
     -e HOST_UID=$(id -u $USER) \
     -e HOST_GID=$(id -g $USER) \
     --dns 9.9.9.9 \
-    --name $CONTAINER_NAME \
-    --hostname $CONTAINER_HOSTNAME \
     --network host \
-    $CONTAINER_IMAGE
+    $CONTAINER_IMAGE \
+    sudo -u shizk OUTSIDE_HOSTNAME=$(hostname) zsh --login 
 }
 
 
