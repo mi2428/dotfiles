@@ -60,6 +60,11 @@ dk() {
       return 0
       ;;
 
+    vl)
+      docker volume ${@:2}
+      return 0
+      ;;
+
     rmi)
       if (( $# == 1 )); then
         docker rmi $(docker images --format '{{.Repository}}:{{.Tag}}' --filter "dangling=false" | grep -v '<none>' | fzf --multi)
