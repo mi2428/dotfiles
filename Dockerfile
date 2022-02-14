@@ -40,7 +40,7 @@ RUN git clone --depth 1 https://github.com/mi2428/dotfiles \
  && HOME=/etc/skel \
     ./.fzf/install --all
 
-RUN cp ./dotfiles/var/entrypoint.sh /sbin/entrypoint.sh \
+RUN cp ./dotfiles/var/docker/entrypoint.sh /sbin/entrypoint.sh \
  && chmod +x /sbin/entrypoint.sh
 
 ENTRYPOINT ["/sbin/entrypoint.sh"]
