@@ -106,6 +106,7 @@ main() {
     -e HOST_UID=$(id -u $USER) \
     -e HOST_GID=$(id -g $USER) \
     --dns 9.9.9.9 \
+    --name $CONTAINER_NAME \
     --hostname $CONTAINER_HOSTNAME \
     --network host \
     $CONTAINER_IMAGE \
