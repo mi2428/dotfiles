@@ -33,7 +33,7 @@ argparse() {
     case $1 in
       --attach|-a)
         ATTACH=1
-        shift 2 ;;
+        shift ;;
       --with|-w)
         CONTAINER_IMAGE_CODE="$2"
         shift 2 ;;
