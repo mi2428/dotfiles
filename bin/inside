@@ -116,6 +116,7 @@ main() {
     -v $(cd $WORKDIR; pwd):/work \
     -e HOST_UID=$(id -u $USER) \
     -e HOST_GID=$(id -g $USER) \
+    -e SSH_CLIENT="${SSH_CLIENT}" \
     --dns 9.9.9.9 \
     --name $CONTAINER_NAME \
     --hostname $CONTAINER_HOSTNAME \
