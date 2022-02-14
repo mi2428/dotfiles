@@ -116,13 +116,12 @@ main() {
     -v $(cd $WORKDIR; pwd):/work \
     -e HOST_UID=$(id -u $USER) \
     -e HOST_GID=$(id -g $USER) \
-    -e SSH_CLIENT="${SSH_CLIENT}" \
     --dns 9.9.9.9 \
     --name $CONTAINER_NAME \
     --hostname $CONTAINER_HOSTNAME \
     --network host \
     $CONTAINER_IMAGE \
-    sudo -u shizk OUTSIDE_HOSTNAME=$(hostname) zsh --login 
+    sudo -u shizk OUTSIDE_HOSTNAME=$(hostname) SSH_CLIENT="${SSH_CLIENT}" zsh --login 
 }
 
 
