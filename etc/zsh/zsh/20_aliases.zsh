@@ -24,6 +24,11 @@ dk() {
       return 0
       ;;
 
+    bd)
+      docker build ${@:2}
+      return 0
+      ;;
+
     pl)
       if (( $# == 1 )); then
         for image in $(docker images --format '{{.Repository}}:{{.Tag}}' --filter "dangling=false" | grep -v '<none>' | fzf --multi); do
