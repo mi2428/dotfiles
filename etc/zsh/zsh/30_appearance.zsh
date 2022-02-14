@@ -19,6 +19,7 @@ typeset -g KAWAII_EMOJI=(
 
 typeset -gA PROMPT_PALETTE=(
   host          '%b%u%F{157}'
+  insidehost    '%b%u%F{194}'
   user          '%b%u%F{253}'
   path          '%B%u%F{229}'
   path.shrinked '%B%u%F{226}'
@@ -133,8 +134,15 @@ set_margin() {
 
 set_hostname() {
   local name=${(%):-%M}
-  prompts[host]="${PROMPT_PALETTE[cursor]}[${PROMPT_PALETTE[host]}${name}${PROMPT_PALETTE[cursor]}]"
-  prompts_len[host]=$(( ${#name} + 2 ))
+  if [[ -z ${OUTSIDE_HOSTNAME} ]]; then
+    prompts[host]="${PROMPT_PALETTE[cursor]}[${PROMPT_PALETTE[host]}${name}${PROMPT_PALETTE[cursor]}]"
+    prompts_len[host]=$(( ${#name} + 2 ))
+  else
+    local inside="${PROMPT_PALETTE[cursor]}[${PROMPT_PALETTE[insidehost]}${name}${PROMPT_PALETTE[cursor]}]"
+    local outside="${PROMPT_PALETTE[cursor]}[${PROMPT_PALETTE[host]}${OUTSIDE_HOSTNAME}${PROMPT_PALETTE[cursor]}]"
+    prompts[host]="${outside}╌${inside}"
+    prompts_len[host]=$(( ${#name} + ${#OUTSIDE_HOSTNAME} + 5 ))
+  fi
 }
 
 

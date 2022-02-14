@@ -176,7 +176,7 @@ alias r='rm -i'
 alias s='sudo'
 alias x='chmod +x'
 alias y='yes'
-alias z='exec env PROMPT_SEVERITY=${PROMPT_SEVERITY} zsh --login'
+alias z='exec env PROMPT_SEVERITY=${PROMPT_SEVERITY} OUTSIDE_HOSTNAME=${OUTSIDE_HOSTNAME} zsh --login'
 
 alias an='ansible'
 alias be='bundle exec'
