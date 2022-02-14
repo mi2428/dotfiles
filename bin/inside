@@ -9,11 +9,13 @@ PULL_BEFORE_RUN=0
 PERSISTENT=0
 COPY_SSH_KEYS=0
 DOOD=0
+ATTACH=0
 
 
 usage() {
 cat <<EOF
 usage: inside [-w dotfiles|ubuntu] [-H hostname] [path]
+ -a, --attach                    attach current container (must be with -n option)
  -w, --with {dotfiles, *ubuntu}  specify container image
  -p, --persist                   keep container persistent
  -s, --copy-ssh-keys             copy SSH keys
@@ -29,6 +31,9 @@ EOF
 argparse() {
   while (( "$#" )); do
     case $1 in
+      --attach|-a)
+        ATTACH=1
+        shift 2 ;;
       --with|-w)
         CONTAINER_IMAGE_CODE="$2"
         shift 2 ;;
@@ -74,6 +79,12 @@ main() {
   fi
 
   argparse $args
+
+  if (( $ATTACH == 1 )); then
+    docker start $CONTAINER_NAME && \
+    docker exec -it $CONTAINER_NAME sudo -u shizk OUTSIDE_HOSTNAME=$(hostname) SSH_CLIENT=${remote_ip} zsh --login 
+    exit 0
+  fi
 
   case "$CONTAINER_IMAGE_CODE" in
     "ubuntu")
