@@ -29,7 +29,7 @@
   signing = true
 
 [pull]
-  ff     = only
+  #ff     = only
   rebase = false
 
 [push]
