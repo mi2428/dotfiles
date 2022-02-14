@@ -1,14 +1,13 @@
 #!/bin/bash
 
-CONTAINER_HOSTNAME=""
-CONTAINER_IMAGE=""
 CONTAINER_IMAGE_CODE="ubuntu"
+CONTAINER_IMAGE=""
 CONTAINER_NAME=""
-PULL_BEFORE_RUN=0
-COPY_SSHKEYS=0
-ENABLE_D_IN_D=0
-PERSISTENT=0
+CONTAINER_HOSTNAME=""
 WORKDIR=""
+PULL_BEFORE_RUN=0
+PERSISTENT=0
+COPY_SSH_KEYS=0
 
 
 usage() {
@@ -16,8 +15,7 @@ cat <<EOF
 usage: inside [-w dotfiles|ubuntu] [-H hostname] [path]
  -w, --with {dotfiles, *ubuntu}  specify container image
  -p, --persist                   keep container persistent
- -s, --copy-ssh                  copy SSH keys
- -d, --d-in-d                    enable D-in-D mode
+ -s, --copy-ssh-keys             copy SSH keys
  -H, --hostname [hostname]       specify container hostname
  -n, --name [name]               specify container name
      --update                    pull the latest image before use
@@ -36,10 +34,7 @@ argparse() {
         PULL_BEFORE_RUN=1
         shift ;;
       --copy-ssh|-s)
-        COPY_SSHKEYS=1
-        shift ;;
-      --d-in-d|-d)
-        ENABLE_D_IN_D=1
+        COPY_SSH_KEYS=1
         shift ;;
       --persist|-p)
         PERSISTENT=1
@@ -85,10 +80,16 @@ main() {
       exit 127 ;;
   esac
 
-  if [[ -z "$CONTAINER_NAME" ]]; then
-    CONTAINER_NAME="${CONTAINER_IMAGE_CODE}_$(date "+%Y-%m-%d-%H-%M-%S")"
+  if [[ -z $CONTAINER_NAME ]]; then
+    for i in $(seq -f "%02g" 1 99); do
+      CONTAINER_NAME="shizk-ubnt-${i}"
+      docker ps --format "{{.Names}}" | grep -q $CONTAINER_NAME || break
+    done
   fi
 
+  if [[ -z "$CONTAINER_HOSTNAME" ]]; then
+    CONTAINER_HOSTNAME="${CONTAINER_NAME}"
+  fi
 
   if (( $PULL_BEFORE_RUN == 1 )); then
     docker pull $CONTAINER_IMAGE
@@ -96,9 +97,7 @@ main() {
 
   ARGS=""
   (( $PERSISTENT == 0 ))    && ARGS="${ARGS} --rm"
-  (( $COPY_SSHKEYS == 1 ))  && ARGS="${ARGS} -v $HOME/.ssh:/etc/skel/.ssh:ro"
-  (( $ENABLE_D_IN_D == 1 )) && ARGS="${ARGS} --privileged --pid=host"
-  [[ -n $CONTAINER_HOSTNAME ]] && ARGS="${ARGS} --hostname ${CONTAINER_HOSTNAME}"
+  (( $COPY_SSH_KEYS == 1 )) && ARGS="${ARGS} -v $HOME/.ssh:/etc/skel/.ssh:ro"
 
   docker run -it \
     ${ARGS} \
@@ -107,6 +106,7 @@ main() {
     -e HOST_UID=$(id -u $USER) \
     -e HOST_GID=$(id -g $USER) \
     --dns 9.9.9.9 \
+    --hostname $CONTAINER_HOSTNAME \
     --network host \
     $CONTAINER_IMAGE \
     sudo -u shizk OUTSIDE_HOSTNAME=$(hostname) zsh --login 
