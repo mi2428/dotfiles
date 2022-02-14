@@ -81,7 +81,7 @@ main() {
   argparse $args
 
   if (( $ATTACH == 1 )); then
-    docker start $CONTAINER_NAME && \
+    docker start $CONTAINER_NAME 1>/dev/null 2>&1 && \
     docker exec -it $CONTAINER_NAME sudo -u shizk OUTSIDE_HOSTNAME=$(hostname) SSH_CLIENT=${remote_ip} zsh --login 
     exit 0
   fi
