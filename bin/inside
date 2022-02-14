@@ -103,7 +103,12 @@ main() {
   ARGS=""
   (( $PERSISTENT == 0 ))    && ARGS="${ARGS} --rm"
   (( $COPY_SSH_KEYS == 1 )) && ARGS="${ARGS} -v $HOME/.ssh:/etc/skel/.ssh:ro"
-  (( $DOOD == 1 ))          && ARGS="${ARGS} -v /var/run/docker.sock:/var/run/docker.sock"
+
+  if (( $DOOD == 1 )); then
+    local docker_gid=$(getent group docker | cut -d ":" -f 3)
+    ARGS="${ARGS} -v /var/run/docker.sock:/var/run/docker.sock"
+    ARGS="${ARGS} -e HOST_DOCKER_GID=${docker_gid}"
+  fi
 
   docker run -it \
     ${ARGS} \
