@@ -110,6 +110,8 @@ main() {
     ARGS="${ARGS} -e HOST_DOCKER_GID=${docker_gid}"
   fi
 
+  local remote_ip=$(awk '{print $1}' <<< "${SSH_CLIENT}")
+
   docker run -it \
     ${ARGS} \
     -w /work \
@@ -121,7 +123,7 @@ main() {
     --hostname $CONTAINER_HOSTNAME \
     --network host \
     $CONTAINER_IMAGE \
-    sudo -u shizk OUTSIDE_HOSTNAME=$(hostname) SSH_CLIENT="${SSH_CLIENT}" zsh --login 
+    sudo -u shizk OUTSIDE_HOSTNAME=$(hostname) SSH_CLIENT=${remote_ip} zsh --login 
 }
 
 
