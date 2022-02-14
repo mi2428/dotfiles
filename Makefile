@@ -42,6 +42,7 @@ pkginstall.archlinux:
 .PHONY: pkginstall.ubuntu
 pkginstall.ubuntu:
 	@xargs sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends < $(PKGDIR)/apt.txt
+	@sudo ./init/pkgs/neovim
 	@sudo ln -sf /usr/bin/batcat /usr/bin/bat || true
 
 .PHONY: pkginstall.macos
@@ -63,6 +64,7 @@ postinstall.linux:
 	@git clone --depth 1 https://github.com/zsh-users/zsh-syntax-highlighting $(HOME)/.local/share/zsh/zsh-syntax-highlighting || true
 	@git clone --depth 1 https://github.com/zsh-users/zsh-autosuggestions $(HOME)/.local/share/zsh/zsh-autosuggestions || true
 	@git clone --depth 1 https://github.com/zsh-users/zsh-completions $(HOME)/.local/share/zsh/zsh-completions || true
+	@sudo locale-gen en_US.UTF-8 ja_JP.UTF-8
 
 .PHONY: link.linux
 link.linux:
