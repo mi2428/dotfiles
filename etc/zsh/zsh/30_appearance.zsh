@@ -296,7 +296,7 @@ mask_ip() {
 
 set_via_ssh_info() {
   local srcip=$(awk '{print $1}' <<< ${SSH_CLIENT})
-  if [[ -n ${srcip} ]]; then
+  if [[ -n ${srcip} ]] && ( [[ -z ${HIDE_SSH_PROMPT} ]] || [[ ${HIDE_SSH_PROMPT} == 0 ]] ); then
     local maskedip=$(mask_ip ${srcip})
     prompts[ssh.via]=" ${PROMPT_PALETTE[conj]}via ${PROMPT_PALETTE[ssh.via]}${maskedip} (SSH)${PROMPT_PALETTE[normal]}"
     prompts_len[ssh.via]=$(( ${#maskedip} + 11 ))

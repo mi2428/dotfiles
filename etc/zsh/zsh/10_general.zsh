@@ -106,14 +106,20 @@ _severity_level4() {
   export PROMPT_SEVERITY=4
 }
 
+_toggle_ssh_prompt() {
+  [[ -z HIDE_SSH_PROMPT ]] && export HIDE_SSH_PROMPT=1
+  HIDE_SSH_PROMPT=$(( (HIDE_SSH_PROMPT + 1) % 2 ))
+}
+
 zle -N severity_clear _severity_clear
 zle -N severity_level1 _severity_level1
 zle -N severity_level2 _severity_level2
 zle -N severity_level3 _severity_level3
 zle -N severity_level4 _severity_level4
+zle -N toggle_ssh_prompt _toggle_ssh_prompt
 
 bindkey '^[0' severity_clear
 bindkey '^[1' severity_level1
 bindkey '^[2' severity_level2
 bindkey '^[3' severity_level3
-bindkey '^[4' severity_level4
+bindkey '^[s' toggle_ssh_prompt
