@@ -1,11 +1,17 @@
 bat
 cargo
+file
 fzf
+glances
 grc
+htop
+less
 pv
 python3-pip
 silversearcher-ag
+tig
 tmux
 tmuxinator
+tree
 unzip
 zsh
