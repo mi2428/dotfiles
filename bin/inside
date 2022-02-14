@@ -8,6 +8,7 @@ WORKDIR=""
 PULL_BEFORE_RUN=0
 PERSISTENT=0
 COPY_SSH_KEYS=0
+DOOD=0
 
 
 usage() {
@@ -18,6 +19,7 @@ usage: inside [-w dotfiles|ubuntu] [-H hostname] [path]
  -s, --copy-ssh-keys             copy SSH keys
  -H, --hostname [hostname]       specify container hostname
  -n, --name [name]               specify container name
+ -D, --dood                      use docker-outside-of-docker
      --update                    pull the latest image before use
  -h, --help                      this help text
 EOF
@@ -45,6 +47,9 @@ argparse() {
       --name|-n)
         CONTAINER_NAME="$2"
         shift 2 ;;
+      --dood|-D)
+        DOOD=1
+        shift ;;
       --help|-h)
         usage
         exit 0 ;;
@@ -83,7 +88,7 @@ main() {
   if [[ -z $CONTAINER_NAME ]]; then
     for i in $(seq -f "%02g" 1 99); do
       CONTAINER_NAME="shizk-ubnt-${i}"
-      docker ps --format "{{.Names}}" | grep -q $CONTAINER_NAME || break
+      docker ps -a --format "{{.Names}}" | grep -q $CONTAINER_NAME || break
     done
   fi
 
@@ -98,6 +103,7 @@ main() {
   ARGS=""
   (( $PERSISTENT == 0 ))    && ARGS="${ARGS} --rm"
   (( $COPY_SSH_KEYS == 1 )) && ARGS="${ARGS} -v $HOME/.ssh:/etc/skel/.ssh:ro"
+  (( $DOOD == 1 ))          && ARGS="${ARGS} -v /var/run/docker.sock:/var/run/docker.sock"
 
   docker run -it \
     ${ARGS} \
