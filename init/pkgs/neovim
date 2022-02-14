@@ -10,13 +10,14 @@ fi
 
 case $DIST in
   Ubuntu|Debian)
-    sudo apt-get update \
-      && apt-get install -y software-properties-common \
-      && add-apt-repository ppa:neovim-ppa/unstable \
-      && apt-get update \
-      && DEBIAN_FRONTEND=noninteractive \
-         apt-get install -y neovim
-      ;;
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y software-properties-common && \
+    DEBIAN_FRONTEND=noninteractive \
+    add-apt-repository -y ppa:neovim-ppa/unstable && \
+    DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y neovim
+    ;;
   *)
     exit 127
     ;;
