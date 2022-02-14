@@ -98,6 +98,14 @@ Paste the below line and wait until the terminal goes silent.
 
 ## Deploy hints
 
+### fix right prompt alignment
+
+Remember to setup locale on your host - both `en_US` and `ja_JP` are requried
+
+```
+% sudo locale-gen en_US.UTF-8 ja_JP.UTF-8
+```
+
 ### import GPG key pair to create signed commit
 
 ```
