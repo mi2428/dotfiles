@@ -30,6 +30,11 @@ dk() {
     return 0
   fi
 
+  if (( $# == 1 )) && [[ $1 == "im" ]]; then
+    docker images
+    return 0
+  fi
+
   docker $@
 }
 
