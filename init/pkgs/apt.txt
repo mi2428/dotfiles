@@ -8,6 +8,7 @@ htop
 less
 pv
 python3-pip
+ripgrep
 silversearcher-ag
 tig
 tmux
