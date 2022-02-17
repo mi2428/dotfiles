@@ -91,12 +91,12 @@ dot() {
   case $1 in
     cc|commit)
       local message="${@:2}"
-      (builtin cd $HOME/dotfiles 2>/dev/null; git add .; git commit -m "$message")
+      (builtin cd $HOME/dotfiles 2>/dev/null; git add . 1>/dev/null 2>&1; git commit -m "$message")
       return 0
       ;;
 
     d|diff)
-      (builtin cd $HOME/dotfiles 2>/dev/null; git diff)
+      (builtin cd $HOME/dotfiles 2>/dev/null; git diff-index --quiet HEAD || git diff)
       return 0
       ;;
 
@@ -115,6 +115,11 @@ dot() {
       return 0
       ;;
 
+    rollback)
+      (builtin cd $HOME/dotfiles 2>/dev/null; git checkout)
+      return 0
+      ;;
+
     -h|--help|*)
       echo "usage: dot [options...]"
       echo " (empty)               move to $HOME/dotfiles"
@@ -123,6 +128,7 @@ dot() {
       echo " lg, log               alias of \`tig\` command"
       echo " pl, pull              alias of \`git pull\` command"
       echo " ps, push              alias of \`git push\` command"
+      echo "     rollback          alias of \`git checkout\` command"
       echo " h,  help              this help text"
       return 0
       ;;
