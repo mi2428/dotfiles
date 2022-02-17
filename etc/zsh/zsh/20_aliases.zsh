@@ -116,7 +116,7 @@ dot() {
       ;;
 
     rollback)
-      (builtin cd $HOME/dotfiles 2>/dev/null; git checkout)
+      (builtin cd $HOME/dotfiles 2>/dev/null; git checkout .)
       return 0
       ;;
 
@@ -128,7 +128,7 @@ dot() {
       echo " lg, log               alias of \`tig\` command"
       echo " pl, pull              alias of \`git pull\` command"
       echo " ps, push              alias of \`git push\` command"
-      echo "     rollback          alias of \`git checkout\` command"
+      echo "     rollback          alias of \`git checkout .\` command"
       echo " h,  help              this help text"
       return 0
       ;;
