@@ -14,7 +14,7 @@ ATTACH=0
 
 usage() {
 cat <<EOF
-usage: inside [-w dotfiles|ubuntu] [-H hostname] [path]
+usage: inside [options...] [path]
  -a, --attach                    attach current container (must be with -n option)
  -w, --with {dotfiles, *ubuntu}  specify container image
  -p, --persist                   keep container persistent
