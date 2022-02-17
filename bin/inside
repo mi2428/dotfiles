@@ -16,12 +16,12 @@ usage() {
 cat <<EOF
 usage: inside [options...] [path]
  -a, --attach                    attach current container (must be with -n option)
- -w, --with {dotfiles, *ubuntu}  specify container image
+ -n, --name [name]               specify container name
  -p, --persist                   keep container persistent
  -s, --copy-ssh-keys             copy SSH keys
- -H, --hostname [hostname]       specify container hostname
- -n, --name [name]               specify container name
+ -w, --with {dotfiles, *ubuntu}  specify container image
  -D, --dood                      use docker-outside-of-docker
+ -H, --hostname [hostname]       specify container hostname
      --update                    pull the latest image before use
  -h, --help                      this help text
 EOF
