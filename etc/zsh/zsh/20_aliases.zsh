@@ -81,6 +81,55 @@ dk() {
 }
 
 
+dot() {
+  if (( $# == 0 )); then
+    cd $HOME/dotfiles
+    return 0
+  fi
+
+  ## execute in subshell so as not to move current directory
+  case $1 in
+    cc|commit)
+      local message="${@:2}"
+      (builtin cd $HOME/dotfiles 2>/dev/null; git add .; git commit -m "$message")
+      return 0
+      ;;
+
+    d|diff)
+      (builtin cd $HOME/dotfiles 2>/dev/null; git diff)
+      return 0
+      ;;
+
+    lg|log)
+      (builtin cd $HOME/dotfiles 2>/dev/null; tig)
+      return 0
+      ;;
+
+    pl|pull)
+      (builtin cd $HOME/dotfiles 2>/dev/null; git pull)
+      return 0
+      ;;
+
+    ps|push)
+      (builtin cd $HOME/dotfiles 2>/dev/null; git push)
+      return 0
+      ;;
+
+    -h|--help|*)
+      echo "usage: dot [options...]"
+      echo " (empty)               move to $HOME/dotfiles"
+      echo " cc, commit [message]  alias of \`git add . && git commit -m\` command"
+      echo " d,  diff              alias of \`git diff\` command"
+      echo " lg, log               alias of \`tig\` command"
+      echo " pl, pull              alias of \`git pull\` command"
+      echo " ps, push              alias of \`git push\` command"
+      echo " h,  help              this help text"
+      return 0
+      ;;
+  esac
+}
+
+
 man() {
   # env PAGER="most -s" man $@
   env \
@@ -242,7 +291,6 @@ alias pp='ping6'
 alias py='python3'
 alias rc='bundle exec rails c'
 
-alias dot='cd $HOME/dotfiles'
 alias dox='docker exec -it `docker ps --format "{{.Names}}" | fzf`'
 alias gco='git checkout'
 alias gpp='git pull'
