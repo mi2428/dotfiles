@@ -72,6 +72,7 @@ argparse() {
 
 main() {
   local args="$@"
+  local remote_ip=$(awk '{print $1}' <<< "${SSH_CLIENT}")
 
   if (( $# == 0 )); then
     usage
