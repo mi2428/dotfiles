@@ -49,6 +49,8 @@ dk() {
         for image in $(docker images --format '{{.Repository}}:{{.Tag}}' --filter "dangling=false" | grep -v '<none>' | fzf --multi); do
           docker pull ${image}
         done
+      elif [[ $2 == "ubuntu" ]]; then
+        docker pull ghcr.io/mi2428/dotfiles:latest
       else
         docker pull ${@:2}
       fi
