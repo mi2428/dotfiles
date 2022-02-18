@@ -158,11 +158,6 @@ tgz() {
 }
 
 
-f() {
-  open -a Finder ${$1:-'.'}
-}
-
-
 ghc() {
   local repo="$1"
   if (( $# == 2 )); then
@@ -299,7 +294,7 @@ alias rc='bundle exec rails c'
 
 alias dox='docker exec -it `docker ps --format "{{.Names}}" | fzf`'
 alias gco='git checkout'
-alias gpp='git pull'
+alias gpl='git pull'
 alias ipf='iperf3'
 alias ipy='ipython3'
 alias mkd='mkdir -p'
@@ -315,7 +310,6 @@ alias grep='grep -n --color=auto'
 alias http='python3 -m http.server'
 alias less='less --no-init --quit-if-one-screen'
 alias myip='curl -s ipinfo.io | jq'
-alias preview='open -a Preview'
 alias sshh='sshuttle'
 
 
