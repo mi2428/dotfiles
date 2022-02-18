@@ -50,7 +50,7 @@ dk() {
           docker pull ${image}
         done
       elif [[ $2 == "ubuntu" ]]; then
-        docker pull ghcr.io/mi2428/dotfiles:latest
+        docker pull ghcr.io/mi2428/ubuntu:latest
       else
         docker pull ${@:2}
       fi
