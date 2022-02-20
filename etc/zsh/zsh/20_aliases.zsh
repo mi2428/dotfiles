@@ -17,6 +17,11 @@ get() {
 }
 
 
+showopt() {
+  set -o | sed -e 's/^no\(.*\)on$/\1  off/' -e 's/^no\(.*\)off$/\1  on/' | \grep --color=auto -E '.*on$|$'
+}
+
+
 dk() {
   case $1 in
     im)
