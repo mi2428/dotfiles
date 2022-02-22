@@ -31,6 +31,8 @@ export SAVEHIST=1000000
 export HISTFILE=$HOME/.zhistory
 export PATH_BOOKMARK=$HOME/.zsh_pathbook
 
+[[ -f ${PATH_BOOKMARK} ]] || touch ${PATH_BOOKMARK}
+
 #export TERM=screen-256color
 export TERM=xterm-256color
 export LANG=en_US.UTF-8
@@ -124,7 +126,6 @@ _toggle_ssh_prompt() {
 }
 
 _toggle_path_bookmark() {
-  [[ -f ${PATH_BOOKMARK} ]] || touch ${PATH_BOOKMARK}
   if \grep -q "^${PWD}$" ${PATH_BOOKMARK}; then
     sed -i "" -e "/^${PWD//\//\\/}$/d" ${PATH_BOOKMARK}
   else
