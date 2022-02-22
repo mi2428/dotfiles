@@ -125,7 +125,7 @@ _toggle_ssh_prompt() {
 
 _toggle_path_bookmark() {
   [[ -f ${PATH_BOOKMARK} ]] || touch ${PATH_BOOKMARK}
-  if \grep -q "${PWD}" ${PATH_BOOKMARK}; then
+  if \grep -q "^${PWD}$" ${PATH_BOOKMARK}; then
     sed -i "" -e "/^${PWD//\//\\/}/d" ${PATH_BOOKMARK}
   else
     echo "${PWD}" >> ${PATH_BOOKMARK}

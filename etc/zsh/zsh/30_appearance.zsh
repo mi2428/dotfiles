@@ -2,6 +2,7 @@ typeset -gA PROMPT_SYMBOL=(
   corner.top     '╭─'
   corner.bottom  '╰─'
   arrow          '─▶'
+  path.marked    '♣ '
   #arrow          '─▶▶'
   #arrow          '─▷'
   #arrow          '─▷▷'
@@ -23,6 +24,7 @@ typeset -gA PROMPT_PALETTE=(
   user          '%b%u%F{253}'
   path          '%B%u%F{229}'
   path.shrinked '%B%u%F{226}'
+  path.marked   '%B%u%F{144}'
   venv          '%b%u%F{081}'
   ssh.via       '%b%u%F{222}'
   ssh.agent     '%b%u%F{081}'
@@ -56,6 +58,7 @@ typeset -gA prompts=(
   user       ""
   level      ""
   path       ""
+  path.icon  ""
   venv       ""
   ssh.via    ""
   ssh.agent  ""
@@ -72,7 +75,7 @@ typeset -gA prompts_len=(
   host       0
   user       0
   path       0
-  path       0
+  path.icon  0
   venv       0
   ssh.via    0
   ssh.agent  0
@@ -157,6 +160,16 @@ set_user() {
 }
 
 
+set_path_icon() {
+  prompts[path.icon]=""
+  prompts_len[path.icon]=0
+  if \grep -q "^${PWD}$" "$PATH_BOOKMARK"; then
+    prompts[path.icon]="${PROMPT_PALETTE[path.marked]}${PROMPT_SYMBOL[path.marked]}${PROMPT_PALETTE[reset]} "
+    prompts_len[path.icon]=$(( ${#prompts_len[path.icon]} + 2 ))
+  fi
+}
+
+
 calc_path_length() {
   local current_path="$1"
   local total_chars=$(LC_CTYPE=ja_JP.UTF-8 wc -m <<< ${current_path})
@@ -171,7 +184,7 @@ calc_path_length() {
 
 set_current_path() {
   LC_CTYPE=ja_JP.UTF-8 local current_path=${(%):-%~}
-  prompts[path]=" ${PROMPT_PALETTE[conj]}in ${PROMPT_PALETTE[path]}${current_path}"
+  prompts[path]=" ${PROMPT_PALETTE[conj]}in ${prompts[path.icon]}${PROMPT_PALETTE[path]}${current_path}"
   prompts_len[path]=$(( $(calc_path_length "$current_path") + 4 ))
 }
 
@@ -220,7 +233,7 @@ set_shrink_path() {
   local depth=$(awk '{count += (split($0, a, "/") - 1)} END{print count}' <<< $current_path)
   while (( level <= depth )) && (( l >= width_budget )); do
     read shrinked shrinked_len < <(shrink_path ${current_path} $level)
-    p=" ${PROMPT_PALETTE[conj]}in ${PROMPT_PALETTE[path]}${shrinked}"
+    p=" ${PROMPT_PALETTE[conj]}in ${prompts[path.icon]}${PROMPT_PALETTE[path]}${shrinked}"
     l=$(( shrinked_len + 4 ))
     level=$(( level + 1 ))
   done
@@ -338,8 +351,9 @@ set_typing_pointer() {
 
 main_prompt() {
   local width=$(tput cols)
-  local prompt_len_wo_path=$(( prompts_len[host] + prompts_len[level] + prompts_len[git] + prompts_len[ssh.agent] + prompts_len[ssh.via] ))
-  local prompt_len_wo_path=$(( prompt_len_wo_path + prompts_len[time] + prompts_len[elapsed] ))
+  local prompt_len_wo_path=$(( prompts_len[host] + prompts_len[level] + prompts_len[path.icon]
+                               + prompts_len[git] + prompts_len[ssh.agent] + prompts_len[ssh.via]
+                               + prompts_len[time] + prompts_len[elapsed] ))
   local path_len_budget="$(( width - prompt_len_wo_path - 2))"
 
   set_shrink_path ${path_len_budget}
@@ -376,6 +390,7 @@ precmd() {
   set_margin
   set_hostname
   set_user
+  set_path_icon
   set_current_path
   set_current_time
   set_elapsed_time
