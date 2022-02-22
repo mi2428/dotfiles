@@ -12,6 +12,11 @@ mcd() {
 }
 
 
+goto() {
+  pushd $(fzf < $PATH_BOOKMARK)
+}
+
+
 get() {
   mv -i $@ .
 }
