@@ -12,6 +12,21 @@ mcd() {
 }
 
 
+pd() {
+  if (( $# == 1 )); then
+    pushd "$1"
+  else
+    popd
+  fi
+
+  if whence -p exa 1> /dev/null; then
+    EXA_ICON_SPACING=1 exa --icons .
+  else
+    ls --color=auto .
+  fi
+}
+
+
 goto() {
   pushd $(fzf < $PATH_BOOKMARK)
 }
