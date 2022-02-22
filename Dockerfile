@@ -12,6 +12,9 @@ RUN apt-get update \
     apt-get install -y --no-install-recommends \
       apt-utils \
       ca-certificates \
+      software-properties-common \
+ && DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y --no-install-recommends \
       curl \
       git \
       gnupg-agent \
@@ -19,7 +22,6 @@ RUN apt-get update \
       language-pack-ja \
       locales \
       make \
-      software-properties-common \
       sudo \
       toilet \
  && add-apt-repository ppa:neovim-ppa/unstable \
