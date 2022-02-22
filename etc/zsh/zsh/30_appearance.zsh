@@ -390,7 +390,7 @@ precmd() {
   set_margin
   set_hostname
   set_user
-  set_path_icon
+  set_path_icon  # must be loaded before set_current_path
   set_current_path
   set_current_time
   set_elapsed_time
