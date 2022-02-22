@@ -29,6 +29,7 @@ setopt SHARE_HISTORY
 export HISTSIZE=1000000
 export SAVEHIST=1000000
 export HISTFILE=$HOME/.zhistory
+export PATH_BOOKMARK=$HOME/.zsh_pathbook
 
 #export TERM=screen-256color
 export TERM=xterm-256color
@@ -122,18 +123,29 @@ _toggle_ssh_prompt() {
   HIDE_SSH_PROMPT=$(( (HIDE_SSH_PROMPT + 1) % 2 ))
 }
 
+_toggle_path_bookmark() {
+  [[ -f ${PATH_BOOKMARK} ]] || touch ${PATH_BOOKMARK}
+  if \grep -q "${PWD}" ${PATH_BOOKMARK}; then
+    sed -i "" -e "/^${PWD//\//\\/}/d" ${PATH_BOOKMARK}
+  else
+    echo "${PWD}" >> ${PATH_BOOKMARK}
+  fi
+}
+
 zle -N severity_clear _severity_clear
 zle -N severity_level1 _severity_level1
 zle -N severity_level2 _severity_level2
 zle -N severity_level3 _severity_level3
 zle -N severity_level4 _severity_level4
 zle -N toggle_ssh_prompt _toggle_ssh_prompt
+zle -N toggle_path_bookmark _toggle_path_bookmark
 
 bindkey '^[0' severity_clear
 bindkey '^[1' severity_level1
 bindkey '^[2' severity_level2
 bindkey '^[3' severity_level3
 bindkey '^[s' toggle_ssh_prompt
+bindkey '^[b' toggle_path_bookmark
 
 autoload -Uz colors && colors
 autoload -Uz compinit && compinit  # all completion settings must be done before
