@@ -326,6 +326,7 @@ alias rc='bundle exec rails c'
 
 alias dox='docker exec -it `docker ps --format "{{.Names}}" | fzf`'
 alias gco='git checkout'
+alias got='goto'
 alias gpl='git pull'
 alias ipf='iperf3'
 alias ipy='ipython3'
