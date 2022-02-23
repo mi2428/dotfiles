@@ -39,11 +39,7 @@ WORKDIR /etc/skel
 RUN git clone --depth 1 https://github.com/mi2428/dotfiles \
  && cd dotfiles \
  && HOME=/etc/skel \
-    make ubuntu-docker \
- && cd .. \
- && git clone --depth 1 https://github.com/junegunn/fzf.git .fzf \
- && HOME=/etc/skel \
-    ./.fzf/install --all
+    make ubuntu-docker
 
 RUN cp ./dotfiles/var/docker/entrypoint.sh /sbin/entrypoint.sh \
  && chmod +x /sbin/entrypoint.sh
