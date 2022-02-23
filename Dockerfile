@@ -30,9 +30,7 @@ RUN apt-get update \
       toilet \
  && add-apt-repository ppa:neovim-ppa/unstable \
  && DEBIAN_FRONTEND=noninteractive \
-    apt-get install -y neovim \
- && apt-get clean \
- && rm -rf /var/lib/apt/lists/*
+    apt-get install -y neovim
 
 RUN groupadd wheel \
  && echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
@@ -49,6 +47,9 @@ RUN git clone --depth 1 https://github.com/mi2428/dotfiles \
 
 RUN cp ./dotfiles/var/docker/entrypoint.sh /sbin/entrypoint.sh \
  && chmod +x /sbin/entrypoint.sh
+
+Run apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
 
 ENTRYPOINT ["/sbin/entrypoint.sh"]
 CMD ["/bin/zsh", "--login"]
