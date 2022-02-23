@@ -145,6 +145,7 @@ bindkey '^[0' severity_clear
 bindkey '^[1' severity_level1
 bindkey '^[2' severity_level2
 bindkey '^[3' severity_level3
+bindkey '^[4' severity_level4
 bindkey '^[s' toggle_ssh_prompt
 bindkey '^[b' toggle_path_bookmark
 
