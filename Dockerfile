@@ -6,32 +6,35 @@ ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US:en
 ENV LC_ALL=en_US.UTF-8
 
+## only effective in x86_64 image
+RUN sed -i".bak" -e 's/\/\/archive.ubuntu.com/\/\/ftp.jaist.ac.jp/g' /etc/apt/sources.list 
+
 RUN apt-get update \
  && apt-get upgrade -y \
  && DEBIAN_FRONTEND=noninteractive \
     apt-get install -y --no-install-recommends \
       apt-utils \
       ca-certificates \
+      language-pack-ja \
+      locales \
       software-properties-common \
+ && locale-gen en_US.UTF-8 ja_JP.UTF-8 \
+ && add-apt-repository ppa:neovim-ppa/unstable \
  && DEBIAN_FRONTEND=noninteractive \
     apt-get install -y --no-install-recommends \
       curl \
       git \
       gnupg-agent \
       iproute2 \
-      language-pack-ja \
-      locales \
       make \
+      neovim \
       sudo \
       toilet \
- && add-apt-repository ppa:neovim-ppa/unstable \
- && apt-get update \
- && DEBIAN_FRONTEND=noninteractive \
-    apt-get install -y neovim
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd wheel \
- && echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers \
- && locale-gen en_US.UTF-8 ja_JP.UTF-8
+ && echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
 
 WORKDIR /etc/skel
 RUN git clone --depth 1 https://github.com/mi2428/dotfiles \
