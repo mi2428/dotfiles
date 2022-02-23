@@ -45,7 +45,7 @@ export LS_COLORS="di=1;34:ln=0;36:pi=0;33:bd=1;33:cd=1;33:so=1;31:ex=1;32:*READM
 
 export HGENCODING='utf-8'
 export GPG_TTY=$TTY
-export WORDCHARS='*?_-.[]~=&;!#$%^(){}<>'
+export WORDCHARS='*?.[]~=&;!#$%^(){}<>'
 export PAGER=less
 export LESS='-g -i -M -R -S -W -z-4 -x4'
 export EDITOR="vim"
