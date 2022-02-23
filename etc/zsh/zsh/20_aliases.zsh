@@ -151,6 +151,17 @@ dot() {
       return 0
       ;;
 
+    actions)
+      if whence -p open 2>/dev/null 1>&2; then
+        open https://github.com/mi2428/dotfiles/actions https://github.com/mi2428/ubuntu/actions
+      else
+        echo "open your browser and visit:"
+        echo " - https://github.com/mi2428/dotfiles/actions"
+        echo " - https://github.com/mi2428/ubuntu/actions"
+      fi
+      return 0
+      ;;
+
     -h|--help|*)
       echo "usage: dot [options...]"
       echo " (empty)               move to $HOME/dotfiles"
@@ -160,6 +171,7 @@ dot() {
       echo " pl, pull              alias of \`git pull\` command"
       echo " ps, push              alias of \`git push\` command"
       echo "     rollback          alias of \`git checkout .\` command"
+      echo "     actions           open GitHub Actions"
       echo " h,  help              this help text"
       return 0
       ;;
