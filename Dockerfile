@@ -19,7 +19,6 @@ RUN apt-get update \
       locales \
       software-properties-common \
  && locale-gen en_US.UTF-8 ja_JP.UTF-8 \
- && add-apt-repository ppa:neovim-ppa/unstable \
  && DEBIAN_FRONTEND=noninteractive \
     apt-get install -y --no-install-recommends \
       curl \
@@ -27,9 +26,11 @@ RUN apt-get update \
       gnupg-agent \
       iproute2 \
       make \
-      neovim \
       sudo \
       toilet \
+ && add-apt-repository ppa:neovim-ppa/unstable \
+ && DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y neovim \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
