@@ -28,11 +28,15 @@ pd() {
 
 
 goto() {
-  local path="$(fzf -e --tac --no-sort < $PATH_BOOKMARK)"
-  if [[ -n "${path}" ]]; then
-    builtin cd "${path}"
-    /usr/bin/sed -i "" -e "/^${path//\//\\/}$/d" ${PATH_BOOKMARK} && echo "${path}" >> ${PATH_BOOKMARK}
+  local keyword="${1:-/}"
+  local matched="$(\egrep "$keyword" $PATH_BOOKMARK)"
+  local n_matched=$(wc -l <<< "$matched")
+  local dst="${matched:-''}"
+  if [[ -z "$matched" ]] || (( $n_matched > 1 )); then
+    dst="$(fzf -e --tac --no-sort <<< $matched --preview 'tree -L 3 -C {} | head -200')"
   fi
+  /usr/bin/sed -i "" -e "/^${dst//\//\\/}$/d" ${PATH_BOOKMARK} && echo "${dst}" >> ${PATH_BOOKMARK}
+  builtin cd "${dst}"
 }
 
 
@@ -309,6 +313,7 @@ alias ..5='cd ../../../../..'
 alias b='brew'
 alias c='pbcopy'
 alias g='git'
+alias j='jmp'
 alias m='mv'
 alias o='open'
 alias p='ping'
@@ -336,15 +341,15 @@ alias pp='ping6'
 alias py='python3'
 alias rc='bundle exec rails c'
 
+alias :::='tmuxinator'
 alias dox='docker exec -it `docker ps --format "{{.Names}}" | fzf`'
 alias gco='git checkout'
-alias got='goto'
 alias gpl='git pull'
 alias ipf='iperf3'
 alias ipy='ipython3'
+alias jmp='goto'
 alias mkd='mkdir -p'
 alias ssa='ssh-agent zsh'
-alias :::='tmuxinator'
 
 alias dorm='docker rm `docker ps -qa` 2>/dev/null'
 alias dormi='docker rmi `docker images --filter "dangling=true" -q` 2>/dev/null'
