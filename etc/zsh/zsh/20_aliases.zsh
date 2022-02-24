@@ -28,7 +28,7 @@ pd() {
 
 
 goto() {
-  local path="$(fzf --tac --no-sort < $PATH_BOOKMARK)"
+  local path="$(fzf -e --tac --no-sort < $PATH_BOOKMARK)"
   if [[ -n "${path}" ]]; then
     builtin cd "${path}"
     /usr/bin/sed -i "" -e "/^${path//\//\\/}$/d" ${PATH_BOOKMARK} && echo "${path}" >> ${PATH_BOOKMARK}
