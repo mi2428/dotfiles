@@ -36,7 +36,7 @@ _fzf_comprun() {
                                       && tree -L 3 -C {} | head -200 \
                                       || bat --style=numbers --color=always --line-range :500 {}' ;;
     export|unset) fzf "$@" --preview "eval 'echo \$'{}" ;;
-    ssh)          fzf "$@" --preview 'curl -s https://ipinfo.io/{} | bat -l json --color=always' ;;
+    ssh)          fzf "$@" --preview 'curl -s http://ip-api.com/json/{} | jq . | bat -l json --color=always' ;;
     *)            fzf "$@" ;;
   esac
 }
