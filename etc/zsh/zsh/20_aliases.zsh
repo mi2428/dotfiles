@@ -205,6 +205,15 @@ tgz() {
 }
 
 
+ipapi() {
+  if [[ -n $1 ]]; then
+    curl -s http://ip-api.com/json/${1} | jq .
+  else
+    curl -s http://ip-api.com/json | jq .
+  fi
+}
+
+
 ghc() {
   local repo="$1"
   if (( $# == 2 )); then
