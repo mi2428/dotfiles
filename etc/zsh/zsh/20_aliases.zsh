@@ -353,7 +353,7 @@ alias rc='bundle exec rails c'
 
 alias :::='tmuxinator'
 alias dox='docker exec -it `docker ps --format "{{.Names}}" | fzf`'
-alias dow='cd $HOME/downloads'
+alias dow='cd $HOME/Downloads'
 alias gco='git checkout'
 alias gpl='git pull'
 alias ipf='iperf3'
