@@ -352,6 +352,7 @@ alias py='python3'
 alias rc='bundle exec rails c'
 
 alias :::='tmuxinator'
+alias dev='cd $HOME/dev'
 alias dox='docker exec -it `docker ps --format "{{.Names}}" | fzf`'
 alias dow='cd $HOME/Downloads'
 alias gco='git checkout'
