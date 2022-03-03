@@ -260,6 +260,17 @@ xx() {
 }
 
 
+gk() {
+  local cpath="$1"
+  if [[ -z $cpath ]]; then
+    cpath=$(dirname `git rev-parse --git-dir`)
+  fi
+  git add ${cpath}
+  git commit -m "keep: $(date)"
+  git push || git pull && git push
+}
+
+
 gadd() {
   local selected
   selected=$(unbuffer git status -s | fzf -m --ansi --preview="echo {} | awk '{print \$2}' | xargs git diff --color" | awk '{print $2}')
@@ -343,7 +354,6 @@ alias gb='git branch'
 alias gc='git commit'
 alias gd='git diff'
 alias gf='git fetch'
-alias gk='git add $(dirname `git rev-parse --git-dir`); git commit -m "keep: $(date)"; git push || git pull && git push'
 alias gp='git push'
 alias gs='git status'
 alias kc='kubectl'
