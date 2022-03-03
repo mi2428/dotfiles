@@ -261,11 +261,11 @@ xx() {
 
 
 gk() {
-  local cpath="$1"
-  if [[ -z $cpath ]]; then
-    cpath=$(dirname `git rev-parse --git-dir`)
+  local target="$@"
+  if [[ -z $target ]]; then
+    target=$(dirname `git rev-parse --git-dir`)
   fi
-  git add ${cpath}
+  git add ${target}
   git commit -m "keep: $(date)"
   git push || git pull && git push
 }
