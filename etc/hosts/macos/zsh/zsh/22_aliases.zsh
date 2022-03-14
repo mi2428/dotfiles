@@ -15,3 +15,5 @@ fi
 
 
 alias preview='open -a Preview'
+alias skim='open -a Skim'
+
