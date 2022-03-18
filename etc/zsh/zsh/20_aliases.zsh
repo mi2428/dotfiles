@@ -184,6 +184,17 @@ dot() {
 }
 
 
+what() {
+  local filepath="$1"
+
+  case $(file -b $filepath) in
+    'PEM certificate')
+      openssl x509 -in $filepath -noout -text
+      ;;
+  esac
+}
+
+
 man() {
   # env PAGER="most -s" man $@
   env \
