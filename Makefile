@@ -50,6 +50,7 @@ pkginstall.macos:
 	@chmod -R go-w /opt/homebrew/share || true
 	@brew bundle --file=/dev/stdin < $(PKGDIR)/Brewfile || true
 	@sudo ln -sf /usr/local/bin/gtimeout /usr/local/bin/timeout || true
+	@sudo ln -sf /opt/homebrew/bin/python3 /usr/local/bin/python || true
 
 .PHONY: postinstall.common
 postinstall.common:
