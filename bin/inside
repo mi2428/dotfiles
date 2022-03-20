@@ -132,6 +132,7 @@ main() {
     ${ARGS} \
     -w /work \
     -v $(cd $WORKDIR; pwd):/work \
+    -e TZ=Asia/Tokyo \
     -e HOST_UID=$(id -u $USER) \
     -e HOST_GID=$(id -g $USER) \
     --dns 9.9.9.9 \
