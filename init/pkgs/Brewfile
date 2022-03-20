@@ -1,4 +1,6 @@
 tap "homebrew/cask-fonts"
+tap "textualize/rich"
+
 
 brew "ag"
 brew "bat"
@@ -16,6 +18,7 @@ brew "most"
 brew "pinentry-mac"
 brew "procs"
 brew "pv"
+brew "rich"
 brew "ripgrep"
 brew "tmux"
 brew "tmuxinator"
