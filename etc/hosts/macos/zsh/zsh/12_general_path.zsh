@@ -34,12 +34,12 @@ arm64*)
     $FZF_BIN
     /opt/homebrew/bin(N-/)
     /opt/homebrew/sbin(N-/)
+    /usr/local/bin
+    /usr/local/sbin
     /usr/bin
     /usr/sbin
     /bin
     /sbin
-    /usr/local/bin
-    /usr/local/sbin
     /Library/Apple/usr/bin
     .
   )
