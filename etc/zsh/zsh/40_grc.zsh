@@ -84,9 +84,18 @@ cmds=(
 
 for cmd in $cmds ; do
   if (( $+commands[$cmd] )) ; then
-    $cmd() {
-      grc --colour=auto ${commands[$0]} "$@"
-    }
+    case $cmd in
+      mtr)
+        $cmd() {
+          sudo grc --colour=auto ${commands[$0]} "$@"
+        }
+        ;;
+      *)
+        $cmd() {
+          grc --colour=auto ${commands[$0]} "$@"
+        }
+      ;;
+    esac
   fi
 done
 
