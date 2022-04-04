@@ -314,6 +314,23 @@ dor() {
 }
 
 
+mmm() {
+  local opt=""
+  local target=$1
+
+  case $opt in
+    -h)
+      tmux split-window -h -p 66 "sudo grc --colour=auto mtr -4 -b -i 0.1 $target"
+      tmux split-window -h "sudo grc --colour=auto mtr -6 -b -i 0.1 $target"
+      ;;
+    -v|*)
+      tmux split-window -v -p 66 "sudo grc --colour=auto mtr -4 -b -i 0.1 $target"
+      tmux split-window -v "sudo grc --colour=auto mtr -6 -b -i 0.1 $target"
+      ;;
+  esac
+}
+
+
 colortest() {
   for c in {000..255}; do
     echo -n "\e[38;5;${c}m $c"
@@ -346,7 +363,7 @@ alias b='brew'
 alias c='pbcopy'
 alias g='git'
 alias j='jmp'
-alias m='mv'
+alias m='mtr -4 -b -i 0.1'
 alias o='open'
 alias p='ping'
 alias r='rm -i'
@@ -368,6 +385,7 @@ alias gf='git fetch'
 alias gp='git push'
 alias gs='git status'
 alias kc='kubectl'
+alias mm='mtr -6 -b -i 0.1'
 alias pp='ping6'
 alias py='python3'
 alias rc='bundle exec rails c'
