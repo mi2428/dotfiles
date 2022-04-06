@@ -359,7 +359,7 @@ alias ..3='cd ../../..'
 alias ..4='cd ../../../..'
 alias ..5='cd ../../../../..'
 
-alias b='brew'
+alias b='bat'
 alias c='pbcopy'
 alias g='git'
 alias j='jmp'
