@@ -20,7 +20,7 @@ arm64*)
   export DENO_INSTALL=$HOME/.deno
   export CARGO_HOME="$HOME/.cargo"
   export VOLTA_HOME="$HOME/.volta"
-  export TEXLIVE_BIN="/usr/local/texlive/2021/bin/universal-darwin"
+  export TEXLIVE_BIN="/usr/local/texlive/2022/bin/universal-darwin"
   export FZF_BIN="/opt/homebrew/opt/fzf/bin"
   typeset -U path PATH
   path=(
