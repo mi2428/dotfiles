@@ -454,6 +454,7 @@ if whence -p nvim 1> /dev/null; then
   alias emacs='nvim'
   alias nano='nvim'
   alias pico='nvim'
+  alias mg='nvim'
 fi
 
 
