@@ -263,7 +263,7 @@ xx() {
   local session="$1"
   if [[ -z ${session} ]]; then
     tmux
-  elif [[ -n $(tmux ls -F "#{session_name}" | grep -x "${session}") ]]; then
+  elif [[ -n $(tmux ls -F "#{session_name}" | \grep -x "${session}") ]]; then
     tmux attach -t "${session}"
   else
     tmux $@
