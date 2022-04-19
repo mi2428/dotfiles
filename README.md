@@ -19,7 +19,7 @@ Use the nerd font for non-ascii characters
 
 * **Ubuntu:** https://fonts.google.com/specimen/Ubuntu
 * **Ubuntu Mono:** https://fonts.google.com/specimen/Ubuntu+Mono
-* **Nerd Fonts:** https://www.nerdfonts.com/
+* **Hack Nerd Fonts:** https://github.com/ryanoasis/nerd-fonts/tree/master/patched-fonts/Hack/Regular/complete
 
 ## Use with docker
 
