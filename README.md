@@ -109,8 +109,16 @@ Remember to setup locale on your host - both `en_US` and `ja_JP` are requried
 ### import GPG key pair to create signed commit
 
 ```
+% chown 700 ~/.gnupg
+% echo "test" | gpg --clearsign 
+```
+
+```
 % gpg --import mi2428.public.key
 % gpg --import mi2428.secret.key
+% gpg --pinentry-mode loopback --import mi2428.secret.key  # If "No pinentry" error occurred
 % gpg --edit-key E8D3009C6341BDEAF038009685AB6867E2147DDA trust quit
+% gpg --list-keys
+% gpg --list-secret-keys
 % gpgconf --kill gpg-agent
 ```
