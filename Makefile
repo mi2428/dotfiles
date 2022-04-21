@@ -47,10 +47,12 @@ pkginstall.ubuntu:
 
 .PHONY: pkginstall.macos
 pkginstall.macos:
-	@chmod -R go-w /opt/homebrew/share || true
+	@chmod -R go-w /usr/local/share || true  # Apple silicon
+	@chmod -R go-w /opt/homebrew/share || true  # Intel chip
 	@brew bundle --file=/dev/stdin < $(PKGDIR)/Brewfile || true
 	@sudo ln -sf /usr/local/bin/gtimeout /usr/local/bin/timeout || true
-	@sudo ln -sf /opt/homebrew/bin/python3 /usr/local/bin/python || true
+	@sudo ln -sf /opt/homebrew/bin/python3 /usr/local/bin/python || true  # Apple silicon
+	@sudo ln -sf /usr/local/bin/python3 /usr/local/bin/python || true  # Intel chip
 
 .PHONY: postinstall.common
 postinstall.common:
