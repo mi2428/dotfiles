@@ -474,3 +474,8 @@ fi
 if whence -p mplayer 1> /dev/null; then
   alias -s {mp3,mp4,wav,mkv,m4v,m4a,wmv,avi,mpeg,mpg,vob,mov,rm}='mplayer'
 fi
+
+
+if whence -p rbenv 1>/dev/null; then
+  eval "$(rbenv init - zsh)"
+fi
