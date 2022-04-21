@@ -1,3 +1,6 @@
+export DENO_INSTALL=$HOME/.deno
+export CARGO_HOME=$HOME/.cargo
+
 case $(arch) in
 x86_64|i386)
   export HOMEBREW_HOME=/usr/local
@@ -8,6 +11,8 @@ x86_64|i386)
     $HOME/bin
     $HOME/dotfiles/bin
     $HOME/.local/bin
+    $DENO_INSTALL/bin
+    $CARGO_HOME/bin
     $VOLTA_HOME/bin
     $HOMEBREW_HOME/bin(N-/)   # use /usr/local/bin in preference to /usr/bin in Intel Mac
     $HOMEBREW_HOME/sbin(N-/)  # use /usr/local/sbin in preference to /usr/sbin in Intel Mac
@@ -20,8 +25,6 @@ x86_64|i386)
   ;;
 arm64*)
   export HOMEBREW_HOME=/opt/homebrew
-  export DENO_INSTALL=$HOME/.deno
-  export CARGO_HOME="$HOME/.cargo"
   export VOLTA_HOME="$HOME/.volta"
   export TEXLIVE_BIN=/usr/local/texlive/2022/bin/universal-darwin
   export FZF_BIN=$HOMEBREW_HOME/opt/fzf/bin
