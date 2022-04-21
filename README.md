@@ -113,6 +113,8 @@ Remember to setup locale on your host - both `en_US` and `ja_JP` are requried
 % echo "test" | gpg --clearsign 
 ```
 
+Check `~/.gnupg/gpg-agent.conf` if you encountered "No pinentry" error.
+
 ```
 % gpg --import mi2428.public.key
 % gpg --import mi2428.secret.key
