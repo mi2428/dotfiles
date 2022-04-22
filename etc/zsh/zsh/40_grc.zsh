@@ -85,7 +85,7 @@ cmds=(
 for cmd in $cmds ; do
   if (( $+commands[$cmd] )) ; then
     case $cmd in
-      mtr)
+      mtr|ping|ping6)
         $cmd() {
           sudo grc --colour=auto ${commands[$0]} "$@"
         }
