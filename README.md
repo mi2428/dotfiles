@@ -124,3 +124,13 @@ Check `~/.gnupg/gpg-agent.conf` if you encountered "No pinentry" error.
 % gpg --list-secret-keys
 % gpgconf --kill gpg-agent
 ```
+
+### visudo
+
+```
+# root and users in group wheel can run anything on any machine as any user
+root    ALL = (ALL) ALL
+%admin  ALL = (ALL) ALL
+mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/ping6
+```
+
