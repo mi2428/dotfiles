@@ -1,3 +1,6 @@
 for conf in $(find $HOME/.zsh -type l | sort); do
   source $conf
 done
+if [ -f /Users/teo/.zshrc_functions/assume-role ]; then
+  source /Users/teo/.zshrc_functions/assume-role
+fi
