@@ -91,6 +91,7 @@ fi
 
 if [[ -n ${SSH_AGENT_PID} ]] && ! ssh-add -l 1> /dev/null; then
   ssh-add $HOME/.ssh/MASTER_KEY/mi2428.master.id_ed25519
+  ssh-add $HOME/.ssh/GIT/mi2428.git.id_ed25519
   echo
 fi
 
