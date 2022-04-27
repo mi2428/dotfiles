@@ -1,0 +1,5 @@
+#!/bin/sh
+pfx='rel'
+d=`date +%Y%m%d%H%M%S`
+git flow release start $pfx-$d
+git flow release finish -m"Release:$d" $pfx-$d
