@@ -7,6 +7,7 @@ CONTAINER_HOSTNAME=""
 WORKDIR=""
 PULL_BEFORE_RUN=0
 PERSISTENT=0
+PRIVILEGED=0
 COPY_SSH_KEYS=0
 DOOD=0
 ATTACH=0
@@ -18,6 +19,7 @@ usage: inside [options...] [path]
  -a, --attach                    attach current container (must be with -n option)
  -n, --name [name]               specify container name
  -p, --persist                   keep container persistent
+ -P, --privileged                create privileged container
  -s, --copy-ssh-keys             copy SSH keys
  -w, --with {dotfiles, *ubuntu}  specify container image
  -D, --dood                      use docker-outside-of-docker
@@ -45,6 +47,9 @@ argparse() {
         shift ;;
       --persist|-p)
         PERSISTENT=1
+        shift ;;
+      --privileged|-P)
+        PRIVILEGED=1
         shift ;;
       --hostname|-H)
         CONTAINER_HOSTNAME="$2"
@@ -118,6 +123,7 @@ main() {
 
   ARGS=""
   (( $PERSISTENT == 0 ))    && ARGS="${ARGS} --rm"
+  (( $PRIVILEGED == 1 ))    && ARGS="${ARGS} --privileged"
   (( $COPY_SSH_KEYS == 1 )) && ARGS="${ARGS} -v $HOME/.ssh:/etc/skel/.ssh:ro"
 
   if (( $DOOD == 1 )); then
@@ -138,6 +144,7 @@ main() {
     --dns 9.9.9.9 \
     --name $CONTAINER_NAME \
     --hostname $CONTAINER_HOSTNAME \
+    --privileged \
     --network host \
     $CONTAINER_IMAGE \
     sudo -u shizk OUTSIDE_HOSTNAME=$(hostname) SSH_CLIENT=${remote_ip} zsh --login 
