@@ -410,7 +410,7 @@ alias free='free -h'
 alias grep='grep -n --color=auto'
 alias httpserver='python3 -m http.server'
 alias less='less --no-init --quit-if-one-screen'
-alias myip='curl -s ipinfo.io | jq'
+alias myip='curl -s https://ipinfo.io | jq'
 alias sshh='sshuttle'
 
 
