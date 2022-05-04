@@ -51,6 +51,42 @@ showopt() {
 }
 
 
+p() {
+  if (( $# == 0 )); then
+    ping 8.8.8.8
+  else
+    ping $@
+  fi
+}
+
+
+m() {
+  if (( $# == 0 )); then
+    mtr -4 -b -i 0.1 8.8.8.8
+  else
+    mtr -4 -b -i 0.1 $@
+  fi
+}
+
+
+pp() {
+  if (( $# == 0 )); then
+    ping6 2001:4860:4860::8888
+  else
+    ping6 $@
+  fi
+}
+
+
+mm() {
+  if (( $# == 0 )); then
+    mtr -6 -b -i 0.1 2001:4860:4860::8888
+  else
+    mtr -6 -b -i 0.1 $@
+  fi
+}
+
+
 dk() {
   case $1 in
     im)
@@ -363,9 +399,7 @@ alias b='bat'
 alias c='pbcopy'
 alias g='git'
 alias j='jmp'
-alias m='mtr -4 -b -i 0.1'
 alias o='open'
-alias p='ping'
 alias r='rm -i'
 alias s='sudo'
 alias x='chmod +x'
@@ -385,8 +419,6 @@ alias gf='git fetch'
 alias gp='git push'
 alias gs='git status'
 alias kc='kubectl'
-alias mm='mtr -6 -b -i 0.1'
-alias pp='ping6'
 alias py='python3'
 alias rc='bundle exec rails c'
 
