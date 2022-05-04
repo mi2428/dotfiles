@@ -60,20 +60,33 @@ p() {
 }
 
 
-m() {
-  if (( $# == 0 )); then
-    mtr -4 -b -i 0.1 8.8.8.8
-  else
-    mtr -4 -b -i 0.1 $@
-  fi
-}
-
-
 pp() {
   if (( $# == 0 )); then
     ping6 2001:4860:4860::8888
   else
     ping6 $@
+  fi
+}
+
+
+ppp() {
+  if (( $# == 0 )); then
+    ping -c 4 -i 0.25 8.8.8.8
+    echo
+    ping6 -c 4 -i 0.25 2001:4860:4860::8888
+  else
+    ping $@
+    echo
+    ping6 $@
+  fi
+}
+
+
+m() {
+  if (( $# == 0 )); then
+    mtr -4 -b -i 0.1 8.8.8.8
+  else
+    mtr -4 -b -i 0.1 $@
   fi
 }
 
@@ -84,6 +97,23 @@ mm() {
   else
     mtr -6 -b -i 0.1 $@
   fi
+}
+
+
+mmm() {
+  local opt=""
+  local target=$1
+
+  case $opt in
+    -h)
+      tmux split-window -h -p 66 "sudo grc --colour=auto mtr -4 -b -i 0.1 $target"
+      tmux split-window -h "sudo grc --colour=auto mtr -6 -b -i 0.1 $target"
+      ;;
+    -v|*)
+      tmux split-window -v -p 66 "sudo grc --colour=auto mtr -4 -b -i 0.1 $target"
+      tmux split-window -v "sudo grc --colour=auto mtr -6 -b -i 0.1 $target"
+      ;;
+  esac
 }
 
 
@@ -347,23 +377,6 @@ fkill() {
 
 dor() {
   docker run -it $@ `docker images --format "{{.Repository}}:{{.Tag}}" --filter "dangling=false" | fzf`
-}
-
-
-mmm() {
-  local opt=""
-  local target=$1
-
-  case $opt in
-    -h)
-      tmux split-window -h -p 66 "sudo grc --colour=auto mtr -4 -b -i 0.1 $target"
-      tmux split-window -h "sudo grc --colour=auto mtr -6 -b -i 0.1 $target"
-      ;;
-    -v|*)
-      tmux split-window -v -p 66 "sudo grc --colour=auto mtr -4 -b -i 0.1 $target"
-      tmux split-window -v "sudo grc --colour=auto mtr -6 -b -i 0.1 $target"
-      ;;
-  esac
 }
 
 
