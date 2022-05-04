@@ -303,7 +303,7 @@ set_venv_info() {
 mask_ip() {
   local rawip="$1"
   [[ ${rawip} =~ '\.' ]] && echo "***.$(awk -F'.' '{print $NF}' <<< ${rawip})"
-  [[ ${rawip} =~ ':' ]] && echo "****:$(awk -F':' '{print $NF}' <<< ${rawip})"
+  [[ ${rawip} =~ ':' ]] && echo "****:$(awk -F':' '{print $NF}' <<< $(awk -F'%' '{print $1}' <<< $SSH_CLIENT))"
 }
 
 
