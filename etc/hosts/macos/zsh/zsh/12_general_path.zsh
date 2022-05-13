@@ -9,6 +9,7 @@ x86_64|i386)
   typeset -U path PATH
   path=(
     $HOME/bin
+    $HOME/dev/bin
     $HOME/dotfiles/bin
     $HOME/.local/bin
     $DENO_INSTALL/bin
@@ -31,6 +32,7 @@ arm64*)
   typeset -U path PATH
   path=(
     $HOME/bin
+    $HOME/dev/bin
     $HOME/dotfiles/bin
     $HOME/.local/bin
     $DENO_INSTALL/bin
