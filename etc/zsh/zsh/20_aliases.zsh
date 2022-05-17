@@ -459,9 +459,9 @@ alias myip='curl -s https://ipinfo.io | jq'
 alias sshh='sshuttle'
 
 
-if whence -p ag 1> /dev/null; then
-  alias grep="ag"
-fi
+#if whence -p ag 1> /dev/null; then
+#  alias grep="ag"
+#fi
 
 
 if whence -p exa 1> /dev/null; then
