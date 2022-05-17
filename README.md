@@ -136,14 +136,17 @@ mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/
 
 ### iTerm2 preferences
 
-#### `Appearance` > `General`
+#### `Appearance` / `General`
 - Theme: **Minimal**
 - Tab bar location: **Top**
 - Status bar location: **Bottom**
 
-#### `Appearance` > `Tabs`
+#### `Appearance` / `Tabs`
 - Show tab bar even when there is only one tab
 
-#### `Advanced` > `Hotkey`
+#### `Appearance` / `Session`
+- Applications in terminal may access clipboard
+
+#### `Advanced` / `Hotkey`
 - Duration in seconds of the hotkey window animation.: **0**
 
