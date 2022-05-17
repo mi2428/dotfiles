@@ -131,7 +131,7 @@ Check `~/.gnupg/gpg-agent.conf` if you encountered "No pinentry" error.
 # root and users in group wheel can run anything on any machine as any user
 root    ALL = (ALL) ALL
 %admin  ALL = (ALL) ALL
-mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/ping6
+mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/ping6,/usr/sbin/tcpdump
 ```
 
 ### iTerm2 preferences
