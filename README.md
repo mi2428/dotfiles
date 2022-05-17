@@ -7,13 +7,13 @@ dotfiles since 2016
 * neovim
 * tmux with tmuxinator
 
-### terminal color scheme
+### Terminal color scheme
 
 Based on [Google's Material Design Color Palette](https://material.io/design/style/color.html)
 
 * https://www.martinseeler.com/iterm2-material-design
 
-### terminal fonts
+### Terminal fonts
 
 Use the nerd font for non-ascii characters, which will be installed by Brewfile
 
@@ -98,7 +98,7 @@ Paste the below line and wait until the terminal goes silent.
 
 ## Deploy hints
 
-### fix right prompt alignment
+### Fix right prompt alignment
 
 Remember to setup locale on your host - both `en_US` and `ja_JP` are requried
 
@@ -106,7 +106,7 @@ Remember to setup locale on your host - both `en_US` and `ja_JP` are requried
 % sudo locale-gen en_US.UTF-8 ja_JP.UTF-8
 ```
 
-### import GPG key pair to create signed commit
+### Import GPG key pair to create signed commit
 
 ```
 % chown 700 ~/.gnupg
@@ -133,4 +133,17 @@ root    ALL = (ALL) ALL
 %admin  ALL = (ALL) ALL
 mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/ping6
 ```
+
+### iTerm2 preferences
+
+#### `Appearance` > `General`
+- Theme: **Minimal**
+- Tab bar location: **Top**
+- Status bar location: **Bottom**
+
+#### `Appearance` > `Tabs`
+- Show tab bar even when there is only one tab
+
+#### `Advanced` > `Hotkey`
+- Duration in seconds of the hotkey window animation.: **0**
 
