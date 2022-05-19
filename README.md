@@ -131,19 +131,22 @@ Check `~/.gnupg/gpg-agent.conf` if you encountered "No pinentry" error.
 # root and users in group wheel can run anything on any machine as any user
 root    ALL = (ALL) ALL
 %admin  ALL = (ALL) ALL
-mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/ping6
+mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/ping6,/usr/sbin/tcpdump
 ```
 
 ### iTerm2 preferences
 
-#### `Appearance` > `General`
+#### `Appearance` / `General`
 - Theme: **Minimal**
 - Tab bar location: **Top**
 - Status bar location: **Bottom**
 
-#### `Appearance` > `Tabs`
+#### `Appearance` / `Tabs`
 - Show tab bar even when there is only one tab
 
-#### `Advanced` > `Hotkey`
+#### `Appearance` / `Session`
+- Applications in terminal may access clipboard
+
+#### `Advanced` / `Hotkey`
 - Duration in seconds of the hotkey window animation.: **0**
 

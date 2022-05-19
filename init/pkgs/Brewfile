@@ -1,9 +1,6 @@
 tap "homebrew/cask-fonts"
 tap "textualize/rich"
 
-
-brew "1password"
-brew "1password-cli"
 brew "ag"
 brew "bat"
 brew "coreutils"
@@ -47,3 +44,5 @@ brew "zsh-git-prompt"
 brew "zsh-syntax-highlighting"
 
 cask "font-hack-nerd-font"
+brew "1password"
+brew "1password-cli"
