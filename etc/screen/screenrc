@@ -1,0 +1,17 @@
+defscrollback   10000
+
+#defutf8                on
+#encoding       utf-8 utf-8
+#defencoding    utf-8
+
+
+#escape ^Ta
+
+caption always "%{= wg} %-w%{=bu dr}%n %t%{-}%+w %= %{=b wb}%y/%m/%d(%D) %{=b wm}%c"
+
+
+
+# logfile
+logfile 'screen/log/screenlog.%H.%Y%m%d-%02c:%s-%n.%t.log'
+logtstamp on
+logtstamp string "\n-- SCREEN [ %Y/%m/%d %02c:%s ] %n:%t --\n"
