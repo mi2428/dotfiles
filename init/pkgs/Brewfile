@@ -44,5 +44,5 @@ brew "zsh-git-prompt"
 brew "zsh-syntax-highlighting"
 
 cask "font-hack-nerd-font"
-brew "1password"
-brew "1password-cli"
+# cask "background-music"
+cask "1password-cli"
