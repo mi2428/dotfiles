@@ -71,7 +71,7 @@ cmds=(
   stat
   sysctl
   systemctl
-  tcpdump
+  #tcpdump
   traceroute
   traceroute6
   tune2fs
