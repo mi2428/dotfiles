@@ -150,3 +150,5 @@ mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/
 #### `Advanced` / `Hotkey`
 - Duration in seconds of the hotkey window animation.: **0**
 
+#### `Advanced` / `Session`
+- Allow sessions to survice logging out and back in: **No**
