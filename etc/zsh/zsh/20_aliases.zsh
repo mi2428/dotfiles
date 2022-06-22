@@ -217,6 +217,11 @@ dot() {
       return 0
       ;;
 
+    s|sync)
+      (builtin cd $HOME/dotfiles 2>/dev/null; git pull && git push)
+      return 0
+      ;;
+
     rollback)
       (builtin cd $HOME/dotfiles 2>/dev/null; git checkout .)
       return 0
@@ -241,6 +246,7 @@ dot() {
       echo " lg, log               alias of \`tig\` command"
       echo " pl, pull              alias of \`git pull\` command"
       echo " ps, push              alias of \`git push\` command"
+      echo " s,  sync              run pull and then push"
       echo "     rollback          alias of \`git checkout .\` command"
       echo "     actions           open GitHub Actions"
       echo " h,  help              this help text"
