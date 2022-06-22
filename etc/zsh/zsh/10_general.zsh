@@ -31,6 +31,7 @@ export HISTSIZE=1000000
 export SAVEHIST=1000000
 export HISTFILE=$HOME/.zhistory
 export PATH_BOOKMARK=$HOME/.zsh_pathbook
+export NOTEDIR=$HOME/notes
 
 [[ -f ${PATH_BOOKMARK} ]] || touch ${PATH_BOOKMARK}
 

@@ -256,6 +256,22 @@ dot() {
 }
 
 
+note() {
+  local title="$@"
+  local ts="$(date +%Y.%m.%d-%H:%M:%S)"
+
+  mkdir -p $NOTEDIR
+  title="${title// /-}"
+
+  if [[ -n $title ]]; then
+    local filename="${NOTEDIR}/${title}__${ts}.md"
+    $(which $EDITOR) $filename
+  else
+    $(which $EDITOR) -p $(\ls -1rt `find $NOTEDIR -type f` | fzf --multi --preview 'bat --color=always {}')
+  fi
+}
+
+
 what() {
   local filepath="$1"
 
