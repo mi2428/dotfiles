@@ -267,7 +267,7 @@ note() {
     local filename="${NOTEDIR}/${title}__${ts}.md"
     $(which $EDITOR) $filename
   else
-    $(which $EDITOR) -p $(\ls -1rt `find $NOTEDIR -type f` | fzf --multi --preview 'bat --color=always {}')
+    $(which $EDITOR) -p $(\ls -1rt `find $NOTEDIR -type f -follow` | fzf --multi --preview 'bat --color=always {}')
   fi
 }
 
