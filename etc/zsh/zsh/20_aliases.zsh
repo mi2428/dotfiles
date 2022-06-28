@@ -402,6 +402,20 @@ dor() {
 }
 
 
+ffind() {
+  for key in ${@}; do
+    find . -type f -name "*${key}*"
+  done
+}
+
+
+dfind() {
+  for key in ${@}; do
+    find . -type d -name "*${key}*"
+  done
+}
+
+
 colortest() {
   for c in {000..255}; do
     echo -n "\e[38;5;${c}m $c"
