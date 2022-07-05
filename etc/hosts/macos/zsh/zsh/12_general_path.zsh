@@ -1,5 +1,6 @@
 export DENO_INSTALL=$HOME/.deno
 export CARGO_HOME=$HOME/.cargo
+export GOPATH="$HOME/dev/gocode"
 
 case $(arch) in
 x86_64|i386)
@@ -12,6 +13,7 @@ x86_64|i386)
     $HOME/dev/bin
     $HOME/dotfiles/bin
     $HOME/.local/bin
+    $GOPATH/bin
     $DENO_INSTALL/bin
     $CARGO_HOME/bin
     $VOLTA_HOME/bin
@@ -35,6 +37,7 @@ arm64*)
     $HOME/dev/bin
     $HOME/dotfiles/bin
     $HOME/.local/bin
+    $GOPATH/bin
     $DENO_INSTALL/bin
     $CARGO_HOME/bin
     $VOLTA_HOME/bin
@@ -54,7 +57,6 @@ arm64*)
   ;;
 esac
 
-export GOPATH="$HOME/dev/gocode"
 export FPATH=$HOMEBREW_HOME/share/zsh-completions:$FPATH
 export ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=242'
 export ZSH_HIGHLIGHT_HIGHLIGHTERS_DIR=$HOMEBREW_HOME/share/zsh-syntax-highlighting/highlighters

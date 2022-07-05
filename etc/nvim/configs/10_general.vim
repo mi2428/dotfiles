@@ -50,6 +50,7 @@ xnoremap p "_xP
 autocmd InsertEnter * :set norelativenumber
 autocmd InsertLeave * :set relativenumber
 
+
 "" https://gist.github.com/atton/db007474075b47f6917933cc2aee924a
 function! s:sudo_write_current_buffer() abort
   if has('nvim')
@@ -119,6 +120,15 @@ Plug 'junegunn/fzf.vim'
 "" Highlight columns in CSV and TSV files and run queries in SQL-like language
 "" https://github.com/mechatroner/rainbow_csv
 Plug 'mechatroner/rainbow_csv'
+
+"" A modern go neovim plugin based on treesitter, nvim-lsp and dap debugger.
+"" https://github.com/ray-x/go.nvim
+" Plug 'ray-x/go.nvim'
+" Plug 'ray-x/guihua.lua' "recommanded if need floating window support
+
+"" This plugin adds Go language support for Vim, with the following main features
+"" https://github.com/fatih/vim-go
+Plug 'fatih/vim-go'
 
 call plug#end()
 
