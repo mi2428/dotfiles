@@ -404,14 +404,7 @@ dor() {
 
 ffind() {
   for key in ${@}; do
-    find . -type f -name "*${key}*" | \grep --color='auto' "${key}"
-  done
-}
-
-
-dfind() {
-  for key in ${@}; do
-    find . -type d -name "*${key}*" | \grep --color='auto' "${key}"
+    find . $opt -name "*${key}*" | \grep --color='auto' "${key}"
   done
 }
 
