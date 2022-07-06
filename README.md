@@ -134,6 +134,13 @@ root    ALL = (ALL) ALL
 mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/ping6,/usr/sbin/tcpdump
 ```
 
+### NeoVim
+
+```
+:PlugInstall
+:UpdateRemotePlugins
+```
+
 ### iTerm2 preferences
 
 #### `Appearance` / `General`

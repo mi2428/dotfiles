@@ -128,7 +128,11 @@ Plug 'mechatroner/rainbow_csv'
 
 "" This plugin adds Go language support for Vim, with the following main features
 "" https://github.com/fatih/vim-go
-Plug 'fatih/vim-go'
+Plug 'fatih/vim-go', { 'do': ':GoUpdateBinaries' }
+
+"" Semshi provides semantic highlighting for Python in Neovim.
+"" https://github.com/numirias/semshi
+Plug 'numirias/semshi', { 'do': ':UpdateRemotePlugins' }
 
 call plug#end()
 
