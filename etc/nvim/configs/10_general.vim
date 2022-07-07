@@ -132,7 +132,11 @@ Plug 'fatih/vim-go', { 'do': ':GoUpdateBinaries' }
 
 "" Semshi provides semantic highlighting for Python in Neovim.
 "" https://github.com/numirias/semshi
-Plug 'numirias/semshi', { 'do': ':UpdateRemotePlugins' }
+" Plug 'numirias/semshi', { 'do': ':UpdateRemotePlugins' }
+
+"" An enhanced version of the original Vim 6.1 Python syntax highlighting python.vim by Neil Schemenauer.
+"" https://github.com/vim-python/python-syntax
+Plug 'vim-python/python-syntax'
 
 call plug#end()
 
