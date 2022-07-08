@@ -364,9 +364,13 @@ gk() {
   if [[ -z $target ]]; then
     target=$(dirname `git rev-parse --git-dir`)
   fi
+
   git add ${target}
   git commit -m "keep: $(date)"
-  git push || git pull && git push
+
+  if [[ -n $(git remote -v) ]]; then
+    git push || git pull && git push
+  fi
 }
 
 
