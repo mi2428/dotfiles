@@ -59,6 +59,7 @@ pkginstall.macos:
 .PHONY: postinstall.common
 postinstall.common:
 	@sh -c 'curl -fLo $(HOME)/.local/share/nvim/site/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim' || true
+	@curl -L https://raw.githubusercontent.com/pimterry/notes/latest-release/_notes > /usr/local/share/zsh/site-functions/_notes || true
 	@python3 -m pip install --upgrade pip
 	@xargs pip3 install --upgrade < $(PKGDIR)/python3-pip.txt || true
 	@xargs cargo install < $(PKGDIR)/cargo.txt || true

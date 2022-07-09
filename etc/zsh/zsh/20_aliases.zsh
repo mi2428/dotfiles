@@ -256,20 +256,24 @@ dot() {
 }
 
 
-note() {
-  local title="$@"
-  local ts="$(date +%Y.%m.%d-%H:%M:%S)"
-
-  mkdir -p $NOTEDIR
-  title="${title// /-}"
-
-  if [[ -n $title ]]; then
-    local filename="${NOTEDIR}/${title}__${ts}.md"
-    $(which $EDITOR) $filename
-  else
-    $(which $EDITOR) -p $(\ls -1rt `find $NOTEDIR -type f -follow` | fzf --multi --preview 'bat --color=always {}')
-  fi
-}
+##
+## DEPRECATED:
+## Use pimeterry/notes instead (https://github.com/pimterry/notes)
+##
+# note() {
+#   local title="$@"
+#   local ts="$(date +%Y.%m.%d-%H:%M:%S)"
+# 
+#   mkdir -p $NOTEDIR
+#   title="${title// /-}"
+# 
+#   if [[ -n $title ]]; then
+#     local filename="${NOTEDIR}/${title}__${ts}.md"
+#     $(which $EDITOR) $filename
+#   else
+#     $(which $EDITOR) -p $(\ls -1rt `find $NOTEDIR -type f -follow` | fzf --multi --preview 'bat --color=always {}')
+#   fi
+# }
 
 
 what() {
@@ -445,7 +449,7 @@ alias b='bat'
 alias c='pbcopy'
 alias g='git'
 alias j='jmp'
-alias n='note'
+alias n='notes'
 alias o='open'
 alias r='rm -i'
 alias s='sudo'
