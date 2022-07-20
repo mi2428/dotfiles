@@ -1,6 +1,13 @@
+# Fig pre block. Keep at the top of this file.
+[[ -f "$HOME/.fig/shell/zshrc.pre.zsh" ]] && . "$HOME/.fig/shell/zshrc.pre.zsh"
+
 for conf in $(find $HOME/.zsh -type l | sort); do
   source $conf
 done
-if [ -f /Users/teo/.zshrc_functions/assume-role ]; then
-  source /Users/teo/.zshrc_functions/assume-role
+
+if [ -f $HOME/.zshrc_functions/assume-role ]; then
+  source $HOME/.zshrc_functions/assume-role
 fi
+
+# Fig post block. Keep at the bottom of this file.
+[[ -f "$HOME/.fig/shell/zshrc.post.zsh" ]] && . "$HOME/.fig/shell/zshrc.post.zsh"
