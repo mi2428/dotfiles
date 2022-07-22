@@ -14,6 +14,7 @@ autocmd ColorScheme * highlight Comment ctermfg=244 guifg=#808080
 autocmd ColorScheme * highlight Visual ctermbg=033 guibg=#0087ff
 autocmd ColorScheme * highlight NonText ctermfg=239 ctermbg=NONE guifg=#4e4e4e guibg=NONE
 autocmd ColorScheme * highlight SpecialKey ctermfg=239 guifg=#4e4e4e
+autocmd ColorScheme * highlight Search ctermbg=034 guibg=#00af00
 
 colorscheme material
 syntax enable
