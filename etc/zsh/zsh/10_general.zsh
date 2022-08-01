@@ -56,6 +56,11 @@ export EDITOR="vim"
 bindkey -e  # set explicitly, or zsh use vi-mode binding by default
 bindkey '^O' autosuggest-accept
 
+
+## load .env
+[[ ! -f .env ]] || export $(\grep -v '^#' .env | xargs)
+
+
 zstyle ':completion:*'                 completer _expand _complete _match _prefix _approximate _list _history
 zstyle ':completion:*'                 group-name ''
 zstyle ':completion:*'                 list-colors '${(s.:.)LS_COLORS}'
