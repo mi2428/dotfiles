@@ -351,6 +351,20 @@ xx() {
 }
 
 
+dotenv() {
+  local _path="$1"
+
+  if [[ ! -f "$_path" ]] && [[ -f .env ]]; then
+    _path=".env"
+  fi
+
+  export $(\grep -v '^#' "$_path" | xargs)
+}
+
+## load .env
+
+
+
 ::() {
   local session="$1"
   if [[ -z ${session} ]]; then
