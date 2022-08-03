@@ -4,13 +4,13 @@ import sys
 import zipfile
 
 def main(filename):
-  with zipfile.ZipFile(filename) as zip:
-    for info in zip.infolist():
-      info.filename = info.filename.decode('shift-jis').encode('utf-8')
-      zip.extract(info)
+    with zipfile.ZipFile(filename) as zip:
+        for info in zip.infolist():
+            info.filename = info.filename.decode('shift-jis').encode('utf-8')
+            zip.extract(info)
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser(description="extract zip file compressed with SJIS")
-  parser.add_argument(required=True, dest="FILE_PATH", help="path to zip")
-  args = parser.parse_args()
-  sys.exit(main(args.FILE_PATH))
+    parser = argparse.ArgumentParser(description="extract zip file compressed with SJIS")
+    parser.add_argument(required=True, dest="FILE_PATH", help="path to zip")
+    args = parser.parse_args()
+    sys.exit(main(args.FILE_PATH))
