@@ -197,6 +197,11 @@ dot() {
       return 0
       ;;
 
+    k|keep)
+      (builtin cd $HOME/dotfiles 2>/dev/null; git add . 1>/dev/null 2>&1; git commit -m "keep: $(date)")
+      return 0
+      ;;
+
     d|diff)
       (builtin cd $HOME/dotfiles 2>/dev/null; git diff-index --quiet HEAD || git diff)
       return 0
@@ -260,7 +265,7 @@ addr() {
   local keyword="$1"
 
   if [[ ! -f ${addrtxt} ]]; then
-    echo "addr.txt is missing: ${addrtxt}"
+    echo "missing: ${addrtxt}"
     return 1
   fi
 
