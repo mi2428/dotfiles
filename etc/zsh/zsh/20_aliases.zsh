@@ -255,6 +255,25 @@ dot() {
   esac
 }
 
+addr() {
+  local addrtxt="$HOME/dev/addr/addr.txt"
+  local keyword="$1"
+
+  if [[ ! -f ${addrtxt} ]]; then
+    echo "addr.txt is missing: ${addrtxt}"
+    exit 1
+  fi
+
+  pushd $(dirname ${addrtxt}) 1>/dev/null 2>&1
+  #git pull 2>/dev/null 1>&2
+
+  if [[ -z ${keyword} ]]; then
+    bat ${addrtxt}
+  else
+    cat ${addrtxt} | \grep -v '^#' | \grep -v '^$' | \grep "${keyword}"
+  fi
+}
+
 
 ##
 ## DEPRECATED:
