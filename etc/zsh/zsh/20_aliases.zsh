@@ -275,7 +275,7 @@ addr() {
   if [[ -z ${keyword} ]]; then
     bat ${addrtxt}
   else
-    cat ${addrtxt} | \grep -v '^#' | \grep -v '^$' | \grep "${keyword}"
+    cat ${addrtxt} | \grep -v '^#' | \grep -v '^$' | \grep -i "${keyword}"
   fi
 }
 
