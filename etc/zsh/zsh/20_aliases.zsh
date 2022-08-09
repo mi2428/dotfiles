@@ -261,7 +261,7 @@ addr() {
 
   if [[ ! -f ${addrtxt} ]]; then
     echo "addr.txt is missing: ${addrtxt}"
-    exit 1
+    return 1
   fi
 
   pushd $(dirname ${addrtxt}) 1>/dev/null 2>&1
