@@ -274,8 +274,18 @@ addr() {
 
   if [[ -z ${keyword} ]]; then
     bat ${addrtxt}
+  elif [[ ${keyword} == "--edit" ]]; then
+    git pull 2>/dev/null || true
+    vim ${addrtxt}
+    git add ${addrtxt} 2>/dev/null && git commit -m "keep: $(date)" 2>/dev/null && git push 2>/dev/null || true
   else
-    cat ${addrtxt} | \grep -v '^#' | \grep -v '^$' | \grep -i "${keyword}"
+    local data=$(cat ${addrtxt} | \grep -v '^#' | \grep -v '^$' | \grep -i "${keyword}")
+    if [[ -n ${data} ]]; then
+      echo "IP address              Hostname                    Notes"
+      echo ${data}
+    else
+      echo "nothing matched: ${keyword}"
+    fi
   fi
 }
 
