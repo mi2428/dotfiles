@@ -1,6 +1,6 @@
 export DENO_INSTALL=$HOME/.deno
 export CARGO_HOME=$HOME/.cargo
-export GOPATH="$HOME/dev/gocode"
+export GOPATH="$HOME/io/gocode"
 
 case $(arch) in
 x86_64|i386)
@@ -10,7 +10,7 @@ x86_64|i386)
   typeset -U path PATH
   path=(
     $HOME/bin
-    $HOME/dev/bin
+    $HOME/io/bin
     $HOME/dotfiles/bin
     $HOME/.local/bin
     $GOPATH/bin
@@ -34,7 +34,7 @@ arm64*)
   typeset -U path PATH
   path=(
     $HOME/bin
-    $HOME/dev/bin
+    $HOME/io/bin
     $HOME/dotfiles/bin
     $HOME/.local/bin
     $GOPATH/bin

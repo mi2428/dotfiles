@@ -261,7 +261,7 @@ dot() {
 }
 
 addr() {
-  local addrtxt="$HOME/dev/addr/addr.txt"
+  local addrtxt="$HOME/io/addr/addr.txt"
   local keyword="$1"
 
   if [[ ! -f ${addrtxt} ]]; then
@@ -522,7 +522,7 @@ alias py='python3'
 alias rc='bundle exec rails c'
 
 alias :::='tmuxinator'
-alias dev='cd $HOME/dev'
+alias dev='cd $HOME/io'
 alias dox='docker exec -it `docker ps --format "{{.Names}}" | fzf`'
 alias dow='cd $HOME/Downloads'
 alias gco='git checkout'
