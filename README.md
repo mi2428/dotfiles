@@ -141,6 +141,20 @@ mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/
 :UpdateRemotePlugins
 ```
 
+### gnome-terminal preferences
+
+To import profile:
+
+```
+dconf load /org/gnome/terminal/legacy/profiles:/ < material-shizk.dconf
+```
+
+To export profile:
+
+```
+dconf load /org/gnome/terminal/legacy/profiles:/ > material-shizk.dconf
+```
+
 ### iTerm2 preferences
 
 #### `Appearance` / `General`

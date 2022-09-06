@@ -1,0 +1,29 @@
+[:b1dcc9dd-5262-4d8d-a863-c897e6d979b9]
+background-color='rgb(38,50,56)'
+background-transparency-percent=3
+bold-color='rgb(236,239,241)'
+bold-color-same-as-fg=false
+bold-is-bright=false
+cursor-background-color='rgb(255,204,0)'
+cursor-blink-mode='on'
+cursor-colors-set=true
+cursor-foreground-color='rgb(38,50,56)'
+custom-command='/bin/zsh --login'
+default-size-columns=170
+default-size-rows=55
+font='UbuntuMono Nerd Font Bold 11'
+foreground-color='rgb(236,239,241)'
+highlight-background-color='rgb(128,203,196)'
+highlight-colors-set=true
+highlight-foreground-color='rgb(38,50,56)'
+login-shell=true
+palette=['rgb(0,0,0)', 'rgb(229,75,75)', 'rgb(158,206,88)', 'rgb(250,237,112)', 'rgb(57,111,226)', 'rgb(187,128,179)', 'rgb(45,218,253)', 'rgb(208,208,208)', 'rgb(85,88,100)', 'rgb(255,83,112)', 
+,141)', 'rgb(255,203,109)', 'rgb(130,170,255)', 'rgb(199,146,234)', 'rgb(137,221,255)', 'rgb(255,255,255)']
+scroll-on-output=true
+scrollback-unlimited=true
+use-custom-command=false
+use-system-font=false
+use-theme-colors=false
+use-theme-transparency=false
+use-transparent-background=true
+visible-name='MATERIAL SHIZK'
