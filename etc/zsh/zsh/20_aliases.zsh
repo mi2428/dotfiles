@@ -119,6 +119,16 @@ mmm() {
 
 dk() {
   case $1 in
+    art|rt)
+      docker start ${@:2}
+      return 0
+      ;;
+
+    op)
+      docker stop ${@:2}
+      return 0
+      ;;
+
     im)
       docker images ${@:2}
       return 0
