@@ -13,7 +13,7 @@ if ! mkdir -p $NOTES_DIR 2>/dev/null; then
 fi
 
 QUICKNOTE_FORMAT="quicknote-%Y-%m-%d-%H%M"  # date format string
-NOTE_EXT=".md"
+NOTE_EXT="md"
 BASENAME="$(basename $0)"
 
 cd $NOTES_DIR
@@ -34,8 +34,20 @@ open_note_dir() {
   return $?
 }
 
-quick_note() {
-  local notename="$(date +${QUICKNOTE_FORMAT}).${NOTE_EXT}"
+new_note() {
+  local keywords="$@"
+  local notename=""
+
+  if [[ -z $keywords ]]; then
+    notename="$(date +${QUICKNOTE_FORMAT})"
+  else
+    for keyword in ${keywords[@]}; do
+      [[ -n $notename ]] && notename="${notename}-"
+      notename="${notename}${keyword}"
+    done
+  fi
+  notename="${notename}.${NOTE_EXT}"
+
   touch $notename
   vim_note $notename
   return $?
@@ -84,7 +96,7 @@ cli() {
 
   case "$1" in
     new|n)
-      cmd="quick_note"
+      cmd="new_note"
       ;;
     nvim|vim|vi|v)
       cmd="vim_note"
