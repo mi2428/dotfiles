@@ -26,16 +26,38 @@ ls_notes() {
 }
 
 open_note_dir() {
-  if whence -p open; then
+  if which open; then
     open . && return 0
-  elif whence -p nautilus; then
+  elif which nautilus; then
     nautilus . && return 0
   fi
   return $?
 }
 
-open_note() {
-  echo "Not yet implemented."
+quick_note() {
+  local notename="$(date +${QUICKNOTE_FORMAT}).${NOTE_EXT}"
+  touch $notename
+  vim_note $notename
+  return $?
+}
+
+vim_note() {
+  local keywords="$@"
+  local vim=${EDITOR:-nvim}
+  local pattern="^"
+
+  for keyword in ${keywords[@]}; do
+    pattern="${pattern}.*${keyword}"
+  done
+  pattern="${pattern}.*$"
+
+  local n=$(ls -1 | grep -Eiw "${pattern}" | wc -l)
+  if (( $n == 1 )); then
+    vim "$(ls -1 | grep -Eiw "${pattern}")"
+  else
+    vim "$(ls -1 | grep -Eiw "${pattern}" | fzf)"
+  fi
+
   return 0
 }
 
@@ -50,6 +72,7 @@ A command line note taking utility.
 
 Usage:
   $BASENAME new|n <name>  # Create new note
+  $BASENAME vim <name>    # Open existing note
   $BASENAME ls <options>  # List notes, support ls options
   $BASENAME open|o        # Open notes directory
   $BASENAME rm            # Remove note
@@ -61,7 +84,10 @@ cli() {
 
   case "$1" in
     new|n)
-      cmd="open_note"
+      cmd="quick_note"
+      ;;
+    nvim|vim|vi|v)
+      cmd="vim_note"
       ;;
     ls)
       cmd="ls_notes"
