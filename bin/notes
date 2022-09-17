@@ -21,13 +21,8 @@ cd $NOTES_DIR
 ls_notes() {
   local ls_opts="$@"
   [[ -z $ls_opts ]] && ls_opts="-1t"
-  ls $ls_opts
-  return 0
-}
-
-open_note() {
-  echo "Not yet implemented."
-  return 0
+  ls $ls_opts && return 1
+  return $?
 }
 
 open_note_dir() {
@@ -36,9 +31,13 @@ open_note_dir() {
   elif whence -p nautilus; then
     nautilus . && return 0
   fi
-  return 1
+  return $?
 }
 
+open_note() {
+  echo "Not yet implemented."
+  return 0
+}
 
 rm_notes() {
   echo "Not yet implemented."
