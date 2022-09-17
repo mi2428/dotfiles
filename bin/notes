@@ -1,0 +1,86 @@
+#!/bin/bash
+
+if [[ -z $NOTES_DIR ]]; then
+  echo "[E] Environment variable is missing: NOTES_DIR"
+  echo "[I] Use $HOME/notes as notes directory."
+  export NOTES_DIR=$HOME/notes
+fi
+
+if ! mkdir -p $NOTES_DIR 2>/dev/null; then
+  echo "[E] Failed to create notes directory, perhaps invalid path was specified?"
+  echo "[I] NOTES_DIR=${NOTES_DIR}"
+  exit 254
+fi
+
+QUICKNOTE_FORMAT="quicknote-%Y-%m-%d-%H%M"  # date format string
+NOTE_EXT=".md"
+BASENAME="$(basename $0)"
+
+cd $NOTES_DIR
+
+ls_notes() {
+  local ls_opts="$@"
+  [[ -z $ls_opts ]] && ls_opts="-1t"
+  ls $ls_opts
+  return 0
+}
+
+open_note() {
+  echo "Not yet implemented."
+  return 0
+}
+
+open_note_dir() {
+  if whence -p open; then
+    open . && return 0
+  elif whence -p nautilus; then
+    nautilus . && return 0
+  fi
+  return 1
+}
+
+
+rm_notes() {
+  echo "Not yet implemented."
+  return 0
+}
+
+usage() {
+  cat <<EOF
+A command line note taking utility.
+
+Usage:
+  $BASENAME new|n <name>  # Create new note
+  $BASENAME ls <options>  # List notes, support ls options
+  $BASENAME open|o        # Open notes directory
+  $BASENAME rm            # Remove note
+EOF
+}
+
+cli() {
+  local cmd=""
+
+  case "$1" in
+    new|n)
+      cmd="open_note"
+      ;;
+    ls)
+      cmd="ls_notes"
+      ;;
+    open|o)
+      cmd="open_note_dir"
+      ;;
+    rm)
+      cmd="rm_notes"
+      ;;
+    *)
+      cmd="usage"
+      ;;
+  esac
+  shift
+
+  $cmd $@
+  exit $?
+}
+
+cli $@
