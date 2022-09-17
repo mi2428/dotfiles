@@ -71,11 +71,11 @@ usage() {
 A command line note taking utility.
 
 Usage:
-  $BASENAME new|n <name>  # Create new note
-  $BASENAME vim <name>    # Open existing note
-  $BASENAME ls <options>  # List notes, support ls options
-  $BASENAME open|o        # Open notes directory
-  $BASENAME rm            # Remove note
+  $BASENAME new|n <name>      # Create new note
+  $BASENAME vim <name>        # Open existing note
+  $BASENAME ls <options>      # List notes, support ls options
+  $BASENAME open|o            # Open notes directory
+  $BASENAME rm                # Remove note
 EOF
 }
 
