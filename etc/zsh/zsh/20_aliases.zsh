@@ -193,6 +193,14 @@ dk() {
 }
 
 
+dcx() {
+  local name="$1"
+  local args="${@:2}"
+  [[ -z $args ]] && args="/bin/bash"
+  docker-compose exec ${name} ${args}
+}
+
+
 dot() {
   if (( $# == 0 )); then
     cd $HOME/dotfiles
