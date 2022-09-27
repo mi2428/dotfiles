@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v1
         with:
-          fetch-depth: 1
+          fetch-depth: 10
       - uses: elgohr/Publish-Docker-Github-Action@master
         with:
           name: mi2428/dotfiles
