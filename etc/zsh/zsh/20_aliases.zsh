@@ -556,6 +556,7 @@ alias mkd='mkdir -p'
 alias ssa='ssh-agent zsh'
 
 alias dcrm='docker-compose rm -f'
+alias dcup='docker-compose up -d && docker-compose logs -f'
 alias dorm='docker rm `docker ps -qa` 2>/dev/null'
 alias dormi='docker rmi `docker images --filter "dangling=true" -q` 2>/dev/null'
 alias editssh='vim $HOME/.ssh/config'
