@@ -42,8 +42,10 @@ set foldcolumn=1
 set foldclose=all
 
 nnoremap <silent>;; :tabnew<CR>
-nnoremap <silent><Tab> :tabnext<CR>
-nnoremap <silent><S-Tab> :tabprevious<CR>
+"nnoremap <silent><Tab> :tabnext<CR>
+"nnoremap <silent><S-Tab> :tabprevious<CR>
+nnoremap <silent><S-l> :tabnext<CR>
+nnoremap <silent><S-h> :tabprevious<CR>
 nnoremap <silent><C-l> :<C-u>nohlsearch<CR>
 xnoremap p "_xP
 
