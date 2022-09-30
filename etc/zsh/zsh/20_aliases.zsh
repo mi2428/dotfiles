@@ -413,8 +413,15 @@ dotenv() {
   export $(\grep -v '^#' "$_path" | xargs)
 }
 
-## load .env
 
+io() {
+  local keywords="$@"
+
+  if [[ -z $keywords ]]; then
+    cd $HOME/io
+    return 0
+  fi
+}
 
 
 ::() {
@@ -540,7 +547,7 @@ alias py='python3'
 alias rc='bundle exec rails c'
 
 alias :::='tmuxinator'
-alias io='cd $HOME/io'
+#alias io='cd $HOME/io'
 alias dck='docker-compose kill && docker-compose rm -f'
 alias dcl='docker-compose logs -f'
 alias dcp='docker-compose ps -a'
