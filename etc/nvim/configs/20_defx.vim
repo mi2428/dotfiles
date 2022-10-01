@@ -7,7 +7,7 @@ nnoremap <silent>f :<C-u>Defx<CR>
 
 function! s:defx_my_settings() abort
   nnoremap <silent><buffer><expr> <CR>
-   \ defx#do_action('open')
+  \ defx#do_action('open')
   nnoremap <silent><buffer><expr> c
   \ defx#do_action('copy')
   nnoremap <silent><buffer><expr> m
