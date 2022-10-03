@@ -6,6 +6,7 @@ export FZF_DEFAULT_OPTS='--reverse --height 60% --border --inline-info --preview
 export FZF_COMPLETION_OPTS="${FZF_DEFAULT_OPTS}"
 export FZF_TMUX=1
 export FZF_TMUX_HEIGHT=20
+export PATH="${PATH:+${PATH}:}/opt/homebrew/opt/fzf/bin"
 
 # Use fd (https://github.com/sharkdp/fd) instead of the default find
 # command for listing path candidates.
