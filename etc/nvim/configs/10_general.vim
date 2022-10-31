@@ -100,8 +100,9 @@ Plug 'kristijanhusak/defx-git'
 
 "" Dark deno-powered completion framework for neovim/Vim8
 "" https://github.com/Shougo/ddc.vim
-Plug 'Shougo/ddc.vim'
 Plug 'vim-denops/denops.vim'
+Plug 'Shougo/ddc.vim'
+Plug 'Shougo/ddc-ui-native'
 Plug 'Shougo/ddc-around'
 Plug 'Shougo/ddc-matcher_head'
 Plug 'Shougo/ddc-sorter_rank'
