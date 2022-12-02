@@ -1,0 +1,13 @@
+#!/bin/bash
+REPOSITORY_URL="$1"
+DIR="$2"
+
+if [[ -z $DIR ]]; then
+  DIR=$(echo $REPOSITORY_URL | rev | cut -d '/' -f 1 | rev | sed -e "s/.git$//")
+fi
+
+git clone $REPOSITORY_URL $DIR || exit 254
+cd $DIR
+git branch -r | grep -v "->" | grep -v main | while read remote; do git branch --track "${remote#origin/}" "$remote"; done
+git fetch --all
+git pull --all
