@@ -1,0 +1,3 @@
+#!/bin/bash
+cd $(dirname `git rev-parse --git-dir`)
+git commit --allow-empty -m "touch: $(date)"
