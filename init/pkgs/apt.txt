@@ -1,5 +1,4 @@
 bat
-cargo
 file
 fzf
 glances
