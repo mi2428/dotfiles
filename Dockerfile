@@ -35,8 +35,7 @@ RUN apt-get update \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > /tmp/rustup.sh \
  && chmod +x /tmp/rustup.sh \
  && HOME=/etc/skel \
-    /tmp/rustup.sh -y \
- && /tmp/rustup.sh -y
+    /tmp/rustup.sh -y
 
 RUN groupadd wheel \
  && echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
