@@ -32,18 +32,19 @@ RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive \
     apt-get install -y neovim
 
+RUN groupadd wheel \
+ && echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+
+WORKDIR /etc/skel
+
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > /tmp/rustup.sh \
  && chmod +x /tmp/rustup.sh \
  && HOME=/etc/skel \
     /tmp/rustup.sh -y
 
-RUN groupadd wheel \
- && echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
-
-WORKDIR /etc/skel
 RUN git clone --depth 1 https://github.com/mi2428/dotfiles \
  && cd dotfiles \
- && HOME=/etc/skel \
+ && HOME=/etc/skel PATH=/etc/skel/.cargo/bin:$PATH \
     make ubuntu-docker
 
 RUN cp ./dotfiles/var/docker/entrypoint.sh /sbin/entrypoint.sh \
