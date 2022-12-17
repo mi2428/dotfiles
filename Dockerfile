@@ -14,7 +14,7 @@ RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive \
     apt-get install -y --no-install-recommends \
       apt-utils \
-      build-essentials \
+      build-essential \
       ca-certificates \
       language-pack-ja \
       locales \
