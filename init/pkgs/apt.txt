@@ -1,6 +1,5 @@
 bat
 file
-fzf
 glances
 grc
 htop
