@@ -141,6 +141,18 @@ Plug 'fatih/vim-go', { 'do': ':GoUpdateBinaries' }
 "" https://github.com/vim-python/python-syntax
 Plug 'vim-python/python-syntax'
 
+
+"" hashivim/vim-terraform depends on the following 4 plugins
+"" https://qiita.com/tenderness330/items/87293c33793f92103ffe
+Plug 'prabirshrestha/async.vim'
+Plug 'prabirshrestha/vim-lsp'
+Plug 'prabirshrestha/asyncomplete.vim'
+Plug 'prabirshrestha/asyncomplete-lsp.vim'
+
+"" This plugin adds a :Terraform command that runs terraform, with tab completion of subcommands.
+"" https://github.com/hashivim/vim-terraform
+Plug 'hashivim/vim-terraform' , { 'for': 'terraform'}
+
 call plug#end()
 
 
