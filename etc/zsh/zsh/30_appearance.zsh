@@ -12,6 +12,7 @@ typeset -gA PROMPT_SYMBOL=(
 typeset -g KAWAII_EMOJI=(
   '(๑˃̵ᴗ˂̵)و'
   '(눈_눈)'
+  '( ⩌_⩌.)v'
   #'(๑•̀ㅂ•́)و'
   #'(๑°ω°๑)و'
   #'(๑•ㅂ•)و'
