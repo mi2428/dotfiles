@@ -24,6 +24,8 @@ x86_64|i386)
     /bin
     /sbin
     /Library/Apple/usr/bin
+    .
+    ./bin
   )
   ;;
 arm64*)
@@ -53,6 +55,7 @@ arm64*)
     /sbin
     /Library/Apple/usr/bin
     .
+    ./bin
   )
   ;;
 esac
