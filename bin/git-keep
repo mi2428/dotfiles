@@ -2,10 +2,16 @@
 
 cd $(dirname `git rev-parse --git-dir`)
 
+message="keep"
+if [[ "$1" == "--fix" ]] || [[ "$1" == "-f" ]]; then
+  message="bugfix"
+  shift
+fi
+
 if (( $# == 0 )); then
   git add .
 else
   git add $@
 fi
 
-git commit -m "keep: $(date)"
+git commit -m "$message: $(date)"
