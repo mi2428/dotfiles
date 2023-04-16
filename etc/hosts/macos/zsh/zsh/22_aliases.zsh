@@ -17,3 +17,4 @@ fi
 alias preview='open -a Preview'
 alias skim='open -a Skim'
 
+alias update-aws-session-token='sesstok "$(op item get soracom-aws-organization-jp --otp)" -s -p'
