@@ -109,7 +109,13 @@ Remember to setup locale on your host - both `en_US` and `ja_JP` are requried
 ### Import GPG key pair to create signed commit
 
 ```
-% chown 700 ~/.gnupg
+% gpg --export --armor --output mi2428.public.key
+% gpg --export-secret-keys --armor --output mi2428.secret.key
+% shred --remove mi2428.secret.key
+```
+
+```
+% chmod 700 ~/.gnupg
 % echo "test" | gpg --clearsign 
 ```
 
