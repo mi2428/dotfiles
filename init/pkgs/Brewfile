@@ -2,6 +2,7 @@ tap "homebrew/cask-fonts"
 tap "textualize/rich"
 
 brew "ag"
+brew "awscli"
 brew "bat"
 brew "coreutils"
 brew "deno"
