@@ -47,6 +47,8 @@ arm64*)
     $FZF_BIN
     $HOMEBREW_HOME/bin(N-/)
     $HOMEBREW_HOME/sbin(N-/)
+    $HOMEBREW_HOME/opt/postgresql@13/bin
+    $HOMEBREW_HOME/opt/postgresql@14/bin
     $HOMEBREW_HOME/opt/postgresql@15/bin
     /usr/local/bin
     /usr/local/sbin
