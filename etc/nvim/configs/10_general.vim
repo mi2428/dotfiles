@@ -153,6 +153,11 @@ Plug 'prabirshrestha/asyncomplete-lsp.vim'
 "" https://github.com/hashivim/vim-terraform
 Plug 'hashivim/vim-terraform' , { 'for': 'terraform'}
 
+""" slim syntax highlighting for vim.
+""" https://github.com/slim-template/vim-slim
+Plug 'gmarik/Vundle.vim'
+Plug 'slim-template/vim-slim'
+
 call plug#end()
 
 
