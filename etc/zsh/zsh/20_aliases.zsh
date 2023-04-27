@@ -536,10 +536,9 @@ resolve-vpg-ip() {
   fi
 
   if [[ ${name:0:9} == "VPG-Type-" ]]; then
-    aws ec2 describe-instances --filters "Name=tag:Name,Values=$name" | jq -r '.Reservations[].Instances[].PrivateIpAddress'
+    aws ec2 describe-instances --filters "Name=tag:Name,Values=$name" | jq -r '.Reservations[].Instances[] | .InstanceId + " " + .PrivateIpAddress'
     return $?
   fi
-
 }
 
 
