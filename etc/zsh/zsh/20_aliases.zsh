@@ -495,6 +495,38 @@ tenki() {
 }
 
 
+copy-aws-session() {
+  mkdir -p ~/.cache
+  cat - << EOS > $HOME/.cache/zsh__copy_aws_session.cache
+export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+export AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION
+export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN
+EOS
+}
+
+
+paste-aws-session() {
+  local cache="$HOME/.cache/zsh__copy_aws_session.cache"
+  local session="$(cat $cache 2>/dev/null)"
+  if [[ -e $cache ]] && [[ -n $session ]]; then
+    echo -n $session | sed -e 's/export //g' -e 's/=/\t/'
+    echo
+    eval $session
+  else
+    echo "Missing cached session."
+  fi
+}
+
+
+clear-aws-session() {
+  unset AWS_ACCESS_KEY_ID
+  unset AWS_DEFAULT_REGION
+  unset AWS_SECRET_ACCESS_KEY
+  unset AWS_SESSION_TOKEN
+}
+
+
 colortest() {
   for c in {000..255}; do
     echo -n "\e[38;5;${c}m $c"
