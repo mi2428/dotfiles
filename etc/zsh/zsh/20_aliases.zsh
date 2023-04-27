@@ -528,8 +528,18 @@ clear-aws-session() {
 
 
 resolve-vpg-ip() {
-  local instanceid="$1"
-  aws ec2 describe-instances --filters "Name=instance-id,Values=$instanceid" | jq '.Reservations[0].Instances[0].PrivateIpAddress'
+  local name="$1"
+
+  if [[ ${name:0:2} == "i-" ]]; then
+    aws ec2 describe-instances --filters "Name=instance-id,Values=$name" | jq -r '.Reservations[0].Instances[0].PrivateIpAddress'
+    return $?
+  fi
+
+  if [[ ${name:0:9} == "VPG-Type-" ]]; then
+    aws ec2 describe-instances --filters "Name=tag:Name,Values=$name" | jq -r '.Reservations[].Instances[].PrivateIpAddress'
+    return $?
+  fi
+
 }
 
 
