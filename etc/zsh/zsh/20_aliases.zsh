@@ -527,6 +527,12 @@ clear-aws-session() {
 }
 
 
+resolve-vpg-ip() {
+  local instanceid="$1"
+  aws ec2 describe-instances --filters "Name=instance-id,Values=$instanceid" | jq '.Reservations[0].Instances[0].PrivateIpAddress'
+}
+
+
 colortest() {
   for c in {000..255}; do
     echo -n "\e[38;5;${c}m $c"
