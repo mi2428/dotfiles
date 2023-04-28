@@ -158,6 +158,10 @@ Plug 'hashivim/vim-terraform' , { 'for': 'terraform'}
 Plug 'gmarik/Vundle.vim'
 Plug 'slim-template/vim-slim'
 
+""" This project adds CoffeeScript support to vim.
+""" https://github.com/kchmck/vim-coffee-script
+Plug 'kchmck/vim-coffee-script'
+
 call plug#end()
 
 
