@@ -503,6 +503,7 @@ export AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION
 export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
 export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN
 EOS
+  echo "copied."
 }
 
 
@@ -524,11 +525,13 @@ clear-aws-session() {
   unset AWS_DEFAULT_REGION
   unset AWS_SECRET_ACCESS_KEY
   unset AWS_SESSION_TOKEN
+  echo "cleared."
 }
 
 
 resolve-vpg-ip() {
   local name="$1"
+  local uuid_pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 
   if [[ ${name:0:2} == "i-" ]]; then
     aws ec2 describe-instances --filters "Name=instance-id,Values=$name" | jq -r '.Reservations[0].Instances[0].PrivateIpAddress'
@@ -537,6 +540,11 @@ resolve-vpg-ip() {
 
   if [[ ${name:0:9} == "VPG-Type-" ]]; then
     aws ec2 describe-instances --filters "Name=tag:Name,Values=$name" | jq -r '.Reservations[].Instances[] | .Placement.AvailabilityZone + " " + .InstanceId + " " + .PrivateIpAddress'
+    return $?
+  fi
+
+  if [[ $name =~ $uuid_pattern ]]; then
+    aws ec2 describe-instances --filters "Name=tag:Name,Values=VPG-Type-*-$name" | jq -r '.Reservations[].Instances[] | .Placement.AvailabilityZone + " " + .InstanceId + " " + .PrivateIpAddress'
     return $?
   fi
 }
