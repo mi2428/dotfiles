@@ -1,2 +1,3 @@
 neovim
 pynvim
+frogmouth
