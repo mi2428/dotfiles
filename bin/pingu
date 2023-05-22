@@ -3,6 +3,7 @@ from argparse import ArgumentParser
 from datetime import datetime as dt
 from time import sleep
 from ping3 import ping
+import asyncio
 
 
 COLOR_RESET  = "\033[0m"
@@ -12,37 +13,39 @@ COLOR_RED    = "\033[1;31m"
 COLOR_GREEN  = "\033[1;32m"
 
 
-def verbose_ping(args):
+async def verbose_ping(host, args):
     c = 0
     while True:
-        time = ping(args.host, size=args.size, timeout=args.timeout, unit="ms")
+        time = ping(host, size=args.size, timeout=args.timeout, unit="ms")
         ts = dt.now()
         c += 1
         COLOR_WHITE = COLOR_WHITE2 if c % 2 == 0 and args.alter_fg else COLOR_WHITE1
 
         if time is not None:
             time = round(time, 2)
-            print(f"{COLOR_WHITE}{ts} {COLOR_GREEN}OK{COLOR_WHITE} {args.host} seq={c} size={args.size} time={time:.2f} ms{COLOR_RESET}")
-            sleep(args.interval-time/1000)
+            print(f"{COLOR_WHITE}{ts} {COLOR_GREEN}OK{COLOR_WHITE} {host} seq={c} size={args.size} time={time:.2f} ms{COLOR_RESET}")
+            await asyncio.sleep(args.interval-time/1000)
         else:
-            print(f"{COLOR_WHITE}{ts} {COLOR_RED}NG{COLOR_WHITE} {args.host} seq={c} size={args.size} timeout ms{COLOR_RESET}")
+            print(f"{COLOR_WHITE}{ts} {COLOR_RED}NG{COLOR_WHITE} {host} seq={c} size={args.size} timeout{COLOR_RESET}")
+            await asyncio.sleep(0.001)
 
 
-def main():
+async def main():
     parser = ArgumentParser()
     parser.add_argument("-l", dest="size",     type=int,   default=56, help="payload size (bytes)")
     parser.add_argument("-t", dest="timeout",  type=float, default=1,  help="request timeout (sec)")
     parser.add_argument("-w", dest="interval", type=float, default=1,  help="request interval (sec)")
     parser.add_argument("-a", dest="alter_fg", action="store_true", default=False, help="color alternate line")
-    parser.add_argument("host", help="destination address")
+    parser.add_argument("hosts", nargs="+", help="destination addresses")
 
     args = parser.parse_args()
 
-    try:
-        verbose_ping(args)
-    except KeyboardInterrupt:
-        return
+    tasks = [ asyncio.create_task(verbose_ping(host, args)) for host in args.hosts ]
+    await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
