@@ -9,8 +9,8 @@ import asyncio
 COLOR_RESET  = "\033[0m"
 COLOR_WHITE1 = "\033[38;5;255m"
 COLOR_WHITE2 = "\033[38;5;251m"
-COLOR_RED    = "\033[1;31m"
-COLOR_GREEN  = "\033[1;32m"
+COLOR_RED    = "\033[38;5;009m"
+COLOR_GREEN  = "\033[38;5;002m"
 
 
 async def verbose_ping(host, args):
@@ -23,10 +23,10 @@ async def verbose_ping(host, args):
 
         if time is not None:
             time = round(time, 2)
-            print(f"{COLOR_WHITE}{ts} {COLOR_GREEN}OK{COLOR_WHITE} {host} seq={c} size={args.size} time={time:.2f} ms{COLOR_RESET}")
+            print(f"{COLOR_WHITE}{ts} {COLOR_GREEN}OK{COLOR_RESET}{COLOR_WHITE} {host} seq={c} size={args.size} time={time:.2f} ms{COLOR_RESET}")
             await asyncio.sleep(args.interval-time/1000)
         else:
-            print(f"{COLOR_WHITE}{ts} {COLOR_RED}NG{COLOR_WHITE} {host} seq={c} size={args.size} timeout{COLOR_RESET}")
+            print(f"{COLOR_WHITE}{ts} {COLOR_RED}NG{COLOR_RESET}{COLOR_WHITE} {host} seq={c} size={args.size} timeout{COLOR_RESET}")
             await asyncio.sleep(0.001)
 
 
