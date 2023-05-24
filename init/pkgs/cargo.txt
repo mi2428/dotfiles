@@ -1,3 +1,4 @@
 exa
 fd-find
 procs
+ripgrep
