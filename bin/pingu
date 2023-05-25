@@ -38,7 +38,7 @@ def main():
     parser.add_argument("host", help="destination addresses")
 
     args = parser.parse_args()
-    verbose_ping(args.hosts[0], args)
+    verbose_ping(args.host, args)
 
 
 if __name__ == "__main__":
