@@ -16,7 +16,7 @@ COLOR_GREEN  = "\033[38;5;002m"
 def verbose_ping(host, args):
     c = 0
     while True:
-        time = ping(host, size=args.size, timeout=args.timeout, unit="ms")
+        time = ping(host, size=args.size, timeout=args.timeout, ttl=args.ttl, unit="ms")
         ts = dt.now()
         c += 1
         COLOR_WHITE = COLOR_WHITE2 if c % 2 == 0 and args.alter_fg else COLOR_WHITE1
