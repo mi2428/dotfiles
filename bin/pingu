@@ -35,7 +35,7 @@ def main():
     parser.add_argument("-t", dest="timeout",  type=float, default=1,  help="request timeout (sec)")
     parser.add_argument("-w", dest="interval", type=float, default=1,  help="request interval (sec)")
     parser.add_argument("-a", dest="alter_fg", action="store_true", default=False, help="color alternate line")
-    parser.add_argument("hosts", nargs="+", help="destination addresses")
+    parser.add_argument("host", help="destination addresses")
 
     args = parser.parse_args()
     verbose_ping(args.hosts[0], args)
