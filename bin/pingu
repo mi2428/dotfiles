@@ -23,6 +23,8 @@ def verbose_ping(host, args):
 
         if time is not None:
             time = round(time, 2)
+            if time < 0:
+                time = 1
             print(f"{COLOR_WHITE}{ts} {COLOR_GREEN}OK{COLOR_RESET}{COLOR_WHITE} {host} seq={c} size={args.size} time={time:.2f} ms{COLOR_RESET}")
             sleep(args.interval-time/1000)
         else:
