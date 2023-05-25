@@ -13,7 +13,7 @@ COLOR_RED    = "\033[38;5;009m"
 COLOR_GREEN  = "\033[38;5;002m"
 
 
-async def verbose_ping(host, args):
+def verbose_ping(host, args):
     c = 0
     while True:
         time = ping(host, size=args.size, timeout=args.timeout, unit="ms")
@@ -24,13 +24,12 @@ async def verbose_ping(host, args):
         if time is not None:
             time = round(time, 2)
             print(f"{COLOR_WHITE}{ts} {COLOR_GREEN}OK{COLOR_RESET}{COLOR_WHITE} {host} seq={c} size={args.size} time={time:.2f} ms{COLOR_RESET}")
-            await asyncio.sleep(args.interval-time/1000)
+            sleep(args.interval-time/1000)
         else:
             print(f"{COLOR_WHITE}{ts} {COLOR_RED}NG{COLOR_RESET}{COLOR_WHITE} {host} seq={c} size={args.size} timeout{COLOR_RESET}")
-            await asyncio.sleep(0.001)
 
 
-async def main():
+def main():
     parser = ArgumentParser()
     parser.add_argument("-l", dest="size",     type=int,   default=56, help="payload size (bytes)")
     parser.add_argument("-t", dest="timeout",  type=float, default=1,  help="request timeout (sec)")
@@ -39,13 +38,11 @@ async def main():
     parser.add_argument("hosts", nargs="+", help="destination addresses")
 
     args = parser.parse_args()
-
-    tasks = [ asyncio.create_task(verbose_ping(host, args)) for host in args.hosts ]
-    await asyncio.gather(*tasks)
+    verbose_ping(args.hosts[0], args)
 
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        main()
     except KeyboardInterrupt:
         pass
