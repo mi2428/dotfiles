@@ -1,6 +1,7 @@
 tap "homebrew/cask-fonts"
 tap "textualize/rich"
 tap "wader/tap/fq"
+tap "aws/tap/aws-sam-cli"
 
 brew "ag"
 brew "awscli"
