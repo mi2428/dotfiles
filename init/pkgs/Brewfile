@@ -5,6 +5,7 @@ tap "aws/tap/aws-sam-cli"
 
 brew "ag"
 brew "awscli"
+brew "aws-cdk"
 brew "bat"
 brew "coreutils"
 brew "deno"
