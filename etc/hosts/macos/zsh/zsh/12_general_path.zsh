@@ -69,3 +69,11 @@ export ZSH_HIGHLIGHT_HIGHLIGHTERS_DIR=$HOMEBREW_HOME/share/zsh-syntax-highlighti
 source $HOMEBREW_HOME/share/zsh-autosuggestions/zsh-autosuggestions.zsh
 source $HOMEBREW_HOME/opt/zsh-git-prompt/zshrc.sh
 source $HOMEBREW_HOME/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+
+if whence -p rbenv 1>/dev/null; then
+  eval "$(rbenv init - zsh)"
+fi
+
+if whence -p nodenv 1>/dev/null; then
+  eval "$(nodenv init - zsh)"
+fi

@@ -106,15 +106,6 @@ if [[ -n ${SSH_AGENT_PID} ]] && ! ssh-add -l 1> /dev/null; then
   echo
 fi
 
-if whence -p rbenv 1>/dev/null; then
-  eval "$(rbenv init - zsh)"
-fi
-
-if whence -p nodenv 1>/dev/null; then
-  eval "$(nodenv init - zsh)"
-fi
-
-
 REPORTTIME=300
 TIMEFMT='JOB:  %J
 TIME: %E (user: %U, kernel: %S)
