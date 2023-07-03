@@ -498,10 +498,10 @@ tenki() {
 copy-aws-session() {
   mkdir -p ~/.cache
   cat - << EOS > $HOME/.cache/zsh__copy_aws_session.cache
-export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
-export AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION
-export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
-export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN
+ export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+ export AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION
+ export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+ export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN
 EOS
   echo "copied."
 }
@@ -510,13 +510,20 @@ EOS
 paste-aws-session() {
   local cache="$HOME/.cache/zsh__copy_aws_session.cache"
   local session="$(cat $cache 2>/dev/null)"
-  if [[ -e $cache ]] && [[ -n $session ]]; then
-    echo -n $session | sed -e 's/export //g' -e 's/=/\t/'
-    echo
-    eval $session
-  else
+
+  if [[ ! -f $cache ]] || [[ -z $session ]]; then
     echo "Missing cached session."
+    return 1
   fi
+
+  if [[ "$1" == "-e" ]]; then
+    echo -n $session
+  else
+    echo -n $session | sed -e 's/ export //g' -e 's/=/\t/'
+  fi
+
+  echo
+  eval $session
 }
 
 
