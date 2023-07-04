@@ -517,6 +517,7 @@ paste-aws-session() {
   fi
 
   if [[ "$1" == "-e" ]]; then
+    echo -n $session | pbcopy 2>/dev/null
     echo -n $session
   else
     echo -n $session | sed -e 's/ export //g' -e 's/=/\t/'
