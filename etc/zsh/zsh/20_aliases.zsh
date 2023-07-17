@@ -503,7 +503,7 @@ copy-aws-session() {
  export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
  export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN
 EOS
-  echo "copied."
+  echo "AWS session copied."
 }
 
 
@@ -533,7 +533,7 @@ clear-aws-session() {
   unset AWS_DEFAULT_REGION
   unset AWS_SECRET_ACCESS_KEY
   unset AWS_SESSION_TOKEN
-  echo "cleared."
+  echo "AWS session cleared."
 }
 
 
