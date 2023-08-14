@@ -99,6 +99,7 @@ if [[ -n ${SSH_AGENT_PID} ]] && ! ssh-add -l 1> /dev/null; then
   ssh-add $HOME/.ssh/masterkey.old/mi2428.master.id_ed25519
   ssh-add $HOME/.ssh/masterkey.old/mi2428.master.id_rsa
   ssh-add $HOME/.ssh/git/mi2428.git.id_ed25519
+  ssh-add $HOME/.ssh/soracom.io/kagari-teo.pem
 
   if [[ -d $HOME/.ssh/soracom.io ]]; then
     ssh-add $HOME/.ssh/soracom.io/sorao.id_rsa
