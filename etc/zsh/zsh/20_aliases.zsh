@@ -245,6 +245,15 @@ dot() {
       return 0
       ;;
 
+    upgrade)
+      if [[ $(uname) == "Darwin" ]]; then
+        brew upgrade
+        xargs cargo install --force <$HOME/dotfiles/init/pkgs/cargo.txt
+	      xargs pip3 install --upgrade <$HOME/dotfiles/init/pkgs/python3-pip.txt
+      fi
+      return 0
+      ;;
+
     rollback)
       (builtin cd $HOME/dotfiles 2>/dev/null; git checkout .)
       return 0
@@ -265,11 +274,13 @@ dot() {
       echo "usage: dot [options...]"
       echo " (empty)               move to $HOME/dotfiles"
       echo " cc, commit [message]  alias of \`git add . && git commit -m\` command"
+      echo " k,  keep              alias of \`git keep .\` command"
       echo " d,  diff              alias of \`git diff\` command"
       echo " lg, log               alias of \`tig\` command"
       echo " pl, pull              alias of \`git pull\` command"
       echo " ps, push              alias of \`git push\` command"
       echo " s,  sync              run pull and then push"
+      echo "     upgrade           run package upgrade"
       echo "     rollback          alias of \`git checkout .\` command"
       echo "     actions           open GitHub Actions"
       echo " h,  help              this help text"
