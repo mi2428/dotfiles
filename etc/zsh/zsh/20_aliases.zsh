@@ -28,6 +28,55 @@ pd() {
 }
 
 
+bk() {
+  local POSITIONAL_ARGS=()
+  local EXTENSION="bk"
+  local TS_FORMAT_STR="+%Y-%m-%dT%H:%M:%S"
+  local TS_BACKUP_MODE=false
+  local FORCE_MODE=false
+
+  while (( $# > 0 )); do
+    case $1 in 
+      -e|--extension)
+        EXTENSION="$2"
+        shift; shift
+        ;;
+      -f|--force)
+        FORCE_MODE=true
+        shift
+        ;;
+      -h|--help)
+        which bk && return 0
+        ;;
+      -t|--time)
+        TS_BACKUP_MODE=true
+        shift
+        ;;
+      *)
+        POSITIONAL_ARGS+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  local cpopt=("-a" "-i")
+  if $FORCE_MODE; then
+    cpopt=("-a" "-f")
+  fi
+
+  if $TS_BACKUP_MODE; then
+    local d=$(date ${TS_FORMAT_STR})
+    mkdir -p $d
+    cp $cpopt $POSITIONAL_ARGS $d
+    return $?
+  fi
+
+  for f in "$POSITIONAL_ARGS[@]"; do
+    cp $cpopt $f "${f}.${EXTENSION}"
+  done
+}
+
+
 goto() {
   local keyword="${1:-/}"
   local matched="$(\egrep "$keyword" $PATH_BOOKMARK)"
