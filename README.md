@@ -143,9 +143,15 @@ mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/
 
 ### pam-watchid
 Run sudo with your Apple Watch. See [Logicer16/pam-watchid](https://github.com/Logicer16/pam-watchid) to install PAM module.
-To sudo with Touch ID, add the following line to the top of `/etc/pam.d/sudo`.
 
 ```
+% /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/logicer16/pam-watchid/HEAD/install.sh)" -- enable
+ ```
+
+Add the following line to the top of `/etc/pam.d/sudo`.
+
+```
+auth       sufficient     pam_watchid.so "reason=execute a command as root"
 auth       sufficient     pam_tid.so
 ```
 
