@@ -57,7 +57,7 @@ bindkey -e  # set explicitly, or zsh use vi-mode binding by default
 bindkey '^O' autosuggest-accept
 
 
-zstyle ':completion:*'                 completer _expand _complete _match _prefix _approximate _list _history
+zstyle ':completion:*'                 completer _expand _expand_alias _complete _match _prefix _approximate _list _history
 zstyle ':completion:*'                 group-name ''
 zstyle ':completion:*'                 list-colors '${(s.:.)LS_COLORS}'
 zstyle ':completion:*'                 list-separator '-->'
