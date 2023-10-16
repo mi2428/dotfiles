@@ -33,6 +33,7 @@ arm64*)
   export VOLTA_HOME="$HOME/.volta"
   export TEXLIVE_BIN=/usr/local/texlive/2022/bin/universal-darwin
   export FZF_BIN=$HOMEBREW_HOME/opt/fzf/bin
+  export RANCHER_DESKTOP_BIN="$HOME/.rd/bin"
   typeset -U path PATH
   path=(
     $HOME/bin
@@ -45,6 +46,7 @@ arm64*)
     $VOLTA_HOME/bin
     $TEXLIVE_BIN
     $FZF_BIN
+    $RANCHER_DESKTOP_BIN
     $HOMEBREW_HOME/bin(N-/)
     $HOMEBREW_HOME/sbin(N-/)
     $HOMEBREW_HOME/opt/postgresql@13/bin
