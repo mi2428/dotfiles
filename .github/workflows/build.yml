@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v1
         with:
           fetch-depth: 10
-      - uses: elgohr/Publish-Docker-Github-Action@master
+      - uses: elgohr/Publish-Docker-Github-Action@v5
         with:
           name: mi2428/dotfiles
           username: ${{ github.actor }}
