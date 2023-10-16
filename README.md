@@ -191,6 +191,9 @@ dconf load /org/gnome/terminal/legacy/profiles:/ > material-shizk.dconf
 #### `Appearance` / `Tabs`
 - Show tab bar even when there is only one tab
 
+#### `Appearance` / `Dimming`
+- Uncheck: Dim inactive split panes
+
 #### `Advanced` / `Hotkey`
 - Duration in seconds of the hotkey window animation.: **0**
 
