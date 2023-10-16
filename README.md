@@ -20,7 +20,7 @@ Use the nerd font for non-ascii characters, which will be installed by Brewfile
 * **Ubuntu:** https://fonts.google.com/specimen/Ubuntu
 * **Ubuntu Mono:** https://fonts.google.com/specimen/Ubuntu+Mono
 * **Source Code Pro:** https://fonts.google.com/specimen/Source+Code+Pro
-* **Hack Nerd Fonts:** https://github.com/ryanoasis/nerd-fonts/tree/master/patched-fonts/Hack/Regular/complete
+* **Hack Nerd Fonts:** https://github.com/ryanoasis/nerd-fonts/blob/master/patched-fonts/Hack/Regular/HackNerdFont-Regular.ttf
 
 ## Use with docker
 
