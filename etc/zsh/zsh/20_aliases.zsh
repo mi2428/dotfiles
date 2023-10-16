@@ -626,15 +626,27 @@ colortest() {
 }
 
 
-alias -s py=python
 alias -s jl=julia
+alias -s py=python3
+alias -s rb=ruby
 alias -s {gz,tgz,zip,lzh,bz2,tbz,Z,tar,arj,xz}=xx
-alias -s {png,jpg,bmp,PNG,JPG,BMP}=preview
+alias -s {png,jpg,jpeg,bmp,PNG,JPG,JPEG,HEIF,BMP}=preview
 
-#alias -g C='| pbcopy'
-#alias -g H='| head'
-#alias -g T='| tail'
-#alias -g X='| xargs'
+alias -g Ia="| awk"
+alias -g Iag="| agrep"
+alias -g Ic="| pbcopy"
+alias -g Ieg="| egrep"
+alias -g Ig="| grep"
+alias -g Igr="groff -s -p -t -e -Tlatin1 -mandoc"
+alias -g Ih="| head"
+alias -g Ik="| keep"
+alias -g Im="| more"
+alias -g Ip="| $PAGER"
+alias -g Is="| sort"
+alias -g It="| tail"
+alias -g Iv="| $EDITOR"
+alias -g Iw="| wc"
+alias -g Ix="| xargs"
 
 alias :q='exit'
 alias ..='cd ..'

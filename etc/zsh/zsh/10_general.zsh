@@ -153,6 +153,7 @@ _sanitize_history() {
   fi
 }
 
+
 zle -N severity_clear       _severity_clear
 zle -N severity_level1      _severity_level1
 zle -N severity_level2      _severity_level2
@@ -170,6 +171,7 @@ bindkey '^[4' severity_level4
 bindkey '^[s' toggle_ssh_prompt
 bindkey '^[b' toggle_path_bookmark
 bindkey '^[h' sanitize_history
+
 
 autoload -Uz colors && colors
 autoload -Uz compinit && compinit  # all completion settings must be done before
