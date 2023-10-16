@@ -15,7 +15,7 @@ Based on [Google's Material Design Color Palette](https://material.io/design/sty
 
 ### Terminal fonts
 
-Use the nerd font for non-ascii characters, which will be installed by Brewfile
+Use the nerd font for non-ascii characters -- you can check icons from the [Cheat Sheet](https://www.nerdfonts.com/cheat-sheet).
 
 * **Ubuntu:** https://fonts.google.com/specimen/Ubuntu
 * **Ubuntu Mono:** https://fonts.google.com/specimen/Ubuntu+Mono
