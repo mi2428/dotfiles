@@ -109,6 +109,8 @@ Remember to setup locale on your host - both `en_US` and `ja_JP` are requried
 
 ### Import GPG key pair to create signed commit
 
+**NOTE:** The simplest way is to copy-and-paste `.gnupg` directory from one to another -- no need type the followings.
+
 ```
 % gpg --export --armor --output mi2428.public.key
 % gpg --export-secret-keys --armor --output mi2428.secret.key
@@ -178,6 +180,9 @@ dconf load /org/gnome/terminal/legacy/profiles:/ > material-shizk.dconf
 
 ### iTerm2 preferences
 
+#### `General` / `Selection`
+- Applications in terminal may access clipboard
+
 #### `Appearance` / `General`
 - Theme: **Minimal**
 - Tab bar location: **Top**
@@ -185,9 +190,6 @@ dconf load /org/gnome/terminal/legacy/profiles:/ > material-shizk.dconf
 
 #### `Appearance` / `Tabs`
 - Show tab bar even when there is only one tab
-
-#### `General` / `Session`
-- Applications in terminal may access clipboard
 
 #### `Advanced` / `Hotkey`
 - Duration in seconds of the hotkey window animation.: **0**
