@@ -1,0 +1,14 @@
+#!/bin/bash
+cd $(dirname $0)
+
+if [[ $USER != "sorao" ]]; then
+    su sorao $PWD/$(basename $0)
+    cd $HOME
+    exit $?
+fi
+
+export PATH="$PATH:/home/sorao/teo/checkpoint_utils/bin"
+eval "$(ssh-agent -s)" && ssh-add /home/sorao/.ssh/id_rsa
+
+cd /home/sorao/teo
+exec bash -l

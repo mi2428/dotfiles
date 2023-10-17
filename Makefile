@@ -22,6 +22,9 @@ ubuntu-server: install.ubuntu link.linux
 .PHONY: ubuntu-docker
 ubuntu-docker: install.ubuntu link.docker
 
+.PHONY: checkpoint
+checkpoint: link.checkpoint
+
 .PHONY: install.archlinux
 install.archlinux: preinstall.common pkginstall.archlinux postinstall.common postinstall.linux
 
@@ -89,6 +92,11 @@ link.macos:
 .PHONY: link.docker
 link.docker:
 	@$(LINKER) --patch docker --force
+
+.PHONY: link.checkpoint
+link.checkpoint:
+	ln -snf $(CURDIR)/etc/hosts/checkpoint/tmux/tmux.conf $(HOME)/.tmux.conf
+	ln -snf $(CURDIR)/etc/hosts/checkpoint/bin $(HOME)/bin
 
 .PHONY: unlink
 unlink:
