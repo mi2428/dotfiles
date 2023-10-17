@@ -163,6 +163,18 @@ Also you need to install `op` command beforehand -- for mac users, the command w
 
 - Settings > Developer > Command-Line Interface (CLI) > Integrate with 1Password CLI
 
+### AWS
+
+#### Session Manager
+
+Install the Session Manager plugin to use `aws ssm` command.
+
+```
+$ curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/mac_arm64/session-manager-plugin.pkg" -o "session-manager-plugin.pkg"
+$ sudo installer -pkg session-manager-plugin.pkg -target /
+$ sudo ln -s /usr/local/sessionmanagerplugin/bin/session-manager-plugin /usr/local/bin/session-manager-plugin
+```
+
 ### NeoVim
 
 ```
