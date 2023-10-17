@@ -9,7 +9,8 @@ fi
 
 # cp /home/sorao/.ssh/id_rsa /home/sorao/teo/.ssh/sorao.id_rsa
 # ssh-keygen -p -P [old password] -N '' -f /home/sorao/teo/.ssh/sorao.id_rsa
-eval "$(ssh-agent -s)" && ssh-add /home/sorao/teo/.ssh/sorao.id_rsa
+eval "$(ssh-agent -s)" && \
+  ssh-add /home/sorao/teo/.ssh/sorao.id_rsa /home/sorao/teo/.ssh/router.id_ed25519
 
 cd /home/sorao/teo
 export PATH="$PATH:/home/sorao/teo/checkpoint_utils/bin"
