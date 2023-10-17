@@ -95,8 +95,8 @@ link.docker:
 
 .PHONY: link.checkpoint
 link.checkpoint:
-	ln -snf $(CURDIR)/etc/hosts/checkpoint/tmux/tmux.conf $(HOME)/.tmux.conf
-	ln -snf $(CURDIR)/etc/hosts/checkpoint/bin $(HOME)/bin
+	@ln -snf $(CURDIR)/etc/hosts/checkpoint/tmux/tmux.conf $(HOME)/.tmux.conf
+	@ln -snf $(CURDIR)/etc/hosts/checkpoint/bin $(HOME)/bin
 
 .PHONY: unlink
 unlink:
