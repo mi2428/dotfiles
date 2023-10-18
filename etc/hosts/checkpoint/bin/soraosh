@@ -14,4 +14,5 @@ eval "$(ssh-agent -s)" && \
 
 cd /home/sorao/teo
 export PATH="$PATH:/home/sorao/teo/checkpoint_utils/bin"
+date
 exec bash -l
