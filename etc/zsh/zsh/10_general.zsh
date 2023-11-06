@@ -56,6 +56,10 @@ export EDITOR="vim"
 bindkey -e  # set explicitly, or zsh use vi-mode binding by default
 bindkey '^O' autosuggest-accept
 
+if whence -p direnv 1>/dev/null; then
+  eval "$(direnv hook zsh)"
+fi
+
 
 zstyle ':completion:*'                 completer _expand _expand_alias _complete _match _prefix _approximate _list _history
 zstyle ':completion:*'                 group-name ''
