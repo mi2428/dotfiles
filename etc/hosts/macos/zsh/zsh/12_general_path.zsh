@@ -79,3 +79,8 @@ fi
 if whence -p nodenv 1>/dev/null; then
   eval "$(nodenv init - zsh)"
 fi
+
+if whence -p direnv 1>/dev/null; then
+  eval "$(direnv hook zsh)"
+fi
+
