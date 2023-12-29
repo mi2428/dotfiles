@@ -18,6 +18,19 @@
   helper = osxkeychain
   #helper = cache --timeout=86400
 
+[diff]
+  tool = difftastic
+  external = difft
+
+[difftool]
+  prompt = false
+
+[difftool "difftastic"]
+  cmd = difft "$LOCAL" "$REMOTE"
+
+[pager]
+  difftool = true
+
 [gpg]
   program = gpg
 
@@ -45,6 +58,9 @@
   d3      = diff HEAD~2
   d4      = diff HEAD~3
   dd      = diff HEAD~
+  dft     = difftool
+  discard = reset --hard FETCH_HEAD
+  dlog = "!f() { GIT_EXTERNAL_DIFF=difft git log -p --ext-diff $@; }; f"
   ft      = fetch
   l       = log --decorate --oneline
   lg      = log --decorate --oneline --stat --graph
