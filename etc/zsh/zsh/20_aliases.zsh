@@ -686,6 +686,7 @@ alias gs='git status'
 alias kc='kubectl'
 alias py='python3'
 alias rc='bundle exec rails c'
+alias tf='terraform'
 
 alias :::='tmuxinator'
 #alias io='cd $HOME/io'
