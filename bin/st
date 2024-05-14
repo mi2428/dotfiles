@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+
+from statistics import mean, median, stdev
+import sys
+
+data = [ float(n) for n in sys.stdin ]
+
+print(f"Mean:   {mean(data)}")
+print(f"Median: {median(data)}")
+print(f"Stdev:  {stdev(data) if len(data) > 1 else 0}")
