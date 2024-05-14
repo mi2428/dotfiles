@@ -1,10 +1,25 @@
 #!/usr/bin/env python3
 
-from statistics import mean, median, stdev
+import statistics as stat
+import math
 import sys
 
 data = [ float(n) for n in sys.stdin ]
 
-print(f"Mean:   {mean(data)}")
-print(f"Median: {median(data)}")
-print(f"Stdev:  {stdev(data) if len(data) > 1 else 0}")
+size     = len(data) + 1
+mean     = stat.mean(data)
+median   = stat.median(data)
+sd       = stat.stdev(data) if size > 1 else 0.0
+sem      = sd / math.sqrt(size) if size > 1 else 0.0
+skewness = (sum((x-mean)**3 for x in data) / size) / (sd**3)
+kurtosis = (sum((x-mean)**4 for x in data) / size) / (sd**4) - 3
+
+print(f"#:      {size}")
+print(f"Min:    {min(data)}")
+print(f"Max:    {max(data)}")
+print(f"Mean:   {mean}")
+print(f"Median: {median}")
+print(f"SD:     {sd}")
+print(f"SEM:    {sem}")
+print(f"Skew:   {skewness}")
+print(f"Kurt:   {kurtosis}")
