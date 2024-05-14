@@ -17,6 +17,7 @@ kurtosis = (sum((x-mean)**4 for x in data) / size) / (sd**4) - 3
 print(f"#:      {size}")
 print(f"Min:    {min(data)}")
 print(f"Max:    {max(data)}")
+print(f"Sum:    {sum(data)}")
 print(f"Mean:   {mean}")
 print(f"Median: {median}")
 print(f"SD:     {sd}")
