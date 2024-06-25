@@ -1,0 +1,60 @@
+#!/bin/bash
+
+SSH_CONFIG_HOSTNAME="gpu"
+
+usage() {
+  cat <<EOF
+  Usage:
+    civitai [options] [files...]
+
+  OPTIONS
+    -b, --base    upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/Stable-diffusiuon
+    -l, --lora    upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/Lora
+    -v, --vae     upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/VAE
+EOF
+}
+
+argparse() {
+  local required_opt_ok=0
+  FILES=()
+
+  for opt in "$@"; do
+    case "$opt" in
+      '--base'|'-b')
+        FLAG_SD_MODEL=1
+        required_opt_ok=1
+        shift ;;
+      '--lora'|'-l')
+        FLAG_LORA_MODEL=1
+        required_opt_ok=1
+        shift ;;
+      '--vae'|'-v')
+        FLAG_VAE_MODEL=1
+        required_opt_ok=1
+        shift ;;
+      '--help'|'-h'|-*)
+        usage
+        exit 0 ;;
+      *)
+        FILES+=("$opt")
+        shift ;;
+    esac
+  done
+
+  [[ $required_opt_ok == 0 ]] && usage && exit 1
+}
+
+main() {
+  argparse $@
+
+  [[ $FLAG_SD_MODEL == 1 ]]   && DIR_PATH="io/stable-diffusion-webui/models/Stable-diffusion"
+  [[ $FLAG_LORA_MODEL == 1 ]] && DIR_PATH="io/stable-diffusion-webui/models/Lora"
+  [[ $FLAG_VAE_MODEL == 1 ]]  && DIR_PATH="io/stable-diffusion-webui/models/VAE"
+
+  #tar zcf --no-xattrs - ${FILES[@]} |\
+  #  ssh ${SSH_CONFIG_HOSTNAME} "tar zxf - -C \$HOME/${DIR_PATH}"
+  
+  scp ${FILES[@]} ${SSH_CONFIG_HOSTNAME}:~/${DIR_PATH}
+}
+
+main $@
