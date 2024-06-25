@@ -8,9 +8,10 @@ usage() {
     civitai [options] [files...]
 
   OPTIONS
-    -b, --base    upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/Stable-diffusiuon
-    -l, --lora    upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/Lora
-    -v, --vae     upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/VAE
+    -b, --base       upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/Stable-diffusiuon
+    -l, --lora       upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/Lora
+    -L, --lycoris    upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/LyCORIS
+    -v, --vae        upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/VAE
 EOF
 }
 
@@ -26,6 +27,10 @@ argparse() {
         shift ;;
       '--lora'|'-l')
         FLAG_LORA_MODEL=1
+        required_opt_ok=1
+        shift ;;
+      '--lycoris'|'-L')
+        FLAG_LYCORIS_MODEL=1
         required_opt_ok=1
         shift ;;
       '--vae'|'-v')
@@ -47,14 +52,16 @@ argparse() {
 main() {
   argparse $@
 
-  [[ $FLAG_SD_MODEL == 1 ]]   && DIR_PATH="io/stable-diffusion-webui/models/Stable-diffusion"
-  [[ $FLAG_LORA_MODEL == 1 ]] && DIR_PATH="io/stable-diffusion-webui/models/Lora"
-  [[ $FLAG_VAE_MODEL == 1 ]]  && DIR_PATH="io/stable-diffusion-webui/models/VAE"
+  [[ $FLAG_SD_MODEL == 1 ]]      && DIR_PATH="io/stable-diffusion-webui/models/Stable-diffusion"
+  [[ $FLAG_LORA_MODEL == 1 ]]    && DIR_PATH="io/stable-diffusion-webui/models/Lora"
+  [[ $FLAG_LYCORIS_MODEL == 1 ]] && DIR_PATH="io/stable-diffusion-webui/models/LyCORIS"
+  [[ $FLAG_VAE_MODEL == 1 ]]     && DIR_PATH="io/stable-diffusion-webui/models/VAE"
 
   #tar zcf --no-xattrs - ${FILES[@]} |\
   #  ssh ${SSH_CONFIG_HOSTNAME} "tar zxf - -C \$HOME/${DIR_PATH}"
-  
+
   scp ${FILES[@]} ${SSH_CONFIG_HOSTNAME}:~/${DIR_PATH}
+  rm -i ${FILES[@]}
 }
 
 main $@
