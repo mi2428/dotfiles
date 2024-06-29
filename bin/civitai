@@ -11,6 +11,7 @@ usage() {
     -b, --base       upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/Stable-diffusiuon
     -l, --lora       upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/Lora
     -L, --lycoris    upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/LyCORIS
+    -e, --embedding  upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/embeddings
     -v, --vae        upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/VAE
 EOF
 }
@@ -33,8 +34,12 @@ argparse() {
         FLAG_LYCORIS_MODEL=1
         required_opt_ok=1
         shift ;;
+      '--embedding'|'-e')
+        FLAG_EMBEDDING=1
+        required_opt_ok=1
+        shift ;;
       '--vae'|'-v')
-        FLAG_VAE_MODEL=1
+        FLAG_VAE=1
         required_opt_ok=1
         shift ;;
       '--help'|'-h'|-*)
@@ -55,7 +60,8 @@ main() {
   [[ $FLAG_SD_MODEL == 1 ]]      && DIR_PATH="io/stable-diffusion-webui/models/Stable-diffusion"
   [[ $FLAG_LORA_MODEL == 1 ]]    && DIR_PATH="io/stable-diffusion-webui/models/Lora"
   [[ $FLAG_LYCORIS_MODEL == 1 ]] && DIR_PATH="io/stable-diffusion-webui/models/LyCORIS"
-  [[ $FLAG_VAE_MODEL == 1 ]]     && DIR_PATH="io/stable-diffusion-webui/models/VAE"
+  [[ $FLAG_EMBEDDING == 1 ]]     && DIR_PATH="io/stable-diffusion-webui/models/embeddings"
+  [[ $FLAG_VAE == 1 ]]           && DIR_PATH="io/stable-diffusion-webui/models/VAE"
 
   #tar zcf --no-xattrs - ${FILES[@]} |\
   #  ssh ${SSH_CONFIG_HOSTNAME} "tar zxf - -C \$HOME/${DIR_PATH}"
