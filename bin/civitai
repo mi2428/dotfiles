@@ -9,11 +9,13 @@ usage() {
 
   OPTIONS
     -b, --base         upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/Stable-diffusiuon
+    -a, --adetaiiler   upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/adetaiiler
     -l, --lora         upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/Lora
     -L, --lycoris      upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/LyCORIS
     -e, --embedding    upload files to GPU_SERVER:~/io/stable-diffusion-webui/embeddings
     -c, --controlnet   upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/ControlNet
     -v, --vae          upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/VAE
+    -E, --esrgan       upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/ESRGAN
 EOF
 }
 
@@ -25,6 +27,10 @@ argparse() {
     case "$opt" in
       '--base'|'-b')
         FLAG_SD_MODEL=1
+        required_opt_ok=1
+        shift ;;
+      '--adetaiiler'|'-a')
+        FLAG_ADETAILER=1
         required_opt_ok=1
         shift ;;
       '--lora'|'-l')
@@ -47,6 +53,10 @@ argparse() {
         FLAG_VAE=1
         required_opt_ok=1
         shift ;;
+      '--esrgan'|'-E')
+        FLAG_ESRGAN=1
+        required_opt_ok=1
+        shift ;;
       '--help'|'-h'|-*)
         usage
         exit 0 ;;
@@ -63,11 +73,13 @@ main() {
   argparse $@
 
   [[ $FLAG_SD_MODEL == 1 ]]      && DIR_PATH="io/stable-diffusion-webui/models/Stable-diffusion"
+  [[ $FLAG_ADETAILER == 1 ]]     && DIR_PATH="io/stable-diffusion-webui/models/adetailer"
   [[ $FLAG_LORA_MODEL == 1 ]]    && DIR_PATH="io/stable-diffusion-webui/models/Lora"
   [[ $FLAG_LYCORIS_MODEL == 1 ]] && DIR_PATH="io/stable-diffusion-webui/models/LyCORIS"
   [[ $FLAG_EMBEDDING == 1 ]]     && DIR_PATH="io/stable-diffusion-webui/embeddings"
   [[ $FLAG_CONTROLNET == 1 ]]    && DIR_PATH="io/stable-diffusion-webui/models/ControlNet"
   [[ $FLAG_VAE == 1 ]]           && DIR_PATH="io/stable-diffusion-webui/models/VAE"
+  [[ $FLAG_ESRGAN == 1 ]]        && DIR_PATH="io/stable-diffusion-webui/models/ESRGAN"
 
   #tar zcf --no-xattrs - ${FILES[@]} |\
   #  ssh ${SSH_CONFIG_HOSTNAME} "tar zxf - -C \$HOME/${DIR_PATH}"
