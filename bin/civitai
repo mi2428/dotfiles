@@ -84,9 +84,9 @@ main() {
   #tar zcf --no-xattrs - ${FILES[@]} |\
   #  ssh ${SSH_CONFIG_HOSTNAME} "tar zxf - -C \$HOME/${DIR_PATH}"
 
-  for file in "${FILES[@]}"; do
-    mv "$file" $(echo $file | tr ' ' '_')
-  done
+  #for file in "${FILES[@]}"; do
+  #  mv "$file" $(echo $file | tr ' ' '_')
+  #done
 
   scp ${FILES[@]} ${SSH_CONFIG_HOSTNAME}:~/${DIR_PATH}
   rm -i ${FILES[@]}
