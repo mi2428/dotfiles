@@ -8,14 +8,14 @@ usage() {
     civitai [options] [files...]
 
   OPTIONS
-    -b, --base         upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/Stable-diffusiuon
-    -a, --adetaiiler   upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/adetaiiler
-    -l, --lora         upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/Lora
-    -L, --lycoris      upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/LyCORIS
-    -e, --embedding    upload files to GPU_SERVER:~/io/stable-diffusion-webui/embeddings
-    -c, --controlnet   upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/ControlNet
-    -v, --vae          upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/VAE
-    -E, --esrgan       upload files to GPU_SERVER:~/io/stable-diffusion-webui/models/ESRGAN
+    -b, --base         upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/Stable-diffusiuon
+    -a, --adetaiiler   upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/adetaiiler
+    -l, --lora         upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/Lora
+    -L, --lycoris      upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/LyCORIS
+    -e, --embedding    upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/embeddings
+    -c, --controlnet   upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/ControlNet
+    -v, --vae          upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/VAE
+    -E, --esrgan       upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/ESRGAN
 EOF
 }
 
@@ -72,14 +72,14 @@ argparse() {
 main() {
   argparse $@
 
-  [[ $FLAG_SD_MODEL == 1 ]]      && DIR_PATH="io/stable-diffusion-webui/models/Stable-diffusion"
-  [[ $FLAG_ADETAILER == 1 ]]     && DIR_PATH="io/stable-diffusion-webui/models/adetailer"
-  [[ $FLAG_LORA_MODEL == 1 ]]    && DIR_PATH="io/stable-diffusion-webui/models/Lora"
-  [[ $FLAG_LYCORIS_MODEL == 1 ]] && DIR_PATH="io/stable-diffusion-webui/models/LyCORIS"
-  [[ $FLAG_EMBEDDING == 1 ]]     && DIR_PATH="io/stable-diffusion-webui/embeddings"
-  [[ $FLAG_CONTROLNET == 1 ]]    && DIR_PATH="io/stable-diffusion-webui/models/ControlNet"
-  [[ $FLAG_VAE == 1 ]]           && DIR_PATH="io/stable-diffusion-webui/models/VAE"
-  [[ $FLAG_ESRGAN == 1 ]]        && DIR_PATH="io/stable-diffusion-webui/models/ESRGAN"
+  [[ $FLAG_SD_MODEL == 1 ]]      && DIR_PATH="io/stable-diffusion-webui-docker/data/models/Stable-diffusion"
+  [[ $FLAG_ADETAILER == 1 ]]     && DIR_PATH="io/stable-diffusion-webui-docker/data/models/adetailer"
+  [[ $FLAG_LORA_MODEL == 1 ]]    && DIR_PATH="io/stable-diffusion-webui-docker/data/models/Lora"
+  [[ $FLAG_LYCORIS_MODEL == 1 ]] && DIR_PATH="io/stable-diffusion-webui-docker/data/models/LyCORIS"
+  [[ $FLAG_EMBEDDING == 1 ]]     && DIR_PATH="io/stable-diffusion-webui-docker/data/embeddings"
+  [[ $FLAG_CONTROLNET == 1 ]]    && DIR_PATH="io/stable-diffusion-webui-docker/data/models/ControlNet"
+  [[ $FLAG_VAE == 1 ]]           && DIR_PATH="io/stable-diffusion-webui-docker/data/models/VAE"
+  [[ $FLAG_ESRGAN == 1 ]]        && DIR_PATH="io/stable-diffusion-webui-docker/data/models/ESRGAN"
 
   #tar zcf --no-xattrs - ${FILES[@]} |\
   #  ssh ${SSH_CONFIG_HOSTNAME} "tar zxf - -C \$HOME/${DIR_PATH}"
