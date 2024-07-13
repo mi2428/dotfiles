@@ -12,6 +12,7 @@ usage() {
     -a, --adetaiiler   upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/adetaiiler
     -l, --lora         upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/Lora
     -lc,               upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/Lora/character
+    -ls,               upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/Lora/style
     -L, --lycoris      upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/LyCORIS
     -e, --embedding    upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/embeddings
     -c, --controlnet   upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/ControlNet
@@ -40,6 +41,10 @@ argparse() {
         shift ;;
       '-lc')
         FLAG_LORA_CHAR_MODEL=1
+        required_opt_ok=1
+        shift ;;
+      '-ls')
+        FLAG_LORA_STYLE_MODEL=1
         required_opt_ok=1
         shift ;;
       '--lycoris'|'-L')
@@ -87,6 +92,7 @@ main() {
   [[ $FLAG_ESRGAN == 1 ]]        && DIR_PATH="io/stable-diffusion-webui-docker/data/models/ESRGAN"
 
   [[ $FLAG_LORA_CHAR_MODEL == 1 ]] && DIR_PATH="io/stable-diffusion-webui-docker/data/models/Lora/character"
+  [[ $FLAG_LORA_STYLE_MODEL == 1 ]] && DIR_PATH="io/stable-diffusion-webui-docker/data/models/Lora/style"
 
   #tar zcf --no-xattrs - ${FILES[@]} |\
   #  ssh ${SSH_CONFIG_HOSTNAME} "tar zxf - -C \$HOME/${DIR_PATH}"
