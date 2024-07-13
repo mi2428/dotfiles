@@ -52,6 +52,9 @@
     "doubleClickTitleBar" : {
       "int" : 0
     },
+    "doubleClickTitleBarIgnoredApps" : {
+
+    },
     "doubleClickTitleBarRestore" : {
       "int" : 0
     },
@@ -81,6 +84,9 @@
     },
     "gapSize" : {
       "float" : 0
+    },
+    "hapticFeedbackOnSnap" : {
+      "int" : 0
     },
     "hideMenubarIcon" : {
       "bool" : true
@@ -148,6 +154,9 @@
     "screenEdgeGapTop" : {
       "float" : 0
     },
+    "screenEdgeGapTopNotch" : {
+      "float" : 0
+    },
     "shortEdgeSnapAreaSize" : {
       "float" : 145
     },
@@ -188,10 +197,13 @@
       "int" : 0
     },
     "SUEnableAutomaticChecks" : {
-      "bool" : false
+      "bool" : true
     },
     "systemWideMouseDown" : {
       "int" : 0
+    },
+    "systemWideMouseDownApps" : {
+
     },
     "todo" : {
       "int" : 0
@@ -212,13 +224,17 @@
       "int" : 0
     },
     "unsnapRestore" : {
-      "int" : 0
+      "int" : 2
     },
     "windowSnapping" : {
       "int" : 0
     }
   },
   "shortcuts" : {
+    "bottomHalf" : {
+      "keyCode" : 26,
+      "modifierFlags" : 1572864
+    },
     "centerHalf" : {
       "keyCode" : 29,
       "modifierFlags" : 1572864
@@ -290,7 +306,11 @@
     "toggleTodo" : {
       "keyCode" : 11,
       "modifierFlags" : 786432
+    },
+    "topHalf" : {
+      "keyCode" : 22,
+      "modifierFlags" : 1572864
     }
   },
-  "version" : "79"
+  "version" : "86"
 }
