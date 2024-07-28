@@ -79,7 +79,8 @@ postinstall.linux:
 
 .PHONY: link.linux
 link.linux:
-	@$(LINKER) --force
+	#@$(LINKER) --force
+	@$(LINKER) --patch linux-server --force
 
 .PHONY: link.linux-desktop
 link.linux-desktop:
