@@ -65,7 +65,7 @@ postinstall.common:
 	@curl -L https://raw.githubusercontent.com/pimterry/notes/latest-release/_notes > /usr/local/share/zsh/site-functions/_notes || true
 	@python3 -m pip install --upgrade pip
 	@xargs pip3 install --upgrade < $(PKGDIR)/python3-pip.txt || true
-	@xargs cargo install < $(PKGDIR)/cargo.txt || true
+	@xargs cargo install --force < $(PKGDIR)/cargo.txt || true
 
 .PHONY: postinstall.linux
 postinstall.linux:

@@ -1,4 +1,5 @@
 tap "aws/tap"
+tap "hashicorp/tap/terraform"
 tap "homebrew/cask-fonts"
 tap "textualize/rich"
 tap "thatmattlove/oui"
