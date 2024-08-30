@@ -731,7 +731,7 @@ if whence -p exa 1> /dev/null; then
   alias ll='exa -l --icons'
   alias la='exa -l -arbghi --git --icons'
   alias lr='exa -lR -arbghi --git -I ".git|__pycache__" --icons'
-  alias lt='exa -lT -arbghi --git -I ".git|__pycache__" --icons'
+  alias lt='exa -lT -arbghi --git -I ".git|__pycache__|.terraform" --icons'
   alias laa="exa -l -arbghi@ --git --icons"
 else
   alias l='ls --color=auto'
