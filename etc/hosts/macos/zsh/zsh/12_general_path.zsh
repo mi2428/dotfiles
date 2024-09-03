@@ -1,6 +1,7 @@
 export DENO_INSTALL=$HOME/.deno
 export CARGO_HOME=$HOME/.cargo
 export GOPATH="$HOME/io/gocode"
+export GOPRIVATE=github.com/soracom
 
 case $(arch) in
 x86_64|i386)
