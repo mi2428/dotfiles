@@ -648,6 +648,9 @@ alias -g Iv="| $EDITOR"
 alias -g Iw="| wc"
 alias -g Ix="| xargs"
 
+alias '$'=""
+alias '%'=""
+
 alias :q='exit'
 alias ..='cd ..'
 alias ...='cd ../..'
