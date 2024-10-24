@@ -246,7 +246,7 @@ dcx() {
   local name="$1"
   local args="${@:2}"
   [[ -z $args ]] && args="/bin/bash"
-  docker-compose exec ${name} ${args}
+  docker compose exec ${name} ${args}
 }
 
 
@@ -678,7 +678,7 @@ alias an='ansible'
 alias be='bundle exec'
 alias bi='bundle install'
 alias bu='bundle update'
-alias dc='docker-compose'
+alias dc='docker compose'
 alias ga='git add'
 alias gb='git branch'
 alias gc='git commit -s -m'
@@ -693,9 +693,9 @@ alias tf='terraform'
 
 alias :::='tmuxinator'
 #alias io='cd $HOME/io'
-alias dck='docker-compose kill && docker-compose rm -f'
-alias dcl='docker-compose logs -f'
-alias dcp='docker-compose ps -a'
+alias dck='docker compose kill && docker compose rm -f'
+alias dcl='docker compose logs -f'
+alias dcp='docker compose ps -a'
 alias dow='cd $HOME/Downloads'
 alias dox='docker exec -it `docker ps --format "{{.Names}}" | fzf`'
 alias gco='git checkout'
@@ -707,8 +707,8 @@ alias jmp='goto'
 alias mkd='mkdir -p'
 alias ssa='ssh-agent zsh'
 
-alias dcrm='docker-compose rm -f'
-alias dcup='docker-compose up -d && docker-compose logs -f'
+alias dcrm='docker compose rm -f'
+alias dcup='docker compose up -d && docker compose logs -f'
 alias dorm='docker rm `docker ps -qa` 2>/dev/null'
 alias dormi='docker rmi `docker images --filter "dangling=true" -q` 2>/dev/null'
 alias editssh='vim $HOME/.ssh/config'
