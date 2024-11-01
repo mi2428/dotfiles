@@ -134,6 +134,13 @@ Check `~/.gnupg/gpg-agent.conf` if you encountered "No pinentry" error.
 % gpgconf --kill gpg-agent
 ```
 
+To skip password dialogue:
+
+```
+% echo "pinentry-program $(which pinentry-mac)" >> ~/.gnupg/gpg-agent.conf
+% gpgconf --kill gpg-agent
+```
+
 ### visudo
 
 ```
