@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 LABEL maintainer "mi2428 <sh@mi2428.io>"
 LABEL org.opencontainers.image.source https://github.com/mi2428/dotfiles
 
