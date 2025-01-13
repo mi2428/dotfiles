@@ -34,7 +34,7 @@ arm64*)
   export VOLTA_HOME="$HOME/.volta"
   export TEXLIVE_BIN=/usr/local/texlive/2022/bin/universal-darwin
   export FZF_BIN=$HOMEBREW_HOME/opt/fzf/bin
-  export RANCHER_DESKTOP_BIN="$HOME/.rd/bin"
+  #export RANCHER_DESKTOP_BIN="$HOME/.rd/bin"
   typeset -U path PATH
   path=(
     $HOME/bin
