@@ -15,6 +15,7 @@ path=(
   /usr/sbin
   /bin
   /sbin
+  /snap/bin
   /usr/local/bin
   /usr/local/sbin
   .
