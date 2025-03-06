@@ -176,3 +176,6 @@ bindkey '^[h' sanitize_history
 
 autoload -Uz colors && colors
 autoload -Uz compinit && compinit  # all completion settings must be done before
+
+# https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/#enable-shell-autocompletion
+source <(kubectl completion zsh)
