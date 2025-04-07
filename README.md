@@ -147,7 +147,7 @@ To skip password dialogue:
 # root and users in group wheel can run anything on any machine as any user
 root    ALL = (ALL) ALL
 %admin  ALL = (ALL) ALL
-mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/ping6,/usr/sbin/tcpdump
+mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/ping6,/usr/sbin/tcpdump,/usr/sbin/purge
 ```
 
 ### pam-watchid
