@@ -5,8 +5,8 @@ for conf in $(find $HOME/.zsh -type l | sort); do
   source $conf
 done
 
-if [ -f $HOME/.zshrc_functions/assume-role.zsh ]; then
-  source $HOME/.zshrc_functions/assume-role.zsh
+if [ -f $HOME/.zshrc_functions/assume-role ]; then
+  source $HOME/.zshrc_functions/assume-role
 fi
 
 # Fig post block. Keep at the bottom of this file.
