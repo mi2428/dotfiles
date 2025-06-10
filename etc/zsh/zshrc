@@ -6,6 +6,7 @@ for conf in $(find $HOME/.zsh -type l | sort); do
 done
 
 if [ -f $HOME/.zshrc_functions/assume-role ]; then
+  export SORACOM_AWS_LOGIN_ITEM_ID=jggxzohgplnedvzyftmxinlgdu  # not a secret!!
   source $HOME/.zshrc_functions/assume-role
 fi
 
