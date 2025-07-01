@@ -20,3 +20,6 @@ export SDKMAN_DIR="$HOME/.sdkman"
 ### MANAGED BY RANCHER DESKTOP START (DO NOT EDIT)
 #export PATH="/Users/teo/.rd/bin:$PATH"
 ### MANAGED BY RANCHER DESKTOP END (DO NOT EDIT)
+
+# added by Snowflake SnowSQL installer v1.2
+export PATH=/Applications/SnowSQL.app/Contents/MacOS:$PATH

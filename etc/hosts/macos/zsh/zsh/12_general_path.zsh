@@ -73,6 +73,8 @@ source $HOMEBREW_HOME/share/zsh-autosuggestions/zsh-autosuggestions.zsh
 source $HOMEBREW_HOME/opt/zsh-git-prompt/zshrc.sh
 source $HOMEBREW_HOME/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 
+source $HOME/.envs
+
 if whence -p rbenv 1>/dev/null; then
   eval "$(rbenv init - zsh)"
 fi
