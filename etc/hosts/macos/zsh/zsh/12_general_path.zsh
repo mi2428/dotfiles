@@ -3,6 +3,8 @@ export CARGO_HOME=$HOME/.cargo
 export GOPATH="$HOME/io/gocode"
 export GOPRIVATE=github.com/soracom
 
+source $HOME/.envs  # set secret envs like GOOGLE_CLOUD_PROJECT
+
 case $(arch) in
 x86_64|i386)
   export HOMEBREW_HOME=/usr/local
@@ -72,8 +74,6 @@ export ZSH_HIGHLIGHT_HIGHLIGHTERS_DIR=$HOMEBREW_HOME/share/zsh-syntax-highlighti
 source $HOMEBREW_HOME/share/zsh-autosuggestions/zsh-autosuggestions.zsh
 source $HOMEBREW_HOME/opt/zsh-git-prompt/zshrc.sh
 source $HOMEBREW_HOME/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
-
-source $HOME/.envs
 
 if whence -p rbenv 1>/dev/null; then
   eval "$(rbenv init - zsh)"
