@@ -25,3 +25,6 @@ export SDKMAN_DIR="$HOME/.sdkman"
 export PATH=/Applications/SnowSQL.app/Contents/MacOS:$PATH
 
 [[ "$TERM_PROGRAM" == "kiro" ]] && . "$(kiro --locate-shell-integration-path zsh)"
+
+# Added by Antigravity
+export PATH="/Users/teo/.antigravity/antigravity/bin:$PATH"
