@@ -626,6 +626,20 @@ colortest() {
 }
 
 
+kcc() {
+  local context namespace
+  context="$(kubectl config current-context 2>/dev/null)" || return $?
+
+  namespace="$(
+    kubectl get namespaces -o custom-columns=':metadata.name' --no-headers 2>/dev/null \
+      | fzf --prompt='namespace> '
+  )" || return 0
+
+  [[ -z "$namespace" ]] && return 0
+  kubectl config set-context "$context" --namespace="$namespace"
+}
+
+
 alias -s jl=julia
 alias -s py=python3
 alias -s rb=ruby
