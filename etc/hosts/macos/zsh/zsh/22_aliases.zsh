@@ -9,9 +9,9 @@ if (( $+commands[arch] )); then
 fi
 
 
-if whence -p trash 1> /dev/null; then
-  alias rm='trash'
-fi
+#if whence -p trash 1> /dev/null; then
+#  alias rm='trash'
+#fi
 
 
 alias preview='open -a Preview'
