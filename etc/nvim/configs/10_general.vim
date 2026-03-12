@@ -49,8 +49,8 @@ nnoremap <silent><S-h> :tabprevious<CR>
 nnoremap <silent><C-l> :<C-u>nohlsearch<CR>
 xnoremap p "_xP
 
-autocmd InsertEnter * :set norelativenumber
-autocmd InsertLeave * :set relativenumber
+"autocmd InsertEnter * :set norelativenumber
+"autocmd InsertLeave * :set relativenumber
 
 
 "" https://gist.github.com/atton/db007474075b47f6917933cc2aee924a
