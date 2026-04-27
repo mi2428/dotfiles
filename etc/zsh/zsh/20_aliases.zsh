@@ -751,6 +751,12 @@ if whence -p iperf3-rs 1> /dev/null; then
 fi
 
 
+if whence -p clockping 1> /dev/null; then
+  alias cping='clockping'
+  alias cp='clockping'
+fi
+
+
 if whence -p exa 1> /dev/null; then
   export EXA_ICON_SPACING=1
   alias l='exa --icons'
