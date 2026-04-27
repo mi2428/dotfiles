@@ -746,6 +746,11 @@ alias sshh='sshuttle'
 #fi
 
 
+if whence -p iperf3-rs 1> /dev/null; then
+  alias iperf3='iperf3-rs'
+fi
+
+
 if whence -p exa 1> /dev/null; then
   export EXA_ICON_SPACING=1
   alias l='exa --icons'
