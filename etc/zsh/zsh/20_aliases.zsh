@@ -753,7 +753,6 @@ fi
 
 if whence -p clockping 1> /dev/null; then
   alias cping='clockping'
-  alias cp='clockping'
 fi
 
 
