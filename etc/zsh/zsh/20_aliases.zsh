@@ -102,31 +102,45 @@ showopt() {
 
 p() {
   if (( $# == 0 )); then
-    ping 8.8.8.8
+    if whence -p clockping 1> /dev/null; then
+      clockping icmp --out.colored 1.1.1.1
+    else
+      ping 1.1.1.1
+    fi
   else
-    ping $@
+    if whence -p clockping 1> /dev/null; then
+      clockping icmp --out.colored $@
+    else
+      ping $@
+    fi
   fi
 }
 
 
 pp() {
   if (( $# == 0 )); then
-    ping6 2001:4860:4860::8888
+    if whence -p clockping 1> /dev/null; then
+      clockping icmp --out.colored 2001:4860:4860::8888
+    else
+      ping6 2001:4860:4860::8888
+    fi
   else
-    ping6 $@
+    if whence -p clockping 1> /dev/null; then
+      clockping icmp --out.colored $@
+    else
+      ping6 $@
+    fi
   fi
 }
 
 
 ppp() {
-  if (( $# == 0 )); then
+  if whence -p clockping 1> /dev/null; then
+    clockping icmp --out.colored -c 4 -i 0.25 8.8.8.8 2001:4860:4860::8888
+  else
     ping -c 4 -i 0.25 8.8.8.8
     echo
     ping6 -c 4 -i 0.25 2001:4860:4860::8888
-  else
-    ping $@
-    echo
-    ping6 $@
   fi
 }
 
