@@ -1,0 +1,223 @@
+#!/bin/bash
+
+set -o pipefail
+
+BASENAME="$(basename "$0")"
+DEFAULT_CONFIG="${WIFI_SWITCH_CONFIG:-$HOME/.wifi-networks.yaml}"
+CONFIG="$DEFAULT_CONFIG"
+DEVICE="${WIFI_SWITCH_DEVICE:-}"
+DRY_RUN=0
+LIST_ONLY=0
+SEP="$(printf '\037')"
+
+usage() {
+  cat <<EOF
+Select and switch Wi-Fi networks from YAML with fzf.
+
+Usage:
+  $BASENAME [options]
+
+Options:
+  -c, --config PATH       YAML config path
+  -d, --device DEVICE     Wi-Fi device, e.g. en0 (default: auto detect)
+  -l, --list              Print parsed networks and exit
+  -n, --dry-run           Print networksetup command instead of running it
+  -h, --help              Show this help
+
+Default config:
+  $DEFAULT_CONFIG
+
+YAML schema:
+  networks:
+    - label: Home 5GHz
+      ssid: MyHome-5G
+      password: "optional-password"
+      note: personal
+
+Passwords can be omitted when the network is open or already saved in macOS.
+EOF
+}
+
+die() {
+  echo "[E] $*" >&2
+  exit 1
+}
+
+need_command() {
+  command -v "$1" >/dev/null 2>&1 || die "Command is missing: $1"
+}
+
+detect_wifi_device() {
+  networksetup -listallhardwareports | awk '
+    /^Hardware Port: (Wi-Fi|AirPort)$/ { found = 1; next }
+    found && /^Device: / { print $2; exit }
+  '
+}
+
+parse_config() {
+  WIFI_SWITCH_SEP="$SEP" ruby -ryaml -e '
+    sep = ENV.fetch("WIFI_SWITCH_SEP")
+    path = ARGV.fetch(0)
+
+    def lookup(hash, *keys)
+      keys.each do |key|
+        return hash[key] if hash.key?(key)
+        symbol = key.to_sym
+        return hash[symbol] if hash.key?(symbol)
+      end
+      nil
+    end
+
+    def field(value)
+      value = value.join(", ") if value.is_a?(Array)
+      value.nil? ? "" : value.to_s.gsub(/\r?\n/, " ").gsub(/\t/, " ").gsub(/\u001f/, " ")
+    end
+
+    data = YAML.safe_load(File.read(path), aliases: true)
+    data = {} if data.nil?
+    networks = data.is_a?(Hash) ? lookup(data, "networks", "wifi", "wifis") : data
+
+    unless networks.respond_to?(:each)
+      warn "No networks array found in #{path}"
+      exit 2
+    end
+
+    networks.each_with_index do |entry, index|
+      entry = { "ssid" => entry } if entry.is_a?(String)
+      unless entry.is_a?(Hash)
+        warn "Skip non-map entry at index #{index}"
+        next
+      end
+
+      ssid = lookup(entry, "ssid", "network", "name")
+      next if ssid.nil? || ssid.to_s.empty?
+
+      label = lookup(entry, "label", "title", "name") || ssid
+      password = lookup(entry, "password", "pass", "psk")
+      device = lookup(entry, "device", "interface")
+      note = lookup(entry, "note", "location", "tags")
+
+      puts [label, ssid, password, device, note].map { |value| field(value) }.join(sep)
+    end
+  ' "$1"
+}
+
+print_networks() {
+  awk -F "$SEP" '
+    BEGIN { printf "%-24s %-32s %-8s %s\n", "LABEL", "SSID", "DEVICE", "NOTE" }
+    { printf "%-24s %-32s %-8s %s\n", $1, $2, ($4 == "" ? "auto" : $4), $5 }
+  '
+}
+
+format_fzf_rows() {
+  awk -v sep="$SEP" -F "$SEP" '
+    {
+      device = ($4 == "" ? "auto" : $4)
+      display = sprintf("%-18s  %-28s  %-6s  %s", $1, $2, device, $5)
+      print display sep $1 sep $2 sep $3 sep $4
+    }
+  '
+}
+
+quote_cmd() {
+  printf "%q" "$1"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -c|--config)
+      [[ $# -ge 2 ]] || die "$1 requires a path"
+      CONFIG="$2"
+      shift 2
+      ;;
+    -d|--device|--interface)
+      [[ $# -ge 2 ]] || die "$1 requires a device"
+      DEVICE="$2"
+      shift 2
+      ;;
+    -l|--list)
+      LIST_ONLY=1
+      shift
+      ;;
+    -n|--dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      die "Unknown option: $1"
+      ;;
+  esac
+done
+
+need_command ruby
+[[ -f "$CONFIG" ]] || die "Config file not found: $CONFIG"
+
+NETWORKS="$(parse_config "$CONFIG")" || die "Failed to parse config: $CONFIG"
+[[ -n "$NETWORKS" ]] || die "No Wi-Fi networks found in config: $CONFIG"
+
+if (( LIST_ONLY )); then
+  printf "%s\n" "$NETWORKS" | print_networks
+  exit 0
+fi
+
+need_command fzf
+need_command networksetup
+
+HEADER="$(printf "%-18s  %-28s  %-6s  %s" "LABEL" "SSID" "DEVICE" "NOTE")"
+SELECTION="$(
+  printf "%s\n" "$NETWORKS" |
+    format_fzf_rows |
+    fzf \
+      --delimiter="$SEP" \
+      --with-nth=1 \
+      --nth=1 \
+      --prompt="Wi-Fi> " \
+      --height=40% \
+      --reverse \
+      --header="$HEADER"
+)" || exit 130
+
+[[ -n "$SELECTION" ]] || exit 130
+
+IFS="$SEP" read -r _ LABEL SSID PASSWORD ENTRY_DEVICE <<EOF
+$SELECTION
+EOF
+
+[[ -n "$SSID" ]] || die "Selected entry has no ssid"
+
+if [[ -z "$DEVICE" ]]; then
+  DEVICE="$ENTRY_DEVICE"
+fi
+
+if [[ -z "$DEVICE" ]]; then
+  DEVICE="$(detect_wifi_device)"
+fi
+
+[[ -n "$DEVICE" ]] || die "Could not detect Wi-Fi device. Pass --device en0."
+
+if (( DRY_RUN )); then
+  printf "networksetup -setairportnetwork "
+  quote_cmd "$DEVICE"
+  printf " "
+  quote_cmd "$SSID"
+  if [[ -n "$PASSWORD" ]]; then
+    printf " "
+    quote_cmd "$PASSWORD"
+  fi
+  printf "\n"
+  exit 0
+fi
+
+networksetup -setairportpower "$DEVICE" on >/dev/null 2>&1 || true
+
+if [[ -n "$PASSWORD" ]]; then
+  networksetup -setairportnetwork "$DEVICE" "$SSID" "$PASSWORD"
+else
+  networksetup -setairportnetwork "$DEVICE" "$SSID"
+fi
+
+echo "[I] Wi-Fi switch requested: $LABEL ($SSID) on $DEVICE"
