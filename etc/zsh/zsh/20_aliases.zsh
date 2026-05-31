@@ -137,6 +137,7 @@ pp() {
 ppp() {
   if whence -p clockping 1> /dev/null; then
     clockping icmp --out.colored -c 4 -i 0.25 8.8.8.8 2001:4860:4860::8888
+    clockping http --out.colored -c 4 -i 0.25 www.wide.ad.jp
   else
     ping -c 4 -i 0.25 8.8.8.8
     echo
