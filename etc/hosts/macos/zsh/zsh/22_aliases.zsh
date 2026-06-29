@@ -21,3 +21,5 @@ alias updatedb='/usr/libexec/locate.updatedb'
 alias update-aws-session-token='sesstok "$(op item get soracom-aws-organization-jp --otp)" -s -p'
 
 alias wireshark='open -n /Applications/Wireshark.app'
+
+alias tamausi='figlet tamasui | cowsay -n -d'
