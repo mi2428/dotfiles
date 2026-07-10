@@ -80,8 +80,10 @@ function __dotfiles_remove_path_bookmark --argument-names bookmark
 end
 
 function __dotfiles_list_dir
-    if command -sq exa
-        env EXA_ICON_SPACING=1 exa --icons .
+    if command -sq eza
+        eza --icons .
+    else if command -sq exa
+        exa --icons .
     else
         ls --color=auto .
     end

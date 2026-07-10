@@ -87,7 +87,7 @@ for cmd in $grc_cmds
         continue
     end
 
-    # Keep explicit aliases/functions such as ls=exa intact.
+    # Keep explicit aliases/functions such as ls=eza intact.
     if functions -q $cmd
         continue
     end
@@ -99,4 +99,3 @@ for cmd in $grc_cmds
         end
     "
 end
-
