@@ -18,5 +18,7 @@ split_horizontal = "prefix+minus"
 split_vertical = "prefix+backslash"
 
 [ui]
+host_cursor = "native"
 sidebar_collapsed_mode = "hidden"
 hide_tab_bar_when_single_tab = true
+agent_panel_sort = "spaces"
