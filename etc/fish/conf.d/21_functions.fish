@@ -119,6 +119,7 @@ end
 function ppp
     if command -sq clockping
         clockping icmp --out.colored -c 4 -i 0.25 8.8.8.8 2001:4860:4860::8888
+        echo
         clockping http --out.colored -c 4 -i 0.25 ipv4.google.com ipv6.google.com
     else
         ping -c 4 -i 0.25 8.8.8.8
