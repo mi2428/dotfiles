@@ -1,10 +1,50 @@
 function cd --wraps cd
-    if test (count $argv) -gt 0
+    set -l max_dir_hist 25
+
+    if status is-command-substitution
         builtin cd -- $argv
-    else
-        builtin cd
+        return $status
     end
+
+    set -l previous $PWD
+
+    if test "$argv" = "-"
+        if test "$__fish_cd_direction" = next
+            nextd
+        else
+            prevd
+        end
+        set -l cd_status $status
+        test $cd_status -eq 0
+        and __dotfiles_list_dir
+        return $cd_status
+    end
+
+    builtin cd -- $argv
+    set -l cd_status $status
+
+    if test $cd_status -eq 0 -a "$PWD" != "$previous"
+        set -q dirprev
+        or set -l dirprev
+        set -q dirprev[$max_dir_hist]
+        and set -e dirprev[1]
+
+        set -U -q dirprev
+        and set -U -a dirprev $previous
+        or set -g -a dirprev $previous
+
+        set -U -q dirnext
+        and set -U -e dirnext
+        or set -e dirnext
+
+        set -U -q __fish_cd_direction
+        and set -U __fish_cd_direction prev
+        or set -g __fish_cd_direction prev
+    end
+
+    test $cd_status -eq 0
     and __dotfiles_list_dir
+    return $cd_status
 end
 
 function mcd
