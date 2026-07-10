@@ -31,7 +31,7 @@
   cmd = difft "$LOCAL" "$REMOTE"
 
 [pager]
-  diff = hunk pager
+  diff = hunk pager --theme gruvbox --transparent-bg
   difftool = true
 
 [gpg]
