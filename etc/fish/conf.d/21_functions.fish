@@ -426,6 +426,10 @@ function ::
     herdr $argv
 end
 
+function :::
+    tmux $argv
+end
+
 function __dotfiles_herdr_pane_label_for_pane --argument-names pane_id
     set -l process_info (herdr pane process-info --pane $pane_id 2>/dev/null)
     test $status -eq 0; or return 1
