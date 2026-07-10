@@ -20,7 +20,9 @@
 
 [diff]
   tool = difftastic
-  external = difft
+  # Keep difftastic available via `git difftool`, but let plain `git diff`
+  # render through the pager so Hunk can become the default review UI.
+  # external = difft
 
 [difftool]
   prompt = false
@@ -29,6 +31,7 @@
   cmd = difft "$LOCAL" "$REMOTE"
 
 [pager]
+  diff = hunk pager
   difftool = true
 
 [gpg]
