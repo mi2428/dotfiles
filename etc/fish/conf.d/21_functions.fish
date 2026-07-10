@@ -426,6 +426,113 @@ function ::
     herdr $argv
 end
 
+function __dotfiles_herdr_pane_label_for_pane --argument-names pane_id
+    set -l process_info (herdr pane process-info --pane $pane_id 2>/dev/null)
+    test $status -eq 0; or return 1
+
+    set -l label (printf '%s\n' $process_info | jq -r '
+        .result.process_info as $info
+        | ($info.foreground_processes[0] // null) as $proc
+        | if $proc == null then "" else ($proc.argv0 // $proc.name // ($proc.argv[0]? // "")) end
+    ')
+
+    set label (string split '/' -- $label | tail -n 1)
+    set label (string replace -r '^-' '' -- (string trim -- $label))
+
+    test -n "$label"; and printf '%s\n' $label
+end
+
+function __dotfiles_sync_herdr_pane_label --argument-names pane_id dry_run
+    set -l pane_info (herdr pane get $pane_id 2>/dev/null)
+    test $status -eq 0; or return 0
+
+    set -l current_label (printf '%s\n' $pane_info | jq -r '.result.pane.label // ""')
+    set -l next_label (__dotfiles_herdr_pane_label_for_pane $pane_id)
+    test -n "$next_label"; or return 0
+    test "$current_label" = "$next_label"; and return 0
+
+    if test "$dry_run" = 1
+        printf '%s\t%s\t%s\n' $pane_id $current_label $next_label
+        return 0
+    end
+
+    herdr pane rename $pane_id $next_label >/dev/null
+end
+
+function herdr-pane-labels
+    argparse 'i/interval=' 'o/once' 'd/dry-run' 'h/help' -- $argv
+    or return 1
+
+    if set -q _flag_help
+        printf '%s\n' \
+            'Usage: herdr-pane-labels [--once] [--dry-run] [--interval SECONDS]' \
+            '' \
+            'Rename Herdr panes to their current foreground process names.' \
+            'This overwrites manual pane labels while it is running.'
+        return 0
+    end
+
+    type -q jq
+    or begin
+        echo 'herdr-pane-labels: jq is required.' >&2
+        return 1
+    end
+
+    set -l interval 2
+    if set -q _flag_interval
+        set interval $_flag_interval
+    end
+
+    while true
+        set -l pane_list (herdr pane list 2>/dev/null)
+        if test $status -ne 0
+            sleep $interval
+            continue
+        end
+
+        for pane_id in (printf '%s\n' $pane_list | jq -r '.result.panes[].pane_id')
+            __dotfiles_sync_herdr_pane_label $pane_id (set -q _flag_dry_run; and echo 1; or echo 0)
+        end
+
+        set -q _flag_once; and break
+        sleep $interval
+    end
+end
+
+function __dotfiles_start_herdr_pane_labels
+    status is-interactive; or return 0
+    set -q HERDR_ENV; or return 0
+    set -q HERDR_SOCKET_PATH; or return 0
+    set -q DOTFILES_HERDR_PANE_LABEL_WATCHER; and return 0
+    type -q jq; or return 0
+
+    set -l cache_dir $HOME/.cache/herdr-pane-labels
+    mkdir -p $cache_dir
+
+    set -l lock_key (string replace -a '/' '_' -- $HERDR_SOCKET_PATH)
+    set -l pidfile $cache_dir/$lock_key.pid
+
+    if test -f $pidfile
+        set -l existing_pid (string trim -- (cat $pidfile 2>/dev/null))
+        if string match -qr '^[0-9]+$' -- $existing_pid
+            if kill -0 $existing_pid 2>/dev/null
+                return 0
+            end
+        end
+        rm -f $pidfile
+    end
+
+    set -l source_file (path resolve (functions --details herdr-pane-labels))
+    set -l command "source "(string escape -- $source_file)"; herdr-pane-labels"
+
+    nohup env DOTFILES_HERDR_PANE_LABEL_WATCHER=1 fish -c "$command" >/dev/null 2>&1 &
+    set -l watcher_pid $last_pid
+    disown $watcher_pid
+    printf '%s\n' $watcher_pid >$pidfile
+end
+
+__dotfiles_start_herdr_pane_labels
+
 function gk
     set -l target $argv
     if test (count $target) -eq 0
