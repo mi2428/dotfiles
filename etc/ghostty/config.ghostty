@@ -1,0 +1,46 @@
+command = /opt/homebrew/bin/fish
+keybind = super+shift+r=reload_config
+keybind = global:cmd+shift+enter=toggle_quick_terminal
+font-family = Ubuntu Mono
+font-family-bold = Ubuntu Mono
+font-family-italic = Ubuntu Mono
+font-family-bold-italic = Ubuntu Mono
+font-style = Regular
+font-style-bold = Bold
+font-style-italic = Italic
+font-style-bold-italic = Bold Italic
+font-synthetic-style = false
+font-feature = -calt, -liga, -dlig
+font-size = 15
+alpha-blending = native
+font-thicken = true
+cursor-style = block
+shell-integration-features = no-cursor,no-sudo,title,no-ssh-env,no-ssh-terminfo,path
+quick-terminal-position = top
+quick-terminal-size = 50%
+quick-terminal-screen = main
+quick-terminal-animation-duration = 0
+quick-terminal-autohide = true
+quick-terminal-space-behavior = move
+
+# Material-inspired flat palette tuned for a matte charcoal background.
+background = #111418
+foreground = #E3E7EA
+cursor-color = #FFD740
+
+palette = 0=#111418
+palette = 1=#E57373
+palette = 2=#81C784
+palette = 3=#FFF176
+palette = 4=#64B5F6
+palette = 5=#BA68C8
+palette = 6=#4DD0E1
+palette = 7=#C7D1D6
+palette = 8=#78909C
+palette = 9=#FF8A80
+palette = 10=#69F0AE
+palette = 11=#FFD740
+palette = 12=#82B1FF
+palette = 13=#EA80FC
+palette = 14=#84FFFF
+palette = 15=#FFFFFF
