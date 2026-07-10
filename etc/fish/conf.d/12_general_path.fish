@@ -1,7 +1,6 @@
 set -gx DENO_INSTALL $HOME/.deno
 set -gx CARGO_HOME $HOME/.cargo
 set -gx VOLTA_HOME $HOME/.volta
-set -gx FZF_HOME $HOME/.fzf
 set -gx GOPATH $HOME/io/gocode
 
 __dotfiles_set_path \
@@ -11,7 +10,6 @@ __dotfiles_set_path \
     $DENO_INSTALL/bin \
     $CARGO_HOME/bin \
     $VOLTA_HOME/bin \
-    $FZF_HOME/bin \
     /usr/bin \
     /usr/sbin \
     /bin \
