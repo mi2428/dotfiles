@@ -8,9 +8,14 @@ prefix = "ctrl+t"
 
 # Carry over the tmux muscle memory from etc/tmux/tmux.conf.
 new_tab = "prefix+c"
+toggle_sidebar = "prefix+b"
 focus_pane_left = "prefix+h"
 focus_pane_down = "prefix+j"
 focus_pane_up = "prefix+k"
 focus_pane_right = "prefix+l"
 split_horizontal = "prefix+minus"
 split_vertical = "prefix+backslash"
+
+[ui]
+sidebar_collapsed_mode = "hidden"
+hide_tab_bar_when_single_tab = true
