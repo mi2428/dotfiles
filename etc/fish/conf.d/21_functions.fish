@@ -423,15 +423,7 @@ function io
 end
 
 function ::
-    set -l session $argv[1]
-
-    if test -z "$session"
-        tmux
-    else if tmux has-session -t "$session" 2>/dev/null
-        tmux attach -t "$session"
-    else
-        tmux $argv
-    end
+    herdr $argv
 end
 
 function gk
