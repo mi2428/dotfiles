@@ -81,7 +81,7 @@ end
 
 function __dotfiles_list_dir
     if command -sq eza
-        eza --icons .
+        eza --icons=auto .
     else if command -sq exa
         exa --icons .
     else

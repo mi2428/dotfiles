@@ -143,13 +143,13 @@ if command -sq clockping
 end
 
 if command -sq eza
-    alias l='eza --icons'
-    alias ls='eza --icons'
-    alias ll='eza -l --icons'
-    alias la='eza -l -arbghi --git --icons'
-    alias lr='eza -lR -arbghi --git -I ".git|__pycache__" --icons'
-    alias lt='eza -lT -arbghi --git -I ".git|__pycache__|.terraform" --icons'
-    alias laa='eza -l -arbghi@ --git --icons'
+    alias l='eza --icons=auto'
+    alias ls='eza --icons=auto'
+    alias ll='eza -l --icons=auto'
+    alias la='eza -l -arbghi --git --icons=auto'
+    alias lr='eza -lR -arbghi --git -I ".git|__pycache__" --icons=auto'
+    alias lt='eza -lT -arbghi --git -I ".git|__pycache__|.terraform" --icons=auto'
+    alias laa='eza -l -arbghi@ --git --icons=auto'
 else if command -sq exa
     alias l='exa --icons'
     alias ls='exa --icons'
