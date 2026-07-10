@@ -69,6 +69,14 @@ alias grep='grep -n --color=auto'
 alias httpserver='python3 -m http.server'
 alias less='less --no-init --quit-if-one-screen'
 
+function tig
+    if command -sq lazygit
+        lazygit $argv
+    else
+        command tig $argv
+    end
+end
+
 function z
     exec env PROMPT_SEVERITY=$PROMPT_SEVERITY OUTSIDE_HOSTNAME=$OUTSIDE_HOSTNAME fish --login
 end

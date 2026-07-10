@@ -757,6 +757,15 @@ alias myip='curl -s https://ipinfo.io | jq'
 alias sshh='sshuttle'
 
 
+tig() {
+  if whence -p lazygit 1> /dev/null; then
+    lazygit "$@"
+  else
+    command tig "$@"
+  fi
+}
+
+
 #if whence -p ag 1> /dev/null; then
 #  alias grep="ag"
 #fi
