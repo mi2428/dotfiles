@@ -23,12 +23,17 @@ quick-terminal-animation-duration = 0
 quick-terminal-autohide = true
 quick-terminal-space-behavior = move
 
-# Material-inspired flat palette tuned for a matte charcoal background.
-background = #111418
+# Material-inspired flat palette tuned for a softer matte charcoal background.
+# Previous matte background:
+# background = #161A1E
+background = #1A1F24
+background-opacity = 0.9
+background-blur = 50
 foreground = #E3E7EA
 cursor-color = #FFD740
 
-palette = 0=#111418
+# palette = 0=#161A1E
+palette = 0=#1A1F24
 palette = 1=#E57373
 palette = 2=#81C784
 palette = 3=#FFF176
