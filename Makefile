@@ -98,6 +98,7 @@ link.linux-desktop: ##
 .PHONY: link.macos
 link.macos: ##
 	@$(LINKER) --patch macos --force
+	@./init/setup-ghostty.sh
 
 .PHONY: link.docker
 link.docker: ##
