@@ -8,7 +8,7 @@ CURDIR = path.dirname(path.abspath(__file__))
 DOTFILES = path.join("/", path.relpath(path.join(CURDIR, ".."), "/"))
 
 XDG_SUPPORTED_PACKAGES = [
-    "compton", "dusnt", "gtk-3.0", "karabiner", "nvim", "psd", "rofi", "systemd"
+    "compton", "dusnt", "fish", "gtk-3.0", "karabiner", "nvim", "psd", "rofi", "systemd"
 ]
 
 
@@ -93,4 +93,3 @@ if __name__ == "__main__":
         if args.patch:
             patchdir = path.join("etc", "hosts", args.patch)
             create_symlinks(path.join(DOTFILES, patchdir), force=True, dry=args.dryrun)
-
