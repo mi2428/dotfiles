@@ -17,6 +17,15 @@ focus_pane_right = "prefix+l"
 split_horizontal = "prefix+minus"
 split_vertical = "prefix+backslash"
 
+[theme]
+# name = "vesper"
+# name = "tokyo-night"
+# name = "one-dark"
+# name = "kanagawa"
+name = "gruvbox"
+# name = "nord"
+# name = "rose-pine"
+
 [ui]
 host_cursor = "native"
 sidebar_collapsed_mode = "hidden"
