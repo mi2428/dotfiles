@@ -29,6 +29,8 @@ quick-terminal-space-behavior = move
 background = #1A1F24
 background-opacity = 0.9
 background-blur = 50
+macos-titlebar-style = transparent
+macos-window-shadow = false
 foreground = #E3E7EA
 cursor-color = #FFD740
 
