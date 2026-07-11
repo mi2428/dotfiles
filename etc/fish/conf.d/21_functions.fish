@@ -53,22 +53,37 @@ function mcd
 end
 
 function cdf
-    set -l query (string join ' ' -- $argv)
+    set -l root .
+    set -l query_args $argv
     set -l fzf_opts --select-1 --exit-0
-    set -l preview 'tree -L 3 -C -- {} | head -200'
+    set -l preview 'tree -L 3 -C -- "$CDF_ROOT"/{} | head -200'
     set -l dst
 
+    if test (count $argv) -gt 0; and test -d "$argv[1]"
+        set root $argv[1]
+        set query_args $argv[2..-1]
+    end
+
+    set -l query (string join ' ' -- $query_args)
+    set -lx CDF_ROOT $root
+
     if command -sq fd
-        set dst (fd --type d --hidden --follow --exclude .git . | fzf $fzf_opts --query "$query" --preview $preview)
+        set dst (begin
+            builtin cd -- "$root"
+            fd --type d --hidden --follow --exclude .git .
+        end | fzf $fzf_opts --query "$query" --preview $preview)
     else
-        set dst (command find . \
-            \( -path '*/.git' -o -path '*/.git/*' \) -prune -o \
-            -type d -print 2>/dev/null | string replace -r '^\./' '' | fzf $fzf_opts --query "$query" --preview $preview)
+        set dst (begin
+            builtin cd -- "$root"
+            command find . \
+                \( -path '*/.git' -o -path '*/.git/*' \) -prune -o \
+                -type d -print 2>/dev/null
+        end | string replace -r '^\./' '' | fzf $fzf_opts --query "$query" --preview $preview)
     end
 
     test -n "$dst"; or return 1
     set -l target $dst[1]
-    builtin cd -- "$target"
+    builtin cd -- "$root/$target"
     and __dotfiles_list_dir
 end
 
