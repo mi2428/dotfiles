@@ -77,7 +77,7 @@ function tig
     end
 end
 
-function z
+function zl
     exec env PROMPT_SEVERITY=$PROMPT_SEVERITY OUTSIDE_HOSTNAME=$OUTSIDE_HOSTNAME fish --login
 end
 
