@@ -11,59 +11,27 @@ local ghostty = {
 	white = "#FFFFFF",
 }
 
-local function patch_dashboard_terminal_exit()
-	local job = require("snacks.util.job")
-	if job._dotfiles_dashboard_exit_patch then
-		return
-	end
-
-	local original_new = job.new
-
-	job.new = function(buf, cmd, opts)
-		local instance = original_new(buf, cmd, opts)
-		local original_hide = instance.hide_process_exited
-
-		instance.hide_process_exited = function(self)
-			if not self:buf_valid() or vim.bo[self.buf].filetype ~= "snacks_dashboard" then
-				return original_hide(self)
-			end
-
-			local timer = assert(vim.uv.new_timer())
-			local closed = false
-
-			local function stop()
-				if closed then
-					return
-				end
-				closed = true
-				if timer:is_active() then
-					timer:stop()
-				end
-				timer:close()
-			end
-
-			local function scrub()
-				if not self:buf_valid() then
-					return stop()
-				end
-
-				local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, true)
-				for i = #lines, 1, -1 do
-					if lines[i] == "[Process exited 0]" then
-						self:set_lines(i - 1, i, {})
-						return stop()
-					end
-				end
-			end
-
-			timer:start(20, 50, vim.schedule_wrap(scrub))
-			vim.defer_fn(stop, 5000)
-		end
-
-		return instance
-	end
-
-	job._dotfiles_dashboard_exit_patch = true
+local function dashboard_square()
+	return {
+		{ " ▀ █ █ ▀ ", hl = "SnacksDashboardSquareRed" },
+		{ " ▀ █ █ ▀ ", hl = "SnacksDashboardSquareGreen" },
+		{ " ▀ █ █ ▀ ", hl = "SnacksDashboardSquareYellow" },
+		{ " ▀ █ █ ▀ ", hl = "SnacksDashboardSquareBlue" },
+		{ " ▀ █ █ ▀ ", hl = "SnacksDashboardSquareMagenta" },
+		{ " ▀ █ █ ▀ \n", hl = "SnacksDashboardSquareCyan" },
+		{ " ██   ██ ", hl = "SnacksDashboardSquareRed" },
+		{ " ██   ██ ", hl = "SnacksDashboardSquareGreen" },
+		{ " ██   ██ ", hl = "SnacksDashboardSquareYellow" },
+		{ " ██   ██ ", hl = "SnacksDashboardSquareBlue" },
+		{ " ██   ██ ", hl = "SnacksDashboardSquareMagenta" },
+		{ " ██   ██ \n", hl = "SnacksDashboardSquareCyan" },
+		{ " ▄ █ █ ▄ ", hl = "SnacksDashboardSquareRed" },
+		{ " ▄ █ █ ▄ ", hl = "SnacksDashboardSquareGreen" },
+		{ " ▄ █ █ ▄ ", hl = "SnacksDashboardSquareYellow" },
+		{ " ▄ █ █ ▄ ", hl = "SnacksDashboardSquareBlue" },
+		{ " ▄ █ █ ▄ ", hl = "SnacksDashboardSquareMagenta" },
+		{ " ▄ █ █ ▄ ", hl = "SnacksDashboardSquareCyan" },
+	}
 end
 
 local function set_dashboard_highlights()
@@ -76,6 +44,12 @@ local function set_dashboard_highlights()
 	vim.api.nvim_set_hl(0, "SnacksDashboardDir", { fg = ghostty.comment })
 	vim.api.nvim_set_hl(0, "SnacksDashboardFooter", { fg = ghostty.comment, italic = true })
 	vim.api.nvim_set_hl(0, "SnacksDashboardSpecial", { fg = ghostty.cyan })
+	vim.api.nvim_set_hl(0, "SnacksDashboardSquareRed", { fg = ghostty.red, bold = true })
+	vim.api.nvim_set_hl(0, "SnacksDashboardSquareGreen", { fg = ghostty.green, bold = true })
+	vim.api.nvim_set_hl(0, "SnacksDashboardSquareYellow", { fg = ghostty.yellow, bold = true })
+	vim.api.nvim_set_hl(0, "SnacksDashboardSquareBlue", { fg = ghostty.blue, bold = true })
+	vim.api.nvim_set_hl(0, "SnacksDashboardSquareMagenta", { fg = ghostty.magenta, bold = true })
+	vim.api.nvim_set_hl(0, "SnacksDashboardSquareCyan", { fg = ghostty.cyan, bold = true })
 end
 
 return {
@@ -204,10 +178,8 @@ return {
 					{ section = "keys", gap = 1, padding = 1 },
 					{
 						pane = 2,
-						section = "terminal",
-						cmd = "colorscript -e square",
-						height = 4,
-						padding = 1,
+						text = dashboard_square(),
+						padding = { 5, 1 },
 					},
 					{
 						pane = 2,
@@ -225,30 +197,12 @@ return {
 						section = "projects",
 						indent = 2,
 						padding = { 1, 1 },
-						limit = 4,
-					},
-					{
-						pane = 2,
-						icon = " ",
-						title = "Git Status",
-						section = "terminal",
-						enabled = function()
-							return Snacks.git.get_root() ~= nil
-						end,
-						cmd = "git status --short --branch --renames",
-						height = 6,
-						padding = { 1, 1 },
-						ttl = 300,
-						indent = 2,
+						limit = 5,
 					},
 					{ section = "startup" },
 				},
 			},
 		},
-		config = function(_, opts)
-			patch_dashboard_terminal_exit()
-			require("snacks").setup(opts)
-		end,
 		init = function()
 			vim.api.nvim_create_autocmd("ColorScheme", {
 				pattern = "*",
