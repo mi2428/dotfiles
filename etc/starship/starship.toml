@@ -1,0 +1,89 @@
+"$schema" = 'https://starship.rs/config-schema.json'
+
+add_newline = true
+command_timeout = 750
+scan_timeout = 50
+
+format = """
+$directory\
+$git_branch\
+$git_status\
+$hostname\
+$cmd_duration\
+$line_break\
+$python\
+$aws\
+$character"""
+
+[directory]
+format = "[$path]($style)"
+style = "blue"
+truncate_to_repo = false
+truncation_length = 0
+fish_style_pwd_dir_length = 0
+read_only = ""
+
+[git_branch]
+format = "[ $branch]($style)"
+style = "bright-black"
+symbol = ""
+
+[git_status]
+format = "[ $all_status$ahead_behind]($style)"
+style = "bright-black"
+conflicted = "*"
+ahead = "⇡"
+behind = "⇣"
+diverged = "⇕"
+up_to_date = ""
+untracked = "*"
+stashed = "≡"
+modified = "*"
+staged = "+"
+renamed = "»"
+deleted = "✘"
+typechanged = "*"
+ignore_submodules = true
+
+[cmd_duration]
+min_time = 5000
+format = "[ $duration]($style)"
+style = "yellow"
+show_milliseconds = false
+
+[line_break]
+disabled = false
+
+[character]
+success_symbol = "[❯](bold purple)"
+error_symbol = "[❯](bold red)"
+vimcmd_symbol = "[❮](bold purple)"
+
+[python]
+format = "[$virtualenv]($style) "
+style = "bright-black"
+symbol = ""
+detect_extensions = []
+detect_files = []
+detect_folders = []
+python_binary = "python3"
+
+[aws]
+format = "[$profile]($style) "
+style = "yellow"
+symbol = ""
+
+[kubernetes]
+disabled = true
+
+[container]
+disabled = true
+
+[hostname]
+ssh_only = true
+format = "[ $hostname]($style)"
+style = "bright-black"
+trim_at = "."
+
+[username]
+disabled = true

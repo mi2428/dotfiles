@@ -1,3 +1,4 @@
 jorgebucaran/fisher
 PatrickF1/fzf.fish
-pure-fish/pure
+# Retired: pure prompt behavior has been migrated to Starship.
+# pure-fish/pure
