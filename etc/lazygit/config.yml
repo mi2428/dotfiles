@@ -1,7 +1,14 @@
 gui:
   nerdFontsVersion: "3"
-  sidePanelWidth: 0.25
+  sidePanelWidth: 0.2
   expandFocusedSidePanel: true
+  expandedSidePanelWeight: 4
+  shrinkSidePanelsToContent: true
+  showBottomLine: false
+  sidePanels:
+    - [files, worktrees, submodules]
+    - [commits, reflog, stash]
+    - [branches, remotes, tags]
   mainPanelSplitMode: flexible
   enlargedSideViewLocation: left
   wrapLinesInStagingView: true
