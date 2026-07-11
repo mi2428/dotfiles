@@ -42,3 +42,6 @@ background-opacity = 0.92
 background-blur = 10
 macos-titlebar-style = transparent
 macos-window-shadow = false
+window-width = 230
+window-height = 70
+window-save-state = never
