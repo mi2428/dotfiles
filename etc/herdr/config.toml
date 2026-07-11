@@ -25,10 +25,26 @@ command = "lazygit"
 description = "run lazygit"
 
 [theme]
-# Follow the terminal palette so Ghostty/tmux flavour switches propagate here.
-name = "terminal"
+# Prefer Herdr's built-in Catppuccin theme so pane accents don't depend on
+# the host terminal's ANSI palette.
+# name = "terminal"
 # name = "catppuccin-latte"
-# name = "catppuccin"
+name = "catppuccin"
+auto_switch = true
+light_name = "catppuccin-latte"
+dark_name = "catppuccin"
+
+[theme.custom]
+panel_bg = "reset"
+accent = "#a6e3a1"
+# Sidebar row/background styling uses the surface tokens.
+# Keep pane emphasis green, but use Catppuccin's darker surface shades here
+# so the sidebar feels active without turning separators bright purple.
+surface0 = "#45475a"
+surface_dim = "#313244"
+subtext0 = "#bac2de"
+text = "#bac2de"
+mauve = "#b4befe"
 
 [ui]
 host_cursor = "native"
