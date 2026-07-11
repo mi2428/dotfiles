@@ -712,9 +712,28 @@ alias dc='docker compose'
 alias ga='git add'
 alias gb='git branch'
 alias gc='git commit -s -m'
-alias gd='git diff'
+__git_delta_lazygit() {
+  local -a delta_cmd=(
+    delta
+    --features=catppuccin-lazygit-mocha
+    --dark
+    --paging=never
+    --line-numbers
+    --hyperlinks
+    '--hyperlinks-file-link-format=lazygit-edit://{path}:{line}'
+    --side-by-side
+  )
+
+  "${delta_cmd[@]}"
+}
+gd() {
+  setopt local_options pipefail
+  git diff --no-color "$@" | __git_delta_lazygit
+}
 gdd() {
   local base_ref
+  setopt local_options pipefail
+
   if git rev-parse --verify --quiet refs/remotes/origin/HEAD >/dev/null; then
     base_ref='origin/HEAD'
   elif git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null; then
@@ -726,7 +745,7 @@ gdd() {
     return 1
   fi
 
-  git diff "${base_ref}...HEAD" "$@"
+  git diff --no-color "${base_ref}...HEAD" "$@" | __git_delta_lazygit
 }
 alias gf='git fetch'
 alias gp='git push'

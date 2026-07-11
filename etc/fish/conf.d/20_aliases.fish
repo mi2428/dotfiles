@@ -43,7 +43,22 @@ alias dc='docker compose'
 alias ga='git add'
 alias gb='git branch'
 alias gc='git commit -s -m'
-alias gd='git diff'
+
+function __git_delta_lazygit
+    delta \
+        --features=catppuccin-lazygit-mocha \
+        --dark \
+        --paging=never \
+        --line-numbers \
+        --hyperlinks \
+        '--hyperlinks-file-link-format=lazygit-edit://{path}:{line}' \
+        --side-by-side
+end
+
+function gd
+    git diff --no-color $argv | __git_delta_lazygit
+    return $pipestatus[1]
+end
 
 function Ia
     awk $argv
@@ -123,7 +138,8 @@ function gdd
         return 1
     end
 
-    git diff "$base_ref"...HEAD $argv
+    git diff --no-color "$base_ref"...HEAD $argv | __git_delta_lazygit
+    return $pipestatus[1]
 end
 alias gf='git fetch'
 alias gp='git push'
