@@ -19,7 +19,7 @@ set -gx FZF_DEFAULT_OPTS "\
 --scrollbar=│ \
 --preview-window=right,55%,border-left \
 --bind='ctrl-/:change-preview-window(right,55%,border-left|down,60%,border-top|hidden)' \
---color=bg:$CTP_BASE,fg:$CTP_TEXT,hl:$CTP_BLUE \
+--color=bg:-1,fg:$CTP_TEXT,hl:$CTP_BLUE \
 --color=bg+:$CTP_SURFACE0,fg+:$CTP_ROSEWATER,hl+:$CTP_LAVENDER \
 --color=border:$CTP_OVERLAY1,label:$CTP_SUBTEXT1 \
 --color=preview-border:$CTP_BLUE,preview-label:$CTP_LAVENDER \

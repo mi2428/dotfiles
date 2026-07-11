@@ -3,6 +3,7 @@ set -euo pipefail
 
 FISH_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/fish"
 FISH_PLUGINS_FILE="$FISH_CONFIG_DIR/fish_plugins"
+FISH_FROZEN_THEME_FILE="$FISH_CONFIG_DIR/conf.d/fish_frozen_theme.fish"
 
 if ! command -v fish >/dev/null 2>&1; then
   exit 0
@@ -11,6 +12,9 @@ fi
 if [[ ! -f "$FISH_PLUGINS_FILE" ]]; then
   exit 0
 fi
+
+# Fish 4.3+ migrated theme handling away from this compatibility shim.
+rm -f "$FISH_FROZEN_THEME_FILE"
 
 MANIFEST_CONTENT="$(cat "$FISH_PLUGINS_FILE")"
 
