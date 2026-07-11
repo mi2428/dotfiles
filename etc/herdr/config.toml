@@ -21,7 +21,9 @@ split_vertical = "prefix+backslash"
 [[keys.command]]
 key = "prefix+g"
 type = "pane"
-command = "lazygit"
+# Launch through fish so lazygit always inherits the Catppuccin merge config,
+# even when the herdr server was started from a stale outer environment.
+command = "/opt/homebrew/bin/fish -lc 'exec lazygit'"
 description = "run lazygit"
 
 [theme]
