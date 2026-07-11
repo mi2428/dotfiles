@@ -35,16 +35,9 @@ return {
 	},
 	{
 		"ibhagwan/fzf-lua",
+		lazy = false,
 		dependencies = { "nvim-tree/nvim-web-devicons" },
 		cmd = "FzfLua",
-		keys = {
-			{ "<leader>f", mode = "n" },
-			{ "<leader>g", mode = "n" },
-			{ "<leader>G", mode = "n" },
-			{ "<leader>b", mode = "n" },
-			{ "<leader>h", mode = "n" },
-			{ "<leader>r", mode = "n" },
-		},
 		opts = {
 			"default",
 			fzf_colors = {
