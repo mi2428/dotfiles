@@ -90,12 +90,14 @@ link.linux: ##
 	#@$(LINKER) --force
 	@$(LINKER) --patch linux-server --force
 	@./init/setup-lazygit.sh
+	@./init/setup-fzf-git.sh
 	@./init/setup-fish-plugins.sh
 
 .PHONY: link.linux-desktop
 link.linux-desktop: ##
 	@$(LINKER) --patch linux-desktop --force
 	@./init/setup-lazygit.sh
+	@./init/setup-fzf-git.sh
 	@./init/setup-fish-plugins.sh
 
 .PHONY: link.macos
@@ -103,12 +105,14 @@ link.macos: ##
 	@$(LINKER) --patch macos --force
 	@./init/setup-ghostty.sh
 	@./init/setup-lazygit.sh
+	@./init/setup-fzf-git.sh
 	@./init/setup-fish-plugins.sh
 
 .PHONY: link.docker
 link.docker: ##
 	@$(LINKER) --patch docker --force
 	@./init/setup-lazygit.sh
+	@./init/setup-fzf-git.sh
 	@./init/setup-fish-plugins.sh
 
 .PHONY: link.checkpoint
