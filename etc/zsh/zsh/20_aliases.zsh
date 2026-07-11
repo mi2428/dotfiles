@@ -714,8 +714,20 @@ alias gb='git branch'
 alias gc='git commit -s -m'
 __git_delta_lazygit() {
   local paging='never'
+  local -a pager_opts=()
+  local -a hyperlink_opts=(
+    --hyperlinks
+    '--hyperlinks-file-link-format=lazygit-edit://{path}:{line}'
+  )
+
   if [[ -t 1 ]]; then
     paging='always'
+    # Repaint from the top on half-page jumps to reduce visual artifacts in tmux.
+    pager_opts=(--pager 'less -Rc')
+  fi
+
+  if [[ -n ${TMUX:-} ]]; then
+    hyperlink_opts=()
   fi
 
   local -a delta_cmd=(
@@ -723,9 +735,9 @@ __git_delta_lazygit() {
     --features=catppuccin-lazygit-mocha
     --dark
     "--paging=${paging}"
+    "${pager_opts[@]}"
     --line-numbers
-    --hyperlinks
-    '--hyperlinks-file-link-format=lazygit-edit://{path}:{line}'
+    "${hyperlink_opts[@]}"
     --side-by-side
   )
 

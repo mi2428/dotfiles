@@ -46,18 +46,23 @@ alias gc='git commit -s -m'
 
 function __git_delta_lazygit
     set -l paging never
-    if test -t 1
-        set paging always
-    end
-
-    delta \
+    set -l delta_args \
         --features=catppuccin-lazygit-mocha \
         --dark \
-        --paging="$paging" \
         --line-numbers \
-        --hyperlinks \
-        '--hyperlinks-file-link-format=lazygit-edit://{path}:{line}' \
         --side-by-side
+
+    if test -t 1
+        set paging always
+        # Repaint from the top on half-page jumps to reduce visual artifacts in tmux.
+        set -a delta_args --pager 'less -Rc'
+    end
+
+    if not set -q TMUX
+        set -a delta_args --hyperlinks '--hyperlinks-file-link-format=lazygit-edit://{path}:{line}'
+    end
+
+    delta --paging="$paging" $delta_args
 end
 
 function gd

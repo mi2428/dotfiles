@@ -1,0 +1,4 @@
+#command
+# Force a repaint after half-page scrolling to reduce prompt/status ghosting.
+^D         forw-scroll ^L
+^U         back-scroll ^L
