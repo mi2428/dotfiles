@@ -52,6 +52,26 @@ function mcd
     and cd $argv[1]
 end
 
+function cdf
+    set -l query (string join ' ' -- $argv)
+    set -l fzf_opts --select-1 --exit-0
+    set -l preview 'tree -L 3 -C -- {} | head -200'
+    set -l dst
+
+    if command -sq fd
+        set dst (fd --type d --hidden --follow --exclude .git . | fzf $fzf_opts --query "$query" --preview $preview)
+    else
+        set dst (command find . \
+            \( -path '*/.git' -o -path '*/.git/*' \) -prune -o \
+            -type d -print 2>/dev/null | string replace -r '^\./' '' | fzf $fzf_opts --query "$query" --preview $preview)
+    end
+
+    test -n "$dst"; or return 1
+    set -l target $dst[1]
+    builtin cd -- "$target"
+    and __dotfiles_list_dir
+end
+
 function pd
     if test (count $argv) -eq 1
         pushd $argv[1]
