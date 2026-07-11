@@ -11,6 +11,61 @@ local ghostty = {
 	white = "#FFFFFF",
 }
 
+local function patch_dashboard_terminal_exit()
+	local job = require("snacks.util.job")
+	if job._dotfiles_dashboard_exit_patch then
+		return
+	end
+
+	local original_new = job.new
+
+	job.new = function(buf, cmd, opts)
+		local instance = original_new(buf, cmd, opts)
+		local original_hide = instance.hide_process_exited
+
+		instance.hide_process_exited = function(self)
+			if not self:buf_valid() or vim.bo[self.buf].filetype ~= "snacks_dashboard" then
+				return original_hide(self)
+			end
+
+			local timer = assert(vim.uv.new_timer())
+			local closed = false
+
+			local function stop()
+				if closed then
+					return
+				end
+				closed = true
+				if timer:is_active() then
+					timer:stop()
+				end
+				timer:close()
+			end
+
+			local function scrub()
+				if not self:buf_valid() then
+					return stop()
+				end
+
+				local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, true)
+				for i = #lines, 1, -1 do
+					if lines[i] == "[Process exited 0]" then
+						self:set_lines(i - 1, i, {})
+						return stop()
+					end
+				end
+			end
+
+			timer:start(20, 50, vim.schedule_wrap(scrub))
+			vim.defer_fn(stop, 5000)
+		end
+
+		return instance
+	end
+
+	job._dotfiles_dashboard_exit_patch = true
+end
+
 local function set_dashboard_highlights()
 	vim.api.nvim_set_hl(0, "SnacksDashboardHeader", { fg = ghostty.blue, bold = true })
 	vim.api.nvim_set_hl(0, "SnacksDashboardKey", { fg = ghostty.yellow, bold = true })
@@ -100,12 +155,38 @@ return {
 ╚═╝  ╚═══╝╚══════╝ ╚═════╝   ╚═══╝  ╚═╝╚═╝     ╚═╝
 					]],
 					keys = {
-						{ icon = " ", key = "f", desc = "Find File", action = ":lua Snacks.dashboard.pick('files')" },
+						{
+							icon = " ",
+							key = "f",
+							desc = "Find File",
+							action = ":lua Snacks.dashboard.pick('files')",
+						},
 						{ icon = " ", key = "n", desc = "New File", action = ":ene | startinsert" },
-						{ icon = "󰱼 ", key = "g", desc = "Find Text", action = ":lua Snacks.dashboard.pick('live_grep')" },
-						{ icon = " ", key = "r", desc = "Recent Files", action = ":lua Snacks.dashboard.pick('oldfiles')" },
-						{ icon = " ", key = "c", desc = "Config", action = ":lua Snacks.dashboard.pick('files', { cwd = vim.fn.stdpath('config') })" },
-						{ icon = "󰒲 ", key = "l", desc = "Lazy", action = ":Lazy", enabled = package.loaded.lazy ~= nil },
+						{
+							icon = "󰱼 ",
+							key = "g",
+							desc = "Find Text",
+							action = ":lua Snacks.dashboard.pick('live_grep')",
+						},
+						{
+							icon = " ",
+							key = "r",
+							desc = "Recent Files",
+							action = ":lua Snacks.dashboard.pick('oldfiles')",
+						},
+						{
+							icon = " ",
+							key = "c",
+							desc = "Config",
+							action = ":lua Snacks.dashboard.pick('files', { cwd = vim.fn.stdpath('config') })",
+						},
+						{
+							icon = "󰒲 ",
+							key = "l",
+							desc = "Lazy",
+							action = ":Lazy",
+							enabled = package.loaded.lazy ~= nil,
+						},
 						{ icon = " ", key = "q", desc = "Quit", action = ":qa" },
 					},
 				},
@@ -164,6 +245,10 @@ return {
 				},
 			},
 		},
+		config = function(_, opts)
+			patch_dashboard_terminal_exit()
+			require("snacks").setup(opts)
+		end,
 		init = function()
 			vim.api.nvim_create_autocmd("ColorScheme", {
 				pattern = "*",
