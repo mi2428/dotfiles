@@ -1,13 +1,29 @@
 local catppuccin = require("config.catppuccin")
 local colors = catppuccin.palette()
+local fzf_colors = {
+	match = colors.blue,
+	info = colors.overlay0,
+	prompt = colors.mauve,
+	pointer = colors.peach,
+	marker = colors.green,
+	spinner = colors.sky,
+}
 
 local function set_fzf_highlights()
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaNormal", { fg = colors.text, bg = "NONE" })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaBorder", { fg = colors.overlay1, bg = "NONE" })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaTitle", { fg = colors.yellow, bg = "NONE", bold = true })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaTitleFlags", { fg = colors.subtext1, bg = "NONE" })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaPreviewTitle", { fg = colors.sky, bg = "NONE", bold = true })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaBackdrop", { bg = "NONE" })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaNormal", { fg = colors.text, bg = colors.base })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaCursorLine", { fg = colors.text, bg = colors.surface0 })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaBorder", { fg = colors.overlay1, bg = colors.base })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaMatch", { fg = fzf_colors.match, bg = colors.base, bold = true })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaInfo", { fg = fzf_colors.info, bg = colors.base })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaPrompt", { fg = fzf_colors.prompt, bg = colors.base, bold = true })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaPointer", { fg = fzf_colors.pointer, bg = colors.base, bold = true })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaMarker", { fg = fzf_colors.marker, bg = colors.base, bold = true })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaSpinner", { fg = fzf_colors.spinner, bg = colors.base, bold = true })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaQuery", { fg = colors.text, bg = colors.base })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaTitle", { fg = colors.yellow, bg = colors.base, bold = true })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaTitleFlags", { fg = colors.subtext1, bg = colors.base })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaPreviewTitle", { fg = colors.sky, bg = colors.base, bold = true })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaBackdrop", { bg = colors.base })
 end
 
 return {
@@ -43,12 +59,7 @@ return {
 		cmd = "FzfLua",
 		opts = {
 			"default",
-			fzf_colors = {
-				true,
-				["bg"] = "-1",
-				["gutter"] = "-1",
-				["header"] = { "fg", "DotfilesFzfLuaTitle" },
-			},
+			fzf_colors = { true },
 			hls = {
 				normal = "DotfilesFzfLuaNormal",
 				border = "DotfilesFzfLuaBorder",
@@ -60,6 +71,22 @@ return {
 				help_normal = "DotfilesFzfLuaNormal",
 				help_border = "DotfilesFzfLuaBorder",
 				backdrop = "DotfilesFzfLuaBackdrop",
+				fzf = {
+					normal = "DotfilesFzfLuaNormal",
+					cursorline = "DotfilesFzfLuaCursorLine",
+					match = "DotfilesFzfLuaMatch",
+					border = "DotfilesFzfLuaBorder",
+					scrollbar = "DotfilesFzfLuaBorder",
+					separator = "DotfilesFzfLuaBorder",
+					gutter = "DotfilesFzfLuaNormal",
+					header = "DotfilesFzfLuaTitle",
+					info = "DotfilesFzfLuaInfo",
+					pointer = "DotfilesFzfLuaPointer",
+					marker = "DotfilesFzfLuaMarker",
+					spinner = "DotfilesFzfLuaSpinner",
+					prompt = "DotfilesFzfLuaPrompt",
+					query = "DotfilesFzfLuaQuery",
+				},
 			},
 			files = {
 				fd_opts = [[--color=never --type f --hidden --follow --exclude .git]],
@@ -70,7 +97,7 @@ return {
 			winopts = {
 				height = 0.9,
 				width = 0.8,
-				backdrop = 100,
+				backdrop = false,
 				preview = {
 					layout = "vertical",
 					vertical = "right:60%",
