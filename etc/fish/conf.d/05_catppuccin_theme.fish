@@ -157,6 +157,16 @@ if not test -f "$eza_config_dir/theme.yml"
 end
 set -gx EZA_CONFIG_DIR $eza_config_dir
 
+set -l lazygit_base_config "$HOME/.config/lazygit/config.yml"
+if not test -f $lazygit_base_config
+    set lazygit_base_config "$etc_root/lazygit/config.yml"
+end
+set -l lazygit_theme "$HOME/.config/lazygit/themes-mergable/$DOTFILES_CATPPUCCIN_FLAVOUR/green.yml"
+if not test -f $lazygit_theme
+    set lazygit_theme "$etc_root/lazygit/themes-mergable/$DOTFILES_CATPPUCCIN_FLAVOUR/green.yml"
+end
+set -gx LG_CONFIG_FILE "$lazygit_base_config,$lazygit_theme"
+
 if not status is-interactive
     return
 end

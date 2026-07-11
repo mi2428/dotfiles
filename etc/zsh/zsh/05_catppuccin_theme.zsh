@@ -127,3 +127,14 @@ esac
 export CLICOLOR=1
 export LS_COLORS="di=1;38;2;${CTP_BLUE_RGB}:ln=38;2;${CTP_SAPPHIRE_RGB}:pi=38;2;${CTP_PEACH_RGB}:bd=1;38;2;${CTP_MAUVE_RGB}:cd=1;38;2;${CTP_MAUVE_RGB}:so=38;2;${CTP_TEAL_RGB}:ex=1;38;2;${CTP_GREEN_RGB}:*.zip=38;2;${CTP_RED_RGB}:*.tar=38;2;${CTP_RED_RGB}:*.gz=38;2;${CTP_RED_RGB}:*.bz2=38;2;${CTP_RED_RGB}:*.xz=38;2;${CTP_RED_RGB}:*.zst=38;2;${CTP_RED_RGB}:*README=1;4;38;2;${CTP_YELLOW_RGB}:*README.md=1;4;38;2;${CTP_YELLOW_RGB}:*Makefile=1;4;38;2;${CTP_YELLOW_RGB}:*Cargo.toml=1;4;38;2;${CTP_YELLOW_RGB}:*package.json=1;4;38;2;${CTP_YELLOW_RGB}:*Dockerfile=1;4;38;2;${CTP_YELLOW_RGB}:*Brewfile=1;4;38;2;${CTP_YELLOW_RGB}"
 export EZA_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/eza/${DOTFILES_CATPPUCCIN_FLAVOUR}"
+_dotfiles_theme_source="${${(%):-%N}:A}"
+_dotfiles_etc_root="${_dotfiles_theme_source:h:h:h}"
+_dotfiles_lazygit_base_config="${XDG_CONFIG_HOME:-$HOME/.config}/lazygit/config.yml"
+if [[ ! -f "$_dotfiles_lazygit_base_config" ]]; then
+  _dotfiles_lazygit_base_config="${_dotfiles_etc_root}/lazygit/config.yml"
+fi
+_dotfiles_lazygit_theme="${XDG_CONFIG_HOME:-$HOME/.config}/lazygit/themes-mergable/${DOTFILES_CATPPUCCIN_FLAVOUR}/green.yml"
+if [[ ! -f "$_dotfiles_lazygit_theme" ]]; then
+  _dotfiles_lazygit_theme="${_dotfiles_etc_root}/lazygit/themes-mergable/${DOTFILES_CATPPUCCIN_FLAVOUR}/green.yml"
+fi
+export LG_CONFIG_FILE="${_dotfiles_lazygit_base_config},${_dotfiles_lazygit_theme}"
