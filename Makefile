@@ -89,6 +89,7 @@ postinstall.linux: ##
 link.linux: ##
 	#@$(LINKER) --force
 	@$(LINKER) --patch linux-server --force
+	@./init/setup-tmux-catppuccin.sh
 	@./init/setup-lazygit.sh
 	@./init/setup-k9s.sh
 	@./init/setup-fzf-git.sh
@@ -97,6 +98,8 @@ link.linux: ##
 .PHONY: link.linux-desktop
 link.linux-desktop: ##
 	@$(LINKER) --patch linux-desktop --force
+	@./init/setup-tmux-catppuccin.sh
+	@./init/setup-vscode.sh
 	@./init/setup-lazygit.sh
 	@./init/setup-k9s.sh
 	@./init/setup-fzf-git.sh
@@ -105,6 +108,8 @@ link.linux-desktop: ##
 .PHONY: link.macos
 link.macos: ##
 	@$(LINKER) --patch macos --force
+	@./init/setup-tmux-catppuccin.sh
+	@./init/setup-vscode.sh
 	@./init/setup-ghostty.sh
 	@./init/setup-lazygit.sh
 	@./init/setup-k9s.sh
@@ -114,6 +119,7 @@ link.macos: ##
 .PHONY: link.docker
 link.docker: ##
 	@$(LINKER) --patch docker --force
+	@./init/setup-tmux-catppuccin.sh
 	@./init/setup-lazygit.sh
 	@./init/setup-k9s.sh
 	@./init/setup-fzf-git.sh
@@ -122,6 +128,7 @@ link.docker: ##
 .PHONY: link.checkpoint
 link.checkpoint: ##
 	@ln -snf $(CURDIR)/etc/hosts/checkpoint/tmux/tmux.conf $(HOME)/.tmux.conf
+	@./init/setup-tmux-catppuccin.sh
 	@ln -snf $(CURDIR)/etc/hosts/checkpoint/bin $(HOME)/bin
 
 .PHONY: unlink
