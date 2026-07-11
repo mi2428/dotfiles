@@ -25,7 +25,7 @@ right_format = """$status$jobs$time$battery"""
 
 [directory]
 format = "[$path]($style)"
-style = "blue"
+style = "bold lavender"
 truncate_to_repo = false
 truncation_length = 0
 fish_style_pwd_dir_length = 0
@@ -33,12 +33,12 @@ read_only = ""
 
 [git_branch]
 format = "[ $symbol$branch]($style)"
-style = "overlay1"
+style = "bold mauve"
 symbol = " "
 
 [git_status]
 format = "[ $all_status$ahead_behind]($style)"
-style = "overlay1"
+style = "bold peach"
 conflicted = "*"
 ahead = "⇡"
 behind = "⇣"
@@ -56,66 +56,77 @@ ignore_submodules = true
 [git_metrics]
 disabled = false
 format = "([ +$added]($added_style))([ -$deleted]($deleted_style))"
-added_style = "green"
-deleted_style = "red"
+added_style = "bold green"
+deleted_style = "bold red"
 ignore_submodules = true
 
 [cmd_duration]
 min_time = 5000
 format = "[ $duration]($style)"
-style = "yellow"
+style = "bold yellow"
 show_milliseconds = false
 
 [status]
 disabled = false
 format = "[$symbol$status]($style) "
-symbol = "✘ "
-style = "red"
+symbol = "󰅚 "
+style = "bold red"
 map_symbol = true
 recognize_signal_code = true
 
 [jobs]
 symbol = "✦ "
-style = "overlay1"
+style = "bold sky"
 number_threshold = 1
 symbol_threshold = 1
 
 [time]
 disabled = false
 format = "[$time]($style) "
-style = "overlay1"
+style = "bold overlay1"
 time_format = "%H:%M"
 
 [battery]
 disabled = false
 format = "[$symbol$percentage]($style) "
-full_symbol = "• "
-charging_symbol = "↑ "
-discharging_symbol = "↓ "
-unknown_symbol = "? "
-empty_symbol = "! "
+full_symbol = "󰁹 "
+charging_symbol = "󰂄 "
+discharging_symbol = "󰂃 "
+unknown_symbol = "󰁽 "
+empty_symbol = "󰂎 "
+
+[[battery.display]]
+threshold = 30
+style = "bold red"
+
+[[battery.display]]
+threshold = 70
+style = "bold yellow"
+
+[[battery.display]]
+style = "bold green"
 
 [line_break]
 disabled = false
 
 [character]
-success_symbol = "[❯](bold mauve)"
-error_symbol = "[❯](bold red)"
-vimcmd_symbol = "[❮](bold mauve)"
+success_symbol = "[[󰄛](green) ❯](peach)"
+error_symbol = "[[󰅚](red) ❯](peach)"
+vimcmd_symbol = "[󰄛 ❮](subtext1)"
 
 [python]
-format = "[$virtualenv]($style) "
-style = "overlay1"
-symbol = ""
+format = "[$symbol$virtualenv]($style) "
+style = "bold sapphire"
+symbol = " "
 detect_extensions = []
 detect_files = []
 detect_folders = []
 python_binary = "python3"
 
 [aws]
-format = "[$profile]($style) "
-style = "yellow"
-symbol = ""
+format = "[$symbol$profile]($style) "
+style = "bold yellow"
+symbol = "󰸏 "
 
 [kubernetes]
 disabled = true
@@ -126,7 +137,7 @@ disabled = true
 [hostname]
 ssh_only = true
 format = "[ $hostname]($style)"
-style = "overlay1"
+style = "bold teal"
 trim_at = "."
 
 [username]
