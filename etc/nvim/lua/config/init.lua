@@ -1,5 +1,1 @@
-require("config.options")
-require("config.keymaps")
-require("config.autocmds")
-require("config.commands")
-require("config.lazy")
+/Users/teo/dotfiles/etc/nvim/lua/config/init.lua
