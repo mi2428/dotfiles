@@ -20,7 +20,7 @@ path=(
 )
 
 export GOPATH="$HOME/io/gocode"
-export ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=242'
+export ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE="fg=${CTP_OVERLAY0}"
 export ZSH_HIGHLIGHT_HIGHLIGHTERS_DIR=$HOME/.local/share/zsh/zsh-syntax-highlighting/highlighters
 source $HOME/.local/share/zsh/zsh-autosuggestions/zsh-autosuggestions.zsh
 source $HOME/.local/share/zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh

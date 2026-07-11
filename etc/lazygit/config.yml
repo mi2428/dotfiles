@@ -23,34 +23,34 @@ gui:
     "^chore/": blue
   theme:
     activeBorderColor:
-      - "#FFD740"
+      - "#89B4FA"
     inactiveBorderColor:
-      - "#78909C"
+      - "#7F849C"
     searchingActiveBorderColor:
-      - "#84FFFF"
+      - "#89DCEB"
     optionsTextColor:
-      - "#64B5F6"
+      - "#F9E2AF"
     selectedLineBgColor:
-      - "#313A42"
+      - "#313244"
     inactiveViewSelectedLineBgColor:
-      - "#242B31"
+      - "#181825"
     cherryPickedCommitFgColor:
-      - "#64B5F6"
+      - "#A6E3A1"
     cherryPickedCommitBgColor:
-      - "#1F2D33"
+      - "#313244"
     markedBaseCommitFgColor:
-      - "#1A1F24"
+      - "#1E1E2E"
     markedBaseCommitBgColor:
-      - "#FFD740"
+      - "#CBA6F7"
     unstagedChangesColor:
-      - "#E57373"
+      - "#F38BA8"
     defaultFgColor:
-      - "#E3E7EA"
+      - "#CDD6F4"
 
 git:
   pagers:
     - name: delta
-      pager: "delta --dark --paging=never --line-numbers --hyperlinks --hyperlinks-file-link-format=\"lazygit-edit://{path}:{line}\" --side-by-side"
+      pager: 'delta --dark --paging=never --line-numbers --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}" --side-by-side --syntax-theme="Catppuccin Mocha"'
     - {}
   autoForwardBranches: onlyMainBranches
 

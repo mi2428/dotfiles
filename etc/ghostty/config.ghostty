@@ -32,31 +32,13 @@ quick-terminal-animation-duration = 0
 quick-terminal-autohide = true
 quick-terminal-space-behavior = move
 
-# Material-inspired flat palette tuned for a softer matte charcoal background.
-# Previous matte background:
-# background = #161A1E
-background = #1A1F24
+# Catppuccin flavour selection. Uncomment exactly one line.
+# theme = catppuccin-latte
+# theme = catppuccin-frappe
+# theme = catppuccin-macchiato
+theme = catppuccin-mocha
+
 background-opacity = 0.85
 background-blur = 50
 macos-titlebar-style = transparent
 macos-window-shadow = false
-foreground = #E3E7EA
-cursor-color = #FFD740
-
-# palette = 0=#161A1E
-palette = 0=#1A1F24
-palette = 1=#E57373
-palette = 2=#81C784
-palette = 3=#FFF176
-palette = 4=#64B5F6
-palette = 5=#BA68C8
-palette = 6=#4DD0E1
-palette = 7=#C7D1D6
-palette = 8=#78909C
-palette = 9=#FF8A80
-palette = 10=#69F0AE
-palette = 11=#FFD740
-palette = 12=#82B1FF
-palette = 13=#EA80FC
-palette = 14=#84FFFF
-palette = 15=#FFFFFF

@@ -1,15 +1,5 @@
-local ghostty = {
-	bg = "#1A1F24",
-	fg = "#E3E7EA",
-	comment = "#78909C",
-	red = "#E57373",
-	green = "#81C784",
-	yellow = "#FFD740",
-	blue = "#64B5F6",
-	magenta = "#BA68C8",
-	cyan = "#4DD0E1",
-	white = "#FFFFFF",
-}
+local catppuccin = require("config.catppuccin")
+local colors = catppuccin.palette()
 
 local function dashboard_square()
 	return {
@@ -66,63 +56,60 @@ local function dashboard_actions()
 end
 
 local function set_dashboard_highlights()
-	vim.api.nvim_set_hl(0, "SnacksDashboardHeader", { fg = ghostty.blue, bold = true })
-	vim.api.nvim_set_hl(0, "SnacksDashboardKey", { fg = ghostty.yellow, bold = true })
-	vim.api.nvim_set_hl(0, "SnacksDashboardDesc", { fg = ghostty.fg })
-	vim.api.nvim_set_hl(0, "SnacksDashboardIcon", { fg = ghostty.cyan })
-	vim.api.nvim_set_hl(0, "SnacksDashboardTitle", { fg = ghostty.magenta, bold = true })
-	vim.api.nvim_set_hl(0, "SnacksDashboardFile", { fg = ghostty.fg })
-	vim.api.nvim_set_hl(0, "SnacksDashboardDir", { fg = ghostty.comment })
-	vim.api.nvim_set_hl(0, "SnacksDashboardFooter", { fg = ghostty.comment, italic = true })
-	vim.api.nvim_set_hl(0, "SnacksDashboardSpecial", { fg = ghostty.cyan })
-	vim.api.nvim_set_hl(0, "SnacksDashboardSquareRed", { fg = ghostty.red, bold = true })
-	vim.api.nvim_set_hl(0, "SnacksDashboardSquareGreen", { fg = ghostty.green, bold = true })
-	vim.api.nvim_set_hl(0, "SnacksDashboardSquareYellow", { fg = ghostty.yellow, bold = true })
-	vim.api.nvim_set_hl(0, "SnacksDashboardSquareBlue", { fg = ghostty.blue, bold = true })
-	vim.api.nvim_set_hl(0, "SnacksDashboardSquareMagenta", { fg = ghostty.magenta, bold = true })
-	vim.api.nvim_set_hl(0, "SnacksDashboardSquareCyan", { fg = ghostty.cyan, bold = true })
+	vim.api.nvim_set_hl(0, "SnacksDashboardHeader", { fg = colors.blue, bold = true })
+	vim.api.nvim_set_hl(0, "SnacksDashboardKey", { fg = colors.yellow, bold = true })
+	vim.api.nvim_set_hl(0, "SnacksDashboardDesc", { fg = colors.text })
+	vim.api.nvim_set_hl(0, "SnacksDashboardIcon", { fg = colors.teal })
+	vim.api.nvim_set_hl(0, "SnacksDashboardTitle", { fg = colors.mauve, bold = true })
+	vim.api.nvim_set_hl(0, "SnacksDashboardFile", { fg = colors.text })
+	vim.api.nvim_set_hl(0, "SnacksDashboardDir", { fg = colors.overlay1 })
+	vim.api.nvim_set_hl(0, "SnacksDashboardFooter", { fg = colors.overlay1, italic = true })
+	vim.api.nvim_set_hl(0, "SnacksDashboardSpecial", { fg = colors.sky })
+	vim.api.nvim_set_hl(0, "SnacksDashboardSquareRed", { fg = colors.red, bold = true })
+	vim.api.nvim_set_hl(0, "SnacksDashboardSquareGreen", { fg = colors.green, bold = true })
+	vim.api.nvim_set_hl(0, "SnacksDashboardSquareYellow", { fg = colors.yellow, bold = true })
+	vim.api.nvim_set_hl(0, "SnacksDashboardSquareBlue", { fg = colors.blue, bold = true })
+	vim.api.nvim_set_hl(0, "SnacksDashboardSquareMagenta", { fg = colors.mauve, bold = true })
+	vim.api.nvim_set_hl(0, "SnacksDashboardSquareCyan", { fg = colors.teal, bold = true })
 end
 
 return {
 	{
-		"folke/tokyonight.nvim",
+		"catppuccin/nvim",
+		name = "catppuccin",
 		priority = 1000,
 		lazy = false,
 		opts = {
-			style = "night",
-			transparent = false,
-			terminal_colors = true,
-			on_colors = function(colors)
-				colors.bg = ghostty.bg
-				colors.bg_dark = ghostty.bg
-				colors.bg_float = ghostty.bg
-				colors.bg_sidebar = ghostty.bg
-				colors.fg = ghostty.fg
-				colors.comment = ghostty.comment
-				colors.red = ghostty.red
-				colors.green = ghostty.green
-				colors.yellow = ghostty.yellow
-				colors.blue = ghostty.blue
-				colors.magenta = ghostty.magenta
-				colors.cyan = ghostty.cyan
-			end,
-			on_highlights = function(hl, colors)
-				hl.Normal = { fg = colors.fg, bg = ghostty.bg }
-				hl.NormalNC = { fg = colors.fg, bg = ghostty.bg }
-				hl.NormalFloat = { fg = colors.fg, bg = ghostty.bg }
-				hl.FloatBorder = { fg = ghostty.comment, bg = ghostty.bg }
-				hl.CursorLine = { bg = "#222930" }
-				hl.Visual = { bg = "#2A3139" }
-				hl.LineNr = { fg = ghostty.comment }
-				hl.CursorLineNr = { fg = ghostty.yellow, bold = true }
-				hl.WinSeparator = { fg = "#303840" }
-				hl.Pmenu = { fg = colors.fg, bg = "#20262C" }
-				hl.PmenuSel = { fg = ghostty.bg, bg = ghostty.blue, bold = true }
+			flavour = catppuccin.flavour,
+			background = {
+				light = "latte",
+				dark = "macchiato",
+			},
+			transparent_background = false,
+			float = {
+				transparent = false,
+				solid = false,
+			},
+			term_colors = true,
+			custom_highlights = function(palette)
+				return {
+					Normal = { fg = palette.text, bg = palette.base },
+					NormalNC = { fg = palette.text, bg = palette.base },
+					NormalFloat = { fg = palette.text, bg = palette.base },
+					FloatBorder = { fg = palette.overlay1, bg = palette.base },
+					CursorLine = { bg = palette.surface0 },
+					Visual = { bg = palette.surface1 },
+					LineNr = { fg = palette.overlay0 },
+					CursorLineNr = { fg = palette.yellow, bold = true },
+					WinSeparator = { fg = palette.surface1 },
+					Pmenu = { fg = palette.text, bg = palette.mantle },
+					PmenuSel = { fg = palette.base, bg = palette.blue, bold = true },
+				}
 			end,
 		},
 		config = function(_, opts)
-			require("tokyonight").setup(opts)
-			vim.cmd.colorscheme("tokyonight-night")
+			require("catppuccin").setup(opts)
+			vim.cmd.colorscheme(catppuccin.colorscheme())
 		end,
 	},
 	{

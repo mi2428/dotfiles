@@ -25,13 +25,10 @@ command = "lazygit"
 description = "run lazygit"
 
 [theme]
-# name = "vesper"
-# name = "tokyo-night"
-# name = "one-dark"
-# name = "kanagawa"
-name = "gruvbox"
-# name = "nord"
-# name = "rose-pine"
+# Follow the terminal palette so Ghostty/tmux flavour switches propagate here.
+name = "terminal"
+# name = "catppuccin-latte"
+# name = "catppuccin"
 
 [ui]
 host_cursor = "native"

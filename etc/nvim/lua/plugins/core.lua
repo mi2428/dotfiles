@@ -1,10 +1,13 @@
+local catppuccin = require("config.catppuccin")
+local colors = catppuccin.palette()
+
 local function set_fzf_highlights()
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaNormal", { link = "NormalFloat" })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaBorder", { link = "FloatBorder" })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaTitle", { link = "SnacksDashboardKey" })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaTitleFlags", { link = "SnacksDashboardDesc" })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaPreviewTitle", { link = "SnacksDashboardSpecial" })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaBackdrop", { link = "NormalFloat" })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaNormal", { fg = colors.text, bg = "NONE" })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaBorder", { fg = colors.overlay1, bg = "NONE" })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaTitle", { fg = colors.yellow, bg = "NONE", bold = true })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaTitleFlags", { fg = colors.subtext1, bg = "NONE" })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaPreviewTitle", { fg = colors.sky, bg = "NONE", bold = true })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaBackdrop", { bg = "NONE" })
 end
 
 return {
