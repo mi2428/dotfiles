@@ -1,3 +1,7 @@
+for stale_abbr in Ia Iag Ic Ieg Ig Igr Ih Ik Im Ip Is It Iv Iw Ix
+    abbr --erase -- $stale_abbr 2>/dev/null
+end
+
 abbr --add -- gcan 'git commit --amend --no-edit'
 abbr --add -- gcaa 'git commit --amend'
 abbr --add -- gpf 'git push --force-with-lease'
