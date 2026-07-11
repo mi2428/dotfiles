@@ -45,10 +45,15 @@ alias gb='git branch'
 alias gc='git commit -s -m'
 
 function __git_delta_lazygit
+    set -l paging never
+    if test -t 1
+        set paging always
+    end
+
     delta \
         --features=catppuccin-lazygit-mocha \
         --dark \
-        --paging=never \
+        --paging="$paging" \
         --line-numbers \
         --hyperlinks \
         '--hyperlinks-file-link-format=lazygit-edit://{path}:{line}' \

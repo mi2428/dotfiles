@@ -713,11 +713,16 @@ alias ga='git add'
 alias gb='git branch'
 alias gc='git commit -s -m'
 __git_delta_lazygit() {
+  local paging='never'
+  if [[ -t 1 ]]; then
+    paging='always'
+  fi
+
   local -a delta_cmd=(
     delta
     --features=catppuccin-lazygit-mocha
     --dark
-    --paging=never
+    "--paging=${paging}"
     --line-numbers
     --hyperlinks
     '--hyperlinks-file-link-format=lazygit-edit://{path}:{line}'
