@@ -1,3 +1,5 @@
+local fzf_theme = require("config.fzf")
+
 return {
 	{
 		"nvim-tree/nvim-web-devicons",
@@ -30,11 +32,10 @@ return {
 		dependencies = { "nvim-tree/nvim-web-devicons" },
 		opts = {
 			"default",
-			fzf_colors = {
-				true,
-				["bg"] = "-1",
-				["gutter"] = "-1",
-			},
+			fzf_colors = false,
+			fzf_opts = vim.tbl_extend("force", fzf_theme.ui_opts(), {
+				["--color"] = fzf_theme.color_spec({ transparent_background = true }),
+			}),
 			files = {
 				fd_opts = [[--color=never --type f --hidden --follow --exclude .git]],
 			},
