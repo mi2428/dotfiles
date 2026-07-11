@@ -257,13 +257,13 @@ if command -sq clockping
 end
 
 if command -sq eza
-    alias l='eza --icons=auto --group-directories-first --hyperlink=auto'
-    alias ls='eza --icons=auto --group-directories-first --hyperlink=auto'
-    alias ll='eza -l --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto'
-    alias la='eza -l -arbghi --git --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto'
-    alias lr='eza -lR -arbghi --git --git-ignore --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto -I ".git|__pycache__"'
-    alias lt='eza -lT -arbghi --git --git-ignore --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto -I ".git|__pycache__|.terraform"'
-    alias laa='eza -l -arbghi@ --git --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto'
+    alias l='__dotfiles_eza --icons=auto --group-directories-first --hyperlink=auto'
+    alias ls='__dotfiles_eza --icons=auto --group-directories-first --hyperlink=auto'
+    alias ll='__dotfiles_eza -l --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto'
+    alias la='__dotfiles_eza -l -arbghi --git --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto'
+    alias lr='__dotfiles_eza -lR -arbghi --git --git-ignore --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto -I ".git|__pycache__"'
+    alias lt='__dotfiles_eza -lT -arbghi --git --git-ignore --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto -I ".git|__pycache__|.terraform"'
+    alias laa='__dotfiles_eza -l -arbghi@ --git --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto'
 else if command -sq exa
     alias l='exa --icons'
     alias ls='exa --icons'

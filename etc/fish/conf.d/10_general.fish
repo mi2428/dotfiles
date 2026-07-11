@@ -66,9 +66,13 @@ function __dotfiles_import_posix_exports --argument-names envfile
     end < $envfile
 end
 
+function __dotfiles_eza
+    env -u LS_COLORS -u EXA_COLORS -u EZA_COLORS eza $argv
+end
+
 function __dotfiles_list_dir
     if command -sq eza
-        eza --icons=auto --group-directories-first --hyperlink=auto .
+        __dotfiles_eza --icons=auto --group-directories-first --hyperlink=auto .
     else if command -sq exa
         exa --icons .
     else

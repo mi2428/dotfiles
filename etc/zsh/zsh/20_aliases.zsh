@@ -1,5 +1,11 @@
+__dotfiles_eza() {
+  env -u LS_COLORS -u EXA_COLORS -u EZA_COLORS eza "$@"
+}
+
 cd() {
-  if whence -p exa 1> /dev/null; then
+  if whence -p eza 1> /dev/null; then
+    builtin cd $1 && __dotfiles_eza --icons=auto --group-directories-first --hyperlink=auto .
+  elif whence -p exa 1> /dev/null; then
     builtin cd $1 && EXA_ICON_SPACING=1 exa --icons .
   else
     builtin cd $1 && ls --color=auto .
@@ -20,7 +26,9 @@ pd() {
     popd
   fi
 
-  if whence -p exa 1> /dev/null; then
+  if whence -p eza 1> /dev/null; then
+    __dotfiles_eza --icons=auto --group-directories-first --hyperlink=auto .
+  elif whence -p exa 1> /dev/null; then
     EXA_ICON_SPACING=1 exa --icons .
   else
     ls --color=auto .
@@ -833,7 +841,15 @@ if whence -p clockping 1> /dev/null; then
 fi
 
 
-if whence -p exa 1> /dev/null; then
+if whence -p eza 1> /dev/null; then
+  alias l='__dotfiles_eza --icons=auto --group-directories-first --hyperlink=auto'
+  alias ls='__dotfiles_eza --icons=auto --group-directories-first --hyperlink=auto'
+  alias ll='__dotfiles_eza -l --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto'
+  alias la='__dotfiles_eza -l -arbghi --git --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto'
+  alias lr='__dotfiles_eza -lR -arbghi --git --git-ignore --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto -I ".git|__pycache__"'
+  alias lt='__dotfiles_eza -lT -arbghi --git --git-ignore --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto -I ".git|__pycache__|.terraform"'
+  alias laa='__dotfiles_eza -l -arbghi@ --git --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto'
+elif whence -p exa 1> /dev/null; then
   export EXA_ICON_SPACING=1
   alias l='exa --icons'
   alias ls='exa --icons'
