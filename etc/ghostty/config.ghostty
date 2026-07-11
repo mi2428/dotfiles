@@ -33,10 +33,10 @@ quick-terminal-autohide = true
 quick-terminal-space-behavior = move
 
 # Catppuccin flavour selection. Uncomment exactly one line.
-# theme = catppuccin-latte
-# theme = catppuccin-frappe
-# theme = catppuccin-macchiato
-theme = catppuccin-mocha
+# theme = catppuccin-latte.conf
+# theme = catppuccin-frappe.conf
+# theme = catppuccin-macchiato.conf
+theme = catppuccin-mocha.conf
 
 background-opacity = 0.92
 background-blur = 10
