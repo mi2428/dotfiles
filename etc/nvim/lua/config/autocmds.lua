@@ -1,8 +1,26 @@
 local autocmd = vim.api.nvim_create_autocmd
+local augroup = vim.api.nvim_create_augroup
+
+local function transparent_background()
+	local groups = {
+		"Normal",
+		"NormalNC",
+		"NormalFloat",
+		"FloatBorder",
+		"SignColumn",
+		"LineNr",
+		"EndOfBuffer",
+		"FoldColumn",
+	}
+
+	for _, group in ipairs(groups) do
+		vim.api.nvim_set_hl(0, group, { bg = "none", ctermbg = "none" })
+	end
+end
 
 autocmd("TextYankPost", {
 	desc = "Highlight when yanking text",
-	group = vim.api.nvim_create_augroup("dotfiles-highlight-yank", { clear = true }),
+	group = augroup("dotfiles-highlight-yank", { clear = true }),
 	callback = function()
 		vim.highlight.on_yank()
 	end,
@@ -10,7 +28,7 @@ autocmd("TextYankPost", {
 
 autocmd({ "BufNewFile", "BufRead" }, {
 	pattern = "*.go",
-	group = vim.api.nvim_create_augroup("dotfiles-go-tabs", { clear = true }),
+	group = augroup("dotfiles-go-tabs", { clear = true }),
 	callback = function()
 		vim.opt_local.expandtab = false
 		vim.opt_local.tabstop = 4
@@ -19,8 +37,13 @@ autocmd({ "BufNewFile", "BufRead" }, {
 	end,
 })
 
+autocmd("ColorScheme", {
+	group = augroup("dotfiles-transparent-background", { clear = true }),
+	callback = transparent_background,
+})
+
 autocmd("LspAttach", {
-	group = vim.api.nvim_create_augroup("dotfiles-lsp-attach", { clear = true }),
+	group = augroup("dotfiles-lsp-attach", { clear = true }),
 	callback = function(args)
 		local map = function(mode, lhs, rhs, desc)
 			vim.keymap.set(mode, lhs, rhs, { buffer = args.buf, desc = desc })
@@ -38,3 +61,5 @@ autocmd("LspAttach", {
 		map("n", "]d", vim.diagnostic.goto_next, "Next diagnostic")
 	end,
 })
+
+transparent_background()
