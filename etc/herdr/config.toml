@@ -9,6 +9,7 @@ prefix = "ctrl+t"
 # Carry over the tmux muscle memory from etc/tmux/tmux.conf.
 detach = "prefix+d"
 new_tab = "prefix+c"
+goto = ""
 toggle_sidebar = "prefix+b"
 focus_pane_left = "prefix+h"
 focus_pane_down = "prefix+j"
@@ -16,6 +17,12 @@ focus_pane_up = "prefix+k"
 focus_pane_right = "prefix+l"
 split_horizontal = "prefix+minus"
 split_vertical = "prefix+backslash"
+
+[[keys.command]]
+key = "prefix+g"
+type = "pane"
+command = "lazygit"
+description = "run lazygit"
 
 [theme]
 # name = "vesper"
