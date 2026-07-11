@@ -1,4 +1,3 @@
-set -gx PATH_BOOKMARK $HOME/.zsh_pathbook
 set -gx NOTES_DIR $HOME/notes
 set -gx NOTES_DIRECTORY $HOME/notes
 set -gx TERM xterm-256color
@@ -17,8 +16,6 @@ set -gx TRASHBIN $HOME/.trash
 if test -t 0
     set -gx GPG_TTY (tty)
 end
-
-test -f $PATH_BOOKMARK; or touch $PATH_BOOKMARK
 
 function __dotfiles_set_path
     set -l merged
@@ -67,15 +64,6 @@ function __dotfiles_import_posix_exports --argument-names envfile
 
         set -gx $key $value
     end < $envfile
-end
-
-function __dotfiles_remove_path_bookmark --argument-names bookmark
-    test -n "$bookmark"; or return 0
-    test -f $PATH_BOOKMARK; or touch $PATH_BOOKMARK
-
-    set -l tmpfile (mktemp)
-    grep -Fvx -- "$bookmark" $PATH_BOOKMARK >$tmpfile 2>/dev/null
-    mv $tmpfile $PATH_BOOKMARK
 end
 
 function __dotfiles_list_dir

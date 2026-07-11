@@ -8,6 +8,5 @@ function fish_user_key_bindings
     bind \e3 _severity_level3
     bind \e4 _severity_level4
     bind \es _toggle_ssh_prompt
-    bind \eb _toggle_path_bookmark
     bind \eh _sanitize_history
 end

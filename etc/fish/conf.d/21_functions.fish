@@ -88,37 +88,6 @@ function bk
     end
 end
 
-function goto
-    set -l keyword /
-    if test (count $argv) -gt 0
-        set keyword $argv[1]
-    end
-
-    test -f $PATH_BOOKMARK; or touch $PATH_BOOKMARK
-
-    set -l matched
-    if test -n "$keyword"
-        set matched (grep -E -- "$keyword" $PATH_BOOKMARK 2>/dev/null)
-    end
-
-    set -l dst
-    if test (count $matched) -eq 1
-        set dst $matched[1]
-    else if command -sq fzf
-        if test (count $matched) -gt 0
-            set dst (printf '%s\n' $matched | fzf -e --tac --no-sort --preview 'tree -L 3 -C {} | head -200')
-        else
-            set dst (cat $PATH_BOOKMARK | fzf -e --tac --no-sort --preview 'tree -L 3 -C {} | head -200')
-        end
-    end
-
-    test -n "$dst"; or return 1
-
-    __dotfiles_remove_path_bookmark "$dst"
-    echo "$dst" >>$PATH_BOOKMARK
-    builtin cd -- "$dst"
-end
-
 function get
     mv -i $argv .
 end
@@ -743,14 +712,6 @@ function _toggle_ssh_prompt
         set -gx HIDE_SSH_PROMPT 1
     else
         set -gx HIDE_SSH_PROMPT 0
-    end
-end
-
-function _toggle_path_bookmark
-    if grep -Fxq -- $PWD $PATH_BOOKMARK 2>/dev/null
-        __dotfiles_remove_path_bookmark $PWD
-    else
-        echo $PWD >>$PATH_BOOKMARK
     end
 end
 
