@@ -34,6 +34,37 @@ local function dashboard_square()
 	}
 end
 
+local function dashboard_spacers(count)
+	local lines = {}
+	for _ = 1, count do
+		lines[#lines + 1] = {
+			text = {
+				{ "", width = 60 },
+			},
+		}
+	end
+	return lines
+end
+
+local function dashboard_actions()
+	return function(self)
+		local items = vim.deepcopy(self.opts.preset.keys)
+		for _, item in ipairs(items) do
+			item.indent = 2
+		end
+
+		local actions = {
+			{
+				icon = " ",
+				title = "Actions",
+				padding = { 1, 0 },
+			},
+		}
+		vim.list_extend(actions, items)
+		return actions
+	end
+end
+
 local function set_dashboard_highlights()
 	vim.api.nvim_set_hl(0, "SnacksDashboardHeader", { fg = ghostty.blue, bold = true })
 	vim.api.nvim_set_hl(0, "SnacksDashboardKey", { fg = ghostty.yellow, bold = true })
@@ -175,7 +206,7 @@ return {
 				},
 				sections = {
 					{ section = "header" },
-					{ section = "keys", gap = 1, padding = 1 },
+					dashboard_actions(),
 					{
 						pane = 2,
 						text = dashboard_square(),
@@ -199,6 +230,7 @@ return {
 						padding = { 1, 1 },
 						limit = 5,
 					},
+					dashboard_spacers(5),
 					{ section = "startup" },
 				},
 			},
