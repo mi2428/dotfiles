@@ -1,18 +1,3 @@
-abbr --add --position anywhere -- Ia '| awk'
-abbr --add --position anywhere -- Iag '| agrep'
-abbr --add --position anywhere -- Ic '| pbcopy'
-abbr --add --position anywhere -- Ieg '| egrep'
-abbr --add --position anywhere -- Ig '| grep'
-abbr --add --position anywhere -- Igr 'groff -s -p -t -e -Tlatin1 -mandoc'
-abbr --add --position anywhere -- Ih '| head'
-abbr --add --position anywhere -- Ik '| keep'
-abbr --add --position anywhere -- Im '| more'
-abbr --add --position anywhere -- Ip '| $PAGER'
-abbr --add --position anywhere -- Is '| sort'
-abbr --add --position anywhere -- It '| tail'
-abbr --add --position anywhere -- Iv '| $EDITOR'
-abbr --add --position anywhere -- Iw '| wc'
-abbr --add --position anywhere -- Ix '| xargs'
 abbr --add -- gcan 'git commit --amend --no-edit'
 abbr --add -- gcaa 'git commit --amend'
 abbr --add -- gpf 'git push --force-with-lease'
@@ -56,6 +41,71 @@ alias ga='git add'
 alias gb='git branch'
 alias gc='git commit -s -m'
 alias gd='git diff'
+
+function Ia
+    awk $argv
+end
+
+function Iag
+    agrep $argv
+end
+
+function Ic
+    pbcopy $argv
+end
+
+function Ieg
+    egrep $argv
+end
+
+function Ig
+    grep $argv
+end
+
+function Igr
+    groff -s -p -t -e -Tlatin1 -mandoc $argv
+end
+
+function Ih
+    head $argv
+end
+
+function Ik
+    keep $argv
+end
+
+function Im
+    more $argv
+end
+
+function Ip
+    set -l pager $PAGER
+    test -n "$pager"; or set pager less
+    command $pager $argv
+end
+
+function Is
+    sort $argv
+end
+
+function It
+    tail $argv
+end
+
+function Iv
+    set -l editor $EDITOR
+    test -n "$editor"; or set editor vi
+    command $editor $argv
+end
+
+function Iw
+    wc $argv
+end
+
+function Ix
+    xargs $argv
+end
+
 function gdd
     set -l base_ref
 
