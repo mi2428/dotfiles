@@ -38,7 +38,7 @@ quick-terminal-space-behavior = move
 # theme = catppuccin-macchiato
 theme = catppuccin-mocha
 
-background-opacity = 0.85
-background-blur = 50
+background-opacity = 0.92
+background-blur = 10
 macos-titlebar-style = transparent
 macos-window-shadow = false
