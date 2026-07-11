@@ -1,23 +1,6 @@
 local autocmd = vim.api.nvim_create_autocmd
 local augroup = vim.api.nvim_create_augroup
 
-local function transparent_background()
-	local groups = {
-		"Normal",
-		"NormalNC",
-		"NormalFloat",
-		"FloatBorder",
-		"SignColumn",
-		"LineNr",
-		"EndOfBuffer",
-		"FoldColumn",
-	}
-
-	for _, group in ipairs(groups) do
-		vim.api.nvim_set_hl(0, group, { bg = "none", ctermbg = "none" })
-	end
-end
-
 autocmd("TextYankPost", {
 	desc = "Highlight when yanking text",
 	group = augroup("dotfiles-highlight-yank", { clear = true }),
@@ -35,11 +18,6 @@ autocmd({ "BufNewFile", "BufRead" }, {
 		vim.opt_local.shiftwidth = 4
 		vim.opt_local.softtabstop = 4
 	end,
-})
-
-autocmd("ColorScheme", {
-	group = augroup("dotfiles-transparent-background", { clear = true }),
-	callback = transparent_background,
 })
 
 autocmd("LspAttach", {
@@ -61,5 +39,3 @@ autocmd("LspAttach", {
 		map("n", "]d", vim.diagnostic.goto_next, "Next diagnostic")
 	end,
 })
-
-transparent_background()

@@ -1,31 +1,3 @@
-local catppuccin = require("config.catppuccin")
-local colors = catppuccin.palette()
-local fzf_colors = {
-	match = colors.blue,
-	info = colors.overlay0,
-	prompt = colors.mauve,
-	pointer = colors.peach,
-	marker = colors.green,
-	spinner = colors.sky,
-}
-
-local function set_fzf_highlights()
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaNormal", { fg = colors.text, bg = colors.base })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaCursorLine", { fg = colors.text, bg = colors.surface0 })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaBorder", { fg = colors.overlay1, bg = colors.base })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaMatch", { fg = fzf_colors.match, bg = colors.base, bold = true })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaInfo", { fg = fzf_colors.info, bg = colors.base })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaPrompt", { fg = fzf_colors.prompt, bg = colors.base, bold = true })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaPointer", { fg = fzf_colors.pointer, bg = colors.base, bold = true })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaMarker", { fg = fzf_colors.marker, bg = colors.base, bold = true })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaSpinner", { fg = fzf_colors.spinner, bg = colors.base, bold = true })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaQuery", { fg = colors.text, bg = colors.base })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaTitle", { fg = colors.yellow, bg = colors.base, bold = true })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaTitleFlags", { fg = colors.subtext1, bg = colors.base })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaPreviewTitle", { fg = colors.sky, bg = colors.base, bold = true })
-	vim.api.nvim_set_hl(0, "DotfilesFzfLuaBackdrop", { bg = colors.base })
-end
-
 return {
 	{
 		"nvim-tree/nvim-web-devicons",
@@ -56,37 +28,12 @@ return {
 		"ibhagwan/fzf-lua",
 		lazy = false,
 		dependencies = { "nvim-tree/nvim-web-devicons" },
-		cmd = "FzfLua",
 		opts = {
 			"default",
-			fzf_colors = { true },
-			hls = {
-				normal = "DotfilesFzfLuaNormal",
-				border = "DotfilesFzfLuaBorder",
-				title = "DotfilesFzfLuaTitle",
-				title_flags = "DotfilesFzfLuaTitleFlags",
-				preview_normal = "DotfilesFzfLuaNormal",
-				preview_border = "DotfilesFzfLuaBorder",
-				preview_title = "DotfilesFzfLuaPreviewTitle",
-				help_normal = "DotfilesFzfLuaNormal",
-				help_border = "DotfilesFzfLuaBorder",
-				backdrop = "DotfilesFzfLuaBackdrop",
-				fzf = {
-					normal = "DotfilesFzfLuaNormal",
-					cursorline = "DotfilesFzfLuaCursorLine",
-					match = "DotfilesFzfLuaMatch",
-					border = "DotfilesFzfLuaBorder",
-					scrollbar = "DotfilesFzfLuaBorder",
-					separator = "DotfilesFzfLuaBorder",
-					gutter = "DotfilesFzfLuaNormal",
-					header = "DotfilesFzfLuaTitle",
-					info = "DotfilesFzfLuaInfo",
-					pointer = "DotfilesFzfLuaPointer",
-					marker = "DotfilesFzfLuaMarker",
-					spinner = "DotfilesFzfLuaSpinner",
-					prompt = "DotfilesFzfLuaPrompt",
-					query = "DotfilesFzfLuaQuery",
-				},
+			fzf_colors = {
+				true,
+				["bg"] = "-1",
+				["gutter"] = "-1",
 			},
 			files = {
 				fd_opts = [[--color=never --type f --hidden --follow --exclude .git]],
@@ -104,35 +51,31 @@ return {
 				},
 			},
 		},
-		config = function(_, opts)
-			require("fzf-lua").setup(opts)
-
-			vim.api.nvim_create_autocmd("ColorScheme", {
-				group = vim.api.nvim_create_augroup("dotfiles-fzf-highlights", { clear = true }),
-				callback = set_fzf_highlights,
-			})
-			set_fzf_highlights()
-		end,
 	},
 	{
-		"nvim-lualine/lualine.nvim",
-		event = "VeryLazy",
+		"feline-nvim/feline.nvim",
+		lazy = false,
 		dependencies = { "nvim-tree/nvim-web-devicons" },
-		opts = {
-			options = {
-				theme = "auto",
-				globalstatus = true,
-				component_separators = { left = "│", right = "│" },
-				section_separators = { left = "", right = "" },
-			},
-			sections = {
-				lualine_a = { "mode" },
-				lualine_b = { "branch", "diff", "diagnostics" },
-				lualine_c = { { "filename", path = 1 } },
-				lualine_x = { "encoding", "fileformat", "filetype" },
-				lualine_y = { "progress" },
-				lualine_z = { "location" },
-			},
-		},
+		config = function()
+			local function setup_feline()
+				package.loaded.feline = nil
+				package.loaded["catppuccin.special.feline"] = nil
+
+				local ctp_feline = require("catppuccin.special.feline")
+				ctp_feline.setup()
+
+				require("feline").setup({
+					components = ctp_feline.get_statusline(),
+				})
+			end
+
+			vim.api.nvim_create_autocmd("ColorScheme", {
+				group = vim.api.nvim_create_augroup("dotfiles-feline-catppuccin", { clear = true }),
+				pattern = "*",
+				callback = setup_feline,
+			})
+
+			setup_feline()
+		end,
 	},
 }

@@ -81,31 +81,19 @@ return {
 		lazy = false,
 		opts = {
 			flavour = catppuccin.flavour,
-			background = {
-				light = "latte",
-				dark = "macchiato",
-			},
-			transparent_background = false,
+			transparent_background = true,
 			float = {
-				transparent = false,
+				transparent = true,
 				solid = false,
 			},
 			term_colors = true,
-			custom_highlights = function(palette)
-				return {
-					Normal = { fg = palette.text, bg = palette.base },
-					NormalNC = { fg = palette.text, bg = palette.base },
-					NormalFloat = { fg = palette.text, bg = palette.base },
-					FloatBorder = { fg = palette.overlay1, bg = palette.base },
-					CursorLine = { bg = palette.surface0 },
-					Visual = { bg = palette.surface1 },
-					LineNr = { fg = palette.overlay0 },
-					CursorLineNr = { fg = palette.yellow, bold = true },
-					WinSeparator = { fg = palette.surface1 },
-					Pmenu = { fg = palette.text, bg = palette.mantle },
-					PmenuSel = { fg = palette.base, bg = palette.blue, bold = true },
-				}
-			end,
+			auto_integrations = true,
+			integrations = {
+				snacks = {
+					enabled = true,
+					indent_scope_color = "overlay2",
+				},
+			},
 		},
 		config = function(_, opts)
 			require("catppuccin").setup(opts)
