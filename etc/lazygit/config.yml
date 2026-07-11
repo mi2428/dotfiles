@@ -23,29 +23,32 @@ gui:
     "^chore/": blue
   theme:
     activeBorderColor:
-      - "#89B4FA"
+      - "#89b4fa"
+      - bold
     inactiveBorderColor:
-      - "#7F849C"
+      - "#a6adc8"
     searchingActiveBorderColor:
-      - "#89DCEB"
+      - "#f9e2af"
     optionsTextColor:
-      - "#F9E2AF"
+      - "#89b4fa"
     selectedLineBgColor:
       - "#313244"
     inactiveViewSelectedLineBgColor:
-      - "#181825"
+      - "#6c7086"
     cherryPickedCommitFgColor:
-      - "#A6E3A1"
+      - "#89b4fa"
     cherryPickedCommitBgColor:
-      - "#313244"
+      - "#45475a"
     markedBaseCommitFgColor:
-      - "#1E1E2E"
+      - "#89b4fa"
     markedBaseCommitBgColor:
-      - "#CBA6F7"
+      - "#f9e2af"
     unstagedChangesColor:
-      - "#F38BA8"
+      - "#f38ba8"
     defaultFgColor:
-      - "#CDD6F4"
+      - "#cdd6f4"
+    authorColors:
+      "*": "#b4befe"
 
 git:
   pagers:
