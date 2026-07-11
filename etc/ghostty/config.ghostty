@@ -2,9 +2,13 @@ command = /opt/homebrew/bin/fish
 keybind = super+shift+r=reload_config
 keybind = global:cmd+shift+enter=toggle_quick_terminal
 font-family = Ubuntu Mono
+font-family = Hack Nerd Font Mono
 font-family-bold = Ubuntu Mono
+font-family-bold = Hack Nerd Font Mono
 font-family-italic = Ubuntu Mono
+font-family-italic = Hack Nerd Font Mono
 font-family-bold-italic = Ubuntu Mono
+font-family-bold-italic = Hack Nerd Font Mono
 font-style = Regular
 font-style-bold = Bold
 font-style-italic = Italic

@@ -1,0 +1,23 @@
+#!/bin/bash
+set -e
+set -o pipefail
+
+CURDIR=$(cd "$(dirname "$0")" && pwd)
+DOTFILES=$(cd "$CURDIR/.." && pwd)
+
+srcdir="$DOTFILES/etc/lazygit"
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  dstdir="$HOME/Library/Application Support/lazygit"
+else
+  dstdir="${XDG_CONFIG_HOME:-$HOME/.config}/lazygit"
+fi
+
+xdgdir="${XDG_CONFIG_HOME:-$HOME/.config}/lazygit"
+
+mkdir -p "$dstdir"
+mkdir -p "$xdgdir"
+ln -snf "$srcdir/config.yml" "$dstdir/config.yml"
+ln -snf "$srcdir/functions.sh" "$dstdir/functions.sh"
+ln -snf "$srcdir/config.yml" "$xdgdir/config.yml"
+ln -snf "$srcdir/functions.sh" "$xdgdir/functions.sh"
