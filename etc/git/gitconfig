@@ -5,6 +5,9 @@
   pager        = less -r
   quotepath    = false
 
+[include]
+  path = ~/.catppuccin-delta.gitconfig
+
 [color]
   ui = true
 
@@ -53,6 +56,9 @@
 
 [http "https://gopkg.in"]
   followRedirects = true
+
+[delta]
+  features = catppuccin-mocha
 
 [filter "lfs"]
   clean    = git-lfs clean -- %f

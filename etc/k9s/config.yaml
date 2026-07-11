@@ -1,0 +1,6 @@
+k9s:
+  ui:
+    # skin: catppuccin-latte
+    # skin: catppuccin-frappe
+    # skin: catppuccin-macchiato
+    skin: catppuccin-mocha
