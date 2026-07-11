@@ -713,6 +713,21 @@ alias ga='git add'
 alias gb='git branch'
 alias gc='git commit -s -m'
 alias gd='git diff'
+gdd() {
+  local base_ref
+  if git rev-parse --verify --quiet refs/remotes/origin/HEAD >/dev/null; then
+    base_ref='origin/HEAD'
+  elif git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null; then
+    base_ref='origin/main'
+  elif git rev-parse --verify --quiet refs/remotes/origin/master >/dev/null; then
+    base_ref='origin/master'
+  else
+    echo 'gdd: could not determine a default base ref (tried origin/HEAD, origin/main, origin/master)' >&2
+    return 1
+  fi
+
+  git diff "${base_ref}...HEAD" "$@"
+}
 alias gf='git fetch'
 alias gp='git push'
 alias gs='git status'
