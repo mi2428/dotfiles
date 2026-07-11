@@ -1,3 +1,12 @@
+local function set_fzf_highlights()
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaNormal", { link = "NormalFloat" })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaBorder", { link = "FloatBorder" })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaTitle", { link = "SnacksDashboardKey" })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaTitleFlags", { link = "SnacksDashboardDesc" })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaPreviewTitle", { link = "SnacksDashboardSpecial" })
+	vim.api.nvim_set_hl(0, "DotfilesFzfLuaBackdrop", { link = "NormalFloat" })
+end
+
 return {
 	{
 		"nvim-tree/nvim-web-devicons",
@@ -38,7 +47,24 @@ return {
 		},
 		opts = {
 			"default",
-			fzf_colors = true,
+			fzf_colors = {
+				true,
+				["bg"] = "-1",
+				["gutter"] = "-1",
+				["header"] = { "fg", "DotfilesFzfLuaTitle" },
+			},
+			hls = {
+				normal = "DotfilesFzfLuaNormal",
+				border = "DotfilesFzfLuaBorder",
+				title = "DotfilesFzfLuaTitle",
+				title_flags = "DotfilesFzfLuaTitleFlags",
+				preview_normal = "DotfilesFzfLuaNormal",
+				preview_border = "DotfilesFzfLuaBorder",
+				preview_title = "DotfilesFzfLuaPreviewTitle",
+				help_normal = "DotfilesFzfLuaNormal",
+				help_border = "DotfilesFzfLuaBorder",
+				backdrop = "DotfilesFzfLuaBackdrop",
+			},
 			files = {
 				fd_opts = [[--color=never --type f --hidden --follow --exclude .git]],
 			},
@@ -48,12 +74,22 @@ return {
 			winopts = {
 				height = 0.9,
 				width = 0.8,
+				backdrop = 100,
 				preview = {
 					layout = "vertical",
 					vertical = "right:60%",
 				},
 			},
 		},
+		config = function(_, opts)
+			require("fzf-lua").setup(opts)
+
+			vim.api.nvim_create_autocmd("ColorScheme", {
+				group = vim.api.nvim_create_augroup("dotfiles-fzf-highlights", { clear = true }),
+				callback = set_fzf_highlights,
+			})
+			set_fzf_highlights()
+		end,
 	},
 	{
 		"nvim-lualine/lualine.nvim",
