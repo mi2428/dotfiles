@@ -55,6 +55,47 @@ local function dashboard_actions()
 	end
 end
 
+-- XXX: Snacks.dashboard's startup path renders into a normal window, but the
+-- generated buffer lines do not necessarily fill the full window width/height.
+-- With transparent backgrounds enabled, any unpainted cells leak whatever was
+-- previously on screen, which showed up as stray gutter/line-number artifacts.
+-- Keep this full-window padding patch unless upstream guarantees the dashboard
+-- always paints every visible cell.
+local function patch_snacks_dashboard()
+	local dashboard = require("snacks.dashboard")
+	if dashboard._dotfiles_fullscreen_render_patched then
+		return
+	end
+
+	local _, class = debug.getupvalue(dashboard.open, 1)
+	if type(class) ~= "table" or class._dotfiles_fullscreen_render_patched then
+		return
+	end
+
+	local original_render_buf = class.render_buf
+
+	class.render_buf = function(self, extmarks)
+		local width = self._size and self._size.width or vim.api.nvim_win_get_width(self.win)
+		local height = vim.api.nvim_win_get_height(self.win)
+
+		for index, line in ipairs(self.lines) do
+			local padding = width - vim.api.nvim_strwidth(line)
+			if padding > 0 then
+				self.lines[index] = line .. string.rep(" ", padding)
+			end
+		end
+
+		while #self.lines < height do
+			self.lines[#self.lines + 1] = string.rep(" ", width)
+		end
+
+		return original_render_buf(self, extmarks)
+	end
+
+	class._dotfiles_fullscreen_render_patched = true
+	dashboard._dotfiles_fullscreen_render_patched = true
+end
+
 local function set_dashboard_highlights()
 	vim.api.nvim_set_hl(0, "SnacksDashboardHeader", { fg = colors.blue, bold = true })
 	vim.api.nvim_set_hl(0, "SnacksDashboardKey", { fg = colors.yellow, bold = true })
@@ -480,6 +521,13 @@ return {
 				callback = set_dashboard_highlights,
 			})
 			set_dashboard_highlights()
+		end,
+		config = function(_, opts)
+			local snacks = require("snacks")
+
+			snacks.setup(opts)
+			patch_snacks_dashboard()
+			snacks.config.styles.dashboard.wo.foldcolumn = "0"
 		end,
 	},
 	{
