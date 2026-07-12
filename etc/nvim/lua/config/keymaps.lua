@@ -9,6 +9,8 @@ map("x", "p", [["_dP]], { desc = "Paste without yanking replaced text" })
 map("n", "-", function()
 	require("oil").open()
 end, { desc = "Open parent directory" })
+map("n", "<C-w>-", "<cmd>split<cr>", { desc = "Horizontal split" })
+map("n", "<C-w>|", "<cmd>vsplit<cr>", { desc = "Vertical split" })
 
 map("n", "<leader>f", function()
 	require("fzf-lua").files()

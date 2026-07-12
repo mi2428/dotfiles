@@ -73,6 +73,110 @@ local function set_dashboard_highlights()
 	vim.api.nvim_set_hl(0, "SnacksDashboardSquareCyan", { fg = colors.teal, bold = true })
 end
 
+local function bufferline_highlights()
+	local current = colors.surface0
+	local inactive = colors.mantle
+	local fill = colors.crust
+
+	return require("catppuccin.special.bufferline").get_theme({
+		styles = { "bold" },
+		custom = {
+			all = {
+				fill = { bg = fill },
+				background = { fg = colors.subtext1, bg = inactive },
+				buffer_visible = { fg = colors.text, bg = inactive },
+				buffer_selected = { fg = colors.text, bg = current, style = { "bold" } },
+				separator = { fg = inactive, bg = fill },
+				separator_visible = { fg = inactive, bg = fill },
+				separator_selected = { fg = current, bg = fill },
+				close_button = { fg = colors.overlay1, bg = inactive },
+				close_button_visible = { fg = colors.overlay1, bg = inactive },
+				close_button_selected = { fg = colors.peach, bg = current },
+				modified = { fg = colors.peach, bg = inactive },
+				modified_visible = { fg = colors.peach, bg = inactive },
+				modified_selected = { fg = colors.peach, bg = current },
+				duplicate = { fg = colors.overlay1, bg = inactive, style = { "italic" } },
+				duplicate_visible = { fg = colors.overlay1, bg = inactive, style = { "italic" } },
+				duplicate_selected = { fg = colors.overlay1, bg = current, style = { "italic" } },
+				diagnostic = { fg = colors.overlay1, bg = inactive },
+				diagnostic_visible = { fg = colors.overlay1, bg = inactive },
+				diagnostic_selected = { fg = colors.overlay1, bg = current },
+				hint = { fg = colors.teal, bg = inactive },
+				hint_visible = { fg = colors.teal, bg = inactive },
+				hint_selected = { fg = colors.teal, bg = current },
+				info = { fg = colors.sky, bg = inactive },
+				info_visible = { fg = colors.sky, bg = inactive },
+				info_selected = { fg = colors.sky, bg = current },
+				warning = { fg = colors.yellow, bg = inactive },
+				warning_visible = { fg = colors.yellow, bg = inactive },
+				warning_selected = { fg = colors.yellow, bg = current },
+				error = { fg = colors.red, bg = inactive },
+				error_visible = { fg = colors.red, bg = inactive },
+				error_selected = { fg = colors.red, bg = current },
+			},
+		},
+	})
+end
+
+local function setup_bufferline_style()
+	local constants = require("bufferline.constants")
+	constants.sep_names.pill = "pill"
+	constants.sep_chars.pill = { "", "" }
+end
+
+local function set_bufferline_pill_highlights()
+	local fill = colors.crust
+	vim.api.nvim_set_hl(0, "BufferLinePillInactive", { fg = colors.mantle, bg = fill })
+	vim.api.nvim_set_hl(0, "BufferLinePillSelected", { fg = colors.surface0, bg = fill })
+end
+
+local function setup_bufferline_pill_renderer()
+	local ui = require("bufferline.ui")
+	if ui._dotfiles_pill_patched then
+		return
+	end
+
+	local orig_element = ui.element
+
+	ui.element = function(current_state, element)
+		local item = orig_element(current_state, element)
+		local orig_component = item.component
+
+		item.component = function(next_item)
+			local comp = orig_component(next_item)
+			local filtered = {}
+
+			for _, segment in ipairs(comp) do
+				if not (segment.highlight and segment.highlight:match("^BufferLineIndicator")) then
+					filtered[#filtered + 1] = segment
+				end
+			end
+
+			comp = filtered
+			local last = comp[#comp]
+
+			if last and last.highlight and last.highlight:match("^BufferLineSeparator") then
+				table.remove(comp, #comp)
+			end
+
+			local current_hl = element:current() and "BufferLinePillSelected" or "BufferLinePillInactive"
+
+			table.insert(comp, 1, { highlight = current_hl, text = "" })
+			table.insert(comp, { highlight = current_hl, text = "" })
+
+			if next_item then
+				table.insert(comp, { highlight = "BufferLineFill", text = " " })
+			end
+
+			return comp
+		end
+
+		return item
+	end
+
+	ui._dotfiles_pill_patched = true
+end
+
 return {
 	{
 		"catppuccin/nvim",
@@ -93,6 +197,7 @@ return {
 					enabled = true,
 					indent_scope_color = "overlay2",
 				},
+				bufferline = true,
 			},
 		},
 		config = function(_, opts)
@@ -216,6 +321,74 @@ return {
 				callback = set_dashboard_highlights,
 			})
 			set_dashboard_highlights()
+		end,
+	},
+	{
+		"akinsho/bufferline.nvim",
+		version = "*",
+		event = "VeryLazy",
+		dependencies = { "nvim-tree/nvim-web-devicons" },
+		opts = function()
+			return {
+				options = {
+					mode = "tabs",
+					always_show_bufferline = true,
+					show_buffer_close_icons = true,
+					show_close_icon = false,
+					modified_icon = "●",
+					buffer_close_icon = "󰅖",
+					separator_style = "pill",
+					indicator = {
+						style = "none",
+					},
+					show_duplicate_prefix = false,
+					max_name_length = 24,
+					tab_size = 24,
+					diagnostics = "nvim_lsp",
+					name_formatter = function(tab)
+						return tab.name
+					end,
+					diagnostics_indicator = function(_, _, diagnostics_dict)
+						local parts = {}
+						if diagnostics_dict.error then
+							parts[#parts + 1] = " " .. diagnostics_dict.error
+						end
+						if diagnostics_dict.warning then
+							parts[#parts + 1] = " " .. diagnostics_dict.warning
+						end
+						if diagnostics_dict.info then
+							parts[#parts + 1] = " " .. diagnostics_dict.info
+						end
+						if diagnostics_dict.hint then
+							parts[#parts + 1] = "󰌵 " .. diagnostics_dict.hint
+						end
+						return #parts > 0 and (" " .. table.concat(parts, " ")) or ""
+					end,
+					offsets = {
+						{
+							filetype = "oil",
+							text = "Oil",
+							text_align = "center",
+							separator = false,
+						},
+					},
+				},
+				highlights = bufferline_highlights(),
+			}
+		end,
+		config = function(_, opts)
+			setup_bufferline_style()
+			setup_bufferline_pill_renderer()
+			require("bufferline").setup(opts)
+			set_bufferline_pill_highlights()
+			vim.api.nvim_create_autocmd("ColorScheme", {
+				group = vim.api.nvim_create_augroup("dotfiles-bufferline-pill", { clear = true }),
+				pattern = "*",
+				callback = function()
+					set_bufferline_pill_highlights()
+					require("bufferline.ui").refresh()
+				end,
+			})
 		end,
 	},
 }

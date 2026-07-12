@@ -1,7 +1,6 @@
 local M = {}
 
 local conditions = require("heirline.conditions")
-local utils = require("heirline.utils")
 
 local function get_palette()
 	return require("catppuccin.palettes").get_palette()
@@ -16,14 +15,6 @@ local function get_settings()
 		extras = colors.overlay1,
 		curr_file = colors.maroon,
 		curr_dir = colors.flamingo,
-		tab_active = colors.surface0,
-		tab_inactive = colors.mantle,
-		tab_text_active = colors.text,
-		tab_text_inactive = colors.subtext1,
-		tab_accent = colors.blue,
-		tab_muted = colors.overlay1,
-		tab_modified = colors.peach,
-		tab_count = colors.teal,
 	}
 
 	if require("catppuccin").flavour == "latte" then
@@ -137,49 +128,6 @@ end
 
 local function current_dir()
 	return " 󰉖 " .. vim.fn.fnamemodify(vim.fn.getcwd(), ":t") .. " "
-end
-
-local function tabpage_bufnr(tabpage)
-	local win = vim.api.nvim_tabpage_get_win(tabpage)
-	return vim.api.nvim_win_get_buf(win)
-end
-
-local function tabpage_name(tabpage)
-	local bufnr = tabpage_bufnr(tabpage)
-	local name = vim.api.nvim_buf_get_name(bufnr)
-
-	if name == "" then
-		local filetype = vim.bo[bufnr].filetype
-		if filetype ~= "" then
-			return "[" .. filetype .. "]"
-		end
-
-		return "[No Name]"
-	end
-
-	return vim.fn.fnamemodify(name, ":t")
-end
-
-local function tabpage_icon(tabpage)
-	local filename = tabpage_name(tabpage)
-	local extension = vim.fn.fnamemodify(filename, ":e")
-	local ok, icons = pcall(require, "nvim-web-devicons")
-	if not ok then
-		return "󰈙"
-	end
-
-	return icons.get_icon(filename, extension, { default = true }) or "󰈙"
-end
-
-local function tabpage_modified(tabpage)
-	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
-		local bufnr = vim.api.nvim_win_get_buf(win)
-		if vim.bo[bufnr].modified then
-			return true
-		end
-	end
-
-	return false
 end
 
 local function file_progress()
@@ -445,153 +393,6 @@ local RightSection = {
 	},
 }
 
-local TabPage = {
-	init = function(self)
-		self.bufnr = tabpage_bufnr(self.tabpage)
-		self.filename = tabpage_name(self.tabpage)
-		self.icon = tabpage_icon(self.tabpage)
-		self.win_count = #vim.api.nvim_tabpage_list_wins(self.tabpage)
-		self.modified = tabpage_modified(self.tabpage)
-	end,
-	on_click = {
-		callback = function(_, minwid, _, button)
-			if button == "m" and #vim.api.nvim_list_tabpages() > 1 then
-				vim.schedule(function()
-					if vim.api.nvim_tabpage_is_valid(minwid) then
-						vim.cmd.tabclose(vim.api.nvim_tabpage_get_number(minwid))
-					end
-				end)
-				return
-			end
-
-			vim.api.nvim_set_current_tabpage(minwid)
-		end,
-		minwid = function(self)
-			return self.tabpage
-		end,
-		name = "dotfiles_heirline_tabpage",
-	},
-	utils.surround({ "", "" }, function(self)
-		local settings = get_settings()
-		return self.is_active and settings.tab_active or settings.tab_inactive
-	end, {
-		{
-			provider = function(self)
-				return " " .. self.tabnr
-			end,
-			hl = function(self)
-				local settings = get_settings()
-				local bg = self.is_active and settings.tab_active or settings.tab_inactive
-				return {
-					fg = self.is_active and settings.tab_accent or settings.tab_muted,
-					bg = bg,
-					bold = true,
-				}
-			end,
-		},
-		{
-			provider = function(self)
-				return " " .. self.icon
-			end,
-			hl = function(self)
-				local settings = get_settings()
-				local bg = self.is_active and settings.tab_active or settings.tab_inactive
-				return {
-					fg = self.is_active and settings.tab_accent or settings.tab_muted,
-					bg = bg,
-				}
-			end,
-		},
-		{
-			provider = function(self)
-				return " " .. self.filename
-			end,
-			hl = function(self)
-				local settings = get_settings()
-				local bg = self.is_active and settings.tab_active or settings.tab_inactive
-				return {
-					fg = self.is_active and settings.tab_text_active or settings.tab_text_inactive,
-					bg = bg,
-					bold = self.is_active,
-				}
-			end,
-		},
-		{
-			condition = function(self)
-				return self.win_count > 1
-			end,
-			provider = function(self)
-				return " " .. self.win_count .. "w"
-			end,
-			hl = function(self)
-				local settings = get_settings()
-				local bg = self.is_active and settings.tab_active or settings.tab_inactive
-				return { fg = settings.tab_count, bg = bg }
-			end,
-		},
-		{
-			condition = function(self)
-				return self.modified
-			end,
-			provider = " ●",
-			hl = function(self)
-				local settings = get_settings()
-				local bg = self.is_active and settings.tab_active or settings.tab_inactive
-				return { fg = settings.tab_modified, bg = bg }
-			end,
-		},
-		{
-			condition = function()
-				return #vim.api.nvim_list_tabpages() > 1
-			end,
-			provider = " 󰅖",
-			hl = function(self)
-				local settings = get_settings()
-				local bg = self.is_active and settings.tab_active or settings.tab_inactive
-				return {
-					fg = self.is_active and settings.tab_modified or settings.tab_muted,
-					bg = bg,
-				}
-			end,
-			on_click = {
-				callback = function(_, minwid)
-					vim.schedule(function()
-						if vim.api.nvim_tabpage_is_valid(minwid) then
-							vim.cmd.tabclose(vim.api.nvim_tabpage_get_number(minwid))
-						end
-					end)
-				end,
-				minwid = function(self)
-					return self.tabpage
-				end,
-				name = "dotfiles_heirline_tabpage_close",
-			},
-		},
-		{
-			provider = " ",
-			hl = function(self)
-				local settings = get_settings()
-				return {
-					bg = self.is_active and settings.tab_active or settings.tab_inactive,
-				}
-			end,
-		},
-	}),
-	{ provider = " " },
-}
-
-local TabPages = utils.make_tablist(TabPage)
-
-local Tabline = {
-	hl = function()
-		return { bg = get_settings().bkg }
-	end,
-	update = { "TabEnter", "TabNew", "TabClosed", "BufEnter", "BufModifiedSet", "WinEnter" },
-	{ provider = " " },
-	TabPages,
-	Align,
-}
-
 local ActiveStatusline = {
 	ViMode,
 	GitDiff,
@@ -636,7 +437,6 @@ local Statusline = {
 function M.setup()
 	require("heirline").setup({
 		statusline = Statusline,
-		tabline = Tabline,
 	})
 end
 
