@@ -510,7 +510,7 @@ return {
 						padding = { 1, 1 },
 						limit = 5,
 					},
-					dashboard_spacers(5),
+						dashboard_spacers(4),
 					{ section = "startup" },
 				},
 			},
