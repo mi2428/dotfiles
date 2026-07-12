@@ -467,7 +467,7 @@ return {
 						section = "projects",
 						indent = 2,
 						padding = { 1, 1 },
-						limit = 10,
+						limit = 5,
 					},
 					dashboard_spacers(5),
 					{ section = "startup" },
