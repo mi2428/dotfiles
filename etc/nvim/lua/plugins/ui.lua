@@ -153,6 +153,14 @@ local function setup_bufferline_pill_renderer()
 			end
 
 			comp = filtered
+			local is_markdown = vim.bo[element.id].filetype == "markdown"
+			for index, segment in ipairs(comp) do
+				if is_markdown and segment.highlight and segment.highlight:match("^BufferLineDevIcon") then
+					table.insert(comp, index + 1, { text = " " })
+					break
+				end
+			end
+
 			local last = comp[#comp]
 
 			if last and last.highlight and last.highlight:match("^BufferLineSeparator") then
@@ -370,13 +378,16 @@ return {
 					},
 					groups = {
 						items = {
-							{
-								name = "docs",
-								auto_close = false,
-								matcher = function(buf)
-									local filetype = vim.bo[buf.id].filetype
-									return filetype == "markdown" or filetype == "text" or filetype == "help"
-								end,
+								{
+									name = "docs",
+									auto_close = false,
+									highlight = {
+										sp = colors.sapphire,
+									},
+									matcher = function(buf)
+										local filetype = vim.bo[buf.id].filetype
+										return filetype == "markdown" or filetype == "text" or filetype == "help"
+									end,
 							},
 						},
 					},
