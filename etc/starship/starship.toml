@@ -15,11 +15,11 @@ $directory\
 $git_branch\
 $git_metrics\
 $git_status\
+$python\
+$aws\
 $hostname\
 $cmd_duration\
 $line_break\
-$python\
-$aws\
 $character"""
 right_format = """$status$jobs$time$battery"""
 
@@ -115,9 +115,9 @@ error_symbol = "[[󰅚](red) ❯](peach)"
 vimcmd_symbol = "[󰄛 ❮](subtext1)"
 
 [python]
-format = "[$symbol$virtualenv]($style) "
+format = "[$symbol $virtualenv]($style)"
 style = "bold sapphire"
-symbol = " "
+symbol = ""
 detect_extensions = []
 detect_files = []
 detect_folders = []
