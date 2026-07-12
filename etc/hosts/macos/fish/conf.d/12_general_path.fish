@@ -69,13 +69,9 @@ end
 set -gx SDKMAN_DIR $HOME/.sdkman
 
 if command -sq rbenv
-    rbenv init - fish | source
+    rbenv init - --no-rehash fish | source
 end
 
 if command -sq nodenv
     nodenv init - fish | source
-end
-
-if command -sq direnv
-    direnv hook fish | source
 end
