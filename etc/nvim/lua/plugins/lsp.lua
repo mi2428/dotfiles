@@ -21,6 +21,54 @@ local function resolve_rust_analyzer()
 	return resolved ~= "" and resolved or nil
 end
 
+local function install_lsp_watch_registration_filter()
+	if vim.g.dotfiles_lsp_watch_registration_filter_installed then
+		return
+	end
+
+	vim.g.dotfiles_lsp_watch_registration_filter_installed = true
+
+	local original = vim.lsp.handlers["client/registerCapability"]
+
+	vim.lsp.handlers["client/registerCapability"] = function(err, params, ctx, config)
+		if params and params.registrations then
+			local filtered_params = vim.deepcopy(params)
+			local registrations = {}
+
+			for _, registration in ipairs(filtered_params.registrations) do
+				if registration.method ~= "workspace/didChangeWatchedFiles" then
+					registrations[#registrations + 1] = registration
+				else
+					local watchers = (((registration or {}).registerOptions or {}).watchers) or {}
+					local kept_watchers = {}
+
+					for _, watcher in ipairs(watchers) do
+						local glob_pattern = watcher.globPattern
+						if type(glob_pattern) ~= "table" or type(glob_pattern.baseUri) ~= "string" then
+							kept_watchers[#kept_watchers + 1] = watcher
+						else
+							local base_path = vim.uri_to_fname(glob_pattern.baseUri)
+							if vim.uv.fs_stat(base_path) ~= nil then
+								kept_watchers[#kept_watchers + 1] = watcher
+							end
+						end
+					end
+
+					if #kept_watchers > 0 then
+						registration.registerOptions.watchers = kept_watchers
+						registrations[#registrations + 1] = registration
+					end
+				end
+			end
+
+			filtered_params.registrations = registrations
+			params = filtered_params
+		end
+
+		return original(err, params, ctx, config)
+	end
+end
+
 return {
 	{
 		"saghen/blink.cmp",
@@ -85,6 +133,8 @@ return {
 		"neovim/nvim-lspconfig",
 		event = { "BufReadPre", "BufNewFile" },
 		config = function()
+			install_lsp_watch_registration_filter()
+
 			local blink = require("blink.cmp")
 			local capabilities = blink.get_lsp_capabilities()
 			local enabled_servers = {}
