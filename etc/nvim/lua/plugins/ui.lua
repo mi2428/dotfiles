@@ -74,48 +74,55 @@ local function set_dashboard_highlights()
 end
 
 local function bufferline_highlights()
-	local current = colors.surface0
-	local inactive = colors.mantle
-	local fill = colors.crust
+	local current = colors.lavender
+	local inactive = colors.surface0
+	local fill = "NONE"
+	local label = colors.crust
 
 	return require("catppuccin.special.bufferline").get_theme({
 		styles = { "bold" },
-		custom = {
+			custom = {
 				all = {
 					fill = { bg = fill },
 					background = { fg = colors.subtext1, bg = inactive },
 					buffer_visible = { fg = colors.text, bg = inactive },
-					buffer_selected = { fg = colors.text, bg = current, style = { "bold" } },
+					buffer_selected = { fg = colors.base, bg = current, style = { "bold" } },
 					numbers = { fg = colors.overlay1, bg = inactive },
 					numbers_visible = { fg = colors.overlay1, bg = inactive },
-					numbers_selected = { fg = colors.subtext0, bg = current, style = { "bold" } },
+					numbers_selected = { fg = colors.base, bg = current, style = { "bold" } },
 					separator = { fg = inactive, bg = fill },
 					separator_visible = { fg = inactive, bg = fill },
 					separator_selected = { fg = current, bg = fill },
 				close_button = { fg = colors.overlay1, bg = inactive },
 				close_button_visible = { fg = colors.overlay1, bg = inactive },
-				close_button_selected = { fg = colors.peach, bg = current },
+				close_button_selected = { fg = colors.base, bg = current },
 				modified = { fg = colors.peach, bg = inactive },
 				modified_visible = { fg = colors.peach, bg = inactive },
-				modified_selected = { fg = colors.peach, bg = current },
+				modified_selected = { fg = colors.base, bg = current },
 				duplicate = { fg = colors.overlay1, bg = inactive, style = { "italic" } },
 				duplicate_visible = { fg = colors.overlay1, bg = inactive, style = { "italic" } },
 				duplicate_selected = { fg = colors.overlay1, bg = current, style = { "italic" } },
 				diagnostic = { fg = colors.overlay1, bg = inactive },
 				diagnostic_visible = { fg = colors.overlay1, bg = inactive },
-				diagnostic_selected = { fg = colors.overlay1, bg = current },
+				diagnostic_selected = { fg = colors.base, bg = current },
 				hint = { fg = colors.teal, bg = inactive },
 				hint_visible = { fg = colors.teal, bg = inactive },
-				hint_selected = { fg = colors.teal, bg = current },
+				hint_selected = { fg = colors.base, bg = current },
 				info = { fg = colors.sky, bg = inactive },
 				info_visible = { fg = colors.sky, bg = inactive },
-				info_selected = { fg = colors.sky, bg = current },
+				info_selected = { fg = colors.base, bg = current },
 				warning = { fg = colors.yellow, bg = inactive },
 				warning_visible = { fg = colors.yellow, bg = inactive },
-				warning_selected = { fg = colors.yellow, bg = current },
+				warning_selected = { fg = colors.base, bg = current },
 				error = { fg = colors.red, bg = inactive },
 				error_visible = { fg = colors.red, bg = inactive },
-				error_selected = { fg = colors.red, bg = current },
+				error_selected = { fg = colors.base, bg = current },
+				offset_separator = { fg = fill, bg = fill },
+				tab_selected = { fg = colors.base, bg = current, style = { "bold" } },
+				tab = { fg = colors.text, bg = inactive },
+				tab_separator = { fg = inactive, bg = fill },
+				tab_separator_selected = { fg = current, bg = fill },
+				group_label = { fg = label, bg = colors.sapphire },
 			},
 		},
 	})
@@ -128,22 +135,22 @@ local function setup_bufferline_style()
 end
 
 local function set_bufferline_pill_highlights()
-	local fill = colors.crust
-	vim.api.nvim_set_hl(0, "BufferLinePillInactive", { fg = colors.mantle, bg = fill })
-	vim.api.nvim_set_hl(0, "BufferLinePillSelected", { fg = colors.surface0, bg = fill })
+	local fill = "NONE"
+	vim.api.nvim_set_hl(0, "BufferLinePillInactive", { fg = colors.surface0, bg = fill })
+	vim.api.nvim_set_hl(0, "BufferLinePillSelected", { fg = colors.lavender, bg = fill })
 end
 
 local function set_bufferline_group_highlights()
-	local inactive = colors.mantle
-	local current = colors.surface0
-	local fill = colors.crust
+	local inactive = colors.surface0
+	local current = colors.lavender
+	local fill = "NONE"
 	local function set_group(name, accent)
 		local prefix = "BufferLine" .. name
 		vim.api.nvim_set_hl(0, prefix, { fg = colors.text, bg = inactive, sp = accent })
 		vim.api.nvim_set_hl(0, prefix .. "Visible", { fg = colors.text, bg = inactive, sp = accent })
-		vim.api.nvim_set_hl(0, prefix .. "Selected", { fg = colors.text, bg = current, bold = true, sp = accent })
+		vim.api.nvim_set_hl(0, prefix .. "Selected", { fg = colors.base, bg = current, bold = true, sp = accent })
 		vim.api.nvim_set_hl(0, prefix .. "Separator", { fg = accent, bg = fill })
-		vim.api.nvim_set_hl(0, prefix .. "Label", { fg = fill, bg = accent, bold = true })
+		vim.api.nvim_set_hl(0, prefix .. "Label", { fg = colors.crust, bg = accent, bold = true })
 	end
 
 	set_group("Docs", colors.sapphire)
