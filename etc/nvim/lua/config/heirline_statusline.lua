@@ -120,10 +120,15 @@ end
 local function file_name()
 	local filename = vim.fn.expand("%:t")
 	local extension = vim.fn.expand("%:e")
+	local filetype = vim.bo.filetype
+	if filetype == "" then
+		filetype = vim.filetype.match({ filename = vim.api.nvim_buf_get_name(0) }) or ""
+	end
 	local ok, icons = pcall(require, "nvim-web-devicons")
 	local icon = ok and icons.get_icon(filename, extension) or nil
+	local spacing = filetype == "markdown" and "  " or " "
 
-	return " " .. (icon or "󰈙") .. " " .. filename .. " "
+	return " " .. (icon or "󰈙") .. spacing .. filename .. " "
 end
 
 local function current_dir()
