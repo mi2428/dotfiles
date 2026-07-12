@@ -228,6 +228,7 @@ return {
 			term_colors = true,
 			auto_integrations = true,
 			integrations = {
+				diffview = true,
 				gitsigns = true,
 				snacks = {
 					enabled = true,
@@ -296,16 +297,23 @@ return {
 							desc = "Find Text",
 							action = ":lua Snacks.dashboard.pick('live_grep')",
 						},
-						{
-							icon = " ",
-							key = "r",
-							desc = "Recent Files",
-							action = ":lua Snacks.dashboard.pick('oldfiles')",
-						},
-						{
-							icon = " ",
-							key = "c",
-							desc = "Config",
+							{
+								icon = " ",
+								key = "r",
+								desc = "Recent Files",
+								action = ":lua Snacks.dashboard.pick('oldfiles')",
+							},
+							{
+								icon = " ",
+								key = "d",
+								desc = "Diff View",
+								action = ":DiffviewOpen",
+								enabled = vim.fn.system({ "git", "rev-parse", "--is-inside-work-tree" }):match("true") ~= nil,
+							},
+							{
+								icon = " ",
+								key = "c",
+								desc = "Config",
 							action = ":lua Snacks.dashboard.pick('files', { cwd = vim.fn.stdpath('config') })",
 						},
 						{
@@ -353,8 +361,8 @@ return {
 						padding = { 1, 1 },
 						limit = 5,
 					},
-					dashboard_spacers(5),
-					{ section = "startup" },
+						dashboard_spacers(2),
+						{ section = "startup" },
 				},
 			},
 		},
