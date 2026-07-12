@@ -38,15 +38,15 @@ dark_name = "catppuccin"
 
 [theme.custom]
 panel_bg = "reset"
-accent = "#a6e3a1"
+accent = "#cba6f7"
 # Sidebar row/background styling uses the surface tokens.
-# Keep pane emphasis green, but use Catppuccin's darker surface shades here
-# so the sidebar feels active without turning separators bright purple.
+# Keep the overall active emphasis aligned with tmux's mauve chip while the
+# background stays on Catppuccin's darker surface shades.
 surface0 = "#45475a"
 surface_dim = "#313244"
 subtext0 = "#bac2de"
 text = "#bac2de"
-mauve = "#b4befe"
+mauve = "#cba6f7"
 
 [ui]
 host_cursor = "native"
