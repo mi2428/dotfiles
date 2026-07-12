@@ -153,7 +153,11 @@ local function setup_bufferline_pill_renderer()
 			end
 
 			comp = filtered
-			local is_markdown = vim.bo[element.id].filetype == "markdown"
+			local filetype = vim.bo[element.id].filetype
+			if filetype == "" and element.path and element.path ~= "" then
+				filetype = vim.filetype.match({ filename = element.path }) or ""
+			end
+			local is_markdown = filetype == "markdown"
 			for index, segment in ipairs(comp) do
 				if is_markdown and segment.highlight and segment.highlight:match("^BufferLineDevIcon") then
 					table.insert(comp, index + 1, { text = " " })
