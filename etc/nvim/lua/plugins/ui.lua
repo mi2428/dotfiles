@@ -81,14 +81,17 @@ local function bufferline_highlights()
 	return require("catppuccin.special.bufferline").get_theme({
 		styles = { "bold" },
 		custom = {
-			all = {
-				fill = { bg = fill },
-				background = { fg = colors.subtext1, bg = inactive },
-				buffer_visible = { fg = colors.text, bg = inactive },
-				buffer_selected = { fg = colors.text, bg = current, style = { "bold" } },
-				separator = { fg = inactive, bg = fill },
-				separator_visible = { fg = inactive, bg = fill },
-				separator_selected = { fg = current, bg = fill },
+				all = {
+					fill = { bg = fill },
+					background = { fg = colors.subtext1, bg = inactive },
+					buffer_visible = { fg = colors.text, bg = inactive },
+					buffer_selected = { fg = colors.text, bg = current, style = { "bold" } },
+					numbers = { fg = colors.overlay1, bg = inactive },
+					numbers_visible = { fg = colors.overlay1, bg = inactive },
+					numbers_selected = { fg = colors.subtext0, bg = current, style = { "bold" } },
+					separator = { fg = inactive, bg = fill },
+					separator_visible = { fg = inactive, bg = fill },
+					separator_selected = { fg = current, bg = fill },
 				close_button = { fg = colors.overlay1, bg = inactive },
 				close_button_visible = { fg = colors.overlay1, bg = inactive },
 				close_button_selected = { fg = colors.peach, bg = current },
@@ -351,19 +354,22 @@ return {
 		dependencies = { "nvim-tree/nvim-web-devicons" },
 		opts = function()
 			return {
-				options = {
-					mode = "buffers",
-					always_show_bufferline = true,
-					show_buffer_close_icons = true,
-					show_close_icon = false,
-					modified_icon = "●",
-					buffer_close_icon = "󰅖",
-					separator_style = "pill",
-					indicator = {
-						style = "none",
-					},
-					show_duplicate_prefix = false,
-					max_name_length = 24,
+					options = {
+						mode = "buffers",
+						always_show_bufferline = true,
+						show_buffer_close_icons = true,
+						show_close_icon = false,
+						modified_icon = "●",
+						buffer_close_icon = "󰅖",
+						separator_style = "pill",
+						indicator = {
+							style = "none",
+						},
+						numbers = function(opts)
+							return opts.raise(opts.ordinal)
+						end,
+						show_duplicate_prefix = true,
+						max_name_length = 24,
 					tab_size = 24,
 					diagnostics = "nvim_lsp",
 					name_formatter = function(tab)

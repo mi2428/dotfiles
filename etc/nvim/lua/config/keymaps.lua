@@ -16,6 +16,9 @@ map("n", "<C-w>k", "<cmd>tabnext<cr>", { desc = "Next tab" })
 map("n", "<C-w>p", "<cmd>BufferLineTogglePin<cr>", { desc = "Toggle buffer pin" })
 map("n", "<C-w>-", "<cmd>split<cr>", { desc = "Horizontal split" })
 map("n", "<C-w>|", "<cmd>vsplit<cr>", { desc = "Vertical split" })
+for i = 1, 9 do
+	map("n", "<C-w>" .. i, "<cmd>BufferLineGoToBuffer " .. i .. "<cr>", { desc = "Go to buffer " .. i })
+end
 
 map("n", "<leader>f", function()
 	require("fzf-lua").files()
