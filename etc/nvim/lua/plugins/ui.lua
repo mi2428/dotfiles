@@ -327,7 +327,7 @@ return {
 		opts = function()
 			return {
 				options = {
-					mode = "tabs",
+					mode = "buffers",
 					always_show_bufferline = true,
 					show_buffer_close_icons = true,
 					show_close_icon = false,
@@ -366,6 +366,18 @@ return {
 							text = "Oil",
 							text_align = "center",
 							separator = false,
+						},
+					},
+					groups = {
+						items = {
+							{
+								name = "docs",
+								auto_close = false,
+								matcher = function(buf)
+									local filetype = vim.bo[buf.id].filetype
+									return filetype == "markdown" or filetype == "text" or filetype == "help"
+								end,
+							},
 						},
 					},
 				},
