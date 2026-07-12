@@ -1,4 +1,6 @@
+local catppuccin = require("config.catppuccin")
 local opt = vim.opt
+local colors = catppuccin.palette()
 
 vim.g.mapleader = " "
 vim.g.maplocalleader = " "
@@ -61,6 +63,8 @@ end
 patch_lua_highlights_query()
 
 local function set_statuscolumn_highlights()
+	vim.api.nvim_set_hl(0, "CursorLineNr", { fg = colors.peach, bold = true })
+
 	local cursorline = vim.api.nvim_get_hl(0, { name = "CursorLineNr", link = false })
 	if not cursorline or vim.tbl_isempty(cursorline) then
 		vim.api.nvim_set_hl(0, "DotfilesStatuscolumnMarker", { link = "CursorLineNr", default = false })
