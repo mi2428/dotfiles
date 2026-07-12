@@ -130,6 +130,19 @@ local function set_bufferline_pill_highlights()
 	vim.api.nvim_set_hl(0, "BufferLinePillSelected", { fg = colors.surface0, bg = fill })
 end
 
+local function set_bufferline_group_highlights()
+	local inactive = colors.mantle
+	local current = colors.surface0
+	local fill = colors.crust
+	local accent = colors.sapphire
+
+	vim.api.nvim_set_hl(0, "BufferLineDocs", { fg = colors.text, bg = inactive, sp = accent })
+	vim.api.nvim_set_hl(0, "BufferLineDocsVisible", { fg = colors.text, bg = inactive, sp = accent })
+	vim.api.nvim_set_hl(0, "BufferLineDocsSelected", { fg = colors.text, bg = current, bold = true, sp = accent })
+	vim.api.nvim_set_hl(0, "BufferLineDocsSeparator", { fg = accent, bg = fill })
+	vim.api.nvim_set_hl(0, "BufferLineDocsLabel", { fg = fill, bg = accent, bold = true })
+end
+
 local function setup_bufferline_pill_renderer()
 	local ui = require("bufferline.ui")
 	if ui._dotfiles_pill_patched then
@@ -390,9 +403,12 @@ return {
 									},
 									matcher = function(buf)
 										local filetype = vim.bo[buf.id].filetype
+										if filetype == "" and buf.path and buf.path ~= "" then
+											filetype = vim.filetype.match({ filename = buf.path }) or ""
+										end
 										return filetype == "markdown" or filetype == "text" or filetype == "help"
 									end,
-							},
+								},
 						},
 					},
 				},
@@ -404,11 +420,13 @@ return {
 			setup_bufferline_pill_renderer()
 			require("bufferline").setup(opts)
 			set_bufferline_pill_highlights()
+			set_bufferline_group_highlights()
 			vim.api.nvim_create_autocmd("ColorScheme", {
 				group = vim.api.nvim_create_augroup("dotfiles-bufferline-pill", { clear = true }),
 				pattern = "*",
 				callback = function()
 					set_bufferline_pill_highlights()
+					set_bufferline_group_highlights()
 					require("bufferline.ui").refresh()
 				end,
 			})
