@@ -164,10 +164,6 @@ local function setup_bufferline_pill_renderer()
 			table.insert(comp, 1, { highlight = current_hl, text = "" })
 			table.insert(comp, { highlight = current_hl, text = "" })
 
-			if next_item then
-				table.insert(comp, { highlight = "BufferLineFill", text = " " })
-			end
-
 			return comp
 		end
 
