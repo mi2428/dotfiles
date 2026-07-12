@@ -60,6 +60,64 @@ end
 
 patch_lua_highlights_query()
 
+local function set_statuscolumn_highlights()
+	local cursorline = vim.api.nvim_get_hl(0, { name = "CursorLineNr", link = false })
+	if not cursorline or vim.tbl_isempty(cursorline) then
+		vim.api.nvim_set_hl(0, "DotfilesStatuscolumnMarker", { link = "CursorLineNr", default = false })
+		return
+	end
+
+	cursorline.bold = true
+	vim.api.nvim_set_hl(0, "DotfilesStatuscolumnMarker", cursorline)
+end
+
+local function statuscolumn_number_width()
+	return math.max(vim.wo.numberwidth, #tostring(vim.fn.line("$")))
+end
+
+local function statuscolumn_padding()
+	return string.rep(" ", statuscolumn_number_width())
+end
+
+local function statuscolumn_marker(width, marker)
+	return "%#DotfilesStatuscolumnMarker#" .. string.format("%" .. width .. "s", marker)
+end
+
+local function set_relative_number(enabled)
+	vim.opt_local.relativenumber = enabled
+end
+
+function _G.dotfiles_statuscolumn()
+	if vim.v.virtnum ~= 0 then
+		return statuscolumn_padding()
+	end
+
+	local width = statuscolumn_number_width()
+	local current = vim.fn.line(".")
+	local line = vim.v.lnum
+	local relnum = vim.v.relnum
+	local relative_mode = vim.wo.relativenumber
+
+	if not relative_mode then
+		local number_hl = line == current and "%#CursorLineNr#" or "%#LineNr#"
+		return number_hl .. string.format("%" .. width .. "d", line)
+	end
+
+	if line == current - 1 then
+		return statuscolumn_marker(width, "󰄿")
+	end
+
+	if line == current then
+		return "%#CursorLineNr#" .. string.format("%" .. width .. "d", line)
+	end
+
+	if line == current + 1 then
+		return statuscolumn_marker(width, "󰄼")
+	end
+
+	return "%#LineNr#" .. string.format("%" .. width .. "d", relnum)
+end
+
 opt.termguicolors = true
 opt.background = "dark"
 opt.clipboard = "unnamedplus"
@@ -71,7 +129,9 @@ opt.ttimeout = true
 opt.ttimeoutlen = 0
 
 opt.number = true
+opt.numberwidth = 3
 opt.relativenumber = true
+opt.statuscolumn = "%s%=%{%v:lua.dotfiles_statuscolumn()%}"
 opt.cursorline = true
 opt.showtabline = 2
 opt.showmode = false
@@ -106,3 +166,24 @@ opt.splitbelow = true
 opt.splitright = true
 opt.updatetime = 200
 opt.completeopt = { "menu", "menuone", "noselect" }
+
+vim.api.nvim_create_autocmd("ColorScheme", {
+	group = vim.api.nvim_create_augroup("dotfiles-statuscolumn-highlights", { clear = true }),
+	pattern = "*",
+	callback = set_statuscolumn_highlights,
+})
+set_statuscolumn_highlights()
+
+vim.api.nvim_create_autocmd("InsertEnter", {
+	group = vim.api.nvim_create_augroup("dotfiles-relative-number-mode", { clear = true }),
+	callback = function()
+		set_relative_number(false)
+	end,
+})
+
+vim.api.nvim_create_autocmd("InsertLeave", {
+	group = "dotfiles-relative-number-mode",
+	callback = function()
+		set_relative_number(true)
+	end,
+})
