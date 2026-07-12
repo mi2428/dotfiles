@@ -109,4 +109,9 @@ return {
 			vim.keymap.set("x", "g<C-x>", require("dial.map").dec_gvisual(), { desc = "Decrement / toggle" })
 		end,
 	},
+	{
+		"numToStr/Comment.nvim",
+		event = "VeryLazy",
+		opts = {},
+	},
 }
