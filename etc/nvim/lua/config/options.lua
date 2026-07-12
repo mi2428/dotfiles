@@ -137,13 +137,13 @@ opt.numberwidth = 3
 opt.relativenumber = true
 opt.statuscolumn = "%s%=%{%v:lua.dotfiles_statuscolumn()%}"
 opt.cursorline = true
-opt.foldcolumn = "1"
+opt.foldcolumn = "auto:1"
 opt.foldlevel = 99
 opt.foldlevelstart = 99
 opt.foldenable = true
 opt.showtabline = 2
 opt.showmode = false
-opt.signcolumn = "yes"
+opt.signcolumn = "yes:1"
 opt.scrolloff = 8
 opt.sidescrolloff = 4
 
