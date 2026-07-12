@@ -12,5 +12,14 @@ function starship_transient_prompt_func
     starship module character
 end
 
+function starship_transient_rprompt_func
+end
+
 starship init fish | source
-enable_transience
+
+# Fish 4.x has built-in transient prompts, but in this setup the built-in
+# final-rendering path is not actually collapsing old prompts. Force the
+# Starship repaint-based transient flow instead.
+set -g fish_transient_prompt 0
+bind --user \r __starship_transient_execute
+bind --user -M insert \r __starship_transient_execute
