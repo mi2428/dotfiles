@@ -228,6 +228,7 @@ return {
 			term_colors = true,
 			auto_integrations = true,
 			integrations = {
+				gitsigns = true,
 				snacks = {
 					enabled = true,
 					indent_scope_color = "overlay2",

@@ -3,6 +3,63 @@ local opt = vim.opt
 vim.g.mapleader = " "
 vim.g.maplocalleader = " "
 
+local bundled_lua_parser = vim.fs.joinpath(vim.env.VIMRUNTIME, "parser", "lua.so")
+if vim.uv.fs_stat(bundled_lua_parser) then
+	-- Neovim 0.12 ships a Lua parser newer than some plugin-managed copies.
+	-- Prefer the bundled parser to avoid query/parser mismatches on startup.
+	pcall(vim.treesitter.language.add, "lua", { path = bundled_lua_parser })
+end
+
+local function patch_lua_highlights_query()
+	local ok, info = pcall(vim.treesitter.language.inspect, "lua")
+	if not ok or not info or vim.tbl_contains(info.fields or {}, "operator") then
+		return
+	end
+
+	local query_path = vim.fs.joinpath(vim.env.VIMRUNTIME, "queries", "lua", "highlights.scm")
+	if not vim.uv.fs_stat(query_path) then
+		return
+	end
+
+	local query = table.concat(vim.fn.readfile(query_path), "\n")
+	local old = [[(binary_expression
+  operator: _ @operator)
+
+(unary_expression
+  operator: _ @operator)
+
+"=" @operator]]
+	local new = [[[
+  "+"
+  "-"
+  "*"
+  "/"
+  "%"
+  "^"
+  "#"
+  "&"
+  "~"
+  "|"
+  "<<"
+  ">>"
+  "//"
+  ".."
+  "<"
+  "<="
+  ">"
+  ">="
+  "=="
+  "~="
+] @operator
+
+"=" @operator]]
+
+	query = query:gsub(old, new, 1)
+	pcall(vim.treesitter.query.set, "lua", "highlights", query)
+end
+
+patch_lua_highlights_query()
+
 opt.termguicolors = true
 opt.background = "dark"
 opt.clipboard = "unnamedplus"
