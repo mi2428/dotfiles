@@ -9,7 +9,7 @@ end
 set -gx STARSHIP_CONFIG $HOME/.config/starship/starship.toml
 
 function starship_transient_prompt_func
-    starship module character
+    starship prompt $argv
 end
 
 function starship_transient_rprompt_func
