@@ -151,6 +151,108 @@ function gdd
     git diff --no-color "$base_ref"...HEAD $argv | __git_delta_lazygit
     return $pipestatus[1]
 end
+
+function gcb
+    command git rev-parse --is-inside-work-tree >/dev/null 2>/dev/null
+    or begin
+        echo 'gcb: not inside a git work tree' >&2
+        return 1
+    end
+
+    command -sq fzf
+    or begin
+        echo 'gcb: fzf is not installed' >&2
+        return 1
+    end
+
+    set -l tab (printf '\t')
+    set -l cols
+
+    if set -q TMUX
+        set cols (command tmux display-message -p '#{pane_width}' 2>/dev/null)
+    end
+
+    if test -z "$cols"
+        set cols $COLUMNS
+    end
+
+    if test -z "$cols"
+        set cols (command tput cols 2>/dev/null)
+    end
+
+    test -n "$cols"
+    or set cols 160
+
+    set -l preview_pct 42
+    set -l list_width (math "floor($cols * (100 - $preview_pct) / 100) - 4")
+    test $list_width -gt 72
+    or set list_width 72
+
+    set -l branch_width 34
+    set -l age_width 11
+    set -l subject_width (math "$list_width - $branch_width - $age_width - 4")
+    test $subject_width -gt 20
+    or set subject_width 20
+
+    set -l selected (command git for-each-ref \
+        --sort=-committerdate \
+        --format='%(refname:short)%09%(committerdate:relative)%09%(subject)' \
+        --exclude='refs/remotes/*/HEAD' \
+        refs/heads refs/remotes \
+        | awk -F '\t' -v branch_width="$branch_width" -v age_width="$age_width" -v subject_width="$subject_width" 'BEGIN { OFS = "\t" } {
+            branch = $1
+            age = $2
+            subject = $3
+
+            if (length(branch) > branch_width) {
+                branch = substr(branch, 1, branch_width - 3) "..."
+            }
+
+            if (length(age) > age_width) {
+                age = substr(age, 1, age_width - 3) "..."
+            }
+
+            if (length(subject) > subject_width) {
+                subject = substr(subject, 1, subject_width - 3) "..."
+            }
+
+            printf "%s\t%-*s  %-*s  %-*s\n", $1, branch_width, branch, age_width, age, subject_width, subject
+        }' \
+        | fzf \
+            --ansi \
+            --no-sort \
+            --prompt='branch> ' \
+            --delimiter=$tab \
+            --with-nth=2 \
+            --preview-window='right,42%,border-left,wrap' \
+            --preview="set -l branch {1}; \
+                git for-each-ref --format='branch: %(refname:short)%0aupdated: %(committerdate:relative)%0asubject: %(subject)' refs/heads/\$branch refs/remotes/\$branch; \
+                echo; \
+                git log --max-count=10 --oneline --graph --date=short --color=always --pretty='format:%C(auto)%cd %h%d %s' \$branch --; \
+                echo; \
+                printf '%s\n' '────────────────────────────────────────'; \
+                echo 'diff vs HEAD'; \
+                git diff --stat --color=always HEAD...\$branch" \
+            --bind='ctrl-/:change-preview-window(right,42%,border-left,wrap|down,55%,border-top,wrap)')
+
+    test -n "$selected"
+    or return 1
+
+    set -l branch (string split -m 1 $tab -- $selected)[1]
+
+    if command git show-ref --verify --quiet "refs/remotes/$branch"
+        set -l local_branch (string replace -r '^[^/]+/' '' -- $branch)
+
+        if command git show-ref --verify --quiet "refs/heads/$local_branch"
+            command git switch $local_branch
+        else
+            command git switch --track -c $local_branch $branch
+        end
+    else
+        command git switch $branch
+    end
+end
+
 alias gf='git fetch'
 alias gp='git push'
 alias gs='git status'
