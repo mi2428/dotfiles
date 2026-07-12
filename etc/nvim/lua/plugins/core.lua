@@ -54,29 +54,22 @@ return {
 		},
 	},
 	{
-		"feline-nvim/feline.nvim",
+		"rebelot/heirline.nvim",
 		lazy = false,
 		dependencies = { "nvim-tree/nvim-web-devicons" },
 		config = function()
-			local function setup_feline()
-				package.loaded.feline = nil
-				package.loaded["catppuccin.special.feline"] = nil
-
-				local ctp_feline = require("catppuccin.special.feline")
-				ctp_feline.setup()
-
-				require("feline").setup({
-					components = ctp_feline.get_statusline(),
-				})
+			local function setup_heirline()
+				package.loaded["config.heirline_statusline"] = nil
+				require("config.heirline_statusline").setup()
 			end
 
 			vim.api.nvim_create_autocmd("ColorScheme", {
-				group = vim.api.nvim_create_augroup("dotfiles-feline-catppuccin", { clear = true }),
+				group = vim.api.nvim_create_augroup("dotfiles-heirline-catppuccin", { clear = true }),
 				pattern = "*",
-				callback = setup_feline,
+				callback = setup_heirline,
 			})
 
-			setup_feline()
+			setup_heirline()
 		end,
 	},
 }
