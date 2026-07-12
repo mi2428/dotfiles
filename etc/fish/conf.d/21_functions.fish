@@ -474,7 +474,15 @@ function ::
 end
 
 function :::
-    tmux $argv
+    set -l session $argv[1]
+
+    if test -z "$session"
+        tmux
+    else if contains -- $session (tmux ls -F '#{session_name}' 2>/dev/null)
+        tmux attach -t $session
+    else
+        tmux $argv
+    end
 end
 
 function __dotfiles_herdr_pane_label_for_pane --argument-names pane_id
