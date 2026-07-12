@@ -388,6 +388,7 @@ function what
 end
 
 function man
+    set -l man_path (string join : $HOME/bin $PATH)
     env \
         LESS_TERMCAP_mb=(printf '\e[1;38;2;%sm' $CTP_PEACH_RGB) \
         LESS_TERMCAP_md=(printf '\e[1;38;2;%sm' $CTP_PEACH_RGB) \
@@ -398,8 +399,8 @@ function man
         LESS_TERMCAP_us=(printf '\e[4;38;2;%sm' $CTP_BLUE_RGB) \
         PAGER=/usr/bin/less \
         _NROFF_U=1 \
-        PATH=$HOME/bin:$PATH \
-        command man $argv
+        PATH=$man_path \
+        /usr/bin/man $argv
 end
 
 function tgz
