@@ -233,21 +233,28 @@ return {
 			vim.cmd.colorscheme(catppuccin.colorscheme())
 		end,
 	},
-	{
-		"folke/snacks.nvim",
-		priority = 900,
-		lazy = false,
-		dependencies = { "nvim-tree/nvim-web-devicons" },
-		opts = {
-			bigfile = { enabled = true },
-			git = { enabled = true },
-			notifier = { enabled = true, timeout = 3000 },
-			quickfile = { enabled = true },
-			dashboard = {
-				enabled = true,
-				width = 60,
-				pane_gap = 8,
-				preset = {
+		{
+			"folke/snacks.nvim",
+			priority = 900,
+			lazy = false,
+			dependencies = { "nvim-tree/nvim-web-devicons" },
+			opts = {
+				bigfile = { enabled = true },
+				git = { enabled = true },
+				notifier = { enabled = true, timeout = 3000 },
+				quickfile = { enabled = true },
+				picker = {
+					sources = {
+						explorer = {
+							watch = false,
+						},
+					},
+				},
+				dashboard = {
+					enabled = true,
+					width = 60,
+					pane_gap = 8,
+					preset = {
 					pick = function(cmd, opts)
 						local fzf = require("fzf-lua")
 
