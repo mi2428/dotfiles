@@ -72,4 +72,41 @@ return {
 			setup_heirline()
 		end,
 	},
+	{
+		"monaqa/dial.nvim",
+		event = "VeryLazy",
+		config = function()
+			local augend = require("dial.augend")
+
+			require("dial.config").augends:register_group({
+				default = {
+					augend.integer.alias.decimal_int,
+					augend.integer.alias.hex,
+					augend.date.alias["%Y/%m/%d"],
+					augend.date.alias["%Y-%m-%d"],
+					augend.date.alias["%m/%d"],
+					augend.date.alias["%H:%M"],
+					augend.constant.alias.bool,
+					augend.constant.alias.Bool,
+					augend.constant.new({ elements = { "yes", "no" }, word = true, cyclic = true, preserve_case = true }),
+					augend.constant.new({ elements = { "on", "off" }, word = true, cyclic = true, preserve_case = true }),
+					augend.constant.new({
+						elements = { "enable", "disable" },
+						word = true,
+						cyclic = true,
+						preserve_case = true,
+					}),
+				},
+			})
+
+			vim.keymap.set("n", "<C-a>", require("dial.map").inc_normal(), { desc = "Increment / toggle" })
+			vim.keymap.set("n", "<C-x>", require("dial.map").dec_normal(), { desc = "Decrement / toggle" })
+			vim.keymap.set("x", "<C-a>", require("dial.map").inc_visual(), { desc = "Increment / toggle" })
+			vim.keymap.set("x", "<C-x>", require("dial.map").dec_visual(), { desc = "Decrement / toggle" })
+			vim.keymap.set("n", "g<C-a>", require("dial.map").inc_gnormal(), { desc = "Increment / toggle" })
+			vim.keymap.set("n", "g<C-x>", require("dial.map").dec_gnormal(), { desc = "Decrement / toggle" })
+			vim.keymap.set("x", "g<C-a>", require("dial.map").inc_gvisual(), { desc = "Increment / toggle" })
+			vim.keymap.set("x", "g<C-x>", require("dial.map").dec_gvisual(), { desc = "Decrement / toggle" })
+		end,
+	},
 }
