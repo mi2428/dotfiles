@@ -506,25 +506,9 @@ return {
 					show_duplicate_prefix = true,
 					max_name_length = 24,
 					tab_size = 24,
-					diagnostics = "nvim_lsp",
+					diagnostics = false,
 					name_formatter = function(tab)
 						return tab.name
-					end,
-					diagnostics_indicator = function(_, _, diagnostics_dict)
-						local parts = {}
-						if diagnostics_dict.error then
-							parts[#parts + 1] = " " .. diagnostics_dict.error
-						end
-						if diagnostics_dict.warning then
-							parts[#parts + 1] = " " .. diagnostics_dict.warning
-						end
-						if diagnostics_dict.info then
-							parts[#parts + 1] = " " .. diagnostics_dict.info
-						end
-						if diagnostics_dict.hint then
-							parts[#parts + 1] = "󰌵 " .. diagnostics_dict.hint
-						end
-						return #parts > 0 and (" " .. table.concat(parts, " ")) or ""
 					end,
 					offsets = {
 						{

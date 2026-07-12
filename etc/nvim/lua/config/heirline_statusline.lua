@@ -237,6 +237,25 @@ local function lsp_name()
 	return "󰅡 Lsp"
 end
 
+local function lsp_chip_text()
+	local parts = { lsp_name() }
+	local severities = {
+		{ vim.diagnostic.severity.ERROR, "󰅚", "DotfilesDiagnosticError" },
+		{ vim.diagnostic.severity.WARN, "󰀪", "DotfilesDiagnosticWarn" },
+		{ vim.diagnostic.severity.INFO, "", "DotfilesDiagnosticInfo" },
+		{ vim.diagnostic.severity.HINT, "󰌵", "DotfilesDiagnosticHint" },
+	}
+
+	for _, item in ipairs(severities) do
+		local count = diagnostic_count(item[1])
+		if count > 0 then
+			parts[#parts + 1] = string.format("%%#%s#%s %d%%#DotfilesLspChip#", item[3], item[2], count)
+		end
+	end
+
+	return "%#DotfilesLspChip# " .. table.concat(parts, "  ") .. " "
+end
+
 local function file_name()
 	local filename = vim.fn.expand("%:t")
 	local extension = vim.fn.expand("%:e")
@@ -453,21 +472,7 @@ local function ExtraComponent(provider, condition)
 	}
 end
 
-local function RightInfoComponent(provider, condition)
-	return {
-		condition = condition,
-		{
-			provider = provider,
-			hl = function()
-				local settings = get_settings()
-				return { fg = settings.extras, bg = settings.bkg }
-			end,
-		},
-		Space,
-	}
-end
-
-local Diagnostics = {
+local LspChip = {
 	{
 		condition = function()
 			return width_above(80) and lsp_progress() ~= ""
@@ -479,54 +484,38 @@ local Diagnostics = {
 	},
 	{
 		condition = function()
-			return diagnostic_count(vim.diagnostic.severity.ERROR) > 0
+			return lsp_name() ~= ""
 		end,
-		provider = function()
-			return "  " .. diagnostic_count(vim.diagnostic.severity.ERROR)
-		end,
+		provider = "",
 		hl = function()
-			return { fg = get_palette().red, bg = get_settings().bkg }
+			local settings = get_settings()
+			return { fg = settings.git_diff, bg = settings.bkg }
 		end,
 	},
 	{
 		condition = function()
-			return diagnostic_count(vim.diagnostic.severity.WARN) > 0
+			return lsp_name() ~= ""
 		end,
-		provider = function()
-			return "  " .. diagnostic_count(vim.diagnostic.severity.WARN)
-		end,
+		provider = lsp_chip_text,
 		hl = function()
-			return { fg = get_palette().yellow, bg = get_settings().bkg }
+			local colors = get_palette()
+			local settings = get_settings()
+			return { fg = colors.text, bg = settings.git_diff, bold = true }
 		end,
 	},
-	{
-		condition = function()
-			return diagnostic_count(vim.diagnostic.severity.INFO) > 0
-		end,
-		provider = function()
-			return "  " .. diagnostic_count(vim.diagnostic.severity.INFO)
-		end,
-		hl = function()
-			return { fg = get_palette().sky, bg = get_settings().bkg }
-		end,
-	},
-	{
-		condition = function()
-			return diagnostic_count(vim.diagnostic.severity.HINT) > 0
-		end,
-		provider = function()
-			return "  " .. diagnostic_count(vim.diagnostic.severity.HINT)
-		end,
-		hl = function()
-			return { fg = get_palette().rosewater, bg = get_settings().bkg }
-		end,
-	},
+	init = function(self)
+		local settings = get_settings()
+		local colors = get_palette()
+		vim.api.nvim_set_hl(0, "DotfilesLspChip", { fg = colors.text, bg = settings.git_diff, bold = true })
+		vim.api.nvim_set_hl(0, "DotfilesDiagnosticError", { fg = colors.red, bg = settings.git_diff, bold = true })
+		vim.api.nvim_set_hl(0, "DotfilesDiagnosticWarn", { fg = colors.yellow, bg = settings.git_diff, bold = true })
+		vim.api.nvim_set_hl(0, "DotfilesDiagnosticInfo", { fg = colors.sky, bg = settings.git_diff, bold = true })
+		vim.api.nvim_set_hl(0, "DotfilesDiagnosticHint", { fg = colors.rosewater, bg = settings.git_diff, bold = true })
+	end,
 }
 
 local RightSection = {
-	RightInfoComponent(lsp_name, function()
-		return lsp_name() ~= ""
-	end),
+	LspChip,
 	{
 		condition = function()
 			return width_above(70)
@@ -534,7 +523,8 @@ local RightSection = {
 		provider = "",
 		hl = function()
 			local settings = get_settings()
-			return { fg = settings.curr_file, bg = settings.bkg }
+			local bg = lsp_name() ~= "" and settings.git_diff or settings.bkg
+			return { fg = settings.curr_file, bg = bg }
 		end,
 	},
 	{
@@ -583,8 +573,6 @@ local ActiveStatusline = {
 	ExtraComponent(search_count, function()
 		return cmdheight_zero() and search_count() ~= ""
 	end),
-	Align,
-	Diagnostics,
 	Align,
 	RightSection,
 }
