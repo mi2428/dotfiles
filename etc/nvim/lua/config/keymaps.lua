@@ -46,7 +46,8 @@ for i = 1, 9 do
 end
 
 map("n", "<leader>f", function()
-	require("fzf-lua").files()
+	local cwd = vim.fs.root(0, ".git") or vim.fn.getcwd()
+	require("fzf-lua").files({ cwd = cwd })
 end, { desc = "Find files" })
 map("n", "<leader>g", function()
 	require("fzf-lua").git_files()
