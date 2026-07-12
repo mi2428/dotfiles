@@ -2,6 +2,25 @@ local function executable(name)
 	return vim.fn.executable(name) == 1
 end
 
+local function resolve_rust_analyzer()
+	local path = vim.fn.exepath("rust-analyzer")
+	if path ~= "" then
+		return path
+	end
+
+	if not executable("rustup") then
+		return nil
+	end
+
+	local result = vim.system({ "rustup", "which", "rust-analyzer" }, { text = true }):wait()
+	if result.code ~= 0 then
+		return nil
+	end
+
+	local resolved = vim.trim(result.stdout or "")
+	return resolved ~= "" and resolved or nil
+end
+
 return {
 	{
 		"saghen/blink.cmp",
@@ -86,7 +105,7 @@ return {
 			})
 
 			local function enable(server, cmd, config)
-				if not executable(cmd) then
+				if cmd and vim.fn.executable(cmd) ~= 1 and vim.uv.fs_stat(cmd) == nil then
 					return
 				end
 
@@ -124,6 +143,25 @@ return {
 					},
 				},
 			})
+
+			local rust_analyzer = resolve_rust_analyzer()
+			if rust_analyzer then
+				enable("rust_analyzer", rust_analyzer, {
+					cmd = { rust_analyzer },
+					settings = {
+						["rust-analyzer"] = {
+							checkOnSave = true,
+							check = {
+								command = "check",
+								allTargets = false,
+							},
+							cargo = {
+								allTargets = false,
+							},
+						},
+					},
+				})
+			end
 
 			if executable("pyright-langserver") then
 				enable("pyright", "pyright-langserver")
