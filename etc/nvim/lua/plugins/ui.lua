@@ -73,6 +73,70 @@ local function set_dashboard_highlights()
 	vim.api.nvim_set_hl(0, "SnacksDashboardSquareCyan", { fg = colors.teal, bold = true })
 end
 
+local function set_dropbar_highlights()
+	vim.api.nvim_set_hl(0, "DropBarIconUISeparator", { fg = colors.overlay1, bg = "NONE" })
+	vim.api.nvim_set_hl(0, "DropBarIconUISeparatorMenu", { fg = colors.overlay1, bg = colors.mantle })
+	vim.api.nvim_set_hl(0, "DropBarIconUIIndicator", { fg = colors.sapphire, bg = "NONE" })
+	vim.api.nvim_set_hl(0, "DropBarIconUIPickPivot", { fg = colors.peach, bg = "NONE", bold = true })
+	vim.api.nvim_set_hl(0, "DropBarCurrentContext", { fg = colors.text, bg = colors.surface0, bold = true })
+	vim.api.nvim_set_hl(0, "DropBarCurrentContextIcon", { fg = colors.blue, bg = colors.surface0, bold = true })
+	vim.api.nvim_set_hl(0, "DropBarCurrentContextName", { fg = colors.text, bg = colors.surface0, bold = true })
+	vim.api.nvim_set_hl(0, "DropBarHover", { fg = colors.base, bg = colors.surface0, bold = true })
+	vim.api.nvim_set_hl(0, "DropBarMenuCurrentContext", { fg = colors.lavender, bold = true })
+	vim.api.nvim_set_hl(0, "DropBarMenuHoverEntry", { fg = colors.base, bg = colors.surface0 })
+	vim.api.nvim_set_hl(0, "DropBarMenuHoverIcon", { fg = colors.blue, bg = colors.surface0 })
+	vim.api.nvim_set_hl(0, "DropBarMenuHoverSymbol", { fg = colors.text, bg = colors.surface0, bold = true })
+	vim.api.nvim_set_hl(0, "DropBarMenuNormalFloat", { fg = colors.text, bg = colors.mantle })
+	vim.api.nvim_set_hl(0, "DropBarMenuFloatBorder", { fg = colors.surface2, bg = colors.mantle })
+	vim.api.nvim_set_hl(0, "DropBarMenuSbar", { bg = colors.surface0 })
+	vim.api.nvim_set_hl(0, "DropBarMenuThumb", { bg = colors.overlay0 })
+	vim.api.nvim_set_hl(0, "DropBarPreview", { bg = colors.surface0 })
+	vim.api.nvim_set_hl(0, "WinBar", { fg = colors.subtext1, bg = "NONE" })
+	vim.api.nvim_set_hl(0, "WinBarNC", { fg = colors.overlay0, bg = "NONE" })
+end
+
+local function dropbar_enabled(buf, win)
+	buf = buf or vim.api.nvim_get_current_buf()
+	win = win or vim.api.nvim_get_current_win()
+
+	if not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(win) then
+		return false
+	end
+
+	if vim.api.nvim_win_get_config(win).relative ~= "" then
+		return false
+	end
+
+	local filetype = vim.bo[buf].filetype
+	local buftype = vim.bo[buf].buftype
+	local disabled_filetypes = {
+		"DiffviewFiles",
+		"alpha",
+		"dashboard",
+		"fzf",
+		"git",
+		"help",
+		"lazy",
+		"mason",
+		"neo-tree",
+		"oil",
+		"qf",
+		"snacks_dashboard",
+		"terminal",
+		"toggleterm",
+		"Trouble",
+	}
+	local disabled_buftypes = {
+		"help",
+		"nofile",
+		"prompt",
+		"quickfix",
+		"terminal",
+	}
+
+	return not vim.tbl_contains(disabled_filetypes, filetype) and not vim.tbl_contains(disabled_buftypes, buftype)
+end
+
 local function bufferline_highlights()
 	local current = colors.lavender
 	local inactive = colors.surface0
@@ -81,18 +145,18 @@ local function bufferline_highlights()
 
 	return require("catppuccin.special.bufferline").get_theme({
 		styles = { "bold" },
-			custom = {
-				all = {
-					fill = { bg = fill },
-					background = { fg = colors.subtext1, bg = inactive },
-					buffer_visible = { fg = colors.text, bg = inactive },
-					buffer_selected = { fg = colors.base, bg = current, style = { "bold" } },
-					numbers = { fg = colors.overlay1, bg = inactive },
-					numbers_visible = { fg = colors.overlay1, bg = inactive },
-					numbers_selected = { fg = colors.base, bg = current, style = { "bold" } },
-					separator = { fg = inactive, bg = fill },
-					separator_visible = { fg = inactive, bg = fill },
-					separator_selected = { fg = current, bg = fill },
+		custom = {
+			all = {
+				fill = { bg = fill },
+				background = { fg = colors.subtext1, bg = inactive },
+				buffer_visible = { fg = colors.text, bg = inactive },
+				buffer_selected = { fg = colors.base, bg = current, style = { "bold" } },
+				numbers = { fg = colors.overlay1, bg = inactive },
+				numbers_visible = { fg = colors.overlay1, bg = inactive },
+				numbers_selected = { fg = colors.base, bg = current, style = { "bold" } },
+				separator = { fg = inactive, bg = fill },
+				separator_visible = { fg = inactive, bg = fill },
+				separator_selected = { fg = current, bg = fill },
 				close_button = { fg = colors.overlay1, bg = inactive },
 				close_button_visible = { fg = colors.overlay1, bg = inactive },
 				close_button_selected = { fg = colors.base, bg = current },
@@ -242,28 +306,71 @@ return {
 			vim.cmd.colorscheme(catppuccin.colorscheme())
 		end,
 	},
-		{
-			"folke/snacks.nvim",
-			priority = 900,
-			lazy = false,
-			dependencies = { "nvim-tree/nvim-web-devicons" },
-			opts = {
-				bigfile = { enabled = true },
-				git = { enabled = true },
-				notifier = { enabled = true, timeout = 3000 },
-				quickfile = { enabled = true },
-				picker = {
-					sources = {
-						explorer = {
-							watch = false,
-						},
+	{
+		"Bekaboo/dropbar.nvim",
+		event = { "BufReadPost", "BufNewFile" },
+		dependencies = { "nvim-tree/nvim-web-devicons" },
+		opts = {
+			bar = {
+				enable = dropbar_enabled,
+				padding = {
+					left = 1,
+					right = 1,
+				},
+			},
+			icons = {
+				ui = {
+					bar = {
+						separator = "  ",
+					},
+					menu = {
+						indicator = " ",
 					},
 				},
-				dashboard = {
-					enabled = true,
-					width = 60,
-					pane_gap = 8,
-					preset = {
+			},
+			menu = {
+				quick_navigation = true,
+			},
+		},
+		config = function(_, opts)
+			local api = require("dropbar.api")
+
+			require("dropbar").setup(opts)
+
+			vim.keymap.set("n", "<leader>;", api.pick, { desc = "Pick breadcrumbs" })
+			vim.keymap.set("n", "[;", api.goto_context_start, { desc = "Go to context start" })
+			vim.keymap.set("n", "];", api.select_next_context, { desc = "Select next context" })
+
+			vim.api.nvim_create_autocmd("ColorScheme", {
+				group = vim.api.nvim_create_augroup("dotfiles-dropbar-catppuccin", { clear = true }),
+				pattern = "*",
+				callback = set_dropbar_highlights,
+			})
+			set_dropbar_highlights()
+		end,
+	},
+	{
+		"folke/snacks.nvim",
+		priority = 900,
+		lazy = false,
+		dependencies = { "nvim-tree/nvim-web-devicons" },
+		opts = {
+			bigfile = { enabled = true },
+			git = { enabled = true },
+			notifier = { enabled = true, timeout = 3000 },
+			quickfile = { enabled = true },
+			picker = {
+				sources = {
+					explorer = {
+						watch = false,
+					},
+				},
+			},
+			dashboard = {
+				enabled = true,
+				width = 60,
+				pane_gap = 8,
+				preset = {
 					pick = function(cmd, opts)
 						local fzf = require("fzf-lua")
 
@@ -297,23 +404,24 @@ return {
 							desc = "Find Text",
 							action = ":lua Snacks.dashboard.pick('live_grep')",
 						},
-							{
-								icon = " ",
-								key = "r",
-								desc = "Recent Files",
-								action = ":lua Snacks.dashboard.pick('oldfiles')",
-							},
-							{
-								icon = " ",
-								key = "d",
-								desc = "Diff View",
-								action = ":DiffviewOpen",
-								enabled = vim.fn.system({ "git", "rev-parse", "--is-inside-work-tree" }):match("true") ~= nil,
-							},
-							{
-								icon = " ",
-								key = "c",
-								desc = "Config",
+						{
+							icon = " ",
+							key = "r",
+							desc = "Recent Files",
+							action = ":lua Snacks.dashboard.pick('oldfiles')",
+						},
+						{
+							icon = " ",
+							key = "d",
+							desc = "Diff View",
+							action = ":DiffviewOpen",
+							enabled = vim.fn.system({ "git", "rev-parse", "--is-inside-work-tree" }):match("true")
+								~= nil,
+						},
+						{
+							icon = " ",
+							key = "c",
+							desc = "Config",
 							action = ":lua Snacks.dashboard.pick('files', { cwd = vim.fn.stdpath('config') })",
 						},
 						{
@@ -361,8 +469,8 @@ return {
 						padding = { 1, 1 },
 						limit = 5,
 					},
-						dashboard_spacers(2),
-						{ section = "startup" },
+					dashboard_spacers(2),
+					{ section = "startup" },
 				},
 			},
 		},
@@ -381,22 +489,22 @@ return {
 		dependencies = { "nvim-tree/nvim-web-devicons" },
 		opts = function()
 			return {
-					options = {
-						mode = "buffers",
-						always_show_bufferline = true,
-						show_buffer_close_icons = true,
-						show_close_icon = false,
-						modified_icon = "●",
-						buffer_close_icon = "󰅖",
-						separator_style = "pill",
-						indicator = {
-							style = "none",
-						},
-						numbers = function(opts)
-							return opts.raise(opts.ordinal)
-						end,
-						show_duplicate_prefix = true,
-						max_name_length = 24,
+				options = {
+					mode = "buffers",
+					always_show_bufferline = true,
+					show_buffer_close_icons = true,
+					show_close_icon = false,
+					modified_icon = "●",
+					buffer_close_icon = "󰅖",
+					separator_style = "pill",
+					indicator = {
+						style = "none",
+					},
+					numbers = function(opts)
+						return opts.raise(opts.ordinal)
+					end,
+					show_duplicate_prefix = true,
+					max_name_length = 24,
 					tab_size = 24,
 					diagnostics = "nvim_lsp",
 					name_formatter = function(tab)
@@ -418,43 +526,43 @@ return {
 						end
 						return #parts > 0 and (" " .. table.concat(parts, " ")) or ""
 					end,
-						offsets = {
+					offsets = {
+						{
+							filetype = "oil",
+							text = "Oil",
+							text_align = "center",
+							separator = false,
+						},
+					},
+					groups = {
+						items = {
 							{
-								filetype = "oil",
-								text = "Oil",
-								text_align = "center",
-								separator = false,
+								name = "docs",
+								auto_close = false,
+								highlight = {
+									sp = colors.sapphire,
+								},
+								matcher = function(buf)
+									local filetype = vim.bo[buf.id].filetype
+									if filetype == "" and buf.path and buf.path ~= "" then
+										filetype = vim.filetype.match({ filename = buf.path }) or ""
+									end
+									return filetype == "markdown" or filetype == "text" or filetype == "help"
+								end,
+							},
+							{
+								name = "tests",
+								auto_close = false,
+								highlight = {
+									sp = colors.green,
+								},
+								matcher = function(buf)
+									local path = buf.path or ""
+									return path:match("_test%.go$") ~= nil
+								end,
 							},
 						},
-						groups = {
-							items = {
-								{
-									name = "docs",
-									auto_close = false,
-									highlight = {
-										sp = colors.sapphire,
-									},
-									matcher = function(buf)
-										local filetype = vim.bo[buf.id].filetype
-										if filetype == "" and buf.path and buf.path ~= "" then
-											filetype = vim.filetype.match({ filename = buf.path }) or ""
-										end
-										return filetype == "markdown" or filetype == "text" or filetype == "help"
-									end,
-								},
-								{
-									name = "tests",
-									auto_close = false,
-									highlight = {
-										sp = colors.green,
-									},
-									matcher = function(buf)
-										local path = buf.path or ""
-										return path:match("_test%.go$") ~= nil
-									end,
-								},
-							},
-						},
+					},
 				},
 				highlights = bufferline_highlights(),
 			}
