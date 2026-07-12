@@ -26,11 +26,23 @@ autocmd("LspAttach", {
 		local map = function(mode, lhs, rhs, desc)
 			vim.keymap.set(mode, lhs, rhs, { buffer = args.buf, desc = desc })
 		end
+		local function glance_open(method, fallback)
+			return function()
+				local ok, glance = pcall(require, "glance")
+				if ok then
+					glance.actions.open(method)
+					return
+				end
 
-		map("n", "gd", vim.lsp.buf.definition, "LSP definition")
+				fallback()
+			end
+		end
+
+		map("n", "gd", glance_open("definitions", vim.lsp.buf.definition), "Glance definitions")
 		map("n", "gD", vim.lsp.buf.declaration, "LSP declaration")
-		map("n", "gr", vim.lsp.buf.references, "LSP references")
-		map("n", "gI", vim.lsp.buf.implementation, "LSP implementation")
+		map("n", "gr", glance_open("references", vim.lsp.buf.references), "Glance references")
+		map("n", "gI", glance_open("implementations", vim.lsp.buf.implementation), "Glance implementations")
+		map("n", "gY", glance_open("type_definitions", vim.lsp.buf.type_definition), "Glance type definitions")
 		map("n", "K", vim.lsp.buf.hover, "LSP hover")
 		map("n", "<leader>rn", vim.lsp.buf.rename, "LSP rename")
 		map({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, "LSP code action")

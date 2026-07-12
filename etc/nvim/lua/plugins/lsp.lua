@@ -48,6 +48,11 @@ return {
 		opts_extend = { "sources.default" },
 	},
 	{
+		"dnlhc/glance.nvim",
+		cmd = "Glance",
+		opts = {},
+	},
+	{
 		"neovim/nvim-lspconfig",
 		event = { "BufReadPre", "BufNewFile" },
 		config = function()
