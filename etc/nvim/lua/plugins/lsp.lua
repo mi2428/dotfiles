@@ -53,6 +53,16 @@ return {
 		opts = {},
 	},
 	{
+		"rachartier/tiny-inline-diagnostic.nvim",
+		event = "LspAttach",
+		priority = 1000,
+		opts = {
+			options = {
+				use_icons_from_diagnostic = true,
+			},
+		},
+	},
+	{
 		"neovim/nvim-lspconfig",
 		event = { "BufReadPre", "BufNewFile" },
 		config = function()
@@ -64,7 +74,14 @@ return {
 				severity_sort = true,
 				float = { border = "rounded" },
 				underline = true,
-				signs = true,
+				signs = {
+					text = {
+						[vim.diagnostic.severity.ERROR] = "●",
+						[vim.diagnostic.severity.WARN] = "●",
+						[vim.diagnostic.severity.INFO] = "●",
+						[vim.diagnostic.severity.HINT] = "●",
+					},
+				},
 				virtual_text = false,
 			})
 
