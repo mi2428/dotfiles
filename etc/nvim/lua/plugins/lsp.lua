@@ -93,6 +93,9 @@ return {
 			enable("gopls", "gopls", {
 				settings = {
 					gopls = {
+						analyses = {
+							modernize = true,
+						},
 						gofumpt = true,
 						staticcheck = true,
 						usePlaceholders = true,
