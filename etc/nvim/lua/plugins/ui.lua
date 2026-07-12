@@ -137,13 +137,17 @@ local function set_bufferline_group_highlights()
 	local inactive = colors.mantle
 	local current = colors.surface0
 	local fill = colors.crust
-	local accent = colors.sapphire
+	local function set_group(name, accent)
+		local prefix = "BufferLine" .. name
+		vim.api.nvim_set_hl(0, prefix, { fg = colors.text, bg = inactive, sp = accent })
+		vim.api.nvim_set_hl(0, prefix .. "Visible", { fg = colors.text, bg = inactive, sp = accent })
+		vim.api.nvim_set_hl(0, prefix .. "Selected", { fg = colors.text, bg = current, bold = true, sp = accent })
+		vim.api.nvim_set_hl(0, prefix .. "Separator", { fg = accent, bg = fill })
+		vim.api.nvim_set_hl(0, prefix .. "Label", { fg = fill, bg = accent, bold = true })
+	end
 
-	vim.api.nvim_set_hl(0, "BufferLineDocs", { fg = colors.text, bg = inactive, sp = accent })
-	vim.api.nvim_set_hl(0, "BufferLineDocsVisible", { fg = colors.text, bg = inactive, sp = accent })
-	vim.api.nvim_set_hl(0, "BufferLineDocsSelected", { fg = colors.text, bg = current, bold = true, sp = accent })
-	vim.api.nvim_set_hl(0, "BufferLineDocsSeparator", { fg = accent, bg = fill })
-	vim.api.nvim_set_hl(0, "BufferLineDocsLabel", { fg = fill, bg = accent, bold = true })
+	set_group("Docs", colors.sapphire)
+	set_group("Tests", colors.green)
 end
 
 local function setup_bufferline_pill_renderer()
@@ -391,16 +395,16 @@ return {
 						end
 						return #parts > 0 and (" " .. table.concat(parts, " ")) or ""
 					end,
-					offsets = {
-						{
-							filetype = "oil",
-							text = "Oil",
-							text_align = "center",
-							separator = false,
+						offsets = {
+							{
+								filetype = "oil",
+								text = "Oil",
+								text_align = "center",
+								separator = false,
+							},
 						},
-					},
-					groups = {
-						items = {
+						groups = {
+							items = {
 								{
 									name = "docs",
 									auto_close = false,
@@ -415,8 +419,19 @@ return {
 										return filetype == "markdown" or filetype == "text" or filetype == "help"
 									end,
 								},
+								{
+									name = "tests",
+									auto_close = false,
+									highlight = {
+										sp = colors.green,
+									},
+									matcher = function(buf)
+										local path = buf.path or ""
+										return path:match("_test%.go$") ~= nil
+									end,
+								},
+							},
 						},
-					},
 				},
 				highlights = bufferline_highlights(),
 			}
