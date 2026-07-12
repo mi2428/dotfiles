@@ -1,6 +1,10 @@
 local M = {}
 
 local conditions = require("heirline.conditions")
+local uv = vim.uv or vim.loop
+
+local git_status_cache = {}
+local git_status_ttl_ms = 1500
 
 local function get_palette()
 	return require("catppuccin.palettes").get_palette()
@@ -11,7 +15,8 @@ local function get_settings()
 	local settings = {
 		text = colors.mantle,
 		bkg = colors.crust,
-		diffs = colors.mauve,
+		git_branch = colors.mauve,
+		git_diff = colors.surface0,
 		extras = colors.overlay1,
 		curr_file = colors.maroon,
 		curr_dir = colors.flamingo,
@@ -61,10 +66,125 @@ local function current_mode()
 	return modes[vim.fn.mode(1)] or modes[vim.fn.mode()] or modes.n
 end
 
-local function any_git_changes()
+local function current_git_root()
 	local gst = vim.b.gitsigns_status_dict
-	return gst
-		and ((gst.added and gst.added > 0) or (gst.removed and gst.removed > 0) or (gst.changed and gst.changed > 0))
+	if gst and gst.root and gst.root ~= "" then
+		return gst.root
+	end
+
+	local bufname = vim.api.nvim_buf_get_name(0)
+	local start = bufname ~= "" and vim.fs.dirname(bufname) or vim.fn.getcwd()
+	local gitdir = vim.fs.find(".git", { path = start, upward = true })[1]
+	if gitdir then
+		return vim.fs.dirname(gitdir)
+	end
+end
+
+local function parse_git_numstat(output)
+	local status = { changed = 0, added = 0, removed = 0 }
+
+	for line in output:gmatch("[^\r\n]+") do
+		local added, removed = line:match("^(%d+)%s+(%d+)%s+")
+		if added and removed then
+			status.changed = status.changed + 1
+			status.added = status.added + tonumber(added)
+			status.removed = status.removed + tonumber(removed)
+		elseif line:match("^%-%s+%-%s+") then
+			status.changed = status.changed + 1
+		end
+	end
+
+	return status
+end
+
+local function run_git_repo_status(root)
+	local cmd = { "git", "diff", "--numstat", "HEAD", "--" }
+	local result = vim.system(cmd, { cwd = root, text = true }):wait()
+	if result.code == 0 then
+		return parse_git_numstat(result.stdout or "")
+	end
+
+	return { changed = 0, added = 0, removed = 0 }
+end
+
+local function refresh_git_repo_status(root, sync)
+	if not root then
+		return { changed = 0, added = 0, removed = 0 }
+	end
+
+	local cmd = { "git", "diff", "--numstat", "HEAD", "--" }
+	local cached = git_status_cache[root]
+	if sync then
+		local status = run_git_repo_status(root)
+		git_status_cache[root] = {
+			status = status,
+			at = uv.now(),
+			refreshing = false,
+		}
+		return status
+	end
+
+	if cached and cached.refreshing then
+		return cached.status
+	end
+
+	git_status_cache[root] = {
+		status = cached and cached.status or { changed = 0, added = 0, removed = 0 },
+		at = cached and cached.at or 0,
+		refreshing = true,
+	}
+
+	vim.system(cmd, { cwd = root, text = true }, function(result)
+		local status = result.code == 0 and parse_git_numstat(result.stdout or "") or { changed = 0, added = 0, removed = 0 }
+		git_status_cache[root] = {
+			status = status,
+			at = uv.now(),
+			refreshing = false,
+		}
+
+		vim.schedule(function()
+			vim.cmd("redrawstatus")
+		end)
+	end)
+
+	return git_status_cache[root].status
+end
+
+local function repo_git_status()
+	local root = current_git_root()
+	if not root then
+		return { changed = 0, added = 0, removed = 0 }
+	end
+
+	local cached = git_status_cache[root]
+	local now = uv.now()
+	if not cached then
+		return refresh_git_repo_status(root, true)
+	end
+
+	if now - cached.at > git_status_ttl_ms then
+		return refresh_git_repo_status(root, false)
+	end
+
+	return cached.status
+end
+
+local function any_git_changes()
+	local status = repo_git_status()
+	return status.added > 0 or status.changed > 0 or status.removed > 0
+end
+
+local function in_git_repo()
+	return vim.b.gitsigns_head ~= nil and vim.b.gitsigns_head ~= ""
+end
+
+local function git_count(key)
+	local status = repo_git_status()
+	if not status[key] or status[key] <= 0 then
+		return nil
+	end
+
+	return status[key]
 end
 
 local function width_above(min_width)
@@ -205,7 +325,7 @@ local ViMode = {
 	{
 		provider = "",
 		condition = function()
-			return not any_git_changes()
+			return not in_git_repo()
 		end,
 		hl = function()
 			local settings = get_settings()
@@ -215,48 +335,106 @@ local ViMode = {
 	},
 	{
 		provider = "",
-		condition = any_git_changes,
+		condition = in_git_repo,
 		hl = function()
 			local settings = get_settings()
 			local mode = current_mode()
-			return { fg = mode[2], bg = settings.diffs }
+			return { fg = mode[2], bg = settings.git_branch }
 		end,
 	},
 }
 
-local function GitDiffComponent(icon, key)
+local function GitStatusComponent(provider, opts)
+	opts = opts or {}
 	return {
+		condition = opts.condition,
 		provider = function()
-			local gst = vim.b.gitsigns_status_dict
-			if not gst or not gst[key] or gst[key] <= 0 then
-				return ""
-			end
-			return " " .. icon .. " " .. gst[key]
+			return provider()
 		end,
 		hl = function()
 			local settings = get_settings()
-			return { fg = settings.text, bg = settings.diffs }
+			return vim.tbl_extend("force", { fg = settings.text, bg = settings.git_diff }, opts.hl and opts.hl() or {})
 		end,
 	}
 end
 
+local GitBranch = {
+	condition = in_git_repo,
+	{
+		provider = function()
+			return "  " .. vim.b.gitsigns_head
+		end,
+		hl = function()
+			local settings = get_settings()
+			return { fg = settings.text, bg = settings.git_branch, bold = true }
+		end,
+	},
+	{
+		provider = "",
+		condition = function()
+			return any_git_changes()
+		end,
+		hl = function()
+			local settings = get_settings()
+			return { fg = settings.git_branch, bg = settings.git_diff }
+		end,
+	},
+	{
+		provider = "",
+		condition = function()
+			return not any_git_changes()
+		end,
+		hl = function()
+			local settings = get_settings()
+			return { fg = settings.git_branch, bg = settings.bkg }
+		end,
+	},
+}
+
 local GitDiff = {
 	condition = any_git_changes,
-	GitDiffComponent("", "added"),
-	GitDiffComponent("", "changed"),
-	GitDiffComponent("", "removed"),
+	GitStatusComponent(function()
+		return " +" .. git_count("added")
+	end, {
+		condition = function()
+			return git_count("added") ~= nil
+		end,
+		hl = function()
+			return { fg = get_palette().green, bold = true }
+		end,
+	}),
+	GitStatusComponent(function()
+		return " ~" .. git_count("changed")
+	end, {
+		condition = function()
+			return git_count("changed") ~= nil
+		end,
+		hl = function()
+			return { fg = get_palette().yellow, bold = true }
+		end,
+	}),
+	GitStatusComponent(function()
+		return " -" .. git_count("removed")
+	end, {
+		condition = function()
+			return git_count("removed") ~= nil
+		end,
+		hl = function()
+			return { fg = get_palette().red, bold = true }
+		end,
+	}),
 	{
 		provider = " ",
 		hl = function()
 			local settings = get_settings()
-			return { fg = settings.bkg, bg = settings.diffs }
+			return { fg = settings.bkg, bg = settings.git_diff }
 		end,
 	},
 	{
 		provider = "",
 		hl = function()
 			local settings = get_settings()
-			return { fg = settings.diffs, bg = settings.bkg }
+			return { fg = settings.git_diff, bg = settings.bkg }
 		end,
 	},
 }
@@ -346,11 +524,6 @@ local Diagnostics = {
 }
 
 local RightSection = {
-	RightInfoComponent(function()
-		return " " .. vim.b.gitsigns_head
-	end, function()
-		return width_above(70) and vim.b.gitsigns_head ~= nil and vim.b.gitsigns_head ~= ""
-	end),
 	RightInfoComponent(lsp_name, function()
 		return lsp_name() ~= ""
 	end),
@@ -400,6 +573,7 @@ local RightSection = {
 
 local ActiveStatusline = {
 	ViMode,
+	GitBranch,
 	GitDiff,
 	ExtraComponent(file_progress),
 	ExtraComponent(position),
