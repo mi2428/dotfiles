@@ -52,6 +52,16 @@ local function start_treesitter(args)
 	end
 end
 
+local function start_treesitter_for_loaded_buffers()
+	-- Startup ordering can leave the initial buffer opened before our FileType
+	-- autocmd exists. Attach treesitter explicitly for any already-loaded file.
+	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+		if vim.api.nvim_buf_is_loaded(buf) then
+			start_treesitter({ buf = buf })
+		end
+	end
+end
+
 return {
 	{
 		"nvim-treesitter/nvim-treesitter",
@@ -62,13 +72,23 @@ return {
 			ensure_installed = parsers,
 			install_dir = vim.fn.stdpath("data") .. "/site",
 		},
-		config = function(_, opts)
+		config = function(plugin, opts)
+			local runtime_dir = vim.fs.joinpath(plugin.dir, "runtime")
+			if vim.uv.fs_stat(runtime_dir) and not vim.tbl_contains(vim.opt.rtp:get(), runtime_dir) then
+				-- nvim-treesitter main keeps queries under runtime/, so add that
+				-- directory explicitly or treesitter highlighting will not find
+				-- language highlight queries even though parsers are installed.
+				vim.opt.rtp:append(runtime_dir)
+			end
+
 			require("nvim-treesitter").setup(opts)
 
 			vim.api.nvim_create_autocmd("FileType", {
 				group = vim.api.nvim_create_augroup("dotfiles-treesitter", { clear = true }),
 				callback = start_treesitter,
 			})
+
+			start_treesitter_for_loaded_buffers()
 		end,
 	},
 	{
