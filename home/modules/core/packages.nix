@@ -5,8 +5,8 @@ let
     zsh
   ]);
 in {
-  # Keep shared command-line tools owned by Home Manager rather than language
-  # package manifests that require an imperative update step.
+  # Keep shared command-line tools owned by Home Manager instead of imperative
+  # per-language global installs.
   home.packages = (with pkgs; [
     bat
     delta
@@ -17,7 +17,9 @@ in {
     glow
     go
     go-tools
+    gotools
     gopls
+    frogmouth
     grc
     jq
     k9s
