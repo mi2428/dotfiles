@@ -2,6 +2,8 @@
 
 REPO := $(CURDIR)
 HOME_BIN := $(HOME)/.local/bin
+HOME_ZSH := $(HOME)/.zsh
+HOME_TMUX := $(HOME)/.tmux
 
 .PHONY: help
 help: ## Display available emergency targets
@@ -12,13 +14,34 @@ help: ## Display available emergency targets
 .PHONY: emergency
 emergency: emergency-zsh emergency-tmux emergency-bin ## Link the minimal emergency environment
 
+.PHONY: min
+min: emergency ## Alias for emergency
+
+.PHONY: link-minimal
+link-minimal: emergency ## Alias for emergency
+
 .PHONY: emergency-zsh
 emergency-zsh: ## Link the repository zsh configuration
+	@mkdir -p $(HOME_ZSH)
 	@ln -sfn $(REPO)/etc/zsh/zshrc $(HOME)/.zshrc
+	@ln -sfn $(REPO)/etc/zsh/zlogin $(HOME)/.zlogin
+	@for config in $(REPO)/etc/zsh/zsh/*; do \
+		[ -f "$$config" ] || continue; \
+		ln -sfn "$$config" "$(HOME_ZSH)/$$(basename "$$config")"; \
+	done
 
 .PHONY: emergency-tmux
 emergency-tmux: ## Link the repository tmux configuration
+	@mkdir -p $(HOME_TMUX) $(HOME_TMUX)/scripts
 	@ln -sfn $(REPO)/etc/tmux/tmux.conf $(HOME)/.tmux.conf
+	@for config in $(REPO)/etc/tmux/tmux/*.conf; do \
+		[ -f "$$config" ] || continue; \
+		ln -sfn "$$config" "$(HOME_TMUX)/$$(basename "$$config")"; \
+	done
+	@for script in $(REPO)/etc/tmux/tmux/scripts/*; do \
+		[ -f "$$script" ] || continue; \
+		ln -sfn "$$script" "$(HOME_TMUX)/scripts/$$(basename "$$script")"; \
+	done
 
 .PHONY: emergency-bin
 emergency-bin: ## Link repository commands into ~/.local/bin
