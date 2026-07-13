@@ -43,7 +43,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
-if [[ "$host" != "macos" ]]; then
+if [[ "$host" != "MBP-M4Pro48G-C3VH95F6P6" ]]; then
   printf '%s\n' "bootstrap: unsupported darwin host: $host" >&2
   exit 1
 fi

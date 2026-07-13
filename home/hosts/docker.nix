@@ -2,7 +2,7 @@
 let
   platform = {
     zsh.overrides = {
-      "22_aliases.zsh" = ../files/zsh/22_aliases.docker-dev.zsh;
+      "22_aliases.zsh" = ../files/zsh/22_aliases.docker.zsh;
     };
   };
 in {

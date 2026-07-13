@@ -8,7 +8,8 @@ let
 in
 (mkHome {
   inherit system;
-  hostModule = ../../home/hosts/docker-dev.nix;
+  hostModule = ../../home/hosts/docker.nix;
+  platformName = "docker";
   hostName = "docker-dev";
   userName = "skel";
   homeDirectory = "/tmp/skel";

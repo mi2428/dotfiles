@@ -2,6 +2,7 @@
 {
   system,
   hostModule,
+  platformName,
   hostName,
   userName,
   homeDirectory,
@@ -17,6 +18,6 @@ inputs.home-manager.lib.homeManagerConfiguration {
   modules = [ hostModule ];
   extraSpecialArgs = {
     inherit inputs;
-    inherit hostName userName homeDirectory;
+    inherit platformName hostName userName homeDirectory;
   };
 }

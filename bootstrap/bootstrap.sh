@@ -28,10 +28,10 @@ log() {
 detect_host() {
   case "$(uname -s)" in
     Darwin)
-      printf '%s\n' 'macos'
+      scutil --get ComputerName 2>/dev/null || hostname -s
       ;;
     Linux)
-      printf '%s\n' 'linux-server'
+      hostname -s
       ;;
     *)
       printf '%s\n' "bootstrap: unsupported platform: $(uname -s)" >&2
@@ -82,7 +82,7 @@ runtime_user="$(id -un)"
 runtime_home="${HOME:?bootstrap: HOME must be set}"
 
 case "$(uname -s):$host" in
-  Darwin:macos|Linux:linux-server|Linux:docker-dev) ;;
+  Darwin:MBP-M4Pro48G-C3VH95F6P6|Linux:linux-server|Linux:docker-dev) ;;
   Darwin:*)
     printf '%s\n' "bootstrap: unsupported macOS host: $host" >&2
     exit 1

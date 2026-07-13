@@ -1,5 +1,5 @@
 {
-  description = "Teo's Nix-first dotfiles";
+  description = "Nix-first dotfiles";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -18,11 +18,12 @@
   in
   {
     darwinConfigurations = {
-      macos = mkDarwin {
+      "MBP-M4Pro48G-C3VH95F6P6" = mkDarwin {
         system = "aarch64-darwin";
         darwinModule = ./darwin/hosts/macos.nix;
         homeModule = ./home/hosts/macos.nix;
-        hostName = "macos";
+        platformName = "macos";
+        hostName = "MBP-M4Pro48G-C3VH95F6P6";
         userName = "teo";
         homeDirectory = "/Users/teo";
       };
@@ -31,7 +32,8 @@
     homeConfigurations = {
       "linux-server" = mkHome {
         system = "aarch64-linux";
-        hostModule = ./home/hosts/linux-server.nix;
+        hostModule = ./home/hosts/linux.nix;
+        platformName = "linux";
         hostName = "linux-server";
         userName = "teo";
         homeDirectory = "/home/teo";
@@ -39,7 +41,8 @@
 
       "docker-dev" = mkHome {
         system = "x86_64-linux";
-        hostModule = ./home/hosts/docker-dev.nix;
+        hostModule = ./home/hosts/docker.nix;
+        platformName = "docker";
         hostName = "docker-dev";
         userName = "teo";
         homeDirectory = "/home/teo";

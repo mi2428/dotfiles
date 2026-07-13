@@ -57,9 +57,10 @@ The repository uses a `chezmoi` + `Nix` layout:
 * `chezmoi/` contains secrets and the minimal pre-Nix bootstrap state
 
 XDG config sources are under `home/files/config/`, non-XDG dotfiles are under
-their corresponding `home/files/` directory. The `linux-server` and
-`docker-dev` configuration names remain available as separate host modules.
-Supported flake hosts are currently `macos`, `linux-server`, and `docker-dev`.
+their corresponding `home/files/` directory. Internal platform modules are
+named `macos`, `linux`, and `docker`. Flake configuration names are the target
+machine names, currently `MBP-M4Pro48G-C3VH95F6P6`, `linux-server`, and
+`docker-dev`.
 The old `linux-desktop` and `checkpoint` host trees were intentionally retired
 in this overhaul and are not migrated into the current flake.
 
@@ -77,7 +78,8 @@ It now does the following:
 * installs `nix` if needed
 * builds and activates the selected flake host configuration
 
-`bootstrap/bootstrap.sh` auto-detects `macos` and `linux-server`.
+`bootstrap/bootstrap.sh` auto-detects the current machine name from
+`scutil --get ComputerName` on macOS and `hostname -s` on Linux.
 On macOS, automatic Nix installation is gated behind
 `DOTFILES_BOOTSTRAP_DARWIN_DAEMON_INSTALL=1` because the daemon installer makes
 system-wide changes.
