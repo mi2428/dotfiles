@@ -49,53 +49,47 @@ Clone this repository just under your `$HOME`.
 % git clone --depth 1 https://github.com/mi2428/dotfiles
 ```
 
-### Linux computers
+The repository uses a `chezmoi` + `Nix` layout:
 
-**Ubuntu:** run `make ubuntu` containing the following two rules:
+* `home/` is the source tree for Home Manager-managed files and adjacent static
+  dotfile sources
+* `bootstrap/` contains the scripts that install and apply the declarative setup
+* `chezmoi/` contains secrets and the minimal pre-Nix bootstrap state
 
-```
-% make install.ubuntu
-% make link.linux-desktop
-```
+XDG config sources are under `home/files/config/`, non-XDG dotfiles are under
+their corresponding `home/files/` directory. Internal platform modules are
+named `macos`, `linux`, and `docker`. Flake configuration names are the target
+machine names, currently `MBP-M4Pro48G-C3VH95F6P6`, `linux-server`, and
+`docker-dev`.
+The old `linux-desktop` and `checkpoint` host trees were intentionally retired
+in this overhaul and are not migrated into the current flake.
 
-**ArchLinux:** run `make archlinux` containing the following two rules:
-
-```
-% make install.archlinux
-% make link.linux-desktop
-```
-
-### macOS computers
-
-First run the software update and install [HomeBrew](https://brew.sh/) with:
+### Bootstrap
 
 ```
-% sudo softwareupdate -i -a
-% xcode-select --install
-% bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+% ./bootstrap/bootstrap.sh
 ```
 
-Then run `make macos` including the following to complete setup.
+This is the standard path for installing and applying chezmoi and Nix.
 
-```
-% make install.macos  # install dependencies
-% make link.macos     # create symbolic links
-```
+It now does the following:
 
-### Linux servers
+* applies the `chezmoi/` source state for secrets and bootstrap-managed files
+* installs `nix` if needed
+* builds and activates the selected flake host configuration
 
-Paste the below line and wait until the terminal goes silent.
+`bootstrap/bootstrap.sh` auto-detects the current machine name from
+`scutil --get ComputerName` on macOS and `hostname -s` on Linux.
+On macOS, automatic Nix installation is gated behind
+`DOTFILES_BOOTSTRAP_DARWIN_DAEMON_INSTALL=1` because the daemon installer makes
+system-wide changes.
 
-```
-% curl -fsSL https://raw.githubusercontent.com/mi2428/dotfiles/master/init/kick.sh | bash
-```
+### Current status
 
-**Ubuntu:** run `make ubuntu-server` containing the following two rules:
-
-```
-% make install.ubuntu
-% make link.linux
-```
+* Managed config and adjacent static sources live under `home/files/` and
+  `home/`
+* XDG configuration trees live under `home/files/config/`
+* `chezmoi/` owns secrets and minimal pre-Nix bootstrapping
 
 ## Deploy hints
 
@@ -141,6 +135,10 @@ To skip password dialogue:
 % gpgconf --kill gpg-agent
 ```
 
+### sudo authentication
+Touch ID / Apple Watch sudo is managed by nix-darwin via
+`security.pam.services.sudo_local`. Keep local PAM tweaks out of `/etc/pam.d`
+unless they are intentionally outside the flake.
 ### visudo
 
 ```
@@ -166,7 +164,7 @@ auth       sufficient     pam_tid.so
 
 ### 1Password
 Remember to activate the integration as below, or you will ask your vault password every time.
-Also you need to install `op` command beforehand -- for mac users, the command will be installed via Brewfile.
+Also you need to install `op` command beforehand.
 
 - Settings > Developer > Command-Line Interface (CLI) > Integrate with 1Password CLI
 
@@ -187,20 +185,6 @@ $ sudo ln -s /usr/local/sessionmanagerplugin/bin/session-manager-plugin /usr/loc
 ```
 :PlugInstall
 :UpdateRemotePlugins
-```
-
-### gnome-terminal preferences
-
-To import profile:
-
-```
-dconf load /org/gnome/terminal/legacy/profiles:/ < material-shizk.dconf
-```
-
-To export profile:
-
-```
-dconf load /org/gnome/terminal/legacy/profiles:/ > material-shizk.dconf
 ```
 
 ### iTerm2 preferences

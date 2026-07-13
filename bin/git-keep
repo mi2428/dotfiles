@@ -1,20 +1,21 @@
-#!/bin/bash
-
-repo_root=""
+#!/usr/bin/env bash
+set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 1
-cd "$repo_root" || exit 1
+cd "$repo_root"
 
-message="keep"
-if [[ "$1" == "--fix" ]] || [[ "$1" == "-f" ]]; then
-  message="bugfix"
-  shift
-fi
+message_prefix="keep"
+case "${1:-}" in
+  --fix|-f)
+    message_prefix="bugfix"
+    shift
+    ;;
+esac
 
-if (( $# == 0 )); then
+if (($# == 0)); then
   git add .
 else
-  git add "$@"
+  git add -- "$@"
 fi
 
-git commit -m "$message: $(date)"
+git commit -m "${message_prefix}: $(date)"

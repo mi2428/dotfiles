@@ -1,0 +1,160 @@
+{ lib, pkgs, platformName, ... }:
+let
+  shellPackages = with pkgs; [
+    bash
+    bat
+    coreutils
+    delta
+    direnv
+    eza
+    fd
+    fish
+    fzf
+    gh
+    git
+    git-lfs
+    gitflow
+    gnugrep
+    gnupg
+    go-task
+    jq
+    neovim
+    python313Packages.pynvim
+    ripgrep
+    starship
+    tig
+    tmux
+    tree
+    watch
+    wget
+    yq-go
+    zoxide
+    zsh
+    zsh-autosuggestions
+    zsh-completions
+    zsh-syntax-highlighting
+  ];
+  containerDevPackages = with pkgs; [
+    actionlint
+    bash-language-server
+    go
+    go-tools
+    golangci-lint
+    gopls
+    hadolint
+    lua-language-server
+    nixd
+    nodejs
+    pre-commit
+    pyright
+    python313Packages.python-lsp-server
+    ruff
+    shfmt
+    stylua
+    taplo
+    terraform-ls
+    tflint
+    uv
+    vscode-langservers-extracted
+    yaml-language-server
+    yarn
+  ];
+  nonContainerPackages = with pkgs; [
+    aws-cdk-cli
+    aws-sam-cli
+    awscli2
+    black
+    cargo-dist
+    cmake
+    colordiff
+    cowsay
+    csvkit
+    cue
+    deno
+    difftastic
+    docker
+    eksctl
+    expect
+    figlet
+    fq
+    frogmouth
+    glances
+    glow
+    gotools
+    gradle
+    grc
+    gum
+    herdr
+    hexyl
+    htop
+    httpie
+    ipcalc
+    iperf3
+    ipinfo
+    isort
+    jnv
+    k9s
+    kubectl
+    lazygit
+    libssh
+    most
+    mtools
+    mtr
+    net-snmp
+    nfdump
+    nkf
+    nmap
+    ollama
+    oui
+    pipenv
+    pipx
+    playwright-driver
+    poetry
+    podman
+    poppler
+    procs
+    protobuf
+    pv
+    rbenv
+    rich-cli
+    rustup
+    silver-searcher-ng
+    sops
+    speedtest-cli
+    tailspin
+    terraform
+    tokei
+    (lib.hiPrio tmuxinator)
+    vhs
+    viddy
+    yt-dlp
+    zig
+  ];
+  commonPackages = shellPackages
+    ++ containerDevPackages
+    ++ lib.optionals (platformName != "docker") nonContainerPackages;
+  linuxPackages = with pkgs; [
+    rsyslog
+  ];
+  darwinPackages = with pkgs; [
+    _1password-cli
+    android-tools
+    claude-code
+    codex
+    iproute2mac
+    mas
+    pinentry_mac
+    postgresql_14
+    ssm-session-manager-plugin
+    swift-format
+    swiftformat
+    swiftlint
+    temurin-bin-17
+  ];
+in {
+  # Keep shared command-line tools owned by Home Manager instead of imperative
+  # per-language global installs.
+  home.packages = commonPackages
+    ++ lib.optionals pkgs.stdenv.isLinux linuxPackages
+    ++ lib.optionals pkgs.stdenv.isDarwin darwinPackages;
+}

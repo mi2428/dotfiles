@@ -1,4 +1,8 @@
-#!/bin/bash
-d=$(date +%Y%m%d%H%M%S)
-git flow release start "rel-${d}"
-git flow release finish -m "Release: ${d}" "rel-${d}"
+#!/usr/bin/env bash
+set -euo pipefail
+
+release_id="$(date +%Y%m%d%H%M%S)"
+release_branch="rel-${release_id}"
+
+git flow release start "$release_branch"
+git flow release finish -m "Release: ${release_id}" "$release_branch"

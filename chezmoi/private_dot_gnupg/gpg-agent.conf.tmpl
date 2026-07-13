@@ -1,0 +1,5 @@
+{{- if eq .chezmoi.arch "amd64" -}}
+pinentry-program /usr/local/bin/pinentry-mac
+{{- else -}}
+pinentry-program /opt/homebrew/bin/pinentry-mac
+{{- end }}

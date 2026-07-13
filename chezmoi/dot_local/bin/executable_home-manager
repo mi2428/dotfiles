@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+home_manager_flake="${DOTFILES_HOME_MANAGER_FLAKE:-github:nix-community/home-manager/release-25.05}"
+
+resolve_nix() {
+  if command -v nix >/dev/null 2>&1; then
+    command -v nix
+    return 0
+  fi
+
+  for candidate in \
+    "$HOME/.nix-profile/bin/nix" \
+    "$HOME/.local/state/nix/profile/bin/nix" \
+    "/run/current-system/sw/bin/nix" \
+    "/nix/var/nix/profiles/default/bin/nix"
+  do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  printf '%s\n' 'home-manager: nix was not found in PATH or standard profile locations' >&2
+  exit 1
+}
+
+nix_bin="$(resolve_nix)"
+
+exec "$nix_bin" run \
+  --extra-experimental-features 'nix-command flakes' \
+  "$home_manager_flake" \
+  -- "$@"

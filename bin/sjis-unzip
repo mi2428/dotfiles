@@ -1,17 +1,59 @@
 #!/usr/bin/env python3
+"""Extract ZIP archives whose member names were encoded in Shift-JIS."""
+
+from __future__ import annotations
+
 import argparse
-import sys
 import zipfile
+from pathlib import Path
+from typing import Sequence
 
-def main(filename):
-    with zipfile.ZipFile(filename) as zip:
-        for info in zip.infolist():
-            if type(info.filename) != str:
-                info.filename = info.filename.decode('shift-jis').encode('utf-8')
-            zip.extract(info)
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="extract zip file compressed with SJIS")
-    parser.add_argument(dest="FILE_PATH", help="path to zip")
-    args = parser.parse_args()
-    sys.exit(main(args.FILE_PATH))
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parse CLI arguments."""
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("archive", type=Path, help="path to the ZIP archive")
+    parser.add_argument(
+        "-d",
+        "--destination",
+        type=Path,
+        default=Path("."),
+        help="directory to extract into (default: current directory)",
+    )
+    return parser.parse_args(argv)
+
+
+def decode_member_name(name: str) -> str:
+    """Recover a Shift-JIS or CP932 member name from zipfile's CP437 decode."""
+
+    raw_name = name.encode("cp437")
+    for encoding in ("cp932", "shift_jis"):
+        try:
+            return raw_name.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return name
+
+
+def extract_archive(archive_path: Path, destination: Path) -> None:
+    """Extract all archive members after repairing their filenames."""
+
+    with zipfile.ZipFile(archive_path) as archive:
+        for member in archive.infolist():
+            decoded_name = member.filename if member.flag_bits & 0x800 else decode_member_name(member.filename)
+            member.filename = decoded_name
+            member.orig_filename = decoded_name
+            archive.extract(member, path=destination)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the CLI."""
+
+    args = parse_args(argv)
+    extract_archive(args.archive, args.destination)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

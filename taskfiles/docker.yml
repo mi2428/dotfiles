@@ -1,0 +1,59 @@
+version: '3'
+
+tasks:
+  docker.build:
+    desc: Build Dockerfile locally as ghcr.io/OWNER/IMAGE:TAG
+    preconditions:
+      - sh: 'command -v {{default "docker" .DOCKER_RUNTIME}} >/dev/null 2>&1'
+        msg: DOCKER_RUNTIME was not found in PATH
+    cmds:
+      - |
+        set -eu
+        docker_runtime='{{default "docker" .DOCKER_RUNTIME}}'
+        ghcr_owner='{{default "mi2428" .GHCR_OWNER}}'
+        ghcr_image_name='{{default "dotfiles" .GHCR_IMAGE_NAME}}'
+        tag='{{default "latest" .TAG}}'
+        ghcr_image="ghcr.io/$ghcr_owner/$ghcr_image_name"
+        "$docker_runtime" buildx build --load -t "$ghcr_image:$tag" .
+
+  docker.login:
+    desc: Login to ghcr.io with GHCR_TOKEN, GITHUB_TOKEN, or gh auth token
+    preconditions:
+      - sh: 'command -v {{default "docker" .DOCKER_RUNTIME}} >/dev/null 2>&1'
+        msg: DOCKER_RUNTIME was not found in PATH
+      - sh: '[ -n "${GHCR_TOKEN:-}" ] || [ -n "${GITHUB_TOKEN:-}" ] || command -v gh >/dev/null 2>&1'
+        msg: Set GHCR_TOKEN, GITHUB_TOKEN, or authenticate with gh before logging in to ghcr.io
+    cmds:
+      - |
+        set -eu
+        docker_runtime='{{default "docker" .DOCKER_RUNTIME}}'
+        ghcr_owner='{{default "mi2428" .GHCR_OWNER}}'
+        if [ -n "${GHCR_TOKEN:-}" ]; then
+          token="$(printf %s "${GHCR_TOKEN}")"
+        elif [ -n "${GITHUB_TOKEN:-}" ]; then
+          token="$(printf %s "${GITHUB_TOKEN}")"
+        else
+          token="$(gh auth token)"
+        fi
+        username="${GHCR_USERNAME:-$ghcr_owner}"
+        printf '%s' "$token" | "$docker_runtime" login ghcr.io -u "$username" --password-stdin
+
+  docker.push:
+    desc: Build and push Dockerfile to ghcr.io as ghcr.io/OWNER/IMAGE:TAG
+    preconditions:
+      - sh: 'command -v {{default "docker" .DOCKER_RUNTIME}} >/dev/null 2>&1'
+        msg: DOCKER_RUNTIME was not found in PATH
+    cmds:
+      - task: docker.login
+        vars:
+          DOCKER_RUNTIME: '{{default "docker" .DOCKER_RUNTIME}}'
+          GHCR_OWNER: '{{default "mi2428" .GHCR_OWNER}}'
+      - |
+        set -eu
+        docker_runtime='{{default "docker" .DOCKER_RUNTIME}}'
+        ghcr_owner='{{default "mi2428" .GHCR_OWNER}}'
+        ghcr_image_name='{{default "dotfiles" .GHCR_IMAGE_NAME}}'
+        tag='{{default "latest" .TAG}}'
+        platforms='{{default "linux/amd64,linux/arm64" .PLATFORMS}}'
+        ghcr_image="ghcr.io/$ghcr_owner/$ghcr_image_name"
+        "$docker_runtime" buildx build --platform "$platforms" --push -t "$ghcr_image:$tag" .
