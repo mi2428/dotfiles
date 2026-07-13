@@ -23,7 +23,7 @@ let
   };
   relativeFiles = baseRelativeFiles ++ (hostExtraFiles.${hostName} or [ ]);
   pickSource = import ../../lib/pick-legacy-source.nix { inherit hostName; } {
-    baseRoot = ../../../etc/fish;
+    baseRoot = ../../../home/files/config/fish;
     overlays = {
       macos = ../../../home/files/hosts/macos/fish;
     };

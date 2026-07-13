@@ -7,7 +7,8 @@ usage() {
   cat <<'EOF'
 Usage: bootstrap/verify-source-equivalence.sh --host HOST [--baseline REF]
 
-Verifies legacy-output equivalence without building Home Manager. It compares:
+Compares archived legacy output against the current source layout without
+building Home Manager. It compares:
 
 1. The archived legacy output from master:init/LINK
 2. The current chezmoi-managed output plus an emulated Home Manager file tree
@@ -156,7 +157,7 @@ materialize_fish() {
 
   for relative_path in "${relative_paths[@]}"; do
     link_file \
-      "$(pick_source "$repo_root/etc/fish" "$overlay_root" "$relative_path")" \
+      "$(pick_source "$repo_root/home/files/config/fish" "$overlay_root" "$relative_path")" \
       "$current_home/.config/fish/$relative_path"
   done
 }
