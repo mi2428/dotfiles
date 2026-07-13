@@ -1,5 +1,6 @@
-{ lib, platformFiles, ... }:
+{ config, lib, ... }:
 let
+  inherit (config.dotfiles) platform;
   relativeFiles = [
     "05_catppuccin_theme.zsh"
     "10_general.zsh"
@@ -11,28 +12,25 @@ let
     "40_grc.zsh"
   ];
   sourceFor = relativePath:
-    if builtins.hasAttr relativePath platformFiles.zsh.overrides then
-      platformFiles.zsh.overrides.${relativePath}
+    if builtins.hasAttr relativePath platform.zsh.overrides then
+      platform.zsh.overrides.${relativePath}
     else
       ../../../home/files/zsh/${relativePath};
-  zshFiles = lib.listToAttrs (map
-    (relativePath:
-      lib.nameValuePair ".zsh/${relativePath}" {
-        source = sourceFor relativePath;
-      })
-    relativeFiles);
+  initFragments = map
+    (relativePath: ''
+      # ${relativePath}
+      ${builtins.readFile (sourceFor relativePath)}
+    '')
+    relativeFiles;
 in {
   programs.zsh = {
     enable = true;
     enableCompletion = true;
+    completionInit = "";
     autosuggestion.enable = true;
     syntaxHighlighting.enable = true;
-    initContent = ''
-      for conf in "$HOME"/.zsh/*.zsh(N); do
-        source "$conf"
-      done
-    '';
+    # The sourced assets still own most shell behavior; HM owns the assembly
+    # order and surrounding integration.
+    initContent = lib.mkOrder 550 (lib.concatStringsSep "\n" initFragments);
   };
-
-  home.file = zshFiles;
 }

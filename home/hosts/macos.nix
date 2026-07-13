@@ -1,6 +1,6 @@
 { homeDirectory, userName, ... }:
 let
-  platformFiles = {
+  platform = {
     fish = {
       extraFiles = [ "conf.d/22_aliases.fish" ];
     };
@@ -8,9 +8,6 @@ let
     tmux = {
       cpu = ../files/tmux/scripts/cpu.macos.sh;
       mem = ../files/tmux/scripts/mem.macos.sh;
-    };
-    vscode = {
-      settingsTarget = "Library/Application Support/Code/User/settings.json";
     };
     zsh = {
       overrides = {
@@ -20,7 +17,7 @@ let
     };
   };
 in {
-  _module.args = { inherit platformFiles; };
+  dotfiles.platform = platform;
 
   imports = [
     ../profiles/base.nix

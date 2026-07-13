@@ -1,5 +1,6 @@
-{ lib, pkgs, platformFiles, ... }:
+{ config, lib, pkgs, ... }:
 let
+  inherit (config.dotfiles) platform;
   fzfGitSource = pkgs.fetchFromGitHub {
     owner = "junegunn";
     repo = "fzf-git.sh";
@@ -19,7 +20,7 @@ let
     "functions/fish_title.fish"
     "functions/fish_user_key_bindings.fish"
   ];
-  relativeFiles = baseRelativeFiles ++ platformFiles.fish.extraFiles;
+  relativeFiles = baseRelativeFiles ++ platform.fish.extraFiles;
   sourceFor = relativePath:
     ../../../home/files/config/fish/${relativePath};
   fishFiles = lib.listToAttrs (map

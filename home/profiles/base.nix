@@ -1,5 +1,6 @@
 { ... }: {
   imports = [
+    ../modules/dotfiles
     ../modules/core
     ../modules/programs
   ];

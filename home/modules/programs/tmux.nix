@@ -1,8 +1,7 @@
-{ lib, pkgs, platformFiles, ... }:
+{ config, lib, pkgs, ... }:
 let
-  catppuccinPlugin =
-    "${pkgs.tmuxPlugins.catppuccin}/share/tmux-plugins/catppuccin";
-  relativeFiles = [
+  inherit (config.dotfiles) platform;
+  tmuxFiles = [
     "scripts/battery-icon.sh"
     "scripts/battery.sh"
     "scripts/storage.sh"
@@ -11,20 +10,29 @@ let
   ];
   sourceFor = relativePath:
     ../../../home/files/tmux/${relativePath};
-  tmuxFiles = lib.listToAttrs (map
+  helperFiles = lib.listToAttrs (map
     (relativePath:
       lib.nameValuePair ".tmux/${relativePath}" {
         source = sourceFor relativePath;
       })
-    relativeFiles);
+    tmuxFiles);
 in {
-  home.file = tmuxFiles // {
-    ".tmux.conf".source = ../../../home/files/tmux/tmux.conf;
-    ".tmux/scripts/cpu.sh".source = platformFiles.tmux.cpu;
-    ".tmux/scripts/mem.sh".source = platformFiles.tmux.mem;
+  home.file = helperFiles // {
+    ".tmux/scripts/cpu.sh".source = platform.tmux.cpu;
+    ".tmux/scripts/mem.sh".source = platform.tmux.mem;
     ".tmux/statusbar.conf".source = ../../../home/files/tmux/statusbar.conf;
   };
-  xdg.configFile."tmux/plugins/catppuccin/tmux" = {
-    source = catppuccinPlugin;
+
+  programs.tmux = {
+    enable = true;
+    prefix = "C-t";
+    terminal = "xterm-256color";
+    baseIndex = 1;
+    historyLimit = 10000000;
+    escapeTime = 0;
+    focusEvents = true;
+    mouse = true;
+    plugins = [ pkgs.tmuxPlugins.catppuccin ];
+    extraConfig = builtins.readFile ../../../home/files/tmux/tmux.conf;
   };
 }
