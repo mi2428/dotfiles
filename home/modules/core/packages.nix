@@ -1,41 +1,153 @@
 { lib, pkgs, ... }:
 let
-  shellPackages = lib.optionals pkgs.stdenv.isLinux (with pkgs; [
-    fish
-    zsh
-  ]);
-in {
-  # Keep shared command-line tools owned by Home Manager instead of imperative
-  # per-language global installs.
-  home.packages = (with pkgs; [
+  commonPackages = with pkgs; [
+    actionlint
+    aws-cdk-cli
+    aws-sam-cli
+    awscli2
+    bash
+    bash-language-server
     bat
-    delta
+    black
+    cargo
+    cargo-dist
+    cmake
+    colordiff
+    coreutils
+    cowsay
+    csvkit
+    cue
+    deno
+    difftastic
+    direnv
+    docker
+    eksctl
+    expect
     eza
     fd
+    figlet
+    fish
+    fq
+    frogmouth
     fzf
+    gh
+    delta
     git
+    git-lfs
+    gitflow
+    glances
     glow
+    gnugrep
+    gnupg
     go
     go-tools
+    golangci-lint
     gotools
     gopls
-    frogmouth
+    gradle
     grc
+    gum
+    hadolint
+    herdr
+    hexyl
+    htop
+    httpie
+    ipcalc
+    iperf3
+    ipinfo
+    isort
+    jnv
     jq
     k9s
     kubectl
     lazygit
+    libssh
+    lua-language-server
+    most
+    mtools
     mtr
+    net-snmp
+    nfdump
     neovim
+    nkf
+    nmap
     nodejs
-    python3Packages.pynvim
+    ollama
+    oui
+    pipenv
+    pipx
+    playwright-driver
+    podman
+    poetry
+    poppler
+    pre-commit
     procs
+    protobuf
+    pv
+    pyright
+    python313Packages.pynvim
+    python313Packages.python-lsp-server
+    rbenv
+    rich-cli
     ripgrep
+    ruff
     rust-analyzer
+    rustc
+    rustup
+    shfmt
+    silver-searcher-ng
+    sops
+    speedtest-cli
     starship
+    stylua
+    tailspin
+    taplo
     terraform
+    terraform-ls
+    tflint
+    tig
     tmux
+    tmuxinator
+    tokei
     tree
+    uv
+    vhs
+    viddy
+    vscode-langservers-extracted
+    watch
+    wget
+    yq-go
+    yarn
+    yt-dlp
+    zig
     zoxide
-  ]) ++ shellPackages;
+    zsh
+    zsh-autosuggestions
+    zsh-completions
+    zsh-syntax-highlighting
+  ];
+  linuxPackages = with pkgs; [
+    rsyslog
+  ];
+  darwinPackages = with pkgs; [
+    _1password-cli
+    android-tools
+    claude-code
+    codex
+    iproute2mac
+    mas
+    pinentry_mac
+    postgresql_14
+    ssm-session-manager-plugin
+    swift-format
+    swiftformat
+    swiftlint
+    temurin-bin-17
+  ];
+in {
+  # Keep shared command-line tools owned by Home Manager instead of imperative
+  # per-language global installs.
+  home.packages = commonPackages
+    ++ lib.optionals pkgs.stdenv.isLinux linuxPackages
+    ++ lib.optionals pkgs.stdenv.isDarwin darwinPackages;
 }

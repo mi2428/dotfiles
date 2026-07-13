@@ -1,14 +1,14 @@
 { config, lib, pkgs, ... }:
 let
-  currentPrefix = if pkgs.stdenv.hostPlatform.isAarch64 then "/opt/homebrew" else "/usr/local";
-  mkAgentConf = prefix: ''
-    pinentry-program ${prefix}/bin/pinentry-mac
+  currentPinentry = "${pkgs.pinentry_mac}/bin/pinentry-mac";
+  mkAgentConf = pinentryProgram: ''
+    pinentry-program ${pinentryProgram}
   '';
 in {
   home.file = {
-    ".gnupg/gpg-agent.conf".text = mkAgentConf currentPrefix;
-    ".gnupg/gpg-agent.conf.apple".text = mkAgentConf "/opt/homebrew";
-    ".gnupg/gpg-agent.conf.intel".text = mkAgentConf "/usr/local";
+    ".gnupg/gpg-agent.conf".text = mkAgentConf currentPinentry;
+    ".gnupg/gpg-agent.conf.apple".text = mkAgentConf "/opt/homebrew/bin/pinentry-mac";
+    ".gnupg/gpg-agent.conf.intel".text = mkAgentConf "/usr/local/bin/pinentry-mac";
   };
 
   home.activation.gnupgPermissions = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

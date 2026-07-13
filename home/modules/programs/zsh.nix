@@ -24,7 +24,9 @@ let
       })
     relativeFiles);
 in {
-  home.file = zshFiles // lib.optionalAttrs pkgs.stdenv.isLinux {
+  home.file = zshFiles // {
+    ".local/share/zsh/site-functions".source =
+      "${pkgs.zsh-completions}/share/zsh/site-functions";
     ".local/share/zsh/zsh-autosuggestions".source =
       "${pkgs.zsh-autosuggestions}/share/zsh-autosuggestions";
     ".local/share/zsh/zsh-syntax-highlighting".source =
