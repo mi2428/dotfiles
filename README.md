@@ -60,6 +60,9 @@ The former top-level `etc/` and `init/` trees have been retired. XDG config
 sources are under `home/files/config/`, non-XDG dotfiles are under their
 corresponding `home/files/` directory. The `linux-server` and `docker-dev`
 configuration names remain available as separate host modules.
+Supported flake hosts are currently `macos`, `linux-server`, and `docker-dev`.
+The old `linux-desktop` and `checkpoint` host trees were intentionally retired
+in this overhaul and are not migrated into the current flake.
 
 ### Minimal fallback
 

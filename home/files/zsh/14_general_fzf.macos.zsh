@@ -1,5 +1,5 @@
 if whence -p fzf 1> /dev/null && fzf --zsh >/dev/null 2>&1; then
-  source <(fzf --zsh)
+  source <(fzf --zsh) 2>/dev/null
 fi
 export FZF_COMPLETION_TRIGGER='**'
 if whence -p fd 1> /dev/null; then
