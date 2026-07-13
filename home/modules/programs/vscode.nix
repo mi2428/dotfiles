@@ -1,8 +1,11 @@
-{ platformFiles, ... }: {
-  home.file = {
-    "${platformFiles.vscode.settingsTarget}" = {
-      force = true;
-      source = ../../../home/files/config/vscode/settings.json;
-    };
+{ ... }:
+let
+  settings = builtins.fromJSON (
+    builtins.readFile ../../../home/files/config/vscode/settings.json
+  );
+in {
+  programs.vscode = {
+    enable = true;
+    profiles.default.userSettings = settings;
   };
 }
