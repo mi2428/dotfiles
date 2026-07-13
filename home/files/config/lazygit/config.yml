@@ -25,7 +25,7 @@ gui:
 git:
   pagers:
     - name: delta
-      pager: 'delta --features=catppuccin-lazygit-mocha --dark --paging=never --line-numbers --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}" --side-by-side'
+      pager: 'delta --features=catppuccin-mocha --dark --paging=never --line-numbers --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}" --side-by-side'
     - {}
   autoForwardBranches: onlyMainBranches
 
