@@ -5,26 +5,40 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
   cat <<'EOF'
-Usage: bootstrap/apply-darwin.sh --host HOST [--home PATH] [--user USER]
+Usage: bootstrap/apply-darwin.sh --host HOST
 EOF
 }
 
+host_home() {
+  case "$1" in
+    macos)
+      printf '%s\n' '/Users/teo'
+      ;;
+    *)
+      printf '%s\n' "bootstrap: unsupported darwin host: $1" >&2
+      return 1
+      ;;
+  esac
+}
+
+host_user() {
+  case "$1" in
+    macos)
+      printf '%s\n' 'teo'
+      ;;
+    *)
+      printf '%s\n' "bootstrap: unsupported darwin host: $1" >&2
+      return 1
+      ;;
+  esac
+}
+
 host=""
-target_home="${DOTFILES_HOME:-$HOME}"
-target_user="${DOTFILES_USER:-${USER:-teo}}"
 
 while (($# > 0)); do
   case "$1" in
     --host)
       host="$2"
-      shift 2
-      ;;
-    --home)
-      target_home="$2"
-      shift 2
-      ;;
-    --user)
-      target_user="$2"
       shift 2
       ;;
     -h|--help)
@@ -44,26 +58,8 @@ if [[ -z "$host" ]]; then
   exit 1
 fi
 
-case "$host" in
-  macos)
-    expected_home="/Users/teo"
-    expected_user="teo"
-    ;;
-  *)
-    printf '%s\n' "bootstrap: unsupported darwin host: $host" >&2
-    exit 1
-    ;;
-esac
-
-if [[ "$target_home" != "$expected_home" ]]; then
-  printf '%s\n' "bootstrap: pure flake host '$host' requires home '$expected_home' (got '$target_home')" >&2
-  exit 1
-fi
-
-if [[ "$target_user" != "$expected_user" ]]; then
-  printf '%s\n' "bootstrap: pure flake host '$host' requires user '$expected_user' (got '$target_user')" >&2
-  exit 1
-fi
+target_home="$(host_home "$host")"
+target_user="$(host_user "$host")"
 
 nix_bin="$("$repo_root/bootstrap/install-nix.sh")"
 nix_bin_dir="$(dirname "$nix_bin")"
