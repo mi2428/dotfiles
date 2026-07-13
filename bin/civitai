@@ -1,109 +1,78 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-SSH_CONFIG_HOSTNAME="gpu"
-DIR_PATH=""
-FILES=()
+ssh_host="gpu"
+destination=""
+declare -a files=()
 
 usage() {
-  cat <<EOF
-  Usage:
-    civitai [options] [files...]
+  cat <<'EOF'
+Usage:
+  civitai [options] [files...]
 
-  OPTIONS
-    -b, --base         upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/Stable-diffusiuon
-    -a, --adetailer    upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/adetailer
-    -l, --lora         upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/Lora
-    -la,               upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/Lora/artist
-    -lb,               upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/Lora/background
-    -lc,               upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/Lora/character
-    -lq,               upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/Lora/quality
-    -ls,               upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/Lora/style
-    -lp,               upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/Lora/pose
-    -lx,               upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/Lora/xxx
-    -L, --lycoris      upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/LyCORIS
-    -e, --embedding    upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/embeddings
-    -c, --controlnet   upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/ControlNet
-    -v, --vae          upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/VAE
-    -E, --esrgan       upload files to GPU_SERVER:~/io/stable-diffusion-webui-docker/data/models/ESRGAN
+Options:
+  -b,  --base        upload to ~/io/stable-diffusion-webui-docker/data/models/Stable-diffusion
+  -a,  --adetailer   upload to ~/io/stable-diffusion-webui-docker/data/models/adetailer
+  -l,  --lora        upload to ~/io/stable-diffusion-webui-docker/data/models/Lora
+  -la                upload to ~/io/stable-diffusion-webui-docker/data/models/Lora/artist
+  -lb                upload to ~/io/stable-diffusion-webui-docker/data/models/Lora/background
+  -lc                upload to ~/io/stable-diffusion-webui-docker/data/models/Lora/character
+  -lq                upload to ~/io/stable-diffusion-webui-docker/data/models/Lora/quality
+  -ls                upload to ~/io/stable-diffusion-webui-docker/data/models/Lora/style
+  -lp                upload to ~/io/stable-diffusion-webui-docker/data/models/Lora/pose
+  -lx                upload to ~/io/stable-diffusion-webui-docker/data/models/Lora/xxx
+  -L,  --lycoris     upload to ~/io/stable-diffusion-webui-docker/data/models/LyCORIS
+  -e,  --embedding   upload to ~/io/stable-diffusion-webui-docker/data/embeddings
+  -c,  --controlnet  upload to ~/io/stable-diffusion-webui-docker/data/models/ControlNet
+  -v,  --vae         upload to ~/io/stable-diffusion-webui-docker/data/models/VAE
+  -E,  --esrgan      upload to ~/io/stable-diffusion-webui-docker/data/models/ESRGAN
 EOF
 }
 
-argparse() {
-  FILES=()
-  DIR_PATH=""
-
+parse_args() {
   while (($#)); do
     case "$1" in
-      '--base'|'-b')
-        DIR_PATH="io/stable-diffusion-webui-docker/data/models/Stable-diffusion"
-        shift ;;
-      '--adetaiiler'|'--adetailer'|'-a')
-        DIR_PATH="io/stable-diffusion-webui-docker/data/models/adetailer"
-        shift ;;
-      '--lora'|'-l')
-        DIR_PATH="io/stable-diffusion-webui-docker/data/models/Lora"
-        shift ;;
-      '-la')
-        DIR_PATH="io/stable-diffusion-webui-docker/data/models/Lora/artist"
-        shift ;;
-      '-lb')
-        DIR_PATH="io/stable-diffusion-webui-docker/data/models/Lora/background"
-        shift ;;
-      '-lc')
-        DIR_PATH="io/stable-diffusion-webui-docker/data/models/Lora/character"
-        shift ;;
-      '-ls')
-        DIR_PATH="io/stable-diffusion-webui-docker/data/models/Lora/style"
-        shift ;;
-      '-lp')
-        DIR_PATH="io/stable-diffusion-webui-docker/data/models/Lora/pose"
-        shift ;;
-      '-lq')
-        DIR_PATH="io/stable-diffusion-webui-docker/data/models/Lora/quality"
-        shift ;;
-      '-lx')
-        DIR_PATH="io/stable-diffusion-webui-docker/data/models/Lora/xxx"
-        shift ;;
-      '--lycoris'|'-L')
-        DIR_PATH="io/stable-diffusion-webui-docker/data/models/LyCORIS"
-        shift ;;
-      '--embedding'|'-e')
-        DIR_PATH="io/stable-diffusion-webui-docker/data/embeddings"
-        shift ;;
-      '--controlnet'|'-c')
-        DIR_PATH="io/stable-diffusion-webui-docker/data/models/ControlNet"
-        shift ;;
-      '--vae'|'-v')
-        DIR_PATH="io/stable-diffusion-webui-docker/data/models/VAE"
-        shift ;;
-      '--esrgan'|'-E')
-        DIR_PATH="io/stable-diffusion-webui-docker/data/models/ESRGAN"
-        shift ;;
-      '--help'|'-h')
+      --base|-b) destination="io/stable-diffusion-webui-docker/data/models/Stable-diffusion" ;;
+      --adetailer|--adetaiiler|-a) destination="io/stable-diffusion-webui-docker/data/models/adetailer" ;;
+      --lora|-l) destination="io/stable-diffusion-webui-docker/data/models/Lora" ;;
+      -la) destination="io/stable-diffusion-webui-docker/data/models/Lora/artist" ;;
+      -lb) destination="io/stable-diffusion-webui-docker/data/models/Lora/background" ;;
+      -lc) destination="io/stable-diffusion-webui-docker/data/models/Lora/character" ;;
+      -lq) destination="io/stable-diffusion-webui-docker/data/models/Lora/quality" ;;
+      -ls) destination="io/stable-diffusion-webui-docker/data/models/Lora/style" ;;
+      -lp) destination="io/stable-diffusion-webui-docker/data/models/Lora/pose" ;;
+      -lx) destination="io/stable-diffusion-webui-docker/data/models/Lora/xxx" ;;
+      --lycoris|-L) destination="io/stable-diffusion-webui-docker/data/models/LyCORIS" ;;
+      --embedding|-e) destination="io/stable-diffusion-webui-docker/data/embeddings" ;;
+      --controlnet|-c) destination="io/stable-diffusion-webui-docker/data/models/ControlNet" ;;
+      --vae|-v) destination="io/stable-diffusion-webui-docker/data/models/VAE" ;;
+      --esrgan|-E) destination="io/stable-diffusion-webui-docker/data/models/ESRGAN" ;;
+      --help|-h)
         usage
-        exit 0 ;;
+        exit 0
+        ;;
       --*|-*)
-        echo "civitai: unknown option: $1" >&2
-        usage
-        return 1 ;;
+        printf 'civitai: unknown option: %s\n' "$1" >&2
+        usage >&2
+        return 1
+        ;;
       *)
-        FILES+=("$1")
-        shift ;;
+        files+=("$1")
+        ;;
     esac
+    shift
   done
 
-  if [[ -z "$DIR_PATH" ]] || ((${#FILES[@]} == 0)); then
-    usage
-    return 1
-  fi
+  [[ -n "$destination" && ${#files[@]} -gt 0 ]]
 }
 
 main() {
-  argparse "$@" || exit $?
+  parse_args "$@" || {
+    usage >&2
+    exit 1
+  }
 
-  if scp "${FILES[@]}" "${SSH_CONFIG_HOSTNAME}:~/${DIR_PATH}"; then
-    rm -i -- "${FILES[@]}"
-  fi
+  scp "${files[@]}" "${ssh_host}:~/${destination}" && rm -i -- "${files[@]}"
 }
 
 main "$@"
