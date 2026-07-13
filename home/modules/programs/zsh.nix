@@ -13,8 +13,8 @@ let
   pickSource = import ../../lib/pick-legacy-source.nix { inherit hostName; } {
     baseRoot = ../../../home/files/zsh/zsh;
     overlays = {
-      macos = ../../../etc/hosts/macos/zsh/zsh;
-      "docker-dev" = ../../../etc/hosts/docker/zsh/zsh;
+      macos = ../../../home/files/hosts/macos/zsh/zsh;
+      "docker-dev" = ../../../home/files/hosts/docker-dev/zsh/zsh;
     };
   };
   zshFiles = lib.listToAttrs (map

@@ -13,9 +13,9 @@ let
   pickSource = import ../../lib/pick-legacy-source.nix { inherit hostName; } {
     baseRoot = ../../../home/files/tmux/tmux;
     overlays = {
-      macos = ../../../etc/hosts/macos/tmux/tmux;
-      "linux-server" = ../../../etc/hosts/linux-server/tmux/tmux;
-      "docker-dev" = ../../../etc/hosts/docker/tmux/tmux;
+      macos = ../../../home/files/hosts/macos/tmux/tmux;
+      "linux-server" = ../../../home/files/hosts/linux-server/tmux/tmux;
+      "docker-dev" = ../../../home/files/hosts/docker-dev/tmux/tmux;
     };
   };
   tmuxFiles = lib.listToAttrs (map

@@ -3,7 +3,7 @@ let
   pickSource = import ../../lib/pick-legacy-source.nix { inherit hostName; } {
     baseRoot = ../../../home/files/git;
     overlays = {
-      macos = ../../../etc/hosts/macos/git;
+      macos = ../../../home/files/hosts/macos/git;
     };
   };
 in {
