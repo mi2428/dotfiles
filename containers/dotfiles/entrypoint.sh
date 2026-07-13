@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HOST_USER=${HOST_USER:-mi2428}
+HOST_USER=${HOST_USER:-teo}
 HOST_UID=${HOST_UID:-1000}
 HOST_GID=${HOST_GID:-1000}
 DEFAULT_SHELL=${DEFAULT_SHELL:-/etc/skel/.nix-profile/bin/fish}
