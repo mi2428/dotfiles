@@ -47,6 +47,8 @@ fi
 mkdir -p "$target_home"
 
 nix_bin="$("$repo_root/bootstrap/install-nix.sh")"
+nix_system="${DOTFILES_NIX_SYSTEM:-$("$repo_root/bootstrap/detect-nix-system.sh")}"
+nix_bin_dir="$(dirname "$nix_bin")"
 cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/bootstrap"
 activation_link="$cache_dir/home-manager-${host}"
 
@@ -54,10 +56,14 @@ mkdir -p "$cache_dir"
 
 DOTFILES_HOME="$target_home" \
 DOTFILES_USER="$target_user" \
+DOTFILES_NIX_SYSTEM="$nix_system" \
   "$nix_bin" build \
     --impure \
     --extra-experimental-features 'nix-command flakes' \
     "path:${repo_root}#homeConfigurations.${host}.activationPackage" \
     --out-link "$activation_link"
 
-HOME="$target_home" USER="$target_user" "$activation_link/activate"
+HOME="$target_home" \
+USER="$target_user" \
+PATH="$nix_bin_dir:$PATH" \
+  "$activation_link/activate"
