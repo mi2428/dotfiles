@@ -35,7 +35,7 @@ export PATH_BOOKMARK=$HOME/.zsh_pathbook
 export NOTES_DIR=$HOME/notes
 export NOTES_DIRECTORY=$HOME/notes
 
-[[ -f ${PATH_BOOKMARK} ]] || touch ${PATH_BOOKMARK}
+[[ -f "$PATH_BOOKMARK" ]] || touch "$PATH_BOOKMARK"
 
 #export TERM=screen-256color
 export TERM=xterm-256color
@@ -78,28 +78,28 @@ zstyle ':completion:*:warnings'        format "%F{$CTP_RED}No matches for:%f%F{$
 if [[ -d ~/.ssh ]]; then
   local h=()
   if [[ -r ~/.ssh/known_hosts ]]; then
-    h=($h $(awk '{print $1}' $HOME/.ssh/known_hosts | cut -d ',' -f 1 | grep -v '\[' | sort | uniq))
+    h+=("${(@f)$(awk '{print $1}' "$HOME/.ssh/known_hosts" | cut -d ',' -f 1 | grep -v '\[' | sort -u)}")
   fi
   if [[ -r ~/.ssh/config ]]; then
-    h=($h $(egrep 'Host\s+[^\*]+[^\*]$' $HOME/.ssh/config  | awk '{print $NF}'))
+    h+=("${(@f)$(grep -E 'Host\s+[^\*]+[^\*]$' "$HOME/.ssh/config" | awk '{print $NF}')}")
   fi
-  if [[ $#h -gt 0 ]]; then
-    zstyle ':completion:*:ssh:*' hosts $h
-    zstyle ':completion:*:scp:*' hosts $h
-    zstyle ':completion:*:rsync:*' hosts $h
-    zstyle ':completion:*:slogin:*' hosts $h
+  if (( ${#h[@]} > 0 )); then
+    zstyle ':completion:*:ssh:*' hosts "${h[@]}"
+    zstyle ':completion:*:scp:*' hosts "${h[@]}"
+    zstyle ':completion:*:rsync:*' hosts "${h[@]}"
+    zstyle ':completion:*:slogin:*' hosts "${h[@]}"
   fi
 fi
 
 if [[ -n ${SSH_AGENT_PID} ]] && ! ssh-add -l 1> /dev/null; then
-  ssh-add $HOME/.ssh/masterkey/mi2428.master.id_ed25519
-  ssh-add $HOME/.ssh/masterkey.old/mi2428.master.id_ed25519
-  ssh-add $HOME/.ssh/masterkey.old/mi2428.master.id_rsa
-  ssh-add $HOME/.ssh/git/mi2428.git.id_ed25519
-  ssh-add $HOME/.ssh/soracom.io/kagari-teo.pem
+  ssh-add "$HOME/.ssh/masterkey/mi2428.master.id_ed25519"
+  ssh-add "$HOME/.ssh/masterkey.old/mi2428.master.id_ed25519"
+  ssh-add "$HOME/.ssh/masterkey.old/mi2428.master.id_rsa"
+  ssh-add "$HOME/.ssh/git/mi2428.git.id_ed25519"
+  ssh-add "$HOME/.ssh/soracom.io/kagari-teo.pem"
 
   if [[ -d $HOME/.ssh/soracom.io ]]; then
-    ssh-add $HOME/.ssh/soracom.io/sorao.id_rsa
+    ssh-add "$HOME/.ssh/soracom.io/sorao.id_rsa"
   fi
   echo
 fi
@@ -136,17 +136,17 @@ _toggle_ssh_prompt() {
 }
 
 _toggle_path_bookmark() {
-  if \grep -q "^${PWD}$" ${PATH_BOOKMARK}; then
-    sed -i "" -e "/^${PWD//\//\\/}$/d" ${PATH_BOOKMARK}
+  if grep -Fxq -- "$PWD" "$PATH_BOOKMARK"; then
+    sed -i "" -e "/^${PWD//\//\\/}$/d" "$PATH_BOOKMARK"
   else
-    echo "${PWD}" >> ${PATH_BOOKMARK}
+    printf '%s\n' "$PWD" >> "$PATH_BOOKMARK"
   fi
 }
 
 _sanitize_history() {
   if whence -p ggrep >/dev/null; then
-    ggrep -P '^[[:ascii:]]+$' $HOME/.zhistory > $HOME/._zhistory
-    mv $HOME/._zhistory $HOME/.zhistory
+    ggrep -P '^[[:ascii:]]+$' "$HOME/.zhistory" > "$HOME/._zhistory"
+    mv "$HOME/._zhistory" "$HOME/.zhistory"
   fi
 }
 
