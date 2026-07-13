@@ -1,4 +1,10 @@
 #command
-# Force a repaint after half-page scrolling to reduce prompt/status ghosting.
+# IMPORTANT: Keep the explicit ^L repaint on both half-page and full-page moves.
+# In tmux + Ghostty, removing these bindings causes visible stale-row artifacts:
+# Ctrl-D/Ctrl-U may still look fine, but Space/PageDown/PageUp/B will ghost.
 ^D         forw-scroll ^L
 ^U         back-scroll ^L
+\40        forw-screen ^L
+b          back-screen ^L
+\kD        forw-screen ^L
+\kU        back-screen ^L
