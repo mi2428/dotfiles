@@ -34,7 +34,7 @@
   cmd = difft "$LOCAL" "$REMOTE"
 
 [pager]
-  diff = hunk pager --transparent-bg
+  diff = hunk pager --theme catppuccin-mocha --transparent-bg
   difftool = true
 
 [gpg]

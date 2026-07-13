@@ -8,7 +8,7 @@ CURDIR = path.dirname(path.abspath(__file__))
 DOTFILES = path.join("/", path.relpath(path.join(CURDIR, ".."), "/"))
 
 XDG_SUPPORTED_PACKAGES = [
-    "bat", "compton", "dusnt", "eza", "fish", "fzf", "gtk-3.0", "herdr", "karabiner", "nvim", "psd", "rofi", "starship", "systemd"
+    "bat", "compton", "dusnt", "eza", "fish", "fzf", "gtk-3.0", "herdr", "hunk", "karabiner", "nvim", "psd", "rofi", "starship", "systemd"
 ]
 
 
