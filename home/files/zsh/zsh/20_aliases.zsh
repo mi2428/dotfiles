@@ -320,9 +320,9 @@ dot() {
     upgrade)
       if [[ $(uname) == "Darwin" ]]; then
         brew upgrade
-        xargs cargo install --force <$HOME/dotfiles/init/pkgs/cargo.txt
-        xargs pip3 install --upgrade <$HOME/dotfiles/init/pkgs/python3-pip.txt
-        xargs -n 1 go install <$HOME/dotfiles/init/pkgs/go.txt
+        xargs cargo install --force <$HOME/dotfiles/packages/cargo.txt
+        xargs pip3 install --upgrade <$HOME/dotfiles/packages/python3-pip.txt
+        xargs -n 1 go install <$HOME/dotfiles/packages/go.txt
       fi
       return 0
       ;;

@@ -314,9 +314,9 @@ function dot
         case upgrade
             if test (uname) = Darwin
                 brew upgrade
-                and xargs cargo install --force <$HOME/dotfiles/init/pkgs/cargo.txt
-                and xargs pip3 install --upgrade <$HOME/dotfiles/init/pkgs/python3-pip.txt
-                and xargs -n 1 go install <$HOME/dotfiles/init/pkgs/go.txt
+                and xargs cargo install --force <$HOME/dotfiles/packages/cargo.txt
+                and xargs pip3 install --upgrade <$HOME/dotfiles/packages/python3-pip.txt
+                and xargs -n 1 go install <$HOME/dotfiles/packages/go.txt
             end
         case rollback
             begin

@@ -181,7 +181,7 @@ auth       sufficient     pam_tid.so
 
 ### 1Password
 Remember to activate the integration as below, or you will ask your vault password every time.
-Also you need to install `op` command beforehand -- for mac users, the command will be installed via Brewfile.
+Also you need to install `op` command beforehand.
 
 - Settings > Developer > Command-Line Interface (CLI) > Integrate with 1Password CLI
 
