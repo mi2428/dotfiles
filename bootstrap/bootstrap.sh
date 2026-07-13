@@ -117,7 +117,7 @@ fi
 
 log "applying Nix activation for host '$host'"
 case "$host" in
-  macos)
+  MBP-M4Pro48G-C3VH95F6P6)
     DOTFILES_BOOTSTRAP_SKIP_NIX_INSTALL="$skip_nix_install" \
       "$repo_root/bootstrap/apply-darwin.sh" --host "$host"
     ;;

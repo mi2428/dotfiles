@@ -1,4 +1,5 @@
-{{- with .secrets }}
+{{- if hasKey . "secrets" }}
+{{- with index . "secrets" }}
 {{- if .ageRecipient }}
 #!/bin/sh
 set -eu
@@ -11,5 +12,6 @@ if [ -f "$encrypted_key" ] && [ ! -f "$key_file" ]; then
     chezmoi age decrypt --output "$key_file" --passphrase "$encrypted_key"
     chmod 600 "$key_file"
 fi
+{{- end }}
 {{- end }}
 {{- end }}
