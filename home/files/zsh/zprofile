@@ -1,0 +1,7 @@
+eval "$(/opt/homebrew/bin/brew shellenv)"
+
+# Keep Nix-managed CLI tools ahead of Homebrew-installed duplicates.
+export PATH="$HOME/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:$PATH"
+
+# Added by `rbenv init` on Sat Feb 21 14:40:21 JST 2026
+eval "$(rbenv init - --no-rehash zsh)"

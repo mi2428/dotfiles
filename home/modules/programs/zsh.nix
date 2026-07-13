@@ -30,6 +30,10 @@ in {
     ".local/share/zsh/zsh-syntax-highlighting".source =
       "${pkgs.zsh-syntax-highlighting}/share/zsh-syntax-highlighting";
   } // {
+    ".zprofile" = {
+      force = true;
+      source = ../../../home/files/zsh/zprofile;
+    };
     ".zlogin" = {
       force = true;
       source = ../../../home/files/zsh/zlogin;
