@@ -54,7 +54,8 @@ The old `make install.*` / `make link.*` flows are no longer maintained.
 
 ### Emergency fallback
 
-Use the emergency bootstrap when you only need a minimal shell environment.
+Use the emergency bootstrap when you only need a minimal Linux shell editor
+environment.
 
 ```
 % make min
@@ -63,8 +64,7 @@ Use the emergency bootstrap when you only need a minimal shell environment.
 This links:
 
 * `~/.zshrc`, `~/.zlogin`, and `~/.zsh/*`
-* `~/.tmux.conf` and `~/.tmux/*`
-* repository commands into `~/.local/bin`
+* `~/.config/nvim`
 
 ### Bootstrap
 
@@ -72,15 +72,45 @@ This links:
 % make bootstrap
 ```
 
-Today this is still a thin wrapper around the emergency bootstrap.
-The full `chezmoi` + `Nix` bootstrap flow is being prepared under `bootstrap/`,
-`chezmoi/`, `flake.nix`, and `home/`.
+This is the standard path.
+
+It now does the following:
+
+* applies the `chezmoi/` source state for file-based config that is not yet in
+  Home Manager
+* installs `nix` if needed
+* builds and activates `homeConfigurations.<host>.activationPackage`
+
+`bootstrap/bootstrap.sh` auto-detects `macos` and `linux-server`.
+Override the destination for testing with `DOTFILES_HOME=/tmp/home` and
+`DOTFILES_USER=teo`.
+On macOS, automatic Nix installation is gated behind
+`DOTFILES_BOOTSTRAP_DARWIN_DAEMON_INSTALL=1` because the daemon installer makes
+system-wide changes.
+
+### Verification
+
+Use the Nix-free equivalence check to confirm that the current source layout
+still renders the same dotfiles as the legacy `master` branch:
+
+```
+% ./bootstrap/verify-source-equivalence.sh --host macos
+% ./bootstrap/verify-source-equivalence.sh --host linux-server
+```
+
+When `nix` is already available on a matching host architecture, you can also
+run the full bootstrap comparison:
+
+```
+% ./bootstrap/verify-legacy-outputs.sh --host linux-server
+```
 
 ### Current status
 
 * First-wave managed config lives under `home/files/` and `home/`
 * The legacy Linux desktop tree has been removed
 * The legacy `etc/hosts/` tree has been retired; host-specific overlays now live under `home/files/hosts/`
+* `init/LINK` has been retired; `chezmoi/` owns the remaining static links
 
 ## Deploy hints
 
