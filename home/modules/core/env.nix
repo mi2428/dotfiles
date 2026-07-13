@@ -6,7 +6,6 @@
     "$HOME/.local/bin"
     "$HOME/.deno/bin"
     "$HOME/.cargo/bin"
-    "$HOME/.volta/bin"
     "$HOME/io/gocode/bin"
   ];
 

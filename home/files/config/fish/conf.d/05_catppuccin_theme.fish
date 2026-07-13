@@ -170,11 +170,3 @@ set -gx LG_CONFIG_FILE "$lazygit_base_config,$lazygit_theme"
 if not status is-interactive
     return
 end
-
-set -l theme_available 1
-contains -- $DOTFILES_CATPPUCCIN_FISH_THEME (fish_config theme list) >/dev/null
-or set theme_available 0
-
-if test $theme_available -eq 1
-    fish_config theme choose $DOTFILES_CATPPUCCIN_FISH_THEME --color-theme=$DOTFILES_CATPPUCCIN_FISH_COLOR_THEME >/dev/null 2>&1
-end

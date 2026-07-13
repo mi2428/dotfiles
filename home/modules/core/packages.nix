@@ -4,7 +4,6 @@
   home.packages = with pkgs; [
     bat
     delta
-    direnv
     eza
     fd
     fish

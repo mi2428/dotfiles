@@ -10,7 +10,6 @@ let
     "conf.d/05_catppuccin_theme.fish"
     "conf.d/10_general.fish"
     "conf.d/11_starship.fish"
-    "conf.d/12_general_path.fish"
     "conf.d/13_zoxide.fish"
     "conf.d/14_fzf_git.fish"
     "conf.d/15_fzf_theme.fish"
@@ -22,10 +21,7 @@ let
   ];
   relativeFiles = baseRelativeFiles ++ platformFiles.fish.extraFiles;
   sourceFor = relativePath:
-    if relativePath == "conf.d/12_general_path.fish" then
-      platformFiles.fish.path
-    else
-      ../../../home/files/config/fish/${relativePath};
+    ../../../home/files/config/fish/${relativePath};
   fishFiles = lib.listToAttrs (map
     (relativePath:
       lib.nameValuePair "fish/${relativePath}" {
