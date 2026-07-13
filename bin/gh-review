@@ -185,7 +185,21 @@ select_open_pr() {
 
     local tab
     local selected
+    local c_reset
+    local c_text
+    local c_mauve
+    local c_green
+    local c_yellow
+    local c_overlay
+    local c_pink
     tab="$(printf '\t')"
+    c_reset="$(printf '\033[0m')"
+    c_text="$(printf '\033[38;2;205;214;244m')"
+    c_mauve="$(printf '\033[38;2;203;166;247m')"
+    c_green="$(printf '\033[38;2;166;227;161m')"
+    c_yellow="$(printf '\033[38;2;249;226;175m')"
+    c_overlay="$(printf '\033[38;2;127;132;156m')"
+    c_pink="$(printf '\033[38;2;245;194;231m')"
 
     selected="$(
         gh pr list \
@@ -193,7 +207,19 @@ select_open_pr() {
             --limit 200 \
             --json number,title,author,updatedAt,baseRefName,headRefName,url \
             --jq '.[] | [.number, .headRefName, .baseRefName, .updatedAt[0:10], .author.login, .title, .url] | @tsv' \
-        | awk -F '\t' 'BEGIN { OFS = "\t" } {
+        | awk -F '\t' \
+            -v c_reset="$c_reset" \
+            -v c_text="$c_text" \
+            -v c_mauve="$c_mauve" \
+            -v c_green="$c_green" \
+            -v c_yellow="$c_yellow" \
+            -v c_overlay="$c_overlay" \
+            -v c_pink="$c_pink" \
+            'BEGIN { OFS = "\t" }
+        function colorize(text, color) {
+            return color text c_reset
+        }
+        {
             head = $2
             base = $3
             updated = $4
@@ -205,7 +231,14 @@ select_open_pr() {
             if (length(base) > 14) base = substr(base, 1, 11) "..."
             if (length(author) > 14) author = substr(author, 1, 11) "..."
 
-            printf "%s\t#%-5s %-72s  [%s -> %s]  %-10s  %-14s\n", $1, $1, title, head, base, updated, author
+            printf "%s\t%s %s  [%s -> %s]  %s  %s\n",
+                $1,
+                colorize(sprintf("#%-5s", $1), c_mauve),
+                colorize(sprintf("%-72s", title), c_text),
+                colorize(head, c_green),
+                colorize(base, c_yellow),
+                colorize(sprintf("%-10s", updated), c_overlay),
+                colorize(sprintf("%-14s", author), c_pink)
         }' \
         | fzf \
             --ansi \

@@ -1,7 +1,51 @@
 local M = {}
 
+local catppuccin = require("config.catppuccin")
+
 local entry_delimiter = "\t"
 local commands_registered = false
+local ansi_reset = "\27[0m"
+local palette = catppuccin.palette()
+
+local function hex_to_ansi(hex)
+	local sanitized = hex:gsub("#", "")
+	local r = tonumber(sanitized:sub(1, 2), 16)
+	local g = tonumber(sanitized:sub(3, 4), 16)
+	local b = tonumber(sanitized:sub(5, 6), 16)
+	return string.format("\27[38;2;%d;%d;%dm", r, g, b)
+end
+
+local ansi = {
+	green = hex_to_ansi(palette.green),
+	red = hex_to_ansi(palette.red),
+	yellow = hex_to_ansi(palette.yellow),
+	blue = hex_to_ansi(palette.blue),
+	muted = hex_to_ansi(palette.overlay1),
+}
+
+local function colorize(text, color)
+	return color .. text .. ansi_reset
+end
+
+local function status_color(status)
+	if status == "A" then
+		return ansi.green
+	end
+	if status == "D" then
+		return ansi.red
+	end
+	if status == "R" then
+		return ansi.yellow
+	end
+	if status == "C" then
+		return ansi.blue
+	end
+	return ansi.muted
+end
+
+local function format_count(prefix, value, color)
+	return colorize(string.format("%s%-4s", prefix, value), color)
+end
 
 local function git(args, cwd)
 	local result = vim.system(vim.list_extend({ "git" }, args), { cwd = cwd, text = true }):wait()
@@ -113,7 +157,15 @@ local function collect_items(review)
 				old_path = old_path,
 				added = stat.added,
 				removed = stat.removed,
-				display = string.format("%-2s  +%-4s -%-4s %s", status, stat.added, stat.removed, display_path),
+				display = table.concat({
+					colorize(string.format("%-2s", status), status_color(status)),
+					"  ",
+					format_count("+", stat.added, ansi.green),
+					" ",
+					format_count("-", stat.removed, ansi.red),
+					" ",
+					display_path,
+				}),
 			}
 		end
 	end
@@ -196,6 +248,7 @@ function M.open(split)
 		cwd = M.state.worktree,
 		prompt = M.state.pr and ("PR " .. M.state.pr .. " review> ") or "review> ",
 		fzf_opts = {
+			["--ansi"] = true,
 			["--delimiter"] = entry_delimiter,
 			["--with-nth"] = "1",
 			["--header"] = "Enter: open  Ctrl-V: vertical split",
