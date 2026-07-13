@@ -8,7 +8,7 @@ function cd --wraps cd
 
     set -l previous $PWD
 
-    if test "$argv" = "-"
+    if test "$argv[1]" = "-"
         if test "$__fish_cd_direction" = next
             nextd
         else
@@ -48,8 +48,14 @@ function cd --wraps cd
 end
 
 function mcd
+    test (count $argv) -gt 0
+    or begin
+        echo 'mcd: missing directory operand' >&2
+        return 1
+    end
+
     mkdir -p -- $argv[1]
-    and cd $argv[1]
+    and cd -- "$argv[1]"
 end
 
 function cdf
@@ -89,9 +95,9 @@ end
 
 function pd
     if test (count $argv) -eq 1
-        pushd $argv[1]
+        pushd "$argv[1]" >/dev/null
     else
-        popd
+        popd >/dev/null
     end
     and __dotfiles_list_dir
 end
@@ -101,8 +107,14 @@ function bk
     or return 1
 
     if set -q _flag_help
-        command -sq bk; and command bk
+        printf '%s\n' 'Usage: bk [-f] [-t] [-e EXTENSION] PATH...'
         return 0
+    end
+
+    test (count $argv) -gt 0
+    or begin
+        echo 'bk: no files provided' >&2
+        return 1
     end
 
     set -l extension bk
@@ -113,18 +125,18 @@ function bk
 
     if set -q _flag_time
         set -l d (date '+%Y-%m-%dT%H:%M:%S')
-        mkdir -p $d
-        cp $cpopt $argv $d
+        mkdir -p -- "$d"
+        cp $cpopt -- $argv "$d"
         return $status
     end
 
     for f in $argv
-        cp $cpopt $f "$f.$extension"
+        cp $cpopt -- "$f" "$f.$extension"
     end
 end
 
 function get
-    mv -i $argv .
+    mv -i -- $argv .
 end
 
 function showopt
@@ -190,20 +202,22 @@ end
 
 function mmm
     set -l layout -v
-    set -l target $argv[1]
+    set -l target 8.8.8.8
     if contains -- $argv[1] -h -v
         set layout $argv[1]
         set target $argv[2]
+    else if test (count $argv) -gt 0
+        set target $argv[1]
     end
     test -n "$target"; or return 1
 
     switch $layout
         case -h
-            tmux split-window -h -p 66 "sudo grc --colour=auto mtr -4 -b -i 0.1 $target"
-            tmux split-window -h "sudo grc --colour=auto mtr -6 -b -i 0.1 $target"
+            tmux split-window -h -p 66 "sudo grc --colour=auto mtr -4 -b -i 0.1 "(string escape -- "$target")
+            tmux split-window -h "sudo grc --colour=auto mtr -6 -b -i 0.1 "(string escape -- "$target")
         case '*'
-            tmux split-window -v -p 66 "sudo grc --colour=auto mtr -4 -b -i 0.1 $target"
-            tmux split-window -v "sudo grc --colour=auto mtr -6 -b -i 0.1 $target"
+            tmux split-window -v -p 66 "sudo grc --colour=auto mtr -4 -b -i 0.1 "(string escape -- "$target")
+            tmux split-window -v "sudo grc --colour=auto mtr -6 -b -i 0.1 "(string escape -- "$target")
     end
 end
 
@@ -234,7 +248,9 @@ function dk
             else if test "$argv[1]" = ubuntu
                 docker pull ghcr.io/mi2428/ubuntu:latest
             else
-                docker pull $argv
+                for image in $argv
+                    docker pull "$image"
+                end
             end
         case cc
             docker commit $argv
@@ -258,12 +274,12 @@ function dcx
     if test (count $argv) -eq 0
         set argv /bin/bash
     end
-    docker compose exec $name $argv
+    docker compose exec "$name" $argv
 end
 
 function dot
     if test (count $argv) -eq 0
-        cd $HOME/dotfiles
+        cd "$HOME/dotfiles"
         return 0
     end
 
@@ -274,40 +290,40 @@ function dot
         case cc commit
             set -l message (string join ' ' -- $argv)
             begin
-                builtin cd $HOME/dotfiles 2>/dev/null
+                builtin cd -- "$HOME/dotfiles" 2>/dev/null
                 and git add . >/dev/null 2>&1
                 and git commit -m "$message"
             end
         case k keep
             begin
-                builtin cd $HOME/dotfiles 2>/dev/null
+                builtin cd -- "$HOME/dotfiles" 2>/dev/null
                 and git add . >/dev/null 2>&1
                 and git commit -m "keep: "(date)
             end
         case d diff
             begin
-                builtin cd $HOME/dotfiles 2>/dev/null
+                builtin cd -- "$HOME/dotfiles" 2>/dev/null
                 and git diff-index --quiet HEAD
                 or git diff
             end
         case lg log
             begin
-                builtin cd $HOME/dotfiles 2>/dev/null
+                builtin cd -- "$HOME/dotfiles" 2>/dev/null
                 and tig
             end
         case pl pull
             begin
-                builtin cd $HOME/dotfiles 2>/dev/null
+                builtin cd -- "$HOME/dotfiles" 2>/dev/null
                 and git pull
             end
         case ps push
             begin
-                builtin cd $HOME/dotfiles 2>/dev/null
+                builtin cd -- "$HOME/dotfiles" 2>/dev/null
                 and git push
             end
         case s sync
             begin
-                builtin cd $HOME/dotfiles 2>/dev/null
+                builtin cd -- "$HOME/dotfiles" 2>/dev/null
                 and git pull
                 and git push
             end
@@ -317,7 +333,7 @@ function dot
             end
         case rollback
             begin
-                builtin cd $HOME/dotfiles 2>/dev/null
+                builtin cd -- "$HOME/dotfiles" 2>/dev/null
                 and if git diff --quiet -- .
                     echo 'dot rollback: no unstaged changes to discard.'
                 else
@@ -355,27 +371,28 @@ function dot
 end
 
 function addr
-    set -l addrtxt $HOME/io/addr/addr.txt
+    set -l addrtxt "$HOME/io/addr/addr.txt"
     set -l keyword $argv[1]
 
-    if not test -f $addrtxt
+    if not test -f "$addrtxt"
         echo "missing: $addrtxt"
         return 1
     end
 
-    pushd (dirname $addrtxt) >/dev/null 2>&1
+    pushd (dirname "$addrtxt") >/dev/null; or return 1
 
     if test -z "$keyword"
-        bat $addrtxt
+        bat "$addrtxt"
     else if test "$keyword" = --edit
         git pull 2>/dev/null; or true
-        $EDITOR $addrtxt
-        git add $addrtxt 2>/dev/null
+        set -l editor_cmd (__dotfiles_command_words "$EDITOR" vi)
+        $editor_cmd "$addrtxt"
+        git add "$addrtxt" 2>/dev/null
         and git commit -m "keep: "(date) 2>/dev/null
         and git push 2>/dev/null
         or true
     else
-        set -l data (cat $addrtxt | grep -v '^#' | grep -v '^$' | grep -i -- "$keyword")
+        set -l data (grep -vE '^(#|$)' "$addrtxt" | grep -i -- "$keyword")
         if test -n "$data"
             echo 'IP address              Hostname                    Notes'
             printf '%s\n' $data
@@ -387,9 +404,9 @@ end
 
 function what
     set -l filepath $argv[1]
-    switch (file -b -- $filepath)
+    switch (file -b -- "$filepath")
         case 'PEM certificate'
-            openssl x509 -in $filepath -noout -text
+            openssl x509 -in "$filepath" -noout -text
     end
 end
 
@@ -410,12 +427,12 @@ function man
 end
 
 function tgz
-    env COPYFILE_DISABLE=1 tar zcvf $argv[1] --exclude=.DS_Store $argv[2..-1]
+    env COPYFILE_DISABLE=1 tar zcvf "$argv[1]" --exclude=.DS_Store $argv[2..-1]
 end
 
 function ipapi
     if test (count $argv) -gt 0
-        curl -s http://ip-api.com/json/$argv[1] | jq .
+        curl -s "http://ip-api.com/json/$argv[1]" | jq .
     else
         curl -s http://ip-api.com/json | jq .
     end
@@ -426,37 +443,43 @@ function ghc
     if test (count $argv) -eq 2
         set repo $argv[1]/$argv[2]
     end
-    git clone --recursive git@github.com:$repo
+    git clone --recursive "git@github.com:$repo"
 end
 
 function sshsocks
-    ssh -C -D $argv[2] -f -N $argv[1]
+    ssh -C -D "$argv[2]" -f -N "$argv[1]"
 end
 
 function xx
-    switch $argv[1]
+    set -l archive $argv[1]
+    test -n "$archive"; or return 1
+
+    switch $archive
         case '*.tar.gz' '*.tgz'
-            tar xzvf $argv[1]
+            tar xzvf "$archive"
         case '*.tar.xz'
-            tar Jxvf $argv[1]
+            tar Jxvf "$archive"
         case '*.zip'
-            unzip $argv[1]
+            unzip "$archive"
         case '*.lzh'
-            lha e $argv[1]
+            lha e "$archive"
         case '*.tar.bz2' '*.tbz'
-            tar xjvf $argv[1]
+            tar xjvf "$archive"
         case '*.tar.Z'
-            tar zxvf $argv[1]
+            tar zxvf "$archive"
         case '*.gz'
-            gzip -d $argv[1]
+            gzip -d "$archive"
         case '*.bz2'
-            bzip2 -dc $argv[1]
+            bzip2 -dc "$archive"
         case '*.Z'
-            uncompress $argv[1]
+            uncompress "$archive"
         case '*.tar'
-            tar xvf $argv[1]
+            tar xvf "$archive"
         case '*.arj'
-            unarj $argv[1]
+            unarj "$archive"
+        case '*'
+            echo "xx: unsupported archive: $archive" >&2
+            return 1
     end
 end
 
@@ -465,13 +488,13 @@ function dotenv
     if test -z "$envfile"; and test -f .env
         set envfile .env
     end
-    test -f $envfile; or return 1
-    __dotfiles_import_posix_exports $envfile
+    test -f "$envfile"; or return 1
+    __dotfiles_import_posix_exports "$envfile"
 end
 
 function io
     if test (count $argv) -eq 0
-        cd $HOME/io
+        cd "$HOME/io"
     end
 end
 
@@ -485,14 +508,14 @@ function :::
     if test -z "$session"
         tmux
     else if contains -- $session (tmux ls -F '#{session_name}' 2>/dev/null)
-        tmux attach -t $session
+        tmux attach -t "$session"
     else
         tmux $argv
     end
 end
 
 function __dotfiles_herdr_pane_label_for_pane --argument-names pane_id
-    set -l process_info (herdr pane process-info --pane $pane_id 2>/dev/null)
+    set -l process_info (herdr pane process-info --pane "$pane_id" 2>/dev/null)
     test $status -eq 0; or return 1
 
     set -l label (printf '%s\n' $process_info | jq -r '
@@ -504,24 +527,24 @@ function __dotfiles_herdr_pane_label_for_pane --argument-names pane_id
     set label (string split '/' -- $label | tail -n 1)
     set label (string replace -r '^-' '' -- (string trim -- $label))
 
-    test -n "$label"; and printf '%s\n' $label
+    test -n "$label"; and printf '%s\n' "$label"
 end
 
 function __dotfiles_sync_herdr_pane_label --argument-names pane_id dry_run
-    set -l pane_info (herdr pane get $pane_id 2>/dev/null)
+    set -l pane_info (herdr pane get "$pane_id" 2>/dev/null)
     test $status -eq 0; or return 0
 
     set -l current_label (printf '%s\n' $pane_info | jq -r '.result.pane.label // ""')
-    set -l next_label (__dotfiles_herdr_pane_label_for_pane $pane_id)
+    set -l next_label (__dotfiles_herdr_pane_label_for_pane "$pane_id")
     test -n "$next_label"; or return 0
     test "$current_label" = "$next_label"; and return 0
 
     if test "$dry_run" = 1
-        printf '%s\t%s\t%s\n' $pane_id $current_label $next_label
+        printf '%s\t%s\t%s\n' "$pane_id" "$current_label" "$next_label"
         return 0
     end
 
-    herdr pane rename $pane_id $next_label >/dev/null
+    herdr pane rename "$pane_id" "$next_label" >/dev/null
 end
 
 function herdr-pane-labels
@@ -556,7 +579,7 @@ function herdr-pane-labels
         end
 
         for pane_id in (printf '%s\n' $pane_list | jq -r '.result.panes[].pane_id')
-            __dotfiles_sync_herdr_pane_label $pane_id (set -q _flag_dry_run; and echo 1; or echo 0)
+            __dotfiles_sync_herdr_pane_label "$pane_id" (set -q _flag_dry_run; and echo 1; or echo 0)
         end
 
         set -q _flag_once; and break
@@ -571,20 +594,20 @@ function __dotfiles_start_herdr_pane_labels
     set -q DOTFILES_HERDR_PANE_LABEL_WATCHER; and return 0
     type -q jq; or return 0
 
-    set -l cache_dir $HOME/.cache/herdr-pane-labels
-    mkdir -p $cache_dir
+    set -l cache_dir "$HOME/.cache/herdr-pane-labels"
+    mkdir -p "$cache_dir"
 
     set -l lock_key (string replace -a '/' '_' -- $HERDR_SOCKET_PATH)
-    set -l pidfile $cache_dir/$lock_key.pid
+    set -l pidfile "$cache_dir/$lock_key.pid"
 
-    if test -f $pidfile
-        set -l existing_pid (string trim -- (cat $pidfile 2>/dev/null))
+    if test -f "$pidfile"
+        set -l existing_pid (string trim -- (cat "$pidfile" 2>/dev/null))
         if string match -qr '^[0-9]+$' -- $existing_pid
-            if kill -0 $existing_pid 2>/dev/null
+            if kill -0 "$existing_pid" 2>/dev/null
                 return 0
             end
         end
-        rm -f $pidfile
+        rm -f "$pidfile"
     end
 
     set -l source_file (path resolve (functions --details herdr-pane-labels))
@@ -592,8 +615,8 @@ function __dotfiles_start_herdr_pane_labels
 
     nohup env DOTFILES_HERDR_PANE_LABEL_WATCHER=1 fish -c "$command" >/dev/null 2>&1 &
     set -l watcher_pid $last_pid
-    disown $watcher_pid
-    printf '%s\n' $watcher_pid >$pidfile
+    disown "$watcher_pid"
+    printf '%s\n' "$watcher_pid" >"$pidfile"
 end
 
 __dotfiles_start_herdr_pane_labels
@@ -604,7 +627,7 @@ function gk
         set target (dirname (git rev-parse --git-dir))
     end
 
-    git add $target
+    git add -- $target
     and git commit -m "keep: "(date)
 
     if test -n (git remote -v)
@@ -626,19 +649,22 @@ end
 
 function fe
     set -l files (fzf-tmux --query="$argv[1]" --multi --select-1 --exit-0)
-    test -n "$files"; and $EDITOR $files
+    if test -n "$files"
+        set -l editor_cmd (__dotfiles_command_words "$EDITOR" vi)
+        $editor_cmd $files
+    end
 end
 
 function fkill
     set -l pid (ps -ef | sed 1d | fzf -m | awk '{print $2}')
     if test -n "$pid"
-        echo $pid | xargs kill -$argv[1]
+        printf '%s\n' $pid | xargs kill -$argv[1]
     end
 end
 
 function dor
     set -l image (docker images --format '{{.Repository}}:{{.Tag}}' --filter 'dangling=false' | fzf)
-    test -n "$image"; and docker run -it $argv $image
+    test -n "$image"; and docker run -it $argv "$image"
 end
 
 function ffind
@@ -648,38 +674,40 @@ function ffind
 end
 
 function tenki
-    curl http://wttr.in/$argv[1]
+    curl "http://wttr.in/$argv[1]"
 end
 
 function copy-aws-session
-    mkdir -p ~/.cache
+    mkdir -p "$HOME/.cache"
+    set -l cache_path "$HOME/.cache/zsh__copy_aws_session.cache"
     printf '%s\n' \
         " export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" \
         " export AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION" \
         " export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" \
         " export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" \
-        >$HOME/.cache/zsh__copy_aws_session.cache
+        >"$cache_path"
+    chmod 600 "$cache_path" 2>/dev/null
     echo 'AWS session copied.'
 end
 
 function paste-aws-session
-    set -l cache $HOME/.cache/zsh__copy_aws_session.cache
-    set -l session (cat $cache 2>/dev/null)
+    set -l cache "$HOME/.cache/zsh__copy_aws_session.cache"
+    set -l session (cat "$cache" 2>/dev/null)
 
-    if not test -f $cache; or test -z "$session"
+    if not test -f "$cache"; or test -z "$session"
         echo 'Missing cached session.'
         return 1
     end
 
     if test "$argv[1]" = -e
-        printf '%s' $session | pbcopy 2>/dev/null
-        printf '%s' $session
+        printf '%s' "$session" | pbcopy 2>/dev/null
+        printf '%s' "$session"
     else
-        printf '%s' $session | sed -e 's/ export //g' -e 's/=/\t/'
+        printf '%s' "$session" | sed -e 's/ export //g' -e 's/=/\t/'
     end
 
     echo
-    for line in (printf '%s\n' $session)
+    for line in (printf '%s\n' "$session")
         set line (string trim -- $line)
         set line (string replace -r '^export\s+' '' -- $line)
         set -l parts (string split -m 1 '=' -- $line)
@@ -732,7 +760,7 @@ function kcc
     or return 0
 
     test -n "$namespace"; or return 0
-    kubectl config set-context $context --namespace=$namespace
+    kubectl config set-context "$context" --namespace="$namespace"
 end
 
 function _severity_clear
@@ -766,8 +794,8 @@ function _toggle_ssh_prompt
 end
 
 function _sanitize_history
-    set -l history_path $HOME/.local/share/fish/fish_history
-    test -f $history_path; or return 0
+    set -l history_path "$HOME/.local/share/fish/fish_history"
+    test -f "$history_path"; or return 0
 
     python3 -c 'import pathlib, sys
 history_path = pathlib.Path(sys.argv[1])
@@ -799,5 +827,5 @@ if changed:
     tmp = history_path.with_suffix(history_path.suffix + ".tmp")
     tmp.write_text("".join(line + "\n" for line in filtered), encoding="utf-8")
     tmp.replace(history_path)
-' $history_path
+' "$history_path"
 end
