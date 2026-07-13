@@ -20,6 +20,17 @@ function __dotfiles_set_path
     set -gx PATH $merged
 end
 
+# Keep local command shims available even before Home Manager session vars are
+# loaded into the current shell.
+__dotfiles_set_path \
+    "$HOME/bin" \
+    "$HOME/io/bin" \
+    "$HOME/dotfiles/bin" \
+    "$HOME/.local/bin" \
+    "$HOME/.deno/bin" \
+    "$HOME/.cargo/bin" \
+    "$HOME/io/gocode/bin"
+
 function __dotfiles_import_posix_exports --argument-names envfile
     test -f $envfile; or return 0
 
