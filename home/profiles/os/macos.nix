@@ -1,5 +1,6 @@
 { ... }: {
   imports = [
+    ../../modules/programs/gnupg.nix
     ../../modules/programs/karabiner.nix
     ../../modules/programs/vscode.nix
   ];
