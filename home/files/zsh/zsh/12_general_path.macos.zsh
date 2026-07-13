@@ -86,4 +86,3 @@ fi
 if whence -p direnv 1>/dev/null; then
   eval "$(direnv hook zsh)"
 fi
-

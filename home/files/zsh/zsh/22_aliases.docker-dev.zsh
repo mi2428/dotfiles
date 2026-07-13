@@ -8,4 +8,3 @@ cd() {
     builtin cd $d && ls --color=auto .
   fi
 }
-

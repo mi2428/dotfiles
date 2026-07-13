@@ -10,17 +10,21 @@ let
     "30_appearance.zsh"
     "40_grc.zsh"
   ];
-  pickSource = import ../../lib/pick-legacy-source.nix { inherit hostName; } {
-    baseRoot = ../../../home/files/zsh/zsh;
-    overlays = {
-      macos = ../../../home/files/hosts/macos/zsh/zsh;
-      "docker-dev" = ../../../home/files/hosts/docker-dev/zsh/zsh;
-    };
-  };
+  sourceFor = relativePath:
+    if relativePath == "12_general_path.zsh" && hostName == "macos" then
+      ../../../home/files/zsh/zsh/12_general_path.macos.zsh
+    else if relativePath == "14_general_fzf.zsh" && hostName == "macos" then
+      ../../../home/files/zsh/zsh/14_general_fzf.macos.zsh
+    else if relativePath == "22_aliases.zsh" && hostName == "macos" then
+      ../../../home/files/zsh/zsh/22_aliases.macos.zsh
+    else if relativePath == "22_aliases.zsh" && hostName == "docker-dev" then
+      ../../../home/files/zsh/zsh/22_aliases.docker-dev.zsh
+    else
+      ../../../home/files/zsh/zsh/${relativePath};
   zshFiles = lib.listToAttrs (map
     (relativePath:
       lib.nameValuePair ".zsh/${relativePath}" {
-        source = pickSource relativePath;
+        source = sourceFor relativePath;
       })
     relativeFiles);
 in {
