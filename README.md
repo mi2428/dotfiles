@@ -49,53 +49,38 @@ Clone this repository just under your `$HOME`.
 % git clone --depth 1 https://github.com/mi2428/dotfiles
 ```
 
-### Linux computers
+The repository is in transition to a `Home Manager` + `chezmoi` layout.
+The old `make install.*` / `make link.*` flows are no longer maintained.
 
-**Ubuntu:** run `make ubuntu` containing the following two rules:
+### Emergency fallback
 
-```
-% make install.ubuntu
-% make link.linux-desktop
-```
-
-**ArchLinux:** run `make archlinux` containing the following two rules:
+Use the emergency bootstrap when you only need a minimal shell environment.
 
 ```
-% make install.archlinux
-% make link.linux-desktop
+% make min
 ```
 
-### macOS computers
+This links:
 
-First run the software update and install [HomeBrew](https://brew.sh/) with:
+* `~/.zshrc`, `~/.zlogin`, and `~/.zsh/*`
+* `~/.tmux.conf` and `~/.tmux/*`
+* repository commands into `~/.local/bin`
 
-```
-% sudo softwareupdate -i -a
-% xcode-select --install
-% bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-Then run `make macos` including the following to complete setup.
+### Bootstrap
 
 ```
-% make install.macos  # install dependencies
-% make link.macos     # create symbolic links
+% make bootstrap
 ```
 
-### Linux servers
+Today this is still a thin wrapper around the emergency bootstrap.
+The full `chezmoi` + `Nix` bootstrap flow is being prepared under `bootstrap/`,
+`chezmoi/`, `flake.nix`, and `home/`.
 
-Paste the below line and wait until the terminal goes silent.
+### Current status
 
-```
-% curl -fsSL https://raw.githubusercontent.com/mi2428/dotfiles/master/init/kick.sh | bash
-```
-
-**Ubuntu:** run `make ubuntu-server` containing the following two rules:
-
-```
-% make install.ubuntu
-% make link.linux
-```
+* First-wave managed config lives under `home/files/` and `home/`
+* The legacy Linux desktop tree has been removed
+* Host-specific leftovers under `etc/hosts/` are being retired incrementally
 
 ## Deploy hints
 
