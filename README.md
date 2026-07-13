@@ -49,14 +49,12 @@ Clone this repository just under your `$HOME`.
 % git clone --depth 1 https://github.com/mi2428/dotfiles
 ```
 
-The repository uses a `Home Manager` + `chezmoi` layout:
+The repository uses a `chezmoi` + `Nix` layout:
 
 * `home/` is the source tree for Home Manager-managed files and adjacent static
   dotfile sources
-* `bootstrap/` contains installation, activation, and verification scripts;
-  helper/setup scripts live under `bootstrap/setup/`
-* `chezmoi/` contains templates for static links not yet managed by Home
-  Manager
+* `bootstrap/` contains the scripts that install and apply the declarative setup
+* `chezmoi/` contains secrets and the minimal pre-Nix bootstrap state
 
 The former top-level `etc/` and `init/` trees have been retired. XDG config
 sources are under `home/files/config/`, non-XDG dotfiles are under their
@@ -64,60 +62,37 @@ corresponding `home/files/` directory, and remaining static host assets are
 under `home/files/hosts/`. Linux hosts share `home/hosts/linux.nix`; the
 `linux-server` and `docker-dev` configuration names remain available.
 
-The old `make install.*` / `make link.*` flows are no longer maintained.
+### Minimal fallback
 
-### Emergency fallback
-
-Use the emergency bootstrap when you only need a minimal Linux shell editor
-environment.
+Use the Makefile fallback when chezmoi and Nix are unavailable.
 
 ```
-% make min
+% make install
 ```
 
 This links:
 
-* `~/.zshrc`, `~/.zlogin`, and `~/.zsh/*`
-* `~/.config/nvim`
+* a minimal `~/.zshrc` plus `~/.zsh/*`
+* `~/.tmux.conf` and `~/.tmux/*`
 
 ### Bootstrap
 
 ```
-% make bootstrap
+% ./bootstrap/bootstrap.sh
 ```
 
-This is the standard path.
+This is the standard path for installing and applying chezmoi and Nix.
 
 It now does the following:
 
-* applies the `chezmoi/` source state for file-based config that is not yet in
-  Home Manager
+* applies the `chezmoi/` source state for secrets and bootstrap-managed files
 * installs `nix` if needed
-* builds and activates `homeConfigurations.<host>.activationPackage`
+* builds and activates the selected flake host configuration
 
 `bootstrap/bootstrap.sh` auto-detects `macos` and `linux-server`.
-Override the destination for testing with `DOTFILES_HOME=/tmp/home` and
-`DOTFILES_USER=teo`.
 On macOS, automatic Nix installation is gated behind
 `DOTFILES_BOOTSTRAP_DARWIN_DAEMON_INSTALL=1` because the daemon installer makes
 system-wide changes.
-
-### Verification
-
-Use the Nix-free archival comparison to diff the current source layout against
-the legacy `master` branch when you need to audit migration drift:
-
-```
-% ./bootstrap/verify-source-equivalence.sh --host macos
-% ./bootstrap/verify-source-equivalence.sh --host linux-server
-```
-
-When `nix` is already available on a matching host architecture, you can also
-run the full bootstrap comparison against the archived legacy baseline:
-
-```
-% ./bootstrap/verify-legacy-outputs.sh --host linux-server
-```
 
 ### Current status
 
@@ -125,9 +100,7 @@ run the full bootstrap comparison against the archived legacy baseline:
   `home/`
 * XDG configuration trees live under `home/files/config/`
 * Remaining static host assets live under `home/files/hosts/`
-* Setup helpers live under `bootstrap/setup/`; the former top-level `init/`
-  tree and `init/LINK` flow have been retired
-* `chezmoi/` owns the remaining static links
+* `chezmoi/` owns secrets and minimal pre-Nix bootstrapping
 
 ## Deploy hints
 
