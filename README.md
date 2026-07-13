@@ -146,28 +146,10 @@ To skip password dialogue:
 % gpgconf --kill gpg-agent
 ```
 
-### visudo
-
-```
-# root and users in group wheel can run anything on any machine as any user
-root    ALL = (ALL) ALL
-%admin  ALL = (ALL) ALL
-mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/ping6,/usr/sbin/tcpdump,/usr/sbin/purge
-```
-
-### pam-watchid
-Run sudo with your Apple Watch. See [Logicer16/pam-watchid](https://github.com/Logicer16/pam-watchid) to install PAM module.
-
-```
-% /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/logicer16/pam-watchid/HEAD/install.sh)" -- enable
- ```
-
-Add the following line to the top of `/etc/pam.d/sudo`.
-
-```
-auth       sufficient     pam_watchid.so "reason=execute a command as root"
-auth       sufficient     pam_tid.so
-```
+### sudo authentication
+Touch ID / Apple Watch sudo is managed by nix-darwin via
+`security.pam.services.sudo_local`. Keep local PAM tweaks out of `/etc/pam.d`
+unless they are intentionally outside the flake.
 
 ### 1Password
 Remember to activate the integration as below, or you will ask your vault password every time.
