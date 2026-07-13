@@ -16,22 +16,19 @@ let
     "functions/fish_title.fish"
     "functions/fish_user_key_bindings.fish"
   ];
-  hostExtraFiles = {
-    macos = [
+  relativeFiles =
+    baseRelativeFiles ++ lib.optionals (hostName == "macos") [
       "conf.d/22_aliases.fish"
     ];
-  };
-  relativeFiles = baseRelativeFiles ++ (hostExtraFiles.${hostName} or [ ]);
-  pickSource = import ../../lib/pick-legacy-source.nix { inherit hostName; } {
-    baseRoot = ../../../home/files/config/fish;
-    overlays = {
-      macos = ../../../home/files/hosts/macos/fish;
-    };
-  };
+  sourceFor = relativePath:
+    if relativePath == "conf.d/12_general_path.fish" && hostName == "macos" then
+      ../../../home/files/config/fish/conf.d/12_general_path.macos.fish
+    else
+      ../../../home/files/config/fish/${relativePath};
   fishFiles = lib.listToAttrs (map
     (relativePath:
       lib.nameValuePair "fish/${relativePath}" {
-        source = pickSource relativePath;
+        source = sourceFor relativePath;
       })
     relativeFiles);
 in {
