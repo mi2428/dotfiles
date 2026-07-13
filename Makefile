@@ -1,9 +1,8 @@
 .DEFAULT_GOAL := help
 
 REPO := $(CURDIR)
-HOME_BIN := $(HOME)/.local/bin
 HOME_ZSH := $(HOME)/.zsh
-HOME_TMUX := $(HOME)/.tmux
+HOME_NVIM := $(HOME)/.config/nvim
 
 .PHONY: help
 help: ## Display available emergency targets
@@ -12,7 +11,7 @@ help: ## Display available emergency targets
 ##@ Emergency setup
 
 .PHONY: emergency
-emergency: emergency-zsh emergency-tmux emergency-bin ## Link the minimal emergency environment
+emergency: emergency-zsh emergency-nvim ## Link the minimal Linux zsh + nvim emergency environment
 
 .PHONY: min
 min: emergency ## Alias for emergency
@@ -30,29 +29,13 @@ emergency-zsh: ## Link the repository zsh configuration
 		ln -sfn "$$config" "$(HOME_ZSH)/$$(basename "$$config")"; \
 	done
 
-.PHONY: emergency-tmux
-emergency-tmux: ## Link the repository tmux configuration
-	@mkdir -p $(HOME_TMUX) $(HOME_TMUX)/scripts
-	@ln -sfn $(REPO)/home/files/tmux/tmux.conf $(HOME)/.tmux.conf
-	@for config in $(REPO)/home/files/tmux/tmux/*.conf; do \
-		[ -f "$$config" ] || continue; \
-		ln -sfn "$$config" "$(HOME_TMUX)/$$(basename "$$config")"; \
-	done
-	@for script in $(REPO)/home/files/tmux/tmux/scripts/*; do \
-		[ -f "$$script" ] || continue; \
-		ln -sfn "$$script" "$(HOME_TMUX)/scripts/$$(basename "$$script")"; \
-	done
-
-.PHONY: emergency-bin
-emergency-bin: ## Link repository commands into ~/.local/bin
-	@mkdir -p $(HOME_BIN)
-	@for command in $(REPO)/bin/*; do \
-		[ -f "$$command" ] || continue; \
-		ln -sfn "$$command" "$(HOME_BIN)/$$(basename "$$command")"; \
-	done
+.PHONY: emergency-nvim
+emergency-nvim: ## Link the repository Neovim configuration
+	@mkdir -p $(HOME)/.config
+	@ln -sfn $(REPO)/home/files/config/nvim $(HOME_NVIM)
 
 ##@ Bootstrap
 
 .PHONY: bootstrap
-bootstrap: ## Check bootstrap prerequisites, then link the emergency environment
+bootstrap: ## Install/apply chezmoi and Home Manager for this host
 	@./bootstrap/bootstrap.sh

@@ -1,4 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
+
 cd "$HOME" || exit 1
 
 DIST=""
@@ -18,15 +20,27 @@ fi
 
 case "$DIST" in
   Ubuntu)
-    "${SUDO[@]}" apt-get install -y git make sudo ;;
+    "${SUDO[@]}" apt-get update
+    "${SUDO[@]}" DEBIAN_FRONTEND=noninteractive \
+      apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        git \
+        make \
+        sudo \
+        xz-utils
+    ;;
   *)
     exit 127 ;;
 esac
 
-git clone --depth 1 https://github.com/mi2428/dotfiles "$HOME/dotfiles"
+if [[ ! -d "$HOME/dotfiles/.git" ]]; then
+  git clone --depth 1 https://github.com/mi2428/dotfiles "$HOME/dotfiles"
+fi
+
 cd "$HOME/dotfiles" || exit 1
 
 case "$DIST" in
   Ubuntu)
-    make ubuntu-server ;;
+    make bootstrap ;;
 esac

@@ -1,0 +1,1 @@
+../../../../home/files/tmux/tmux/scripts/window-label.sh
