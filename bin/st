@@ -1,26 +1,97 @@
 #!/usr/bin/env python3
+"""Print descriptive statistics for newline-delimited numeric input."""
 
-import statistics as stat
+from __future__ import annotations
+
 import math
+import statistics
 import sys
+from dataclasses import dataclass
+from typing import Sequence, TextIO
 
-data = [ float(n) for n in sys.stdin ]
 
-size     = len(data) + 1
-mean     = stat.mean(data)
-median   = stat.median(data)
-sd       = stat.stdev(data) if size > 1 else 0.0
-sem      = sd / math.sqrt(size) if size > 1 else 0.0
-skewness = (sum((x-mean)**3 for x in data) / size) / (sd**3)
-kurtosis = (sum((x-mean)**4 for x in data) / size) / (sd**4) - 3
+@dataclass(frozen=True)
+class Summary:
+    """Descriptive statistics for a numeric sample."""
 
-print(f"#:      {size}")
-print(f"Min:    {min(data)}")
-print(f"Max:    {max(data)}")
-print(f"Sum:    {sum(data)}")
-print(f"Mean:   {mean}")
-print(f"Median: {median}")
-print(f"SD:     {sd}")
-print(f"SEM:    {sem}")
-print(f"Skew:   {skewness}")
-print(f"Kurt:   {kurtosis}")
+    size: int
+    minimum: float
+    maximum: float
+    total: float
+    mean: float
+    median: float
+    standard_deviation: float
+    standard_error: float
+    skewness: float
+    kurtosis: float
+
+
+def read_values(stream: TextIO) -> list[float]:
+    """Read one float per non-empty line."""
+
+    values: list[float] = []
+    for line in stream:
+        stripped = line.strip()
+        if stripped:
+            values.append(float(stripped))
+    return values
+
+
+def summarize(values: Sequence[float]) -> Summary:
+    """Compute a compact statistical summary."""
+
+    if not values:
+        raise ValueError("no numeric input")
+
+    size = len(values)
+    mean = statistics.mean(values)
+    median = statistics.median(values)
+    standard_deviation = statistics.stdev(values) if size > 1 else 0.0
+    standard_error = standard_deviation / math.sqrt(size) if size > 1 else 0.0
+
+    if size > 2 and standard_deviation > 0:
+        centered = [value - mean for value in values]
+        skewness = sum(delta**3 for delta in centered) / size / (standard_deviation**3)
+        kurtosis = sum(delta**4 for delta in centered) / size / (standard_deviation**4) - 3.0
+    else:
+        skewness = 0.0
+        kurtosis = 0.0
+
+    return Summary(
+        size=size,
+        minimum=min(values),
+        maximum=max(values),
+        total=sum(values),
+        mean=mean,
+        median=median,
+        standard_deviation=standard_deviation,
+        standard_error=standard_error,
+        skewness=skewness,
+        kurtosis=kurtosis,
+    )
+
+
+def main() -> int:
+    """Read stdin and print statistics."""
+
+    try:
+        summary = summarize(read_values(sys.stdin))
+    except ValueError as exc:
+        print(f"st: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"#:      {summary.size}")
+    print(f"Min:    {summary.minimum}")
+    print(f"Max:    {summary.maximum}")
+    print(f"Sum:    {summary.total}")
+    print(f"Mean:   {summary.mean}")
+    print(f"Median: {summary.median}")
+    print(f"SD:     {summary.standard_deviation}")
+    print(f"SEM:    {summary.standard_error}")
+    print(f"Skew:   {summary.skewness}")
+    print(f"Kurt:   {summary.kurtosis}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
