@@ -321,7 +321,16 @@ function dot
         case rollback
             begin
                 builtin cd $HOME/dotfiles 2>/dev/null
-                and git checkout .
+                and if git diff --quiet -- .
+                    echo 'dot rollback: no unstaged changes to discard.'
+                else
+                    read -l -P 'dot rollback: discard unstaged changes in tracked files under ~/dotfiles? [y/N] ' confirm
+                    if string match -rqi '^(y|yes)$' -- $confirm
+                        git restore --worktree -- .
+                    else
+                        echo 'dot rollback: aborted.'
+                    end
+                end
             end
         case actions
             if command -sq open
@@ -342,7 +351,7 @@ function dot
             echo ' ps, push              alias of `git push` command'
             echo ' s,  sync              run pull and then push'
             echo '     upgrade           run package upgrade'
-            echo '     rollback          alias of `git checkout .` command'
+            echo '     rollback          discard unstaged tracked-file changes after confirmation'
             echo '     actions           open GitHub Actions'
             echo ' h,  help              this help text'
     end

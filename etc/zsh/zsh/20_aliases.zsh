@@ -328,7 +328,20 @@ dot() {
       ;;
 
     rollback)
-      (builtin cd $HOME/dotfiles 2>/dev/null; git checkout .)
+      (
+        builtin cd $HOME/dotfiles 2>/dev/null || exit 1
+        if git diff --quiet -- .; then
+          echo "dot rollback: no unstaged changes to discard."
+        else
+          printf "dot rollback: discard unstaged changes in tracked files under ~/dotfiles? [y/N] "
+          read -r confirm
+          if [[ "$confirm:l" == "y" || "$confirm:l" == "yes" ]]; then
+            git restore --worktree -- .
+          else
+            echo "dot rollback: aborted."
+          fi
+        fi
+      )
       return 0
       ;;
 
@@ -354,7 +367,7 @@ dot() {
       echo " ps, push              alias of \`git push\` command"
       echo " s,  sync              run pull and then push"
       echo "     upgrade           run package upgrade"
-      echo "     rollback          alias of \`git checkout .\` command"
+      echo "     rollback          discard unstaged tracked-file changes after confirmation"
       echo "     actions           open GitHub Actions"
       echo " h,  help              this help text"
       return 0
