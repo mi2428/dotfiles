@@ -1,0 +1,5 @@
+{{- if env "DOTFILES_REPO_ROOT" -}}
+{{ env "DOTFILES_REPO_ROOT" }}
+{{- else -}}
+{{ joinPath .chezmoi.homeDir "dotfiles" }}
+{{- end -}}/etc/wget/wgetrc
