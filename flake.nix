@@ -25,13 +25,13 @@
 
       "linux-server" = mkHome {
         system = envOr "DOTFILES_NIX_SYSTEM" "aarch64-linux";
-        hostModule = ./home/hosts/linux-server.nix;
+        hostModule = ./home/hosts/linux.nix;
         hostName = "linux-server";
       };
 
       "docker-dev" = mkHome {
         system = envOr "DOTFILES_NIX_SYSTEM" "x86_64-linux";
-        hostModule = ./home/hosts/docker-dev.nix;
+        hostModule = ./home/hosts/linux.nix;
         hostName = "docker-dev";
       };
     };

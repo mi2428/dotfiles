@@ -14,7 +14,6 @@ in {
   imports = [
     ../profiles/base.nix
     ../profiles/os/linux.nix
-    ../profiles/role/server.nix
   ];
 
   home.username = userName;
