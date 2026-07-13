@@ -22,9 +22,6 @@ set -l grc_cmds \
     diff \
     dig \
     dnf \
-    docker \
-    docker-compose \
-    docker-machine \
     du \
     fdisk \
     findmnt \

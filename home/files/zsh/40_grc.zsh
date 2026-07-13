@@ -18,9 +18,6 @@ cmds=(
   diff
   dig
   dnf
-  docker
-  docker-compose
-  docker-machine
   du
   #env
   fdisk
