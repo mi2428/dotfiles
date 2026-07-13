@@ -1,0 +1,101 @@
+[core]
+  autocrlf     = input
+  editor       = nvim
+  excludesfile = $HOME/.gitignore
+  pager        = less -r
+  quotepath    = false
+
+[include]
+  path = ~/.catppuccin-delta.gitconfig
+
+[color]
+  ui = true
+
+[user]
+  name       = mi2428
+  email      = mi2428782020@gmail.com
+  signkey    = E8D3009C6341BDEAF038009685AB6867E2147DDA
+  signingkey = 85AB6867E2147DDA
+
+[credential]
+  helper = osxkeychain
+  #helper = cache --timeout=86400
+
+[diff]
+  tool = difftastic
+  # Keep difftastic available via `git difftool`, but let plain `git diff`
+  # render through the pager so Hunk can become the default review UI.
+  # external = difft
+
+[difftool]
+  prompt = false
+
+[difftool "difftastic"]
+  cmd = difft "$LOCAL" "$REMOTE"
+
+[pager]
+  diff = hunk pager --theme catppuccin-mocha --transparent-bg
+  difftool = true
+
+[gpg]
+  program = gpg
+
+[init]
+  defaultBranch = main
+
+[commit]
+  gpgsign = true
+  signing = true
+
+[pull]
+  #ff     = only
+  rebase = false
+
+[push]
+  default = current
+
+[alias]
+  ad      = add
+  br      = branch
+  cancel  = reset --soft HEAD^
+  cc      = commit -s
+  ck      = checkout
+  d       = diff
+  d3      = diff HEAD~2
+  d4      = diff HEAD~3
+  dd      = diff HEAD~
+  dft     = difftool
+  discard = reset --hard FETCH_HEAD
+  dlog = "!f() { GIT_EXTERNAL_DIFF=difft git log -p --ext-diff $@; }; f"
+  ft      = fetch
+  l       = log --decorate --oneline
+  lg      = log --decorate --oneline --stat --graph
+  ls      = log --decorate --oneline --stat
+  pl      = pull
+  ps      = push
+  sh      = show
+  so      = remote show origin
+  ss      = status -s
+  st      = status
+  unstage = reset HEAD --
+  up      = pull --rebase
+  url     = config --get remote.origin.url
+
+[http "https://gopkg.in"]
+  followRedirects = true
+
+[delta]
+  features = catppuccin-mocha
+
+[filter "clean_ipynb"]
+  clean  = jq '{ cells: [.cells[] | . + { metadata: {} } + if .cell_type == \"code\" then { outputs: [], execution_count: null } else {} end ] } + delpaths([[\"cells\"]])'
+  smudge = cat
+[url "https://github.com/"]
+	insteadOf = ssh://git@github.com/
+[url "git@github.com:"]
+	insteadOf = https://github.com/
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true

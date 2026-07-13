@@ -4,9 +4,8 @@ Static files that should eventually be managed by `home.file` or
 `xdg.configFile` live here.
 
 - `config/` holds XDG-managed trees such as `nvim/`
-- `git/` holds static git fragments that are consumed by Home Manager
-- `tmux/` and `zsh/` hold first-wave source files that are linked by Home
-  Manager and the emergency Make targets
+- `git/`, `tmux/`, and `zsh/` hold first-wave source files that are linked by
+  Home Manager and the emergency Make targets
 - `hosts/` holds host-specific overlays that still have not been absorbed into
   `profiles/` or `hosts/*.nix`, plus a few host-local static files that still
   need an eventual owner
