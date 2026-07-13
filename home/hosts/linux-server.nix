@@ -1,12 +1,10 @@
-{ homeDirectory, hostName, userName, ... }:
+{ homeDirectory, userName, ... }:
 let
   platformFiles = {
     fish = {
-      path = ../files/config/fish/conf.d/12_general_path.fish;
       extraFiles = [];
     };
     git = ../files/git/gitconfig;
-    karabiner = null;
     tmux = {
       cpu = ../files/tmux/tmux/scripts/cpu.sh;
       mem = ../files/tmux/tmux/scripts/mem.sh;
@@ -16,11 +14,7 @@ let
     };
     zsh = {
       overrides = {
-        "22_aliases.zsh" =
-          if hostName == "docker-dev" then
-            ../files/zsh/zsh/22_aliases.docker-dev.zsh
-          else
-            ../files/zsh/zsh/22_aliases.zsh;
+        "22_aliases.zsh" = ../files/zsh/zsh/22_aliases.zsh;
       };
     };
   };

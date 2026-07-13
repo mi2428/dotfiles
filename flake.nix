@@ -31,7 +31,7 @@
     homeConfigurations = {
       "linux-server" = mkHome {
         system = "aarch64-linux";
-        hostModule = ./home/hosts/linux.nix;
+        hostModule = ./home/hosts/linux-server.nix;
         hostName = "linux-server";
         userName = "teo";
         homeDirectory = "/home/teo";
@@ -39,7 +39,7 @@
 
       "docker-dev" = mkHome {
         system = "x86_64-linux";
-        hostModule = ./home/hosts/linux.nix;
+        hostModule = ./home/hosts/docker-dev.nix;
         hostName = "docker-dev";
         userName = "teo";
         homeDirectory = "/home/teo";
