@@ -9,35 +9,15 @@ Usage: bootstrap/apply-home-manager.sh --host HOST
 EOF
 }
 
-host_home() {
-  case "$1" in
-    linux-server|docker-dev)
-      printf '%s\n' '/home/teo'
-      ;;
-    *)
-      printf '%s\n' "bootstrap: unsupported linux host: $1" >&2
-      return 1
-      ;;
-  esac
-}
-
-host_user() {
-  case "$1" in
-    linux-server|docker-dev)
-      printf '%s\n' 'teo'
-      ;;
-    *)
-      printf '%s\n' "bootstrap: unsupported linux host: $1" >&2
-      return 1
-      ;;
-  esac
-}
-
 host=""
 
 while (($# > 0)); do
   case "$1" in
     --host)
+      if (($# < 2)); then
+        printf '%s\n' 'bootstrap: --host requires a value' >&2
+        exit 1
+      fi
       host="$2"
       shift 2
       ;;
@@ -58,14 +38,27 @@ if [[ -z "$host" ]]; then
   exit 1
 fi
 
-target_home="$(host_home "$host")"
-target_user="$(host_user "$host")"
+if [[ "$(uname -s)" != "Linux" ]]; then
+  printf '%s\n' "bootstrap: Linux host '$host' requires Linux" >&2
+  exit 1
+fi
 
-mkdir -p "$target_home"
+case "$host" in
+  linux-server|docker-dev) ;;
+  *)
+    printf '%s\n' "bootstrap: unsupported Linux host: $host" >&2
+    exit 1
+    ;;
+esac
+
+runtime_user="$(id -un)"
+runtime_home="${HOME:?bootstrap: HOME must be set}"
+
+mkdir -p "$runtime_home"
 
 nix_bin="$("$repo_root/bootstrap/install-nix.sh")"
 nix_bin_dir="$(dirname "$nix_bin")"
-cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/bootstrap"
+cache_dir="${XDG_CACHE_HOME:-$runtime_home/.cache}/dotfiles/bootstrap"
 activation_link="$cache_dir/home-manager-${host}"
 
 mkdir -p "$cache_dir"
@@ -76,7 +69,7 @@ PATH="$nix_bin_dir:$PATH" \
     "path:${repo_root}#homeConfigurations.${host}.activationPackage" \
     --out-link "$activation_link"
 
-HOME="$target_home" \
-USER="$target_user" \
+HOME="$runtime_home" \
+USER="$runtime_user" \
 PATH="$nix_bin_dir:$PATH" \
   "$activation_link/activate"

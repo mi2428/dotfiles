@@ -26,6 +26,15 @@ resolve_existing_nix() {
   return 1
 }
 
+platform="$(uname -s)"
+case "$platform" in
+  Darwin|Linux) ;;
+  *)
+    printf '%s\n' "bootstrap: unsupported platform for Nix installation: $platform" >&2
+    exit 1
+    ;;
+esac
+
 prepare_linux_store() {
   if [[ -d /nix ]]; then
     return 0
@@ -71,7 +80,7 @@ if [[ -n "${DOTFILES_BOOTSTRAP_NIX_EXTRA_CONF_FILE:-}" ]]; then
   installer_args+=(--nix-extra-conf-file "$DOTFILES_BOOTSTRAP_NIX_EXTRA_CONF_FILE")
 fi
 
-case "$(uname -s)" in
+case "$platform" in
   Darwin)
     if [[ "${DOTFILES_BOOTSTRAP_DARWIN_DAEMON_INSTALL:-0}" != "1" ]]; then
       printf '%s\n' \
@@ -80,9 +89,13 @@ case "$(uname -s)" in
     fi
     sh "$installer" --daemon "${installer_args[@]}" >&2
     ;;
-  *)
+  Linux)
     prepare_linux_store
     sh "$installer" --no-daemon "${installer_args[@]}" >&2
+    ;;
+  *)
+    printf '%s\n' "bootstrap: unsupported platform for Nix installation: $platform" >&2
+    exit 1
     ;;
 esac
 

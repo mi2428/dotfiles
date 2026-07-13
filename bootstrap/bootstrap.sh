@@ -40,33 +40,6 @@ detect_host() {
   esac
 }
 
-host_home() {
-  case "$1" in
-    macos)
-      printf '%s\n' '/Users/teo'
-      ;;
-    linux-server|docker-dev)
-      printf '%s\n' '/home/teo'
-      ;;
-    *)
-      printf '%s\n' "bootstrap: unsupported host: $1" >&2
-      return 1
-      ;;
-  esac
-}
-
-host_user() {
-  case "$1" in
-    macos|linux-server|docker-dev)
-      printf '%s\n' 'teo'
-      ;;
-    *)
-      printf '%s\n' "bootstrap: unsupported host: $1" >&2
-      return 1
-      ;;
-  esac
-}
-
 host="${DOTFILES_BOOTSTRAP_HOST:-}"
 skip_home_manager="${DOTFILES_BOOTSTRAP_SKIP_HOME_MANAGER:-0}"
 skip_nix_install="${DOTFILES_BOOTSTRAP_SKIP_NIX_INSTALL:-0}"
@@ -74,6 +47,10 @@ skip_nix_install="${DOTFILES_BOOTSTRAP_SKIP_NIX_INSTALL:-0}"
 while (($# > 0)); do
   case "$1" in
     --host)
+      if (($# < 2)); then
+        printf '%s\n' 'bootstrap: --host requires a value' >&2
+        exit 1
+      fi
       host="$2"
       shift 2
       ;;
@@ -101,19 +78,36 @@ if [[ -z "$host" ]]; then
   host="$(detect_host)"
 fi
 
-target_home="$(host_home "$host")"
-target_user="$(host_user "$host")"
+runtime_user="$(id -un)"
+runtime_home="${HOME:?bootstrap: HOME must be set}"
 
-mkdir -p "$target_home" "$target_home/.config"
+case "$(uname -s):$host" in
+  Darwin:macos|Linux:linux-server|Linux:docker-dev) ;;
+  Darwin:*)
+    printf '%s\n' "bootstrap: unsupported macOS host: $host" >&2
+    exit 1
+    ;;
+  Linux:*)
+    printf '%s\n' "bootstrap: unsupported Linux host: $host" >&2
+    exit 1
+    ;;
+  *)
+    printf '%s\n' "bootstrap: unsupported platform: $(uname -s)" >&2
+    exit 1
+    ;;
+esac
+
+mkdir -p "$runtime_home" "$runtime_home/.config"
 
 chezmoi_bin="$("$repo_root/bootstrap/install-chezmoi.sh")"
 
-log "applying chezmoi source state to $target_home"
+log "applying chezmoi source state to $runtime_home"
+HOME="$runtime_home" USER="$runtime_user" \
 "$chezmoi_bin" apply \
   --force \
   --no-tty \
   --source "$repo_root/chezmoi" \
-  --destination "$target_home"
+  --destination "$runtime_home"
 
 if [[ "$skip_home_manager" == "1" ]]; then
   log 'skipping Nix activation'
@@ -121,10 +115,13 @@ if [[ "$skip_home_manager" == "1" ]]; then
 fi
 
 log "applying Nix activation for host '$host'"
-if [[ "$host" == "macos" ]]; then
-  DOTFILES_BOOTSTRAP_SKIP_NIX_INSTALL="$skip_nix_install" \
-    "$repo_root/bootstrap/apply-darwin.sh" --host "$host"
-else
-  DOTFILES_BOOTSTRAP_SKIP_NIX_INSTALL="$skip_nix_install" \
-    "$repo_root/bootstrap/apply-home-manager.sh" --host "$host"
-fi
+case "$host" in
+  macos)
+    DOTFILES_BOOTSTRAP_SKIP_NIX_INSTALL="$skip_nix_install" \
+      "$repo_root/bootstrap/apply-darwin.sh" --host "$host"
+    ;;
+  linux-server|docker-dev)
+    DOTFILES_BOOTSTRAP_SKIP_NIX_INSTALL="$skip_nix_install" \
+      "$repo_root/bootstrap/apply-home-manager.sh" --host "$host"
+    ;;
+esac

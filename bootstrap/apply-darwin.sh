@@ -9,35 +9,15 @@ Usage: bootstrap/apply-darwin.sh --host HOST
 EOF
 }
 
-host_home() {
-  case "$1" in
-    macos)
-      printf '%s\n' '/Users/teo'
-      ;;
-    *)
-      printf '%s\n' "bootstrap: unsupported darwin host: $1" >&2
-      return 1
-      ;;
-  esac
-}
-
-host_user() {
-  case "$1" in
-    macos)
-      printf '%s\n' 'teo'
-      ;;
-    *)
-      printf '%s\n' "bootstrap: unsupported darwin host: $1" >&2
-      return 1
-      ;;
-  esac
-}
-
 host=""
 
 while (($# > 0)); do
   case "$1" in
     --host)
+      if (($# < 2)); then
+        printf '%s\n' 'bootstrap: --host requires a value' >&2
+        exit 1
+      fi
       host="$2"
       shift 2
       ;;
@@ -58,12 +38,22 @@ if [[ -z "$host" ]]; then
   exit 1
 fi
 
-target_home="$(host_home "$host")"
-target_user="$(host_user "$host")"
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  printf '%s\n' "bootstrap: darwin host '$host' requires macOS" >&2
+  exit 1
+fi
+
+if [[ "$host" != "macos" ]]; then
+  printf '%s\n' "bootstrap: unsupported darwin host: $host" >&2
+  exit 1
+fi
+
+runtime_user="$(id -un)"
+runtime_home="${HOME:?bootstrap: HOME must be set}"
 
 nix_bin="$("$repo_root/bootstrap/install-nix.sh")"
 nix_bin_dir="$(dirname "$nix_bin")"
-cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/bootstrap"
+cache_dir="${XDG_CACHE_HOME:-$runtime_home/.cache}/dotfiles/bootstrap"
 system_link="$cache_dir/darwin-${host}"
 nix_config='experimental-features = nix-command flakes'
 
@@ -76,8 +66,8 @@ NIX_CONFIG="$nix_config" \
     --out-link "$system_link"
 
 sudo env \
-  HOME="$target_home" \
-  USER="$target_user" \
+  HOME="$runtime_home" \
+  USER="$runtime_user" \
   PATH="$nix_bin_dir:$PATH" \
   NIX_CONFIG="$nix_config" \
   "$system_link/sw/bin/darwin-rebuild" switch --flake "path:${repo_root}#${host}"
