@@ -15,6 +15,9 @@ switch (uname -m)
             $HOME/bin \
             $HOME/io/bin \
             $HOME/dotfiles/bin \
+            $HOME/.nix-profile/bin \
+            /run/current-system/sw/bin \
+            /nix/var/nix/profiles/default/bin \
             $HOME/.local/bin \
             $GOPATH/bin \
             $DENO_INSTALL/bin \
@@ -41,6 +44,9 @@ switch (uname -m)
             $HOME/bin \
             $HOME/io/bin \
             $HOME/dotfiles/bin \
+            $HOME/.nix-profile/bin \
+            /run/current-system/sw/bin \
+            /nix/var/nix/profiles/default/bin \
             $HOME/.local/bin \
             $GOPATH/bin \
             $DENO_INSTALL/bin \

@@ -15,6 +15,9 @@ x86_64|i386)
     $HOME/bin
     $HOME/io/bin
     $HOME/dotfiles/bin
+    $HOME/.nix-profile/bin
+    /run/current-system/sw/bin
+    /nix/var/nix/profiles/default/bin
     $HOME/.local/bin
     $GOPATH/bin
     $DENO_INSTALL/bin
@@ -42,6 +45,9 @@ arm64*)
     $HOME/bin
     $HOME/io/bin
     $HOME/dotfiles/bin
+    $HOME/.nix-profile/bin
+    /run/current-system/sw/bin
+    /nix/var/nix/profiles/default/bin
     $HOME/.local/bin
     $GOPATH/bin
     $DENO_INSTALL/bin
@@ -86,4 +92,3 @@ fi
 if whence -p direnv 1>/dev/null; then
   eval "$(direnv hook zsh)"
 fi
-

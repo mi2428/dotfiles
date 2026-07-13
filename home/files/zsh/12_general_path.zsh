@@ -5,6 +5,9 @@ typeset -U path PATH
 path=(
   $HOME/bin
   $HOME/dotfiles/bin
+  $HOME/.nix-profile/bin
+  /run/current-system/sw/bin
+  /nix/var/nix/profiles/default/bin
   $HOME/.local/bin
   $DENO_INSTALL/bin
   $CARGO_HOME/bin

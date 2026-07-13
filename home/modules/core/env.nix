@@ -1,5 +1,8 @@
 { ... }: {
   home.sessionPath = [
+    "$HOME/.nix-profile/bin"
+    "/run/current-system/sw/bin"
+    "/nix/var/nix/profiles/default/bin"
     "$HOME/bin"
     "$HOME/io/bin"
     "$HOME/.local/bin"
