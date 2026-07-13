@@ -8,8 +8,8 @@ usage() {
 Usage: bootstrap/bootstrap.sh [--host HOST] [--home PATH] [--user USER]
                               [--skip-home-manager] [--skip-nix-install]
 
-Bootstraps chezmoi-managed files and then applies the Home Manager activation
-package for the selected host.
+Bootstraps chezmoi-managed files and then applies the Nix activation for the
+selected host.
 
 Environment:
   DOTFILES_BOOTSTRAP_HOST            Default host selection
@@ -86,6 +86,31 @@ if [[ -z "$host" ]]; then
   host="$(detect_host)"
 fi
 
+case "$host" in
+  macos)
+    expected_home="/Users/teo"
+    expected_user="teo"
+    ;;
+  linux-server|docker-dev)
+    expected_home="/home/teo"
+    expected_user="teo"
+    ;;
+  *)
+    printf '%s\n' "bootstrap: unsupported host: $host" >&2
+    exit 1
+    ;;
+esac
+
+if [[ "$target_home" != "$expected_home" ]]; then
+  printf '%s\n' "bootstrap: pure flake host '$host' requires home '$expected_home' (got '$target_home')" >&2
+  exit 1
+fi
+
+if [[ "$target_user" != "$expected_user" ]]; then
+  printf '%s\n' "bootstrap: pure flake host '$host' requires user '$expected_user' (got '$target_user')" >&2
+  exit 1
+fi
+
 mkdir -p "$target_home" "$target_home/.config"
 
 chezmoi_bin="$("$repo_root/bootstrap/install-chezmoi.sh")"
@@ -109,8 +134,15 @@ if [[ "$skip_home_manager" == "1" ]]; then
   exit 0
 fi
 
-log "building Home Manager activation for host '$host'"
-DOTFILES_BOOTSTRAP_SKIP_NIX_INSTALL="$skip_nix_install" \
-  DOTFILES_HOME="$target_home" \
-  DOTFILES_USER="$target_user" \
-  "$repo_root/bootstrap/apply-home-manager.sh" --host "$host"
+log "applying Nix activation for host '$host'"
+if [[ "$host" == "macos" ]]; then
+  DOTFILES_BOOTSTRAP_SKIP_NIX_INSTALL="$skip_nix_install" \
+    DOTFILES_HOME="$target_home" \
+    DOTFILES_USER="$target_user" \
+    "$repo_root/bootstrap/apply-darwin.sh" --host "$host"
+else
+  DOTFILES_BOOTSTRAP_SKIP_NIX_INSTALL="$skip_nix_install" \
+    DOTFILES_HOME="$target_home" \
+    DOTFILES_USER="$target_user" \
+    "$repo_root/bootstrap/apply-home-manager.sh" --host "$host"
+fi

@@ -14,8 +14,6 @@
   ];
   nix.optimise.automatic = true;
 
-  services.nix-daemon.enable = true;
-
   programs.fish.enable = true;
   programs.zsh.enable = true;
 

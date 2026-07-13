@@ -44,21 +44,38 @@ if [[ -z "$host" ]]; then
   exit 1
 fi
 
+case "$host" in
+  linux-server|docker-dev)
+    expected_home="/home/teo"
+    expected_user="teo"
+    ;;
+  *)
+    printf '%s\n' "bootstrap: use apply-darwin.sh for host '$host'" >&2
+    exit 1
+    ;;
+esac
+
+if [[ "$target_home" != "$expected_home" ]]; then
+  printf '%s\n' "bootstrap: pure flake host '$host' requires home '$expected_home' (got '$target_home')" >&2
+  exit 1
+fi
+
+if [[ "$target_user" != "$expected_user" ]]; then
+  printf '%s\n' "bootstrap: pure flake host '$host' requires user '$expected_user' (got '$target_user')" >&2
+  exit 1
+fi
+
 mkdir -p "$target_home"
 
 nix_bin="$("$repo_root/bootstrap/install-nix.sh")"
-nix_system="${DOTFILES_NIX_SYSTEM:-$("$repo_root/bootstrap/detect-nix-system.sh")}"
 nix_bin_dir="$(dirname "$nix_bin")"
 cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/bootstrap"
 activation_link="$cache_dir/home-manager-${host}"
 
 mkdir -p "$cache_dir"
 
-DOTFILES_HOME="$target_home" \
-DOTFILES_USER="$target_user" \
-DOTFILES_NIX_SYSTEM="$nix_system" \
+PATH="$nix_bin_dir:$PATH" \
   "$nix_bin" build \
-    --impure \
     --extra-experimental-features 'nix-command flakes' \
     "path:${repo_root}#homeConfigurations.${host}.activationPackage" \
     --out-link "$activation_link"
