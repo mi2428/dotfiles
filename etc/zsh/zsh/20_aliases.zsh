@@ -1,5 +1,11 @@
+__dotfiles_eza() {
+  env -u LS_COLORS -u EXA_COLORS -u EZA_COLORS eza "$@"
+}
+
 cd() {
-  if whence -p exa 1> /dev/null; then
+  if whence -p eza 1> /dev/null; then
+    builtin cd $1 && __dotfiles_eza --icons=auto --group-directories-first --hyperlink=auto .
+  elif whence -p exa 1> /dev/null; then
     builtin cd $1 && EXA_ICON_SPACING=1 exa --icons .
   else
     builtin cd $1 && ls --color=auto .
@@ -20,7 +26,9 @@ pd() {
     popd
   fi
 
-  if whence -p exa 1> /dev/null; then
+  if whence -p eza 1> /dev/null; then
+    __dotfiles_eza --icons=auto --group-directories-first --hyperlink=auto .
+  elif whence -p exa 1> /dev/null; then
     EXA_ICON_SPACING=1 exa --icons .
   else
     ls --color=auto .
@@ -313,13 +321,27 @@ dot() {
       if [[ $(uname) == "Darwin" ]]; then
         brew upgrade
         xargs cargo install --force <$HOME/dotfiles/init/pkgs/cargo.txt
-	      xargs pip3 install --upgrade <$HOME/dotfiles/init/pkgs/python3-pip.txt
+        xargs pip3 install --upgrade <$HOME/dotfiles/init/pkgs/python3-pip.txt
+        xargs -n 1 go install <$HOME/dotfiles/init/pkgs/go.txt
       fi
       return 0
       ;;
 
     rollback)
-      (builtin cd $HOME/dotfiles 2>/dev/null; git checkout .)
+      (
+        builtin cd $HOME/dotfiles 2>/dev/null || exit 1
+        if git diff --quiet -- .; then
+          echo "dot rollback: no unstaged changes to discard."
+        else
+          printf "dot rollback: discard unstaged changes in tracked files under ~/dotfiles? [y/N] "
+          read -r confirm
+          if [[ "$confirm:l" == "y" || "$confirm:l" == "yes" ]]; then
+            git restore --worktree -- .
+          else
+            echo "dot rollback: aborted."
+          fi
+        fi
+      )
       return 0
       ;;
 
@@ -345,7 +367,7 @@ dot() {
       echo " ps, push              alias of \`git push\` command"
       echo " s,  sync              run pull and then push"
       echo "     upgrade           run package upgrade"
-      echo "     rollback          alias of \`git checkout .\` command"
+      echo "     rollback          discard unstaged tracked-file changes after confirmation"
       echo "     actions           open GitHub Actions"
       echo " h,  help              this help text"
       return 0
@@ -417,13 +439,13 @@ what() {
 man() {
   # env PAGER="most -s" man $@
   env \
-    LESS_TERMCAP_mb=$(printf "\e[1;31m") \
-    LESS_TERMCAP_md=$(printf "\e[1;31m") \
+    LESS_TERMCAP_mb=$(printf "\e[1;38;2;%sm" "${CTP_PEACH_RGB}") \
+    LESS_TERMCAP_md=$(printf "\e[1;38;2;%sm" "${CTP_PEACH_RGB}") \
     LESS_TERMCAP_me=$(printf "\e[0m") \
     LESS_TERMCAP_se=$(printf "\e[0m") \
-    LESS_TERMCAP_so=$(printf "\e[0;0;102m") \
+    LESS_TERMCAP_so=$(printf "\e[38;2;%s;48;2;%sm" "${CTP_TEXT_RGB}" "${CTP_SURFACE0_RGB}") \
     LESS_TERMCAP_ue=$(printf "\e[0m") \
-    LESS_TERMCAP_us=$(printf "\e[4;32m") \
+    LESS_TERMCAP_us=$(printf "\e[4;38;2;%sm" "${CTP_BLUE_RGB}") \
     PAGER=/usr/bin/less \
     _NROFF_U=1 \
     PATH=${HOME}/bin:${PATH} \
@@ -711,7 +733,68 @@ alias dc='docker compose'
 alias ga='git add'
 alias gb='git branch'
 alias gc='git commit -s -m'
-alias gd='git diff'
+__git_delta_lazygit() {
+  local paging='never'
+  local added_label=$'\033[1;38;2;166;227;161mA\033[0m'
+  local copied_label=$'\033[1;38;2;148;226;213mC\033[0m'
+  local modified_label=$'\033[1;38;2;249;226;175mM\033[0m'
+  local removed_label=$'\033[1;38;2;243;139;168mD\033[0m'
+  local renamed_label=$'\033[1;38;2;137;180;250mR\033[0m'
+  local -a pager_opts=()
+  local -a hyperlink_opts=(
+    --hyperlinks
+    '--hyperlinks-file-link-format=lazygit-edit://{path}:{line}'
+  )
+
+  if [[ -t 1 ]]; then
+    paging='always'
+    # Repaint from the top on half-page jumps to reduce visual artifacts in tmux.
+    pager_opts=(--pager 'less -Rc')
+  fi
+
+  if [[ -n ${TMUX:-} ]]; then
+    hyperlink_opts=()
+  fi
+
+  local -a delta_cmd=(
+    delta
+    --features=catppuccin-lazygit-mocha
+    --dark
+    "--file-added-label=${added_label}"
+    "--file-copied-label=${copied_label}"
+    "--file-modified-label=${modified_label}"
+    "--file-removed-label=${removed_label}"
+    "--file-renamed-label=${renamed_label}"
+    "--paging=${paging}"
+    "${pager_opts[@]}"
+    --line-numbers
+    "${hyperlink_opts[@]}"
+    --side-by-side
+  )
+
+  "${delta_cmd[@]}"
+}
+gd() {
+  setopt local_options pipefail
+  git-delta-input -- "$@" | __git_delta_lazygit
+}
+gdd() {
+  local base_ref
+  setopt local_options pipefail
+
+  if git rev-parse --verify --quiet refs/remotes/origin/HEAD >/dev/null; then
+    base_ref='origin/HEAD'
+  elif git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null; then
+    base_ref='origin/main'
+  elif git rev-parse --verify --quiet refs/remotes/origin/master >/dev/null; then
+    base_ref='origin/master'
+  else
+    echo 'gdd: could not determine a default base ref (tried origin/HEAD, origin/main, origin/master)' >&2
+    return 1
+  fi
+
+  git-delta-input --range "${base_ref}...HEAD" -- "$@" | __git_delta_lazygit
+}
 alias gf='git fetch'
 alias gp='git push'
 alias gs='git status'
@@ -757,6 +840,15 @@ alias myip='curl -s https://ipinfo.io | jq'
 alias sshh='sshuttle'
 
 
+tig() {
+  if whence -p lazygit 1> /dev/null; then
+    lazygit "$@"
+  else
+    command tig "$@"
+  fi
+}
+
+
 #if whence -p ag 1> /dev/null; then
 #  alias grep="ag"
 #fi
@@ -772,7 +864,15 @@ if whence -p clockping 1> /dev/null; then
 fi
 
 
-if whence -p exa 1> /dev/null; then
+if whence -p eza 1> /dev/null; then
+  alias l='__dotfiles_eza --icons=auto --group-directories-first --hyperlink=auto'
+  alias ls='__dotfiles_eza --icons=auto --group-directories-first --hyperlink=auto'
+  alias ll='__dotfiles_eza -l --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto'
+  alias la='__dotfiles_eza -l -arbghi --git --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto'
+  alias lr='__dotfiles_eza -lR -arbghi --git --git-ignore --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto -I ".git|__pycache__"'
+  alias lt='__dotfiles_eza -lT -arbghi --git --git-ignore --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto -I ".git|__pycache__|.terraform"'
+  alias laa='__dotfiles_eza -l -arbghi@ --git --icons=auto --group-directories-first --header --time-style=relative --hyperlink=auto'
+elif whence -p exa 1> /dev/null; then
   export EXA_ICON_SPACING=1
   alias l='exa --icons'
   alias ls='exa --icons'

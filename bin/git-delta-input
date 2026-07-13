@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+
+set -uo pipefail
+
+range=""
+
+while (($#)); do
+  case "$1" in
+    --range)
+      range="$2"
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      echo "git-delta-input: unknown option: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+is_revisionish() {
+  local arg="$1"
+
+  [[ "$arg" == *..* ]] && return 0
+  git rev-parse --verify --quiet "${arg}^{commit}" >/dev/null 2>&1
+}
+
+collect_untracked_pathspecs() {
+  local arg
+  local after_double_dash=0
+
+  for arg in "$@"; do
+    if (( after_double_dash )); then
+      printf '%s\n' "$arg"
+      continue
+    fi
+
+    if [[ "$arg" == "--" ]]; then
+      after_double_dash=1
+      continue
+    fi
+
+    if [[ "$arg" == -* ]]; then
+      continue
+    fi
+
+    if is_revisionish "$arg"; then
+      continue
+    fi
+
+    printf '%s\n' "$arg"
+  done
+}
+
+emit_deleted_summaries() {
+  awk '
+function flush_section(    i, deleted, saw_hunk) {
+  if (line_count == 0) {
+    return
+  }
+
+  deleted = 0
+  saw_hunk = 0
+
+  for (i = 1; i <= line_count; i++) {
+    if (lines[i] ~ /^deleted file mode /) {
+      deleted = 1
+    }
+    if (lines[i] ~ /^@@/) {
+      saw_hunk = 1
+    }
+  }
+
+  if (!deleted) {
+    for (i = 1; i <= line_count; i++) {
+      print lines[i]
+    }
+  } else {
+    for (i = 1; i <= line_count; i++) {
+      if (lines[i] ~ /^@@/) {
+        break
+      }
+      if (lines[i] ~ /^Binary files /) {
+        continue
+      }
+      print lines[i]
+    }
+
+    print "@@ -1 +0,0 @@"
+    print " File deleted; contents omitted."
+  }
+
+  delete lines
+  line_count = 0
+}
+
+/^diff --git / {
+  flush_section()
+}
+
+{
+  lines[++line_count] = $0
+}
+
+END {
+  flush_section()
+}
+'
+}
+
+emit_diff() {
+  local diff_status=0
+  local file
+  local -a diff_args=()
+  local -a pathspecs=()
+
+  if [[ -n "$range" ]]; then
+    diff_args+=("$range")
+  fi
+  diff_args+=("$@")
+
+  while IFS= read -r file; do
+    [[ -n "$file" ]] && pathspecs+=("$file")
+  done < <(collect_untracked_pathspecs "$@")
+
+  git diff --no-color "${diff_args[@]}" || diff_status=$?
+
+  if ((${#pathspecs[@]})); then
+    while IFS= read -r file; do
+      [[ -z "$file" ]] && continue
+      git diff --no-index --no-color -- /dev/null "$file" || [[ $? -eq 1 ]]
+    done < <(git ls-files --others --exclude-standard -- "${pathspecs[@]}")
+  else
+    while IFS= read -r file; do
+      [[ -z "$file" ]] && continue
+      git diff --no-index --no-color -- /dev/null "$file" || [[ $? -eq 1 ]]
+    done < <(git ls-files --others --exclude-standard)
+  fi
+
+  return "$diff_status"
+}
+
+emit_diff "$@" | emit_deleted_summaries

@@ -15,7 +15,7 @@ help: ## Display this help
 default: ubuntu-server  ## Setup as a Ubuntu Server
 
 .PHONY: archlinux
-archlinux: install.arch link.linux-desktop  ## Setup Arch Linux
+archlinux: install.archlinux link.linux-desktop  ## Setup Arch Linux
 
 .PHONY: macos
 macos: install.macos link.macos  ## Setup macOS
@@ -65,16 +65,17 @@ pkginstall.macos: ##
 	@./init/setup-sudo-with-touchid.sh || true
 	@sudo ln -sf /opt/homebrew/bin/gtimeout /usr/local/bin/timeout 2>/dev/null || true  # Apple silicon
 	@sudo ln -sf /usr/local/bin/gtimeout    /usr/local/bin/timeout 2>/dev/null || true  # Intel chip
+	@sudo ln -sf /opt/homebrew/bin/fish     /usr/local/bin/fish    2>/dev/null || true  # Apple silicon
 	@sudo ln -sf /opt/homebrew/bin/python3  /usr/local/bin/python  2>/dev/null || true  # Apple silicon
 	@sudo ln -sf /usr/local/bin/python3     /usr/local/bin/python  2>/dev/null || true  # Intel chip
 
 .PHONY: postinstall.common
 postinstall.common: ##
-	@sh -c 'curl -fLo $(HOME)/.local/share/nvim/site/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim' || true
 	@curl -L https://raw.githubusercontent.com/pimterry/notes/latest-release/_notes > /usr/local/share/zsh/site-functions/_notes || true
 	#@python3 -m pip install --upgrade pip
 	#@xargs pip3 install --upgrade < $(PKGDIR)/python3-pip.txt || true
 	@xargs cargo install --force < $(PKGDIR)/cargo.txt || true
+	@xargs -n 1 go install < $(PKGDIR)/go.txt || true
 
 .PHONY: postinstall.linux
 postinstall.linux: ##
@@ -83,29 +84,52 @@ postinstall.linux: ##
 	@git clone --depth 1 https://github.com/zsh-users/zsh-syntax-highlighting $(HOME)/.local/share/zsh/zsh-syntax-highlighting || true
 	@git clone --depth 1 https://github.com/zsh-users/zsh-autosuggestions $(HOME)/.local/share/zsh/zsh-autosuggestions || true
 	@git clone --depth 1 https://github.com/zsh-users/zsh-completions $(HOME)/.local/share/zsh/zsh-completions || true
-	@git clone --depth 1 https://github.com/junegunn/fzf.git $(HOME)/.fzf && $(HOME)/.fzf/install --all || true
 	@sudo locale-gen en_US.UTF-8 ja_JP.UTF-8
 
 .PHONY: link.linux
 link.linux: ##
 	#@$(LINKER) --force
 	@$(LINKER) --patch linux-server --force
+	@./init/setup-tmux-catppuccin.sh
+	@./init/setup-lazygit.sh
+	@./init/setup-k9s.sh
+	@./init/setup-fzf-git.sh
+	@./init/setup-fish-plugins.sh
 
 .PHONY: link.linux-desktop
 link.linux-desktop: ##
 	@$(LINKER) --patch linux-desktop --force
+	@./init/setup-tmux-catppuccin.sh
+	@./init/setup-vscode.sh
+	@./init/setup-lazygit.sh
+	@./init/setup-k9s.sh
+	@./init/setup-fzf-git.sh
+	@./init/setup-fish-plugins.sh
 
 .PHONY: link.macos
 link.macos: ##
 	@$(LINKER) --patch macos --force
+	@./init/setup-tmux-catppuccin.sh
+	@./init/setup-vscode.sh
+	@./init/setup-ghostty.sh
+	@./init/setup-lazygit.sh
+	@./init/setup-k9s.sh
+	@./init/setup-fzf-git.sh
+	@./init/setup-fish-plugins.sh
 
 .PHONY: link.docker
 link.docker: ##
 	@$(LINKER) --patch docker --force
+	@./init/setup-tmux-catppuccin.sh
+	@./init/setup-lazygit.sh
+	@./init/setup-k9s.sh
+	@./init/setup-fzf-git.sh
+	@./init/setup-fish-plugins.sh
 
 .PHONY: link.checkpoint
 link.checkpoint: ##
 	@ln -snf $(CURDIR)/etc/hosts/checkpoint/tmux/tmux.conf $(HOME)/.tmux.conf
+	@./init/setup-tmux-catppuccin.sh
 	@ln -snf $(CURDIR)/etc/hosts/checkpoint/bin $(HOME)/bin
 
 .PHONY: unlink

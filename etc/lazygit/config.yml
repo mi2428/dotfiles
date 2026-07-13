@@ -1,0 +1,69 @@
+gui:
+  nerdFontsVersion: "3"
+  sidePanelWidth: 0.2
+  expandFocusedSidePanel: true
+  expandedSidePanelWeight: 4
+  shrinkSidePanelsToContent: true
+  showBottomLine: false
+  sidePanels:
+    - [files, worktrees, submodules]
+    - [commits, reflog, stash]
+    - [branches, remotes, tags]
+  mainPanelSplitMode: flexible
+  enlargedSideViewLocation: left
+  wrapLinesInStagingView: true
+  useHunkModeInStagingView: true
+  filterMode: fuzzy
+  branchColorPatterns:
+    "^main$": green
+    "^master$": green
+    "^release/": yellow
+    "^hotfix/": red
+    "^docs/": cyan
+    "^chore/": blue
+
+git:
+  pagers:
+    - name: delta
+      pager: 'delta --features=catppuccin-lazygit-mocha --dark --paging=never --line-numbers --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}" --side-by-side'
+    - {}
+  autoForwardBranches: onlyMainBranches
+
+os:
+  shellFunctionsFile: ~/.config/lazygit/functions.sh
+
+disableStartupPopups: true
+
+customCommands:
+  - key: "C"
+    context: "files"
+    description: "Create a conventional commit"
+    prompts:
+      - type: "menu"
+        title: "Select the commit type"
+        key: "Type"
+        options:
+          - value: "feat"
+          - value: "fix"
+          - value: "chore"
+          - value: "docs"
+          - value: "refactor"
+          - value: "test"
+          - value: "ci"
+          - value: "build"
+          - value: "perf"
+      - type: "input"
+        title: "Scope (optional)"
+        key: "Scope"
+        initialValue: ""
+      - type: "input"
+        title: "Description"
+        key: "Description"
+        initialValue: ""
+    command: "TYPE={{.Form.Type | quote}} SCOPE={{.Form.Scope | quote}} DESC={{.Form.Description | quote}} sh -c 'if [ -n \"$SCOPE\" ]; then git commit -m \"$TYPE($SCOPE): $DESC\"; else git commit -m \"$TYPE: $DESC\"; fi'"
+    output: "terminal"
+  - key: "<c-o>"
+    context: "global"
+    description: "Open repository on GitHub"
+    command: "lg_open_repo"
+    output: "none"

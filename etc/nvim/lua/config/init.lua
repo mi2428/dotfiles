@@ -1,0 +1,7 @@
+require("config.options")
+require("config.keymaps")
+require("config.autocmds")
+require("config.commands")
+require("config.review").setup()
+require("config.multi_search").setup()
+require("config.lazy")

@@ -1,13 +1,33 @@
 #!/bin/bash
-REPOSITORY_URL="$1"
-DIR="$2"
 
-if [[ -z $DIR ]]; then
-  DIR=$(echo $REPOSITORY_URL | rev | cut -d '/' -f 1 | rev | sed -e "s/.git$//")
+REPOSITORY_URL="${1:-}"
+DIR="${2:-}"
+CURRENT_BRANCH=""
+REMOTE_BRANCH=""
+
+if [[ -z "$REPOSITORY_URL" ]]; then
+  echo "Usage: $(basename "$0") <repository-url> [directory]" >&2
+  exit 1
 fi
 
-git clone $REPOSITORY_URL $DIR || exit 254
-cd $DIR
-git branch -r | grep -v "->" | grep -v main | while read remote; do git branch --track "${remote#origin/}" "$remote"; done
+if [[ -z $DIR ]]; then
+  DIR="$(basename "$REPOSITORY_URL" .git)"
+fi
+
+git clone "$REPOSITORY_URL" "$DIR" || exit 254
+cd "$DIR" || exit 254
+
+CURRENT_BRANCH="$(git branch --show-current)"
+while IFS= read -r REMOTE_BRANCH; do
+  REMOTE_BRANCH="${REMOTE_BRANCH#origin/}"
+  if [[ "$REMOTE_BRANCH" == "HEAD" ]] || [[ "$REMOTE_BRANCH" == "$CURRENT_BRANCH" ]]; then
+    continue
+  fi
+
+  if ! git show-ref --verify --quiet "refs/heads/${REMOTE_BRANCH}"; then
+    git branch --track "$REMOTE_BRANCH" "origin/${REMOTE_BRANCH}"
+  fi
+done < <(git for-each-ref --format='%(refname:short)' refs/remotes/origin)
+
 git fetch --all
 git pull --all

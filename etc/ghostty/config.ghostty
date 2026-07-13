@@ -1,0 +1,46 @@
+keybind = super+shift+r=reload_config
+keybind = global:cmd+shift+enter=toggle_quick_terminal
+keybind = cmd+g>d=new_split:right
+keybind = cmd+g>shift+d=new_split:down
+keybind = cmd+g>h=goto_split:left
+keybind = cmd+g>j=goto_split:bottom
+keybind = cmd+g>k=goto_split:top
+keybind = cmd+g>l=goto_split:right
+keybind = cmd+g>z=toggle_split_zoom
+keybind = cmd+g>e=equalize_splits
+keybind = cmd+g>escape=end_key_sequence
+font-family = Ubuntu Mono
+font-family-bold = Ubuntu Mono
+font-family-italic = Ubuntu Mono
+font-family-bold-italic = Ubuntu Mono
+font-style = Regular
+font-style-bold = Bold
+font-style-italic = Italic
+font-style-bold-italic = Bold Italic
+font-synthetic-style = false
+font-feature = -calt, -liga, -dlig
+font-size = 14
+alpha-blending = native
+font-thicken = true
+cursor-style = block
+shell-integration-features = no-cursor,no-sudo,title,no-ssh-env,no-ssh-terminfo,path
+quick-terminal-position = top
+quick-terminal-size = 50%
+quick-terminal-screen = main
+quick-terminal-animation-duration = 0
+quick-terminal-autohide = true
+quick-terminal-space-behavior = move
+
+# Catppuccin flavour selection. Uncomment exactly one line.
+# theme = catppuccin-latte.conf
+# theme = catppuccin-frappe.conf
+# theme = catppuccin-macchiato.conf
+theme = catppuccin-mocha.conf
+
+background-opacity = 0.92
+background-blur = 10
+macos-titlebar-style = transparent
+macos-window-shadow = false
+window-width = 230
+window-height = 70
+window-save-state = never

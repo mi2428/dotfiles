@@ -22,35 +22,36 @@ typeset -g KAWAII_EMOJI=(
 
 
 typeset -gA PROMPT_PALETTE=(
-  host          '%b%u%F{157}'
-  insidehost    '%b%u%F{194}'
-  user          '%b%u%F{253}'
-  path          '%B%u%F{229}'
-  path.shrinked '%B%u%F{226}'
-  path.marked   '%B%u%F{144}'
-  venv          '%b%u%F{081}'
-  ssh.via       '%b%u%F{222}'
-  ssh.agent     '%b%u%F{081}'
-  time          '%b%u%F{247}'
-  elapsed       '%b%u%F{222}'
-  exit.mark     '%b%u%F{246}'
-  exit.code     '%B%u%F{203}'
-  git.commited  '%b%u%F{038}'
-  git.staged    '%b%u%F{226}'
-  git.modified  '%b%u%F{009}'
-  git.untracked '%b%u%F{208}'
-  conj          '%b%u%F{102}'
-  typing        '%b%u%F{255}'
-  normal        '%b%u%F{255}'
-  cursor        '%b%u%F{255}'
-  level0        '%b%u%F{255}'
-  level1        '%b%u%F{014}'
-  level2        '%b%u%F{003}'
-  level3        '%b%u%F{208}'
-  level4        '%b%u%F{009}'
-  underline     '%b%U%F{255}'
-  success       '%b%u%F{013}'
-  error         '%b%u%F{203}'
+  host          "%b%u%F{$CTP_SAPPHIRE}"
+  insidehost    "%b%u%F{$CTP_TEAL}"
+  user          "%b%u%F{$CTP_TEXT}"
+  root          "%B%u%F{$CTP_RED}"
+  path          "%B%u%F{$CTP_YELLOW}"
+  path.shrinked "%B%u%F{$CTP_PEACH}"
+  path.marked   "%B%u%F{$CTP_MAUVE}"
+  venv          "%b%u%F{$CTP_GREEN}"
+  ssh.via       "%b%u%F{$CTP_PEACH}"
+  ssh.agent     "%b%u%F{$CTP_GREEN}"
+  time          "%b%u%F{$CTP_SUBTEXT1}"
+  elapsed       "%b%u%F{$CTP_PEACH}"
+  exit.mark     "%b%u%F{$CTP_OVERLAY0}"
+  exit.code     "%B%u%F{$CTP_RED}"
+  git.commited  "%b%u%F{$CTP_GREEN}"
+  git.staged    "%b%u%F{$CTP_YELLOW}"
+  git.modified  "%b%u%F{$CTP_PEACH}"
+  git.untracked "%b%u%F{$CTP_SKY}"
+  conj          "%b%u%F{$CTP_OVERLAY1}"
+  typing        "%b%u%F{$CTP_TEXT}"
+  normal        "%b%u%F{$CTP_TEXT}"
+  cursor        "%b%u%F{$CTP_TEXT}"
+  level0        "%b%u%F{$CTP_TEXT}"
+  level1        "%b%u%F{$CTP_SKY}"
+  level2        "%b%u%F{$CTP_YELLOW}"
+  level3        "%b%u%F{$CTP_PEACH}"
+  level4        "%b%u%F{$CTP_RED}"
+  underline     "%b%U%F{$CTP_TEXT}"
+  success       "%b%u%F{$CTP_GREEN}"
+  error         "%b%u%F{$CTP_RED}"
   reset         '%{\e[00m%}'
 )
 

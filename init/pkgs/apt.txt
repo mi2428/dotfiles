@@ -1,6 +1,9 @@
 cargo
 bat
+fd-find
 file
+fish
+fzf
 glances
 grc
 htop

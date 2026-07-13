@@ -1,0 +1,154 @@
+{
+    "[javascript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true
+    },
+    "[python]": {
+        "editor.wordBasedSuggestions": "off",
+        "editor.defaultFormatter": "ms-python.autopep8",
+        "editor.formatOnSave": false
+    },
+    "[rust]": {
+        "editor.defaultFormatter": "rust-lang.rust-analyzer",
+        "editor.formatOnPaste": true,
+        "editor.formatOnSave": true,
+        "editor.formatOnType": true
+    },
+    "editor.defaultFormatter": null,
+    "editor.fontSize": 14,
+    "editor.glyphMargin": false,
+    "editor.inlayHints.enabled": "offUnlessPressed",
+    "editor.semanticHighlighting.enabled": false,
+    "editor.experimental.asyncTokenization": false,
+    "editor.minimap.enabled": false,
+    "editor.parameterHints.cycle": false,
+    "editor.renderLineHighlight": "all",
+    "editor.tabSize": 4,
+    "editor.wordSeparators": "./\\()\"'-:,.;<>~!@#$%^&*|+=[]{}`~?　、。「」【】『』（）！？てにをはがのともへでや",
+    "explorer.confirmDelete": false,
+    "explorer.confirmDragAndDrop": false,
+    "explorer.fileNesting.enabled": true,
+    "explorer.sortOrder": "type",
+    "explorer.sortOrderLexicographicOptions": "upper",
+    "files.associations": {
+        "*.go.tmpl": "go",
+        "*.json.tmpl": "go",
+        "*.yml.tmpl": "go",
+        "*.yaml.tmpl": "go"
+    },
+    "git.autofetch": true,
+    "git.openRepositoryInParentFolders": "always",
+    "go.formatTool": "goimports",
+    "go.toolsManagement.autoUpdate": true,
+    "cSpell.enabled": false,
+    "cSpell.userWords": [
+        "addrs", "alala", "alaxala", "algs", "aodv", "asciicast", "asic", "auth", "bfs",
+        "ccmp", "coffeebreak", "colordiff", "confirmation", "covid", "cps", "cpss", "cpulimit",
+        "dhcpv", "disk", "diskutil", "dryrun", "elif", "essid", "essids", "ethernets", "fanet",
+        "flowspec", "fujisawa", "geolocation", "get", "googleapi", "hampel", "hanets", "hint",
+        "hostapd", "hostvars", "if", "iface", "ifid", "ifupdown", "inet", "initscript", "ipam",
+        "iperf", "iptables", "ishikawadai", "junos", "kbps", "keypair", "kitaguchi", "kote",
+        "lacp", "libpcap", "loopback", "lpddr", "memcpy", "meraki", "metaheuristics", "mfeed",
+        "mgmt", "midorigaoka", "mispredicted", "misprediction", "mispredictions", "miya",
+        "mkpasswd", "mware", "napi", "netbox", "netconf", "netfilter", "noobs", "nopasswd",
+        "ntpservers", "o", "olsr", "olsrd", "ookayama", "perouter", "pfifo", "pipenv", "pipfile",
+        "poweroff", "printk", "pwauth", "pycache", "pynetbox", "radvd", "raspbian", "raspi",
+        "rdisk", "rdnss", "reconf", "regex", "reselecting", "reselects", "resolve", "rreq",
+        "rssi", "runcmd", "sbin", "sdram", "snmp", "snr", "socat", "srcm", "ssh", "ssid",
+        "suzukake", "suzukakedai", "taichi", "tamachi", "telescreens", "titech", "tkip",
+        "tmuxinator", "toolset", "uavs", "unicast", "unmount", "urandom", "urllc", "v",
+        "v mware", "vanet", "vlanid", "vsix", "vsixpi", "waypoint", "wifi", "wlan", "wsns"
+    ],
+    "cmake.pinnedCommands": [
+        "workbench.action.tasks.configureTaskRunner",
+        "workbench.action.tasks.runTask"
+    ],
+    "notebook.cellToolbarLocation": {
+        "default": "right",
+        "jupyter-notebook": "left"
+    },
+    "security.workspace.trust.untrustedFiles": "open",
+    "terminal.integrated.commandsToSkipShell": [
+        "language-julia.interrupt"
+    ],
+    "terminal.integrated.defaultProfile.osx": "fish",
+    "terminal.integrated.fontSize": 14,
+    "terminal.integrated.profiles.osx": {
+        "fish": {
+            "args": [
+                "-lc",
+                "if command -v fish >/dev/null 2>&1; then exec fish -l; else exec /bin/zsh -l; fi"
+            ],
+            "path": "/bin/zsh"
+        }
+    },
+    "vim.statusBarColorControl": false,
+    "window.commandCenter": false,
+    "window.confirmSaveUntitledWorkspace": false,
+    "window.dialogStyle": "custom",
+    "workbench.activityBar.location": "top",
+    "workbench.editor.editorActionsLocation": "titleBar",
+    "workbench.editorAssociations": {
+        "*.ipynb": "jupyter-notebook"
+    },
+    "workbench.iconTheme": "catppuccin-mocha",
+    "workbench.layoutControl.enabled": false,
+    "workbench.sideBar.location": "right",
+    "workbench.startupEditor": "newUntitledFile",
+    "docker.extension.enableComposeLanguageServer": false,
+    "githubPullRequests.createOnPublishBranch": "never",
+    "docker.extension.dockerEngineAvailabilityPrompt": false,
+    "amazonQ.suppressPrompts": {
+        "amazonQChatPairProgramming": true,
+        "amazonQChatDisclaimer": true
+    },
+    "amazonQ.telemetry": false,
+    "git.enableSmartCommit": true,
+    "amazonQ.shareContentWithAWS": false,
+    "amazonQ.importRecommendationForInlineCodeSuggestions": false,
+    "geminicodeassist.inlineSuggestions.enableAuto": false,
+    "git.confirmSync": false,
+    "geminicodeassist.project": "teo-playground-464609",
+    "terminal.integrated.cursorBlinking": true,
+    "extensions.experimental.affinity": {
+        "vscodevim.vim": 1,
+        "asvetliakov.vscode-neovim": 1
+    },
+    "terminal.integrated.fontFamily": "Hack Nerd Font",
+    "editor.codeActionsOnSave": {},
+    "github.copilot.nextEditSuggestions.enabled": true,
+    "makefile.configureOnOpen": false,
+    "terminal.external.osxExec": "Warp.app",
+    "[dockercompose]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2,
+        "editor.autoIndent": "advanced",
+        "editor.quickSuggestions": {
+            "other": true,
+            "comments": false,
+            "strings": true
+        },
+        "editor.defaultFormatter": "redhat.vscode-yaml"
+    },
+    "[github-actions-workflow]": {
+        "editor.defaultFormatter": "redhat.vscode-yaml"
+    },
+    "workbench.colorTheme": "Catppuccin Mocha",
+    "aws.cloudformation.telemetry.enabled": false,
+    "azureTerraform.survey": {
+        "surveyPromptDate": "2026-09-24T03:24:21.782Z",
+        "surveyPromptIgnoredCount": 0
+    },
+    "redhat.telemetry.enabled": true,
+    "githubPullRequests.pullBranch": "never",
+    "claudeCode.preferredLocation": "panel",
+    "python.defaultInterpreterPath": "/opt/homebrew/bin/python3",
+    "chatgpt.composerEnterBehavior": "cmdIfMultiline",
+    "editor.accessibilitySupport": "on",
+    "chat.viewSessions.orientation": "stacked",
+    "claudeCode.disableLoginPrompt": true,
+    "gitlens.ai.model": "vscode",
+    "gitlens.ai.vscode.model": "copilot:gpt-4.1",
+    "zig.zls.enabled": "on",
+    "accessibility.signalOptions.volume": 0
+}

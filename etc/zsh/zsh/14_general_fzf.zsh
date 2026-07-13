@@ -1,8 +1,18 @@
-[[ -f $HOME/.fzf/shell/key-bindings.zsh ]] && source $HOME/.fzf/shell/key-bindings.zsh
-[[ -f $HOME/.fzf/shell/completion.zsh ]]   && source $HOME/.fzf/shell/completion.zsh
+if whence -p fzf 1> /dev/null && fzf --zsh >/dev/null 2>&1; then
+  source <(fzf --zsh)
+fi
 export FZF_COMPLETION_TRIGGER='**'
-export FZF_DEFAULT_COMMAND="fd"
-export FZF_DEFAULT_OPTS='--height 60% --border --inline-info --preview-window=right:60%:wrap --color=fg:252,fg+:233,bg+:002,preview-fg:252,prompt:226,pointer:007,info:247,spinner:237,header:009,gutter:237,hl:220,hl+:231'
+if whence -p fd 1> /dev/null; then
+  export FZF_FD_BIN='fd'
+  export FZF_DEFAULT_COMMAND='fd'
+elif whence -p fdfind 1> /dev/null; then
+  export FZF_FD_BIN='fdfind'
+  export FZF_DEFAULT_COMMAND='fdfind'
+else
+  export FZF_FD_BIN=''
+  export FZF_DEFAULT_COMMAND='find . -mindepth 1'
+fi
+export FZF_DEFAULT_OPTS="--height 60% --border --inline-info --preview-window=right:60%:wrap --color=bg:-1,bg+:-1,fg:${CTP_TEXT},fg+:${CTP_ROSEWATER},hl:${CTP_BLUE},hl+:${CTP_LAVENDER},border:${CTP_OVERLAY1},gutter:-1,info:${CTP_OVERLAY0},prompt:${CTP_MAUVE},pointer:${CTP_PEACH},spinner:${CTP_SKY},header:${CTP_TEAL}"
 export FZF_COMPLETION_OPTS="${FZF_DEFAULT_OPTS}"
 export FZF_TMUX=1
 export FZF_TMUX_HEIGHT=20
@@ -12,12 +22,22 @@ export FZF_TMUX_HEIGHT=20
 # - The first argument to the function ($1) is the base path to start traversal
 # - See the source code (completion.{bash,zsh}) for the details.
 _fzf_compgen_path() {
-  fd --hidden --follow --exclude ".git" . "$1"
+  if [[ -n $FZF_FD_BIN ]]; then
+    $FZF_FD_BIN --hidden --follow --exclude ".git" . "$1"
+  else
+    command find "$1" -mindepth 1 \
+      \( -path '*/.git' -o -path '*/.git/*' \) -prune -o -print
+  fi
 }
 
 # Use fd to generate the list for directory completion
 _fzf_compgen_dir() {
-  fd --type d --hidden --follow --exclude ".git" . "$1"
+  if [[ -n $FZF_FD_BIN ]]; then
+    $FZF_FD_BIN --type d --hidden --follow --exclude ".git" . "$1"
+  else
+    command find "$1" -type d \
+      \( -path '*/.git' -o -path '*/.git/*' \) -prune -o -print
+  fi
 }
 
 # (EXPERIMENTAL) Advanced customization of fzf options via _fzf_comprun function

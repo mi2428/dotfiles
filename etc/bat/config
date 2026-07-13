@@ -1,0 +1,5 @@
+# Catppuccin flavor selection. Uncomment exactly one line.
+# --theme="Catppuccin Latte"
+# --theme="Catppuccin Frappe"
+# --theme="Catppuccin Macchiato"
+--theme="Catppuccin Mocha"

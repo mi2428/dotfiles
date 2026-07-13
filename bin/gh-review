@@ -1,0 +1,416 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+self_path="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")"
+dotfiles_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+glow_style_path="${dotfiles_root}/etc/glow/styles/catppuccin-mocha.json"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  gh-review [pr-number|pr-url]
+  gh-review --local [base-ref]
+
+Open a tmux review session using:
+  - top pane: the complete review diff, rendered with delta when available
+  - bottom pane: Neovim for editing/navigation
+
+PR reviews create or reuse a detached review worktree under:
+  ~/.cache/gh-review/<owner>/<repo>/pr-<number>
+
+Local reviews stay in the current repository and default to origin's default branch.
+
+Run this from inside the target git repository.
+EOF
+}
+
+die() {
+    printf 'gh-review: %s\n' "$*" >&2
+    exit 1
+}
+
+need_cmd() {
+    command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+}
+
+slugify() {
+    printf '%s' "$1" \
+        | tr '[:upper:]' '[:lower:]' \
+        | tr -cs '[:alnum:]' '-' \
+        | sed 's/^-//; s/-$//' \
+        | cut -c1-36
+}
+
+render_pr_preview() {
+    local pr_ref="$1"
+    local width="${FZF_PREVIEW_COLUMNS:-100}"
+    local markdown
+
+    need_cmd gh
+    need_cmd jq
+
+    markdown="$(
+        gh pr view "$pr_ref" --json number,title,url,author,baseRefName,headRefName,body,reviews,comments \
+        | jq -r '
+            def clip($n): .[0:$n];
+            def body_or_default:
+                if (.body // "") == "" then "_No description._" else .body end;
+            def review_section:
+                (.reviews | clip(4)) as $reviews
+                | if ($reviews | length) == 0 then
+                    "## Reviews\n\n_No reviews yet._"
+                  else
+                    "## Reviews\n\n"
+                    + ($reviews | map("### \(.author.login) [\(.state)]\n\n" + ((.body // "") | if . == "" then "_No body._" else . end)) | join("\n\n"))
+                  end;
+            def comment_section:
+                (.comments | clip(4)) as $comments
+                | if ($comments | length) == 0 then
+                    "## Comments\n\n_No issue comments._"
+                  else
+                    "## Comments\n\n"
+                    + ($comments | map("### \(.author.login)\n\n" + ((.body // "") | if . == "" then "_No body._" else . end)) | join("\n\n"))
+                  end;
+            "# PR #\(.number): \(.title)\n\n"
+            + "- URL: \(.url)\n"
+            + "- Author: \(.author.login)\n"
+            + "- Base: `\(.baseRefName)`\n"
+            + "- Head: `\(.headRefName)`\n\n"
+            + "## Description\n\n"
+            + body_or_default
+            + "\n\n"
+            + review_section
+            + "\n\n"
+            + comment_section
+        '
+    )"
+
+    if command -v glow >/dev/null 2>&1; then
+        printf '%s\n' "$markdown" | glow -s "$glow_style_path" -w "$width" -
+    else
+        printf '%s\n' "$markdown"
+    fi
+}
+
+switch_or_attach_tmux() {
+    local session="$1"
+
+    if [[ "${GH_REVIEW_NO_ATTACH:-}" == "1" ]]; then
+        return 0
+    fi
+
+    if [[ -n "${TMUX:-}" ]]; then
+        tmux switch-client -t "$session"
+    else
+        tmux attach-session -t "$session"
+    fi
+}
+
+detect_remote() {
+    local owner="$1"
+    local repo="$2"
+    local remote
+    local url
+
+    if git remote get-url origin >/dev/null 2>&1; then
+        url="$(git remote get-url origin 2>/dev/null || true)"
+        case "$url" in
+            *github.com[:/]"$owner/$repo"|*github.com[:/]"$owner/$repo.git")
+                echo origin
+                return 0
+                ;;
+        esac
+    fi
+
+    while IFS= read -r remote; do
+        url="$(git remote get-url "$remote" 2>/dev/null || true)"
+        case "$url" in
+            *github.com[:/]"$owner/$repo"|*github.com[:/]"$owner/$repo.git")
+                echo "$remote"
+                return 0
+                ;;
+        esac
+    done < <(git remote)
+
+    die "could not determine a git remote for ${owner}/${repo}"
+}
+
+resolve_local_base() {
+    local remote="${1:-origin}"
+    local symbolic_ref
+
+    symbolic_ref="$(git symbolic-ref --quiet --short "refs/remotes/${remote}/HEAD" 2>/dev/null || true)"
+    if [[ -n "$symbolic_ref" ]]; then
+        printf '%s\n' "$symbolic_ref"
+        return 0
+    fi
+
+    if git show-ref --verify --quiet "refs/remotes/${remote}/main"; then
+        printf '%s/main\n' "$remote"
+        return 0
+    fi
+
+    if git show-ref --verify --quiet "refs/remotes/${remote}/master"; then
+        printf '%s/master\n' "$remote"
+        return 0
+    fi
+
+    die "could not resolve a default local review base for ${remote}; pass --local <base-ref>"
+}
+
+normalize_local_base() {
+    local base="$1"
+    local remote="${2:-origin}"
+
+    if [[ "$base" == "${remote}/HEAD" ]]; then
+        resolve_local_base "$remote"
+        return 0
+    fi
+
+    printf '%s\n' "$base"
+}
+
+set_tmux_env() {
+    local session="$1"
+    local key="$2"
+    local value="${3:-}"
+
+    if [[ -n "$value" ]]; then
+        tmux set-environment -t "$session" "$key" "$value"
+    fi
+}
+
+select_open_pr() {
+    need_cmd fzf
+
+    local tab
+    local selected
+    local c_reset
+    local c_text
+    local c_mauve
+    local c_green
+    local c_yellow
+    local c_overlay
+    local c_pink
+    tab="$(printf '\t')"
+    c_reset="$(printf '\033[0m')"
+    c_text="$(printf '\033[38;2;205;214;244m')"
+    c_mauve="$(printf '\033[38;2;203;166;247m')"
+    c_green="$(printf '\033[38;2;166;227;161m')"
+    c_yellow="$(printf '\033[38;2;249;226;175m')"
+    c_overlay="$(printf '\033[38;2;127;132;156m')"
+    c_pink="$(printf '\033[38;2;245;194;231m')"
+
+    selected="$(
+        gh pr list \
+            --state open \
+            --limit 200 \
+            --json number,title,author,updatedAt,baseRefName,headRefName,url \
+            --jq '.[] | [.number, .headRefName, .baseRefName, .updatedAt[0:10], .author.login, .title, .url] | @tsv' \
+        | awk -F '\t' \
+            -v c_reset="$c_reset" \
+            -v c_text="$c_text" \
+            -v c_mauve="$c_mauve" \
+            -v c_green="$c_green" \
+            -v c_yellow="$c_yellow" \
+            -v c_overlay="$c_overlay" \
+            -v c_pink="$c_pink" \
+            'BEGIN { OFS = "\t" }
+        function colorize(text, color) {
+            return color text c_reset
+        }
+        {
+            head = $2
+            base = $3
+            updated = $4
+            author = $5
+            title = $6
+
+            if (length(title) > 72) title = substr(title, 1, 69) "..."
+            if (length(head) > 24) head = substr(head, 1, 21) "..."
+            if (length(base) > 14) base = substr(base, 1, 11) "..."
+            if (length(author) > 14) author = substr(author, 1, 11) "..."
+
+            printf "%s\t%s %s  [%s -> %s]  %s  %s\n",
+                $1,
+                colorize(sprintf("#%-5s", $1), c_mauve),
+                colorize(sprintf("%-72s", title), c_text),
+                colorize(head, c_green),
+                colorize(base, c_yellow),
+                colorize(sprintf("%-10s", updated), c_overlay),
+                colorize(sprintf("%-14s", author), c_pink)
+        }' \
+        | fzf \
+            --ansi \
+            --no-sort \
+            --delimiter="$tab" \
+            --with-nth=2 \
+            --prompt='pr> ' \
+            --preview="'$self_path' --preview-pr {1}" \
+            --preview-window='right,60%,border-left,wrap'
+    )"
+
+    [[ -n "$selected" ]] || exit 1
+    printf '%s\n' "${selected%%"$tab"*}"
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    usage
+    exit 0
+fi
+
+if [[ "${1:-}" == "--preview-pr" ]]; then
+    [[ $# -eq 2 ]] || die "--preview-pr requires a PR number or URL"
+    render_pr_preview "$2"
+    exit 0
+fi
+
+need_cmd git
+need_cmd tmux
+need_cmd nvim
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || die "run this inside a git repository"
+cd "$repo_root"
+
+mode="pr"
+pr_ref=""
+local_base_arg=""
+
+case "${1:-}" in
+    --local)
+        mode="local"
+        local_base_arg="${2:-}"
+        [[ $# -le 2 ]] || die "expected at most one base ref after --local"
+        ;;
+    "")
+        ;;
+    *)
+        [[ $# -le 1 ]] || die "expected at most one PR argument"
+        pr_ref="$1"
+        ;;
+esac
+
+repo_name="$(basename "$repo_root")"
+review_base=""
+worktree_path=""
+session_name=""
+window_name=""
+pr_number=""
+head_ref="HEAD"
+
+if [[ "$mode" == "local" ]]; then
+    remote="origin"
+    git remote get-url "$remote" >/dev/null 2>&1 || die "local review requires an origin remote"
+    review_base="$(normalize_local_base "${local_base_arg:-$(resolve_local_base "$remote")}" "$remote")"
+
+    if [[ "$review_base" == "${remote}/"* ]]; then
+        git fetch --prune "$remote" "${review_base#"${remote}"/}" >/dev/null
+    fi
+
+    worktree_path="$repo_root"
+    current_ref="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || git rev-parse --short HEAD)"
+    head_slug="$(slugify "$current_ref")"
+    base_slug="$(slugify "$review_base")"
+    [[ -n "$head_slug" ]] || head_slug="head"
+    [[ -n "$base_slug" ]] || base_slug="base"
+    session_name="review-$(printf '%s' "${repo_name}-local-${head_slug}-${base_slug}" | tr '/._' '-' | tr -cd '[:alnum:]-' | cut -c1-48)"
+    window_name="$(printf '%s' "local-${head_slug}" | cut -c1-48)"
+else
+    need_cmd gh
+    need_cmd jq
+
+    repo_name_with_owner="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+    repo_owner="${repo_name_with_owner%%/*}"
+    repo_name="${repo_name_with_owner##*/}"
+
+    if [[ -z "$pr_ref" ]]; then
+        pr_ref="$(select_open_pr)"
+    fi
+
+    if [[ -n "$pr_ref" ]]; then
+        pr_meta="$(gh pr view "$pr_ref" --json number,title,url,baseRefName,headRefName --jq '[.number,.title,.url,.baseRefName,.headRefName] | @tsv')"
+    else
+        pr_meta="$(gh pr view --json number,title,url,baseRefName,headRefName --jq '[.number,.title,.url,.baseRefName,.headRefName] | @tsv')"
+    fi
+
+    IFS=$'\t' read -r pr_number _pr_title pr_url base_ref head_ref <<<"$pr_meta"
+    [[ -n "$pr_number" ]] || die "failed to resolve the pull request"
+
+    pr_owner="$(printf '%s\n' "$pr_url" | cut -d/ -f4)"
+    pr_repo="$(printf '%s\n' "$pr_url" | cut -d/ -f5)"
+
+    [[ "$pr_owner" == "$repo_owner" && "$pr_repo" == "$repo_name" ]] \
+        || die "PR ${pr_url} does not belong to the current repository (${repo_name_with_owner})"
+
+    remote="$(detect_remote "$repo_owner" "$repo_name")"
+    review_base="${remote}/${base_ref}"
+    cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/gh-review/${repo_owner}/${repo_name}"
+    worktree_path="${cache_root}/pr-${pr_number}"
+    head_slug="$(slugify "$head_ref")"
+    [[ -n "$head_slug" ]] || head_slug="pr-${pr_number}"
+    local_branch="$(printf '%s' "review/pr-${pr_number}-${head_slug}" | cut -c1-72)"
+    session_name="review-$(printf '%s' "${repo_name}-${pr_number}-${head_slug}" | tr '/._' '-' | tr -cd '[:alnum:]-' | cut -c1-48)"
+    window_name="$(printf '%s' "${pr_number}-${head_slug}" | cut -c1-48)"
+
+    mkdir -p "$cache_root"
+
+    if [[ -e "$worktree_path" ]] && ! git -C "$worktree_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        die "path exists and is not a git worktree: $worktree_path"
+    fi
+
+    if [[ ! -e "$worktree_path" ]]; then
+        git worktree add --detach "$worktree_path" HEAD >/dev/null
+    fi
+
+    git -C "$worktree_path" fetch --prune "$remote" "$base_ref" >/dev/null
+    (cd "$worktree_path" && gh pr checkout "$pr_number" --branch "$local_branch" --force >/dev/null)
+fi
+
+if tmux has-session -t "$session_name" 2>/dev/null; then
+    printf 'gh-review: reusing tmux session %s\n' "$session_name"
+    switch_or_attach_tmux "$session_name"
+    exit 0
+fi
+
+first_file="$(
+    git -C "$worktree_path" diff --name-only "${review_base}...HEAD" \
+    | while IFS= read -r path; do
+        if [[ -f "${worktree_path}/${path}" ]]; then
+            printf '%s\n' "$path"
+            break
+        fi
+    done
+)"
+
+if [[ -n "$first_file" ]]; then
+    printf -v edit_cmd "nvim %q" "$first_file"
+else
+    edit_cmd="nvim"
+fi
+
+diff_ref="${review_base}...HEAD"
+printf -v diff_shell_cmd 'if command -v delta >/dev/null 2>&1; then git -c core.pager=%q --paginate diff --color=always %q; else git -c core.pager=%q --paginate diff --color=always %q; fi' \
+    "delta --paging=always" "$diff_ref" "less -R -+F" "$diff_ref"
+printf -v diff_cmd 'bash -lc %q' "$diff_shell_cmd"
+
+tmux new-session -d -s "$session_name" -n "$window_name" -c "$worktree_path"
+set_tmux_env "$session_name" NVIM_REVIEW_MODE 1
+set_tmux_env "$session_name" NVIM_REVIEW_BASE "$review_base"
+set_tmux_env "$session_name" NVIM_REVIEW_HEAD HEAD
+set_tmux_env "$session_name" NVIM_REVIEW_PR "$pr_number"
+set_tmux_env "$session_name" NVIM_REVIEW_REPO_ROOT "$repo_root"
+set_tmux_env "$session_name" NVIM_REVIEW_WORKTREE "$worktree_path"
+tmux send-keys -t "${session_name}:${window_name}.0" "$diff_cmd" C-m
+tmux split-window -v -p 55 -t "${session_name}:${window_name}.0" -c "$worktree_path"
+tmux send-keys -t "${session_name}:${window_name}.1" "$edit_cmd" C-m
+tmux select-pane -t "${session_name}:${window_name}.1"
+
+if [[ -n "$pr_number" ]]; then
+    printf 'gh-review: session=%s pr=#%s base=%s worktree=%s\n' \
+        "$session_name" "$pr_number" "$review_base" "$worktree_path"
+else
+    printf 'gh-review: session=%s base=%s worktree=%s\n' \
+        "$session_name" "$review_base" "$worktree_path"
+fi
+
+switch_or_attach_tmux "$session_name"
