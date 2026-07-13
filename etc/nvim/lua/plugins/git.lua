@@ -1,4 +1,5 @@
 local catppuccin = require("config.catppuccin")
+local review = require("config.review")
 local colors = catppuccin.palette()
 
 local function set_gitsigns_highlights()
@@ -27,6 +28,7 @@ return {
 		"lewis6991/gitsigns.nvim",
 		event = { "BufReadPre", "BufNewFile" },
 		opts = {
+			base = review.gitsigns_base(),
 			signs = {
 				add = { text = "▎" },
 				change = { text = "▎" },
