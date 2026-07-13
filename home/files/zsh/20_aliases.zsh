@@ -318,7 +318,12 @@ dot() {
       ;;
 
     upgrade)
-      echo "dot upgrade: packages are managed by Nix; activate the Home Manager or nix-darwin configuration instead."
+      if [[ $(uname) == "Darwin" ]]; then
+        brew upgrade
+        xargs cargo install --force <$HOME/dotfiles/init/pkgs/cargo.txt
+        xargs pip3 install --upgrade <$HOME/dotfiles/init/pkgs/python3-pip.txt
+        xargs -n 1 go install <$HOME/dotfiles/init/pkgs/go.txt
+      fi
       return 0
       ;;
 
@@ -361,7 +366,7 @@ dot() {
       echo " pl, pull              alias of \`git pull\` command"
       echo " ps, push              alias of \`git push\` command"
       echo " s,  sync              run pull and then push"
-      echo "     upgrade           show the declarative package management reminder"
+      echo "     upgrade           run package upgrade"
       echo "     rollback          discard unstaged tracked-file changes after confirmation"
       echo "     actions           open GitHub Actions"
       echo " h,  help              this help text"
