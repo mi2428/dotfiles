@@ -36,7 +36,7 @@ function __dotfiles_set_path
 end
 
 function __dotfiles_import_posix_exports --argument-names envfile
-    test -f $envfile; or return 0
+    test -f "$envfile"; or return 0
 
     while read -l line
         set line (string trim -- $line)
@@ -63,7 +63,7 @@ function __dotfiles_import_posix_exports --argument-names envfile
         set value (string replace -r "^'(.*)'\$" '$1' -- $value)
 
         set -gx $key $value
-    end < $envfile
+    end < "$envfile"
 end
 
 function __dotfiles_eza
