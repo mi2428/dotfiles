@@ -1,4 +1,4 @@
-{ hostName, lib, pkgs, ... }:
+{ hostName, lib, ... }:
 let
   relativeFiles = [
     "05_catppuccin_theme.zsh"
@@ -28,10 +28,40 @@ let
       })
     relativeFiles);
 in {
-  home.packages = [ pkgs.zsh ];
+  programs.zsh = {
+    enable = true;
+    enableCompletion = true;
+    autosuggestion.enable = true;
+    syntaxHighlighting.enable = true;
+    initContent = lib.mkMerge [
+      (lib.mkBefore ''
+        [[ -f "$HOME/.fig/shell/zshrc.pre.zsh" ]] && . "$HOME/.fig/shell/zshrc.pre.zsh"
+      '')
+      ''
+        for conf in "$HOME"/.zsh/*.zsh(N); do
+          source "$conf"
+        done
 
-  home.file = zshFiles // {
-    ".zshrc".source = ../../../home/files/zsh/zshrc;
-    ".zlogin".source = ../../../home/files/zsh/zlogin;
+        if [ -f "$HOME/.zshrc_functions/assume-role" ]; then
+          export SORACOM_AWS_LOGIN_ITEM_ID=jggxzohgplnedvzyftmxinlgdu
+          source "$HOME/.zshrc_functions/assume-role"
+        fi
+
+        export SDKMAN_DIR="$HOME/.sdkman"
+        [[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
+
+        if [[ "$TERM_PROGRAM" == "kiro" ]] && command -v kiro >/dev/null 2>&1; then
+          kiro_shell_integration_path="$(kiro --locate-shell-integration-path zsh 2>/dev/null)"
+          [[ -n "$kiro_shell_integration_path" && -f "$kiro_shell_integration_path" ]] && . "$kiro_shell_integration_path"
+        fi
+
+        [[ -f "$HOME/.openclaw/completions/openclaw.zsh" ]] && source "$HOME/.openclaw/completions/openclaw.zsh"
+      ''
+      (lib.mkAfter ''
+        [[ -f "$HOME/.fig/shell/zshrc.post.zsh" ]] && . "$HOME/.fig/shell/zshrc.post.zsh"
+      '')
+    ];
   };
+
+  home.file = zshFiles;
 }

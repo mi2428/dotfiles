@@ -312,12 +312,7 @@ function dot
                 and git push
             end
         case upgrade
-            if test (uname) = Darwin
-                brew upgrade
-                and xargs cargo install --force <$HOME/dotfiles/packages/cargo.txt
-                and xargs pip3 install --upgrade <$HOME/dotfiles/packages/python3-pip.txt
-                and xargs -n 1 go install <$HOME/dotfiles/packages/go.txt
-            end
+            echo 'dot upgrade: packages are managed by Nix; activate the Home Manager or nix-darwin configuration instead.'
         case rollback
             begin
                 builtin cd $HOME/dotfiles 2>/dev/null
@@ -350,7 +345,7 @@ function dot
             echo ' pl, pull              alias of `git pull` command'
             echo ' ps, push              alias of `git push` command'
             echo ' s,  sync              run pull and then push'
-            echo '     upgrade           run package upgrade'
+            echo '     upgrade           show the declarative package management reminder'
             echo '     rollback          discard unstaged tracked-file changes after confirmation'
             echo '     actions           open GitHub Actions'
             echo ' h,  help              this help text'

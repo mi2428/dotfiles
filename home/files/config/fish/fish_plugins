@@ -1,5 +1,2 @@
-jorgebucaran/fisher
-catppuccin/fish
-PatrickF1/fzf.fish
-# Retired: pure prompt behavior has been migrated to Starship.
-# pure-fish/pure
+# Fish plugins are declared in home/modules/programs/fish.nix.
+# This file is retained only for compatibility with older checkouts.

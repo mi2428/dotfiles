@@ -1,6 +1,4 @@
-{ hostName, pkgs, ... }: {
-  home.packages = [ pkgs.git ];
-
+{ hostName, ... }: {
   home.file.".gitconfig".source =
     if hostName == "macos" then
       ../../../home/files/git/gitconfig.macos

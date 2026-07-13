@@ -32,25 +32,10 @@ export SAVEHIST=1000000
 export HISTFILE=$HOME/.zhistory
 export PATH_BOOKMARK=$HOME/.zsh_pathbook
 
-export NOTES_DIR=$HOME/notes
-export NOTES_DIRECTORY=$HOME/notes
-
 [[ -f ${PATH_BOOKMARK} ]] || touch ${PATH_BOOKMARK}
 
-#export TERM=screen-256color
-export TERM=xterm-256color
-export LANG=en_US.UTF-8
-export LANGUAGE=$LANG
-export LC_CTYPE=$LANG
-export LC_ALL=$LANG
-export VIRTUAL_ENV_DISABLE_PROMPT=1
-
-export HGENCODING='utf-8'
 export GPG_TTY=$TTY
 export WORDCHARS='*?.-[]~=&;!#$%^(){}<>'
-export PAGER=less
-export LESS='-g -i -M -R -S -W -z-4 -x4'
-export EDITOR="vim"
 bindkey -e  # set explicitly, or zsh use vi-mode binding by default
 (( ${+widgets[autosuggest-accept]} )) && bindkey '^O' autosuggest-accept
 

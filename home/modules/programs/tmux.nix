@@ -1,4 +1,4 @@
-{ hostName, lib, pkgs, ... }:
+{ hostName, lib, ... }:
 let
   relativeFiles = [
     "scripts/battery-icon.sh"
@@ -16,8 +16,6 @@ let
       })
     relativeFiles);
 in {
-  home.packages = [ pkgs.tmux ];
-
   home.file = tmuxFiles // {
     ".tmux.conf".source = ../../../home/files/tmux/tmux.conf;
     ".tmux/scripts/cpu.sh".source =

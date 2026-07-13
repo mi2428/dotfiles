@@ -1,8 +1,6 @@
-{ hostName, lib, ... }:
+{ hostName, lib, pkgs, ... }:
 let
   baseRelativeFiles = [
-    "config.fish"
-    "fish_plugins"
     "conf.d/05_catppuccin_theme.fish"
     "conf.d/10_general.fish"
     "conf.d/11_starship.fish"
@@ -16,10 +14,9 @@ let
     "functions/fish_title.fish"
     "functions/fish_user_key_bindings.fish"
   ];
-  relativeFiles =
-    baseRelativeFiles ++ lib.optionals (hostName == "macos") [
-      "conf.d/22_aliases.fish"
-    ];
+  relativeFiles = baseRelativeFiles ++ lib.optionals (hostName == "macos") [
+    "conf.d/22_aliases.fish"
+  ];
   sourceFor = relativePath:
     if relativePath == "conf.d/12_general_path.fish" && hostName == "macos" then
       ../../../home/files/config/fish/conf.d/12_general_path.macos.fish
@@ -32,5 +29,15 @@ let
       })
     relativeFiles);
 in {
+  programs.fish = {
+    enable = true;
+    plugins = [
+      {
+        name = "fzf-fish";
+        src = pkgs.fishPlugins.fzf-fish.src;
+      }
+    ];
+  };
+
   xdg.configFile = fishFiles;
 }
