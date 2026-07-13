@@ -1,18 +1,8 @@
 { homeDirectory, userName, ... }:
 let
   platform = {
-    fish = {
-      extraFiles = [];
-    };
-    git = ../files/git/gitconfig;
-    tmux = {
-      cpu = ../files/tmux/scripts/cpu.sh;
-      mem = ../files/tmux/scripts/mem.sh;
-    };
-    zsh = {
-      overrides = {
-        "22_aliases.zsh" = ../files/zsh/22_aliases.docker-dev.zsh;
-      };
+    zsh.overrides = {
+      "22_aliases.zsh" = ../files/zsh/22_aliases.docker-dev.zsh;
     };
   };
 in {
