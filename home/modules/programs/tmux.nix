@@ -1,6 +1,12 @@
 { config, lib, pkgs, ... }:
 let
   inherit (config.dotfiles) platform;
+  catppuccinTmux = pkgs.fetchFromGitHub {
+    owner = "catppuccin";
+    repo = "tmux";
+    rev = "v2.3.0";
+    hash = "sha256-3CJRQCgS8NAN7vOLBjNGiHbGXTIrIyY/FLmfZrXcEYc=";
+  };
   tmuxFiles = [
     "scripts/battery-icon.sh"
     "scripts/battery.sh"
@@ -18,21 +24,25 @@ let
     tmuxFiles);
 in {
   home.file = helperFiles // {
+    ".tmux.conf" = {
+      force = true;
+      source = ../../../home/files/tmux/tmux.conf;
+    };
     ".tmux/scripts/cpu.sh".source = platform.tmux.cpu;
     ".tmux/scripts/mem.sh".source = platform.tmux.mem;
     ".tmux/statusbar.conf".source = ../../../home/files/tmux/statusbar.conf;
   };
 
-  programs.tmux = {
-    enable = true;
-    prefix = "C-t";
-    terminal = "xterm-256color";
-    baseIndex = 1;
-    historyLimit = 10000000;
-    escapeTime = 0;
-    focusEvents = true;
-    mouse = true;
-    plugins = [ pkgs.tmuxPlugins.catppuccin ];
-    extraConfig = builtins.readFile ../../../home/files/tmux/tmux.conf;
+  xdg.configFile = {
+    "tmux/tmux.conf" = {
+      force = true;
+      text = ''
+        source-file $HOME/.tmux.conf
+      '';
+    };
+    "tmux/plugins/catppuccin/tmux" = {
+      recursive = true;
+      source = catppuccinTmux;
+    };
   };
 }
