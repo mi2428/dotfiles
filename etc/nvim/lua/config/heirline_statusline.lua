@@ -200,7 +200,7 @@ local function diagnostic_count(severity)
 end
 
 local function lsp_progress()
-	if vim.lsp.status then
+	if not vim.lsp.status or not vim.lsp.util or not vim.lsp.util.get_progress_messages then
 		return ""
 	end
 
