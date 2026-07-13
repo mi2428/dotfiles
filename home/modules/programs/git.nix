@@ -1,17 +1,98 @@
-{ hostName, pkgs, ... }:
+{ hostName, lib, pkgs, ... }:
 let
-  pickSource = import ../../lib/pick-legacy-source.nix { inherit hostName; } {
-    baseRoot = ../../../home/files/git;
-    overlays = {
-      macos = ../../../home/files/hosts/macos/git;
-    };
+  isMacos = hostName == "macos";
+  baseAliases = {
+    ad = "add";
+    br = "branch";
+    cancel = "reset --soft HEAD^";
+    cc = "commit -s";
+    ck = "checkout";
+    d = "diff";
+    d3 = "diff HEAD~2";
+    d4 = "diff HEAD~3";
+    dd = "diff HEAD~";
+    ft = "fetch";
+    l = "log --decorate --oneline";
+    lg = "log --decorate --oneline --stat --graph";
+    ls = "log --decorate --oneline --stat";
+    pl = "pull";
+    ps = "push";
+    sh = "show";
+    so = "remote show origin";
+    ss = "status -s";
+    st = "status";
+    unstage = "reset HEAD --";
+    up = "pull --rebase";
+    url = "config --get remote.origin.url";
+  };
+  macosAliases = {
+    dft = "difftool";
+    discard = "reset --hard FETCH_HEAD";
+    dlog = "!f() { GIT_EXTERNAL_DIFF=difft git log -p --ext-diff $@; }; f";
   };
 in {
-  home.packages = [ pkgs.git ];
-
-  home.file = {
-    ".gitconfig".source = pickSource "gitconfig";
-    ".catppuccin-delta.gitconfig".source =
-      ../../../home/files/git/catppuccin-delta.gitconfig;
+  programs.git = {
+    enable = true;
+    package = pkgs.git;
+    userName = "mi2428";
+    userEmail = "mi2428782020@gmail.com";
+    aliases = baseAliases // lib.optionalAttrs isMacos macosAliases;
+    includes = [
+      { path = "~/.catppuccin-delta.gitconfig"; }
+    ];
+    extraConfig = {
+      core = {
+        autocrlf = "input";
+        editor = "nvim";
+        excludesfile = "$HOME/.gitignore";
+        pager = "less -r";
+        quotepath = false;
+      };
+      color.ui = true;
+      user = {
+        signkey = "E8D3009C6341BDEAF038009685AB6867E2147DDA";
+        signingkey = "85AB6867E2147DDA";
+      };
+      credential.helper =
+        if isMacos then "osxkeychain" else "cache --timeout=86400";
+      init.defaultBranch = "main";
+      pull = {
+        rebase = false;
+      } // lib.optionalAttrs (!isMacos) {
+        ff = "only";
+      };
+      push.default = "current";
+      "http \"https://gopkg.in\"".followRedirects = true;
+      delta.features = "catppuccin-mocha";
+      "filter \"lfs\"" = {
+        clean = "git-lfs clean -- %f";
+        smudge = "git-lfs smudge -- %f";
+        process = "git-lfs filter-process";
+        required = true;
+      };
+      "filter \"clean_ipynb\"" = {
+        clean =
+          "jq '{ cells: [.cells[] | . + { metadata: {} } + if .cell_type == \"code\" then { outputs: [], execution_count: null } else {} end ] } + delpaths([[\"cells\"]])'";
+        smudge = "cat";
+      };
+    } // lib.optionalAttrs isMacos {
+      diff.tool = "difftastic";
+      difftool.prompt = false;
+      "difftool \"difftastic\"".cmd = "difft \"$LOCAL\" \"$REMOTE\"";
+      pager = {
+        diff = "hunk pager --theme catppuccin-mocha --transparent-bg";
+        difftool = true;
+      };
+      gpg.program = "gpg";
+      commit = {
+        gpgsign = true;
+        signing = true;
+      };
+      "url \"https://github.com/\"".insteadOf = "ssh://git@github.com/";
+      "url \"git@github.com:\"".insteadOf = "https://github.com/";
+    };
   };
+
+  home.file.".catppuccin-delta.gitconfig".source =
+    ../../../home/files/git/catppuccin-delta.gitconfig;
 }
