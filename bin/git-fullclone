@@ -1,31 +1,32 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-REPOSITORY_URL="${1:-}"
-DIR="${2:-}"
-CURRENT_BRANCH=""
-REMOTE_BRANCH=""
+repo_url="${1:-}"
+dir_path="${2:-}"
 
-if [[ -z "$REPOSITORY_URL" ]]; then
-  echo "Usage: $(basename "$0") <repository-url> [directory]" >&2
+usage() {
+  printf 'Usage: %s <repository-url> [directory]\n' "$(basename "$0")" >&2
+}
+
+[[ -n "$repo_url" ]] || {
+  usage
   exit 1
+}
+
+if [[ -z "$dir_path" ]]; then
+  dir_path="$(basename "$repo_url" .git)"
 fi
 
-if [[ -z $DIR ]]; then
-  DIR="$(basename "$REPOSITORY_URL" .git)"
-fi
+git clone "$repo_url" "$dir_path"
+cd "$dir_path"
 
-git clone "$REPOSITORY_URL" "$DIR" || exit 254
-cd "$DIR" || exit 254
+current_branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+while IFS= read -r remote_branch; do
+  remote_branch="${remote_branch#origin/}"
+  [[ "$remote_branch" == "HEAD" || "$remote_branch" == "$current_branch" ]] && continue
 
-CURRENT_BRANCH="$(git branch --show-current)"
-while IFS= read -r REMOTE_BRANCH; do
-  REMOTE_BRANCH="${REMOTE_BRANCH#origin/}"
-  if [[ "$REMOTE_BRANCH" == "HEAD" ]] || [[ "$REMOTE_BRANCH" == "$CURRENT_BRANCH" ]]; then
-    continue
-  fi
-
-  if ! git show-ref --verify --quiet "refs/heads/${REMOTE_BRANCH}"; then
-    git branch --track "$REMOTE_BRANCH" "origin/${REMOTE_BRANCH}"
+  if ! git show-ref --verify --quiet "refs/heads/${remote_branch}"; then
+    git branch --track "$remote_branch" "origin/${remote_branch}"
   fi
 done < <(git for-each-ref --format='%(refname:short)' refs/remotes/origin)
 
