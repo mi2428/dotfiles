@@ -123,7 +123,7 @@ let
     tailspin
     terraform
     tokei
-    tmuxinator
+    (lib.hiPrio tmuxinator)
     vhs
     viddy
     yt-dlp
