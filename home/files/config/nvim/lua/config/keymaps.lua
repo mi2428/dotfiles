@@ -48,9 +48,11 @@ for i = 1, 9 do
 end
 
 map("n", "<leader>f", function()
-	local cwd = vim.fs.root(0, ".git") or vim.fn.getcwd()
-	require("fzf-lua").files({ cwd = cwd })
-end, { desc = "Find files" })
+	require("fzf-lua").files({ cwd = vim.fs.root(0, ".git") or vim.fn.getcwd() })
+end, { desc = "Find files from repo root" })
+map("n", "<leader>d", function()
+	require("fzf-lua").files({ cwd = vim.fn.getcwd() })
+end, { desc = "Find files from current directory" })
 map("n", "<leader>g", function()
 	require("fzf-lua").git_files()
 end, { desc = "Find git files" })
