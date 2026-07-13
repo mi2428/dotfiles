@@ -83,12 +83,12 @@ set -l grc_cmds \
     whois
 
 for cmd in $grc_cmds
-    if not command -sq $cmd
+    if not command -sq "$cmd"
         continue
     end
 
     # Keep explicit aliases/functions such as ls=eza intact.
-    if functions -q $cmd
+    if functions -q "$cmd"
         continue
     end
 
