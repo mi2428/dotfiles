@@ -6,16 +6,16 @@ let
     };
     git = ../files/git/gitconfig.macos;
     tmux = {
-      cpu = ../files/tmux/tmux/scripts/cpu.macos.sh;
-      mem = ../files/tmux/tmux/scripts/mem.macos.sh;
+      cpu = ../files/tmux/scripts/cpu.macos.sh;
+      mem = ../files/tmux/scripts/mem.macos.sh;
     };
     vscode = {
       settingsTarget = "Library/Application Support/Code/User/settings.json";
     };
     zsh = {
       overrides = {
-        "14_general_fzf.zsh" = ../files/zsh/zsh/14_general_fzf.macos.zsh;
-        "22_aliases.zsh" = ../files/zsh/zsh/22_aliases.macos.zsh;
+        "14_general_fzf.zsh" = ../files/zsh/14_general_fzf.macos.zsh;
+        "22_aliases.zsh" = ../files/zsh/22_aliases.macos.zsh;
       };
     };
   };

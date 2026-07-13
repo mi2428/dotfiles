@@ -6,15 +6,15 @@ let
     };
     git = ../files/git/gitconfig;
     tmux = {
-      cpu = ../files/tmux/tmux/scripts/cpu.sh;
-      mem = ../files/tmux/tmux/scripts/mem.sh;
+      cpu = ../files/tmux/scripts/cpu.sh;
+      mem = ../files/tmux/scripts/mem.sh;
     };
     vscode = {
       settingsTarget = ".config/Code/User/settings.json";
     };
     zsh = {
       overrides = {
-        "22_aliases.zsh" = ../files/zsh/zsh/22_aliases.docker-dev.zsh;
+        "22_aliases.zsh" = ../files/zsh/22_aliases.docker-dev.zsh;
       };
     };
   };

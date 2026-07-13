@@ -14,7 +14,7 @@ let
     if builtins.hasAttr relativePath platformFiles.zsh.overrides then
       platformFiles.zsh.overrides.${relativePath}
     else
-      ../../../home/files/zsh/zsh/${relativePath};
+      ../../../home/files/zsh/${relativePath};
   zshFiles = lib.listToAttrs (map
     (relativePath:
       lib.nameValuePair ".zsh/${relativePath}" {

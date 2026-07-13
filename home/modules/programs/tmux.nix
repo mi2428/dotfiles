@@ -10,7 +10,7 @@ let
     "statusbar-catppuccin.conf"
   ];
   sourceFor = relativePath:
-    ../../../home/files/tmux/tmux/${relativePath};
+    ../../../home/files/tmux/${relativePath};
   tmuxFiles = lib.listToAttrs (map
     (relativePath:
       lib.nameValuePair ".tmux/${relativePath}" {
@@ -22,7 +22,7 @@ in {
     ".tmux.conf".source = ../../../home/files/tmux/tmux.conf;
     ".tmux/scripts/cpu.sh".source = platformFiles.tmux.cpu;
     ".tmux/scripts/mem.sh".source = platformFiles.tmux.mem;
-    ".tmux/statusbar.conf".source = ../../../home/files/tmux/tmux/statusbar.conf;
+    ".tmux/statusbar.conf".source = ../../../home/files/tmux/statusbar.conf;
   };
   xdg.configFile."tmux/plugins/catppuccin/tmux" = {
     source = catppuccinPlugin;

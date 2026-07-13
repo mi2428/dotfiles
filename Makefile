@@ -5,7 +5,7 @@ HOME_TMUX := $(HOME)/.tmux
 .PHONY: install
 install: ## Link the minimal shell and tmux configuration
 	@mkdir -p $(HOME)
-	@ln -sfn $(REPO)/home/files/zsh/zsh $(HOME_ZSH)
+	@ln -sfn $(REPO)/home/files/zsh $(HOME_ZSH)
 	@printf '%s\n' \
 		'if [ -d "$$HOME/.zsh" ]; then' \
 		'  for conf in "$$HOME"/.zsh/*.zsh; do' \
@@ -14,4 +14,4 @@ install: ## Link the minimal shell and tmux configuration
 		'  done' \
 		'fi' > $(HOME)/.zshrc
 	@ln -sfn $(REPO)/home/files/tmux/tmux.conf $(HOME)/.tmux.conf
-	@ln -sfn $(REPO)/home/files/tmux/tmux $(HOME_TMUX)
+	@ln -sfn $(REPO)/home/files/tmux $(HOME_TMUX)
