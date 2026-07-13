@@ -88,32 +88,6 @@ Decrypt into the real home when needed:
 task secrets.decrypt IMPORT_GPG=1 DECRYPT_HOME=$HOME
 ```
 
-#### Ghostty
-
-Outer terminal: [`home/files/config/ghostty/config.ghostty`](/Users/teo/dotfiles/home/files/config/ghostty/config.ghostty)
-
-- It uses `Ubuntu Mono`.
-- It uses Catppuccin.
-- It keeps quick terminal enabled.
-
-#### herdr
-
-Primary terminal multiplexer: [`home/files/config/herdr/config.toml`](/Users/teo/dotfiles/home/files/config/herdr/config.toml)
-
-#### tmux
-
-Still part of the workflow:
-
-- The Home Manager entry point is [`home/modules/programs/tmux.nix`](/Users/teo/dotfiles/home/modules/programs/tmux.nix).
-- The tmux config file is [`home/files/tmux/tmux.conf`](/Users/teo/dotfiles/home/files/tmux/tmux.conf).
-
-#### Neovim
-
-Managed through Home Manager:
-
-- The Home Manager entry point is [`home/modules/programs/nvim.nix`](/Users/teo/dotfiles/home/modules/programs/nvim.nix).
-- The main config file is [`home/files/config/nvim/init.lua`](/Users/teo/dotfiles/home/files/config/nvim/init.lua).
-
 #### Packages
 
 Main package list: [`home/modules/core/packages.nix`](/Users/teo/dotfiles/home/modules/core/packages.nix)
@@ -126,3 +100,58 @@ Main package list: [`home/modules/core/packages.nix`](/Users/teo/dotfiles/home/m
 - The current macOS bootstrap host name is `MBP-M4Pro48G-C3VH95F6P6`.
 - Secret template data lives in `chezmoi/.chezmoidata/`.
 - If colors look wrong, check ANSI versus truecolor first.
+
+#### sudo authentication
+
+Touch ID and Apple Watch sudo are managed by nix-darwin via `security.pam.services.sudo_local`. Keep local PAM edits out of `/etc/pam.d` unless they are intentionally outside the flake.
+
+#### visudo
+
+This is the memo I want to keep for local sudoers shape:
+
+```console
+# root and users in group wheel can run anything on any machine as any user
+root    ALL = (ALL) ALL
+%admin  ALL = (ALL) ALL
+mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/ping6,/usr/sbin/tcpdump,/usr/sbin/purge
+```
+
+#### pam-watchid
+
+Apple Watch sudo used to be enabled with `pam-watchid`. If I ever need to re-check the old path, this was the installer:
+
+```console
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/mostpinkest/pam-watchid/HEAD/install.sh)" -- enable
+```
+
+And this was the corresponding `/etc/pam.d/sudo` snippet:
+
+```console
+auth       sufficient     pam_watchid.so "reason=execute a command as root"
+auth       sufficient     pam_tid.so
+```
+
+#### 1Password
+
+Remember to enable CLI integration in 1Password or it will keep asking for the vault password. The path was `Settings > Developer > Command-Line Interface (CLI) > Integrate with 1Password CLI`.
+
+#### AWS Session Manager
+
+If `aws ssm` is missing the Session Manager plugin on macOS, this was the install path:
+
+```console
+curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/mac_arm64/session-manager-plugin.pkg" -o "session-manager-plugin.pkg"
+sudo installer -pkg session-manager-plugin.pkg -target /
+sudo ln -s /usr/local/sessionmanagerplugin/bin/session-manager-plugin /usr/local/bin/session-manager-plugin
+```
+
+#### iTerm2 Preferences
+
+Old iTerm2 preferences worth remembering:
+
+- Under `General / Selection`, keep "Applications in terminal may access clipboard" enabled.
+- Under `Appearance / General`, use the **Minimal** theme, put the tab bar at the top, and the status bar at the bottom.
+- Under `Appearance / Tabs`, keep "Show tab bar even when there is only one tab" enabled.
+- Under `Appearance / Dimming`, keep inactive split dimming disabled.
+- Under `Advanced / Hotkey`, set the hotkey window animation duration to `0`.
+- Under `Advanced / Session`, keep "Allow sessions to survive logging out and back in" set to `No`.
