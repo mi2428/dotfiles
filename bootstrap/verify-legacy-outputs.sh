@@ -9,7 +9,7 @@ Usage: bootstrap/verify-legacy-outputs.sh --host HOST [--baseline REF]
 
 Builds a legacy home tree from the baseline ref with the archived init/LINK
 script, bootstraps the current tree into a temporary destination, and compares
-the materialized outputs.
+the resulting materialized outputs.
 EOF
 }
 

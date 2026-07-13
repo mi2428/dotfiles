@@ -49,7 +49,20 @@ Clone this repository just under your `$HOME`.
 % git clone --depth 1 https://github.com/mi2428/dotfiles
 ```
 
-The repository is in transition to a `Home Manager` + `chezmoi` layout.
+The repository uses a `Home Manager` + `chezmoi` layout:
+
+* `home/` is the source tree for Home Manager-managed files and adjacent static
+  dotfile sources
+* `bootstrap/` contains installation, activation, and verification scripts;
+  helper/setup scripts live under `bootstrap/setup/`
+* `chezmoi/` contains templates for static links not yet managed by Home
+  Manager
+
+The former top-level `etc/` and `init/` trees have been retired. XDG config
+sources are under `home/files/config/`, non-XDG dotfiles are under their
+corresponding `home/files/` directory, and host-specific overlays remain under
+`home/files/hosts/`.
+
 The old `make install.*` / `make link.*` flows are no longer maintained.
 
 ### Emergency fallback
@@ -90,8 +103,8 @@ system-wide changes.
 
 ### Verification
 
-Use the Nix-free equivalence check to confirm that the current source layout
-still renders the same dotfiles as the legacy `master` branch:
+Use the Nix-free archival comparison to diff the current source layout against
+the legacy `master` branch when you need to audit migration drift:
 
 ```
 % ./bootstrap/verify-source-equivalence.sh --host macos
@@ -99,7 +112,7 @@ still renders the same dotfiles as the legacy `master` branch:
 ```
 
 When `nix` is already available on a matching host architecture, you can also
-run the full bootstrap comparison:
+run the full bootstrap comparison against the archived legacy baseline:
 
 ```
 % ./bootstrap/verify-legacy-outputs.sh --host linux-server
@@ -107,10 +120,13 @@ run the full bootstrap comparison:
 
 ### Current status
 
-* First-wave managed config lives under `home/files/` and `home/`
-* The legacy Linux desktop tree has been removed
-* The legacy `etc/hosts/` tree has been retired; host-specific overlays now live under `home/files/hosts/`
-* `init/LINK` has been retired; `chezmoi/` owns the remaining static links
+* Managed config and adjacent static sources live under `home/files/` and
+  `home/`
+* XDG configuration trees live under `home/files/config/`
+* Host-specific overlays live under `home/files/hosts/`
+* Setup helpers live under `bootstrap/setup/`; the former top-level `init/`
+  tree and `init/LINK` flow have been retired
+* `chezmoi/` owns the remaining static links
 
 ## Deploy hints
 
