@@ -1,4 +1,4 @@
-{ hostName, lib, pkgs, ... }:
+{ lib, pkgs, platformFiles, ... }:
 let
   fzfGitSource = pkgs.fetchFromGitHub {
     owner = "junegunn";
@@ -20,12 +20,10 @@ let
     "functions/fish_title.fish"
     "functions/fish_user_key_bindings.fish"
   ];
-  relativeFiles = baseRelativeFiles ++ lib.optionals (hostName == "macos") [
-    "conf.d/22_aliases.fish"
-  ];
+  relativeFiles = baseRelativeFiles ++ platformFiles.fish.extraFiles;
   sourceFor = relativePath:
-    if relativePath == "conf.d/12_general_path.fish" && hostName == "macos" then
-      ../../../home/files/config/fish/conf.d/12_general_path.macos.fish
+    if relativePath == "conf.d/12_general_path.fish" then
+      platformFiles.fish.path
     else
       ../../../home/files/config/fish/${relativePath};
   fishFiles = lib.listToAttrs (map

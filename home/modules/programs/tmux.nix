@@ -1,4 +1,4 @@
-{ hostName, lib, pkgs, ... }:
+{ lib, pkgs, platformFiles, ... }:
 let
   catppuccinPlugin =
     "${pkgs.tmuxPlugins.catppuccin}/share/tmux-plugins/catppuccin";
@@ -20,16 +20,8 @@ let
 in {
   home.file = tmuxFiles // {
     ".tmux.conf".source = ../../../home/files/tmux/tmux.conf;
-    ".tmux/scripts/cpu.sh".source =
-      if hostName == "macos" then
-        ../../../home/files/tmux/tmux/scripts/cpu.macos.sh
-      else
-        ../../../home/files/tmux/tmux/scripts/cpu.sh;
-    ".tmux/scripts/mem.sh".source =
-      if hostName == "macos" then
-        ../../../home/files/tmux/tmux/scripts/mem.macos.sh
-      else
-        ../../../home/files/tmux/tmux/scripts/mem.sh;
+    ".tmux/scripts/cpu.sh".source = platformFiles.tmux.cpu;
+    ".tmux/scripts/mem.sh".source = platformFiles.tmux.mem;
     ".tmux/statusbar.conf".source = ../../../home/files/tmux/tmux/statusbar.conf;
   };
   xdg.configFile."tmux/plugins/catppuccin/tmux" = {

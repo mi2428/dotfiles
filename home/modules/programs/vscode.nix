@@ -1,13 +1,6 @@
-{ hostName, ... }:
-let
-  settingsTarget =
-    if hostName == "macos" then
-      "Library/Application Support/Code/User/settings.json"
-    else
-      ".config/Code/User/settings.json";
-in {
+{ platformFiles, ... }: {
   home.file = {
-    "${settingsTarget}" = {
+    "${platformFiles.vscode.settingsTarget}" = {
       force = true;
       source = ../../../home/files/config/vscode/settings.json;
     };

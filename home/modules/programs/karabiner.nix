@@ -1,7 +1,7 @@
-{ hostName, lib, pkgs, ... }:
-lib.mkIf (pkgs.stdenv.isDarwin && hostName == "macos") {
+{ lib, platformFiles, ... }:
+lib.mkIf (platformFiles.karabiner != null) {
   xdg.configFile."karabiner/karabiner.json" = {
     force = true;
-    source = ../../../home/files/hosts/macos/karabiner/karabiner.json;
+    source = platformFiles.karabiner;
   };
 }

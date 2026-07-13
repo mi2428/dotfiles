@@ -1,5 +1,3 @@
-__dotfiles_import_posix_exports $HOME/.envs
-
 switch (uname -m)
     case x86_64 i386
         set -gx HOMEBREW_HOME /usr/local
@@ -15,11 +13,3 @@ switch (uname -m)
 end
 
 set -gx SDKMAN_DIR $HOME/.sdkman
-
-if command -sq rbenv
-    rbenv init - --no-rehash fish | source
-end
-
-if command -sq nodenv
-    nodenv init - fish | source
-end
