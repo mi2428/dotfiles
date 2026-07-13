@@ -1,6 +1,7 @@
 { ... }: {
   imports = [
     ../../modules/programs/karabiner.nix
+    ../../modules/programs/vscode.nix
   ];
 
   home.sessionPath = [
