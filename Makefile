@@ -1,41 +1,17 @@
-.DEFAULT_GOAL := help
-
 REPO := $(CURDIR)
 HOME_ZSH := $(HOME)/.zsh
-HOME_NVIM := $(HOME)/.config/nvim
+HOME_TMUX := $(HOME)/.tmux
 
-.PHONY: help
-help: ## Display available emergency targets
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9.-]+:.*?##/ { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
-
-##@ Emergency setup
-
-.PHONY: emergency
-emergency: emergency-zsh emergency-nvim ## Link the minimal Linux zsh + nvim emergency environment
-
-.PHONY: min
-min: emergency ## Alias for emergency
-
-.PHONY: link-minimal
-link-minimal: emergency ## Alias for emergency
-
-.PHONY: emergency-zsh
-emergency-zsh: ## Link the repository zsh configuration
-	@mkdir -p $(HOME_ZSH)
-	@ln -sfn $(REPO)/home/files/zsh/zshrc $(HOME)/.zshrc
-	@ln -sfn $(REPO)/home/files/zsh/zlogin $(HOME)/.zlogin
-	@for config in $(REPO)/home/files/zsh/zsh/*; do \
-		[ -f "$$config" ] || continue; \
-		ln -sfn "$$config" "$(HOME_ZSH)/$$(basename "$$config")"; \
-	done
-
-.PHONY: emergency-nvim
-emergency-nvim: ## Link the repository Neovim configuration
-	@mkdir -p $(HOME)/.config
-	@ln -sfn $(REPO)/home/files/config/nvim $(HOME_NVIM)
-
-##@ Bootstrap
-
-.PHONY: bootstrap
-bootstrap: ## Install/apply chezmoi and Home Manager for this host
-	@./bootstrap/bootstrap.sh
+.PHONY: install
+install: ## Link the minimal shell and tmux configuration
+	@mkdir -p $(HOME)
+	@ln -sfn $(REPO)/home/files/zsh/zsh $(HOME_ZSH)
+	@printf '%s\n' \
+		'if [ -d "$$HOME/.zsh" ]; then' \
+		'  for conf in "$$HOME"/.zsh/*.zsh; do' \
+		'    [ -f "$$conf" ] || continue' \
+		'    . "$$conf"' \
+		'  done' \
+		'fi' > $(HOME)/.zshrc
+	@ln -sfn $(REPO)/home/files/tmux/tmux.conf $(HOME)/.tmux.conf
+	@ln -sfn $(REPO)/home/files/tmux/tmux $(HOME_TMUX)

@@ -1,5 +1,7 @@
-{ hostName, lib, ... }:
+{ hostName, lib, pkgs, ... }:
 let
+  catppuccinPlugin =
+    "${pkgs.tmuxPlugins.catppuccin}/share/tmux-plugins/catppuccin";
   relativeFiles = [
     "scripts/battery-icon.sh"
     "scripts/battery.sh"
@@ -29,5 +31,8 @@ in {
       else
         ../../../home/files/tmux/tmux/scripts/mem.sh;
     ".tmux/statusbar.conf".source = ../../../home/files/tmux/tmux/statusbar.conf;
+  };
+  xdg.configFile."tmux/plugins/catppuccin/tmux" = {
+    source = catppuccinPlugin;
   };
 }

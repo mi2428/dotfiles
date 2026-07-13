@@ -1,5 +1,11 @@
 { hostName, lib, pkgs, ... }:
 let
+  fzfGitSource = pkgs.fetchFromGitHub {
+    owner = "junegunn";
+    repo = "fzf-git.sh";
+    rev = "fdf632c53262dfcc44fc09d591e462e9f8fcae83";
+    hash = "sha256-3ho7Kn84q36bj9N+Nj+5XEdkXIN4xwYk7h7g/ou3TRM=";
+  };
   baseRelativeFiles = [
     "conf.d/05_catppuccin_theme.fish"
     "conf.d/10_general.fish"
@@ -40,4 +46,7 @@ in {
   };
 
   xdg.configFile = fishFiles;
+  xdg.dataFile."fzf-git" = {
+    source = fzfGitSource;
+  };
 }

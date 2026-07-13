@@ -46,7 +46,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > /tmp/rustup.sh \
 RUN git clone --depth 1 https://github.com/mi2428/dotfiles \
  && cd dotfiles \
  && HOME=/etc/skel CARGO_HOME=/etc/skel/.cargo PATH=/etc/skel/.cargo/bin:$PATH \
-    make emergency
+    make install
 
 RUN cp ./dotfiles/containers/dotfiles/entrypoint.sh /sbin/entrypoint.sh \
  && chmod +x /sbin/entrypoint.sh
