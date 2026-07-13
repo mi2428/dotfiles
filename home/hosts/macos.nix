@@ -14,7 +14,6 @@ in {
   imports = [
     ../profiles/base.nix
     ../profiles/os/macos.nix
-    ../profiles/role/desktop.nix
   ];
 
   home.username = userName;
