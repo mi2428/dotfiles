@@ -1,4 +1,4 @@
-command = /opt/homebrew/bin/fish
+command = /usr/local/bin/fish
 keybind = super+shift+r=reload_config
 keybind = global:cmd+shift+enter=toggle_quick_terminal
 keybind = cmd+g>d=new_split:right

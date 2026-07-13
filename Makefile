@@ -65,6 +65,7 @@ pkginstall.macos: ##
 	@./init/setup-sudo-with-touchid.sh || true
 	@sudo ln -sf /opt/homebrew/bin/gtimeout /usr/local/bin/timeout 2>/dev/null || true  # Apple silicon
 	@sudo ln -sf /usr/local/bin/gtimeout    /usr/local/bin/timeout 2>/dev/null || true  # Intel chip
+	@sudo ln -sf /opt/homebrew/bin/fish     /usr/local/bin/fish    2>/dev/null || true  # Apple silicon
 	@sudo ln -sf /opt/homebrew/bin/python3  /usr/local/bin/python  2>/dev/null || true  # Apple silicon
 	@sudo ln -sf /usr/local/bin/python3     /usr/local/bin/python  2>/dev/null || true  # Intel chip
 

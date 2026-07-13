@@ -76,7 +76,7 @@
     "terminal.integrated.profiles.osx": {
         "fish": {
             "args": ["-l"],
-            "path": "/opt/homebrew/bin/fish"
+            "path": "/usr/local/bin/fish"
         }
     },
     "vim.statusBarColorControl": false,
