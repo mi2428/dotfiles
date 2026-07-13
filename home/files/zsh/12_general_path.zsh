@@ -4,7 +4,6 @@ export VOLTA_HOME="$HOME/.volta"
 typeset -U path PATH
 path=(
   $HOME/bin
-  $HOME/dotfiles/bin
   $HOME/.nix-profile/bin
   /run/current-system/sw/bin
   /nix/var/nix/profiles/default/bin

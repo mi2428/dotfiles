@@ -14,7 +14,6 @@ x86_64|i386)
   path=(
     $HOME/bin
     $HOME/io/bin
-    $HOME/dotfiles/bin
     $HOME/.nix-profile/bin
     /run/current-system/sw/bin
     /nix/var/nix/profiles/default/bin
@@ -44,7 +43,6 @@ arm64*)
   path=(
     $HOME/bin
     $HOME/io/bin
-    $HOME/dotfiles/bin
     $HOME/.nix-profile/bin
     /run/current-system/sw/bin
     /nix/var/nix/profiles/default/bin

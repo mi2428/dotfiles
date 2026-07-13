@@ -67,7 +67,7 @@ disabled = true
 # repositories. Keep the same visual cues, but route them through the cached
 # helper below.
 [custom.git_state]
-command = "~/dotfiles/bin/starship-git-metrics summary"
+command = "$HOME/.local/bin/starship-git-metrics summary"
 when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
 shell = ["bash", "--noprofile", "--norc"]
 format = "$output"
