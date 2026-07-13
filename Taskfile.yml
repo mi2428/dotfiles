@@ -8,368 +8,62 @@ vars:
   CHEZMOI_BIN:
     sh: ./bootstrap/install-chezmoi.sh
 
+includes:
+  secrets:
+    taskfile: ./taskfiles/secrets.yml
+    flatten: true
+    vars:
+      REPO_ROOT:
+        ref: .REPO_ROOT
+      CHEZMOI_BIN:
+        ref: .CHEZMOI_BIN
+  docker:
+    taskfile: ./taskfiles/docker.yml
+    flatten: true
+
 tasks:
   default:
-    desc: Show available tasks
     cmds:
       - task: help
 
   help:
     desc: Show this help message
-    cmds:
-      - task --list
-      - |
-        printf '\nExamples:\n'
-        printf '  task age-init\n'
-        printf '  task encrypt BUNDLE=ssh\n'
-        printf "  task encrypt BUNDLE=gnupg GPG_KEY_IDS='E8D3009C6341BDEAF038009685AB6867E2147DDA'\n"
-        printf '  task decrypt BUNDLE=gnupg IMPORT_GPG=1 DECRYPT_HOME=$HOME\n'
-        printf '  task backup\n'
-        printf '  task docker-build TAG=latest\n'
-        printf '  task docker-push TAG=latest\n'
-
-  age-init:
-    desc: Generate the repo age identity, recipient metadata, and local chezmoi config
-    cmds:
-      - |
-        set -eu
-        chezmoi_source='{{.REPO_ROOT}}/chezmoi'
-        chezmoi_config_dir="$HOME/.config/chezmoi"
-        chezmoi_config="$chezmoi_config_dir/chezmoi.toml"
-        chezmoi_key="$chezmoi_config_dir/key.txt"
-        chezmoi_encrypted_key="$chezmoi_source/key.txt.age"
-        chezmoi_data_dir="$chezmoi_source/.chezmoidata"
-        chezmoi_data_file="$chezmoi_data_dir/secrets.yaml"
-        mkdir -p "$chezmoi_config_dir" "$chezmoi_data_dir"
-        if [ -f "$chezmoi_config" ] && ! grep -Fq 'managed by /Users/teo/dotfiles/Taskfile.yml' "$chezmoi_config"; then
-          echo "Refusing to overwrite $chezmoi_config without the dotfiles marker" >&2
-          exit 1
-        fi
-        tmp_key="$(mktemp)"
-        trap 'rm -f "$tmp_key"' EXIT
-        recipient="$("{{.CHEZMOI_BIN}}" age-keygen --output "$tmp_key" 2>&1 | awk '/^Public key:/ { print $3 }')"
-        if [ -z "$recipient" ]; then
-          echo "Failed to capture age recipient from chezmoi age-keygen" >&2
-          exit 1
-        fi
-        install -m 600 "$tmp_key" "$chezmoi_key"
-        "{{.CHEZMOI_BIN}}" age encrypt --passphrase --output "$chezmoi_encrypted_key" "$tmp_key"
-        printf '%s\n' \
-          'secrets:' \
-          "  ageRecipient: $recipient" \
-          > "$chezmoi_data_file"
-        printf '%s\n' \
-          '# managed by /Users/teo/dotfiles/Taskfile.yml' \
-          'encryption = "age"' \
-          '[age]' \
-          "    identity = \"$chezmoi_key\"" \
-          "    recipient = \"$recipient\"" \
-          > "$chezmoi_config"
-        printf 'Initialized age recipient: %s\n' "$recipient"
-
-  age-unlock:
-    desc: Decrypt key.txt.age into ~/.config/chezmoi/key.txt and refresh local chezmoi config
-    cmds:
-      - |
-        set -eu
-        chezmoi_source='{{.REPO_ROOT}}/chezmoi'
-        chezmoi_config_dir="$HOME/.config/chezmoi"
-        chezmoi_config="$chezmoi_config_dir/chezmoi.toml"
-        chezmoi_key="$chezmoi_config_dir/key.txt"
-        chezmoi_encrypted_key="$chezmoi_source/key.txt.age"
-        chezmoi_data_file="$chezmoi_source/.chezmoidata/secrets.yaml"
-        mkdir -p "$chezmoi_config_dir"
-        if [ ! -s "$chezmoi_encrypted_key" ]; then
-          echo "Missing $chezmoi_encrypted_key. Run 'task age-init' first." >&2
-          exit 1
-        fi
-        if [ ! -s "$chezmoi_data_file" ]; then
-          echo "Missing $chezmoi_data_file. Run 'task age-init' first." >&2
-          exit 1
-        fi
-        "{{.CHEZMOI_BIN}}" age decrypt --output "$chezmoi_key" --passphrase "$chezmoi_encrypted_key"
-        chmod 600 "$chezmoi_key"
-        recipient="$(awk -F': ' '/ageRecipient:/ { print $2 }' "$chezmoi_data_file" | tail -n 1)"
-        if [ -z "$recipient" ]; then
-          echo "ageRecipient was empty in $chezmoi_data_file" >&2
-          exit 1
-        fi
-        printf '%s\n' \
-          '# managed by /Users/teo/dotfiles/Taskfile.yml' \
-          'encryption = "age"' \
-          '[age]' \
-          "    identity = \"$chezmoi_key\"" \
-          "    recipient = \"$recipient\"" \
-          > "$chezmoi_config"
-
-  assert-age-ready:
     internal: true
     cmds:
       - |
-        set -eu
-        chezmoi_source='{{.REPO_ROOT}}/chezmoi'
-        chezmoi_config_dir="$HOME/.config/chezmoi"
-        chezmoi_config="$chezmoi_config_dir/chezmoi.toml"
-        chezmoi_key="$chezmoi_config_dir/key.txt"
-        chezmoi_encrypted_key="$chezmoi_source/key.txt.age"
-        chezmoi_data_file="$chezmoi_source/.chezmoidata/secrets.yaml"
-        if [ ! -x "{{.CHEZMOI_BIN}}" ]; then
-          echo "chezmoi was not found. bootstrap/install-chezmoi.sh could not resolve it." >&2
-          exit 1
-        fi
-        if [ ! -s "$chezmoi_encrypted_key" ] || [ ! -s "$chezmoi_data_file" ]; then
-          echo "Encryption is not initialized. Run 'task age-init' first." >&2
-          exit 1
-        fi
-        if [ ! -s "$chezmoi_key" ] || [ ! -s "$chezmoi_config" ]; then
-          echo "Local chezmoi age config is missing. Run 'task age-unlock' first." >&2
-          exit 1
-        fi
-
-  encrypt:
-    desc: Encrypt all bundles or specific ones with BUNDLE=ssh,gnupg
-    cmds:
-      - |
-        set -eu
-        bundle_input='{{default "" .BUNDLE}}'
-        if [ -n "$bundle_input" ]; then
-          for bundle in $(printf '%s' "$bundle_input" | tr ',' ' '); do
-            task encrypt-one BUNDLE="$bundle" GPG_KEY_IDS='{{default "" .GPG_KEY_IDS}}'
-          done
-        else
-          for bundle in ssh gnupg; do
-            task encrypt-one BUNDLE="$bundle" GPG_KEY_IDS='{{default "" .GPG_KEY_IDS}}'
-          done
-        fi
-
-  encrypt-one:
-    desc: Stage a single bundle and re-add it to chezmoi as encrypted files
-    internal: true
-    cmds:
-      - task: assert-age-ready
-      - |
-        set -eu
-        bundle='{{default "" .BUNDLE}}'
-        if [ -z "$bundle" ]; then
-          echo "Set BUNDLE=ssh or BUNDLE=gnupg" >&2
-          exit 1
-        fi
-        chezmoi_source='{{.REPO_ROOT}}/chezmoi'
-        chezmoi_config="$HOME/.config/chezmoi/chezmoi.toml"
-        cache_dir="${CACHE_DIR:-$HOME/.cache/dotfiles/secrets}"
-        stage_home="$cache_dir/stage-home"
-        gpg_export_root='.local/share/dotfiles/gnupg'
-        rm -rf "$stage_home"
-        mkdir -p "$stage_home"
-        case "$bundle" in
-          ssh)
-            src="$HOME/.ssh"
-            dst="$stage_home/.ssh"
-            if [ ! -d "$src" ]; then
-              echo "Missing $src" >&2
-              exit 1
-            fi
-            mkdir -p "$dst"
-            find "$src" -maxdepth 1 -type f \
-              \( -name 'config' -o -name 'allowed_signers' -o -name 'authorized_keys' -o -name 'id_*' -o -name '*.pub' -o -name '*.pem' -o -name '*.crt' -o -name '*.cer' -o -name '*.p12' -o -name '*.asc' \) \
-              ! -name 'known_hosts*' \
-              -print | while IFS= read -r file; do
-                install -m 600 "$file" "$dst/$(basename "$file")"
-              done
-            managed_paths="$(cd "$stage_home" && find .ssh -type f | sort)"
-            ;;
-          gnupg)
-            src_gnupg="${GNUPGHOME:-$HOME/.gnupg}"
-            dst_gnupg="$stage_home/.gnupg"
-            export_root="$stage_home/$gpg_export_root"
-            gpg_key_ids='{{default "" .GPG_KEY_IDS}}'
-            if ! command -v gpg >/dev/null 2>&1; then
-              echo "gpg is required for BUNDLE=gnupg" >&2
-              exit 1
-            fi
-            mkdir -p "$dst_gnupg" "$export_root"
-            for file in gpg.conf gpg-agent.conf dirmngr.conf scdaemon.conf sshcontrol; do
-              if [ -f "$src_gnupg/$file" ]; then
-                install -m 600 "$src_gnupg/$file" "$dst_gnupg/$file"
-              fi
-            done
-            if [ -d "$src_gnupg/openpgp-revocs.d" ]; then
-              find "$src_gnupg/openpgp-revocs.d" -type f -name '*.rev' -print | while IFS= read -r file; do
-                install -Dm600 "$file" "$dst_gnupg/openpgp-revocs.d/$(basename "$file")"
-              done
-            fi
-            export_args=""
-            if [ -n "$gpg_key_ids" ]; then
-              export_args="$gpg_key_ids"
-            fi
-            GNUPGHOME="$src_gnupg" gpg --batch --yes --armor --export $export_args > "$export_root/public.asc"
-            GNUPGHOME="$src_gnupg" gpg --batch --yes --armor --export-secret-keys $export_args > "$export_root/secret.asc"
-            GNUPGHOME="$src_gnupg" gpg --export-ownertrust > "$export_root/ownertrust.txt"
-            chmod 600 "$export_root/"*
-            managed_paths="$(cd "$stage_home" && { find .gnupg -type f 2>/dev/null; find "$gpg_export_root" -type f 2>/dev/null; } | sort)"
-            ;;
-          *)
-            echo "Error: Unknown BUNDLE '$bundle'" >&2
-            exit 1
-            ;;
-        esac
-        if [ -z "${managed_paths:-}" ]; then
-          echo "No files were staged for $bundle" >&2
-          exit 1
-        fi
-        printf '%s\n' "$managed_paths" | while IFS= read -r relpath; do
-          [ -n "$relpath" ] || continue
-          "{{.CHEZMOI_BIN}}" --config "$chezmoi_config" add --source "$chezmoi_source" --destination "$stage_home" --encrypt --force "$stage_home/$relpath"
-        done
-
-  decrypt:
-    desc: Decrypt bundles into DECRYPT_HOME (default ~/.cache/dotfiles/secrets/decrypted-home)
-    cmds:
-      - |
-        set -eu
-        bundle_input='{{default "" .BUNDLE}}'
-        if [ -n "$bundle_input" ]; then
-          for bundle in $(printf '%s' "$bundle_input" | tr ',' ' '); do
-            task decrypt-one BUNDLE="$bundle" IMPORT_GPG='{{default "0" .IMPORT_GPG}}' DECRYPT_HOME='{{default "" .DECRYPT_HOME}}'
-          done
-        else
-          for bundle in ssh gnupg; do
-            task decrypt-one BUNDLE="$bundle" IMPORT_GPG='{{default "0" .IMPORT_GPG}}' DECRYPT_HOME='{{default "" .DECRYPT_HOME}}'
-          done
-        fi
-
-  decrypt-one:
-    desc: Materialize a single bundle into DECRYPT_HOME; use IMPORT_GPG=1 for key import
-    internal: true
-    cmds:
-      - task: assert-age-ready
-      - |
-        set -eu
-        bundle='{{default "" .BUNDLE}}'
-        if [ -z "$bundle" ]; then
-          echo "Set BUNDLE=ssh or BUNDLE=gnupg" >&2
-          exit 1
-        fi
-        chezmoi_source='{{.REPO_ROOT}}/chezmoi'
-        chezmoi_config="$HOME/.config/chezmoi/chezmoi.toml"
-        decrypt_home='{{default "" .DECRYPT_HOME}}'
-        import_gpg='{{default "0" .IMPORT_GPG}}'
-        gpg_export_root='.local/share/dotfiles/gnupg'
-        if [ -z "$decrypt_home" ]; then
-          decrypt_home="$HOME/.cache/dotfiles/secrets/decrypted-home"
-        fi
-        mkdir -p "$decrypt_home"
-        case "$bundle" in
-          ssh)
-            targets=".ssh"
-            ;;
-          gnupg)
-            targets=".gnupg $gpg_export_root"
-            ;;
-          *)
-            echo "Error: Unknown BUNDLE '$bundle'" >&2
-            exit 1
-            ;;
-        esac
-        HOME="$decrypt_home" USER="${USER:-$(id -un)}" "{{.CHEZMOI_BIN}}" --config "$chezmoi_config" apply --force --init --no-tty --exclude=scripts --source "$chezmoi_source" --destination "$decrypt_home" $targets
-        if [ "$bundle" = "gnupg" ] && [ "$import_gpg" = "1" ]; then
-          if ! command -v gpg >/dev/null 2>&1; then
-            echo "gpg is required for IMPORT_GPG=1" >&2
-            exit 1
-          fi
-          export_dir="$decrypt_home/$gpg_export_root"
-          gnupghome="$decrypt_home/.gnupg"
-          mkdir -p "$gnupghome"
-          chmod 700 "$gnupghome"
-          if [ -f "$export_dir/public.asc" ]; then
-            GNUPGHOME="$gnupghome" gpg --batch --yes --import "$export_dir/public.asc"
-          fi
-          if [ -f "$export_dir/secret.asc" ]; then
-            GNUPGHOME="$gnupghome" gpg --batch --yes --pinentry-mode loopback --import "$export_dir/secret.asc" || \
-              GNUPGHOME="$gnupghome" gpg --batch --yes --import "$export_dir/secret.asc"
-          fi
-          if [ -f "$export_dir/ownertrust.txt" ]; then
-            GNUPGHOME="$gnupghome" gpg --import-ownertrust "$export_dir/ownertrust.txt"
-          fi
-        fi
-
-  clean-secrets-cache:
-    desc: Remove local staging and decrypted secret work directories
-    cmds:
-      - |
-        set -eu
-        cache_dir="${CACHE_DIR:-$HOME/.cache/dotfiles/secrets}"
-        rm -rf "$cache_dir"
-
-  backup:
-    desc: Backup both ssh and gnupg into encrypted chezmoi source state
-    cmds:
-      - |
-        set -eu
-        for bundle in ssh gnupg; do
-          task "backup-$bundle" GPG_KEY_IDS='{{default "" .GPG_KEY_IDS}}'
-        done
-
-  backup-ssh:
-    desc: Backup ~/.ssh into encrypted chezmoi source state
-    cmds:
-      - task: encrypt-one
-        vars:
-          BUNDLE: ssh
-
-  backup-gnupg:
-    desc: Backup ~/.gnupg into encrypted chezmoi source state
-    cmds:
-      - task: encrypt-one
-        vars:
-          BUNDLE: gnupg
-          GPG_KEY_IDS: '{{default "" .GPG_KEY_IDS}}'
-
-  docker-build:
-    desc: Build Dockerfile locally as ghcr.io/OWNER/IMAGE:TAG
-    cmds:
-      - |
-        set -eu
-        docker_runtime='{{default "docker" .DOCKER_RUNTIME}}'
-        ghcr_owner='{{default "mi2428" .GHCR_OWNER}}'
-        ghcr_image_name='{{default "dotfiles" .GHCR_IMAGE_NAME}}'
-        tag='{{default "latest" .TAG}}'
-        ghcr_image="ghcr.io/$ghcr_owner/$ghcr_image_name"
-        "$docker_runtime" buildx build --load -t "$ghcr_image:$tag" .
-
-  ghcr-login:
-    desc: Login to ghcr.io with GHCR_TOKEN, GITHUB_TOKEN, or gh auth token
-    cmds:
-      - |
-        set -eu
-        docker_runtime='{{default "docker" .DOCKER_RUNTIME}}'
-        ghcr_owner='{{default "mi2428" .GHCR_OWNER}}'
-        if [ -n "${GHCR_TOKEN:-}" ]; then
-          token="$(printf %s "${GHCR_TOKEN}")"
-        elif [ -n "${GITHUB_TOKEN:-}" ]; then
-          token="$(printf %s "${GITHUB_TOKEN}")"
-        elif command -v gh >/dev/null 2>&1; then
-          token="$(gh auth token)"
-        else
-          echo "Set GHCR_TOKEN, GITHUB_TOKEN, or authenticate with gh before logging in to ghcr.io" >&2
-          exit 1
-        fi
-        username="${GHCR_USERNAME:-$ghcr_owner}"
-        printf '%s' "$token" | "$docker_runtime" login ghcr.io -u "$username" --password-stdin
-
-  docker-push:
-    desc: Build and push Dockerfile to ghcr.io as ghcr.io/OWNER/IMAGE:TAG
-    cmds:
-      - task: ghcr-login
-        vars:
-          DOCKER_RUNTIME: '{{default "docker" .DOCKER_RUNTIME}}'
-          GHCR_OWNER: '{{default "mi2428" .GHCR_OWNER}}'
-      - |
-        set -eu
-        docker_runtime='{{default "docker" .DOCKER_RUNTIME}}'
-        ghcr_owner='{{default "mi2428" .GHCR_OWNER}}'
-        ghcr_image_name='{{default "dotfiles" .GHCR_IMAGE_NAME}}'
-        tag='{{default "latest" .TAG}}'
-        platforms='{{default "linux/amd64,linux/arm64" .PLATFORMS}}'
-        ghcr_image="ghcr.io/$ghcr_owner/$ghcr_image_name"
-        "$docker_runtime" buildx build --platform "$platforms" --push -t "$ghcr_image:$tag" .
+        bold='\033[1m'
+        cyan='\033[36m'
+        green='\033[32m'
+        yellow='\033[33m'
+        dim='\033[2m'
+        reset='\033[0m'
+        task_fmt='  %b%-18s%b %s\n'
+        default_fmt='  %b%-18s%b %s\n'
+        printf '%bTasks%b\n' "$bold$cyan" "$reset"
+        printf "$task_fmt" "$green" 'age.init' "$reset" 'Generate the repo age identity and local chezmoi config'
+        printf "$task_fmt" "$green" 'age.unlock' "$reset" 'Decrypt key.txt.age into ~/.config/chezmoi/key.txt'
+        printf "$task_fmt" "$green" 'secrets.encrypt' "$reset" 'Encrypt ssh and/or gnupg into chezmoi source state'
+        printf "$task_fmt" "$green" 'secrets.decrypt' "$reset" 'Decrypt ssh and/or gnupg into a target directory'
+        printf "$task_fmt" "$green" 'secrets.backup' "$reset" 'Backup ssh and gnupg into encrypted chezmoi source state'
+        printf "$task_fmt" "$green" 'secrets.clear' "$reset" 'Remove local staging and decrypted secret work directories'
+        printf "$task_fmt" "$green" 'docker.build' "$reset" 'Build Dockerfile locally as ghcr.io/OWNER/IMAGE:TAG'
+        printf "$task_fmt" "$green" 'docker.login' "$reset" 'Login to ghcr.io with GHCR_TOKEN, GITHUB_TOKEN, or gh auth token'
+        printf "$task_fmt" "$green" 'docker.push' "$reset" 'Build and push Dockerfile to ghcr.io as ghcr.io/OWNER/IMAGE:TAG'
+        printf '\n%bDefaults%b\n' "$bold$cyan" "$reset"
+        printf "$default_fmt" "$yellow" 'GHCR_OWNER' "$reset" 'mi2428'
+        printf "$default_fmt" "$yellow" 'GHCR_IMAGE_NAME' "$reset" 'dotfiles'
+        printf "$default_fmt" "$yellow" 'TAG' "$reset" 'latest'
+        printf "$default_fmt" "$yellow" 'DOCKER_RUNTIME' "$reset" 'docker'
+        printf "$default_fmt" "$yellow" 'PLATFORMS' "$reset" 'linux/amd64,linux/arm64'
+        printf "$default_fmt" "$yellow" 'IMPORT_GPG' "$reset" '0'
+        printf "$default_fmt" "$yellow" 'DECRYPT_HOME' "$reset" '$HOME/.cache/dotfiles/secrets/decrypted-home'
+        printf '\n%bExamples%b\n' "$bold$cyan" "$reset"
+        printf '  %btask age.init%b\n' "$green" "$reset"
+        printf '  %btask secrets.encrypt%b\n' "$green" "$reset"
+        printf '  %btask secrets.encrypt BUNDLE=ssh%b\n' "$green" "$reset"
+        printf "  %btask secrets.encrypt BUNDLE=gnupg GPG_KEY_IDS='E8D3009C6341BDEAF038009685AB6867E2147DDA'%b\n" "$green" "$reset"
+        printf '  %btask secrets.decrypt IMPORT_GPG=1 DECRYPT_HOME=$HOME%b\n' "$green" "$reset"
+        printf '  %btask secrets.backup%b\n' "$green" "$reset"
+        printf '  %btask docker.build TAG=latest%b\n' "$green" "$reset"
+        printf '  %btask docker.push TAG=latest%b\n' "$green" "$reset"
+        printf '\n%brun %btask --list%b to inspect the raw public task list if needed.\n' "$dim" "$green" "$reset"
