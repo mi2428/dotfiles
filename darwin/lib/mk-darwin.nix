@@ -16,8 +16,9 @@ inputs.nix-darwin.lib.darwinSystem {
     darwinModule
     inputs.home-manager.darwinModules.home-manager
     {
+      home-manager.backupFileExtension = "hm-backup";
       home-manager.useGlobalPkgs = true;
-      home-manager.useUserPackages = true;
+      home-manager.useUserPackages = false;
       home-manager.extraSpecialArgs = {
         inherit inputs hostName userName homeDirectory;
       };
