@@ -58,9 +58,8 @@ The repository uses a `chezmoi` + `Nix` layout:
 
 The former top-level `etc/` and `init/` trees have been retired. XDG config
 sources are under `home/files/config/`, non-XDG dotfiles are under their
-corresponding `home/files/` directory, and remaining static host assets are
-under `home/files/hosts/`. Linux hosts share `home/hosts/linux.nix`; the
-`linux-server` and `docker-dev` configuration names remain available.
+corresponding `home/files/` directory. The `linux-server` and `docker-dev`
+configuration names remain available as separate host modules.
 
 ### Minimal fallback
 
@@ -99,7 +98,6 @@ system-wide changes.
 * Managed config and adjacent static sources live under `home/files/` and
   `home/`
 * XDG configuration trees live under `home/files/config/`
-* Remaining static host assets live under `home/files/hosts/`
 * `chezmoi/` owns secrets and minimal pre-Nix bootstrapping
 
 ## Deploy hints

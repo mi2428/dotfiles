@@ -6,7 +6,6 @@ static dotfile sources.
 - `config/` holds XDG configuration trees such as `nvim/` and `fish/`
 - `git/`, `tmux/`, and `zsh/` hold non-XDG source files linked by Home Manager;
   `tmux/` and `zsh/` are also used by the minimal Make fallback
-- `hosts/` holds remaining host-local static files
 
 Installation and activation scripts live under `bootstrap/`. The former
 top-level `etc/` and `init/` source trees are retired.
