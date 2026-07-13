@@ -1,14 +1,14 @@
-export DENO_INSTALL=$HOME/.deno
-export CARGO_HOME=$HOME/.cargo
+export DENO_INSTALL="$HOME/.deno"
+export CARGO_HOME="$HOME/.cargo"
 export GOPATH="$HOME/io/gocode"
 export GOPRIVATE=github.com/soracom
 
-source $HOME/.envs  # set secret envs like GOOGLE_CLOUD_PROJECT
+[[ -r "$HOME/.envs" ]] && source "$HOME/.envs"  # secret envs like GOOGLE_CLOUD_PROJECT
 
 case $(arch) in
 x86_64|i386)
-  export HOMEBREW_HOME=/usr/local
-  export VOLTA_HOME=$HOME/.volta_x64
+  export HOMEBREW_HOME="/usr/local"
+  export VOLTA_HOME="$HOME/.volta_x64"
   typeset -U path PATH
   path=(
     $HOME/bin
@@ -33,7 +33,7 @@ x86_64|i386)
   )
   ;;
 arm64*)
-  export HOMEBREW_HOME=/opt/homebrew
+  export HOMEBREW_HOME="/opt/homebrew"
   export VOLTA_HOME="$HOME/.volta"
   export TEXLIVE_BIN=/usr/local/texlive/2022/bin/universal-darwin
   #export RANCHER_DESKTOP_BIN="$HOME/.rd/bin"
@@ -66,12 +66,15 @@ arm64*)
   ;;
 esac
 
-export FPATH=$HOME/.local/share/zsh/site-functions:$FPATH
+export FPATH="$HOME/.local/share/zsh/site-functions:$FPATH"
 export ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=242'
-export ZSH_HIGHLIGHT_HIGHLIGHTERS_DIR=$HOME/.local/share/zsh/zsh-syntax-highlighting/highlighters
-source $HOME/.local/share/zsh/zsh-autosuggestions/zsh-autosuggestions.zsh
-[[ -f $HOMEBREW_HOME/opt/zsh-git-prompt/zshrc.sh ]] && source $HOMEBREW_HOME/opt/zsh-git-prompt/zshrc.sh
-source $HOME/.local/share/zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+export ZSH_HIGHLIGHT_HIGHLIGHTERS_DIR="$HOME/.local/share/zsh/zsh-syntax-highlighting/highlighters"
+[[ -r "$HOME/.local/share/zsh/zsh-autosuggestions/zsh-autosuggestions.zsh" ]] \
+  && source "$HOME/.local/share/zsh/zsh-autosuggestions/zsh-autosuggestions.zsh"
+[[ -r "$HOMEBREW_HOME/opt/zsh-git-prompt/zshrc.sh" ]] \
+  && source "$HOMEBREW_HOME/opt/zsh-git-prompt/zshrc.sh"
+[[ -r "$HOME/.local/share/zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]] \
+  && source "$HOME/.local/share/zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 
 if whence -p rbenv 1>/dev/null; then
   eval "$(rbenv init - zsh)"
