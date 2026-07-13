@@ -107,20 +107,13 @@ target_user="$(host_user "$host")"
 mkdir -p "$target_home" "$target_home/.config"
 
 chezmoi_bin="$("$repo_root/bootstrap/install-chezmoi.sh")"
-chezmoi_apply_flags=()
-
-if [[ "$host" != "macos" ]]; then
-  chezmoi_apply_flags+=(--include symlinks)
-fi
 
 log "applying chezmoi source state to $target_home"
-DOTFILES_REPO_ROOT="$repo_root" \
-  "$chezmoi_bin" apply \
-    --force \
-    --no-tty \
-    "${chezmoi_apply_flags[@]}" \
-    --source "$repo_root/chezmoi" \
-    --destination "$target_home"
+"$chezmoi_bin" apply \
+  --force \
+  --no-tty \
+  --source "$repo_root/chezmoi" \
+  --destination "$target_home"
 
 if [[ "$skip_home_manager" == "1" ]]; then
   log 'skipping Nix activation'
