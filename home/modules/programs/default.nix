@@ -5,6 +5,7 @@
     ./karabiner.nix
     ./nvim.nix
     ./tmux.nix
+    ./vscode.nix
     ./zsh.nix
   ];
 }
