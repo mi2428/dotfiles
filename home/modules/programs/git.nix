@@ -1,17 +1,12 @@
-{ hostName, pkgs, ... }:
-let
-  pickSource = import ../../lib/pick-legacy-source.nix { inherit hostName; } {
-    baseRoot = ../../../home/files/git;
-    overlays = {
-      macos = ../../../home/files/hosts/macos/git;
-    };
-  };
-in {
+{ hostName, pkgs, ... }: {
   home.packages = [ pkgs.git ];
 
-  home.file = {
-    ".gitconfig".source = pickSource "gitconfig";
-    ".catppuccin-delta.gitconfig".source =
-      ../../../home/files/git/catppuccin-delta.gitconfig;
-  };
+  home.file.".gitconfig".source =
+    if hostName == "macos" then
+      ../../../home/files/git/gitconfig.macos
+    else
+      ../../../home/files/git/gitconfig;
+
+  home.file.".catppuccin-delta.gitconfig".source =
+    ../../../home/files/git/catppuccin-delta.gitconfig;
 }
