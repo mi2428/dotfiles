@@ -174,20 +174,6 @@ $ sudo ln -s /usr/local/sessionmanagerplugin/bin/session-manager-plugin /usr/loc
 :UpdateRemotePlugins
 ```
 
-### gnome-terminal preferences
-
-To import profile:
-
-```
-dconf load /org/gnome/terminal/legacy/profiles:/ < material-shizk.dconf
-```
-
-To export profile:
-
-```
-dconf load /org/gnome/terminal/legacy/profiles:/ > material-shizk.dconf
-```
-
 ### iTerm2 preferences
 
 #### `General` / `Selection`
