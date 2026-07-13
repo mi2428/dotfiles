@@ -149,12 +149,32 @@ ex=1;38;2;$CTP_GREEN_RGB:\
 *Dockerfile=1;4;38;2;$CTP_YELLOW_RGB:\
 *Brewfile=1;4;38;2;$CTP_YELLOW_RGB"
 
-set -gx EZA_CONFIG_DIR "$HOME/.config/eza/$DOTFILES_CATPPUCCIN_FLAVOUR"
+set -l eza_config_dir "$HOME/.config/eza/$DOTFILES_CATPPUCCIN_FLAVOUR"
+set -l source_file (path resolve (status filename))
+set -l etc_root (path dirname (path dirname (path dirname $source_file)))
+if not test -f "$eza_config_dir/theme.yml"
+    set eza_config_dir "$etc_root/eza/$DOTFILES_CATPPUCCIN_FLAVOUR"
+end
+set -gx EZA_CONFIG_DIR $eza_config_dir
 
 set -l lazygit_base_config "$HOME/.config/lazygit/config.yml"
+if not test -f $lazygit_base_config
+    set lazygit_base_config "$etc_root/lazygit/config.yml"
+end
 set -l lazygit_theme "$HOME/.config/lazygit/themes-mergable/$DOTFILES_CATPPUCCIN_FLAVOUR/green.yml"
+if not test -f $lazygit_theme
+    set lazygit_theme "$etc_root/lazygit/themes-mergable/$DOTFILES_CATPPUCCIN_FLAVOUR/green.yml"
+end
 set -gx LG_CONFIG_FILE "$lazygit_base_config,$lazygit_theme"
 
 if not status is-interactive
     return
+end
+
+set -l theme_available 1
+contains -- $DOTFILES_CATPPUCCIN_FISH_THEME (fish_config theme list) >/dev/null
+or set theme_available 0
+
+if test $theme_available -eq 1
+    fish_config theme choose $DOTFILES_CATPPUCCIN_FISH_THEME --color-theme=$DOTFILES_CATPPUCCIN_FISH_COLOR_THEME >/dev/null 2>&1
 end

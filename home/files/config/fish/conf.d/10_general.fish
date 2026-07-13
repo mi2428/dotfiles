@@ -1,3 +1,18 @@
+set -gx NOTES_DIR $HOME/notes
+set -gx NOTES_DIRECTORY $HOME/notes
+set -gx TERM xterm-256color
+set -gx LANG en_US.UTF-8
+set -gx LANGUAGE $LANG
+set -gx LC_CTYPE $LANG
+set -gx LC_ALL $LANG
+set -gx VIRTUAL_ENV_DISABLE_PROMPT 1
+set -gx HGENCODING utf-8
+set -gx PAGER less
+set -gx LESS '-g -i -M -R -S -W -z-4 -x4'
+set -gx EDITOR vim
+set -gx PROMPT_SEVERITY 0
+set -gx TRASHBIN $HOME/.trash
+
 if test -t 0
     set -gx GPG_TTY (tty)
 end
@@ -19,16 +34,6 @@ function __dotfiles_set_path
 
     set -gx PATH $merged
 end
-
-# Keep local command shims available even before Home Manager session vars are
-# loaded into the current shell.
-__dotfiles_set_path \
-    "$HOME/bin" \
-    "$HOME/io/bin" \
-    "$HOME/.local/bin" \
-    "$HOME/.deno/bin" \
-    "$HOME/.cargo/bin" \
-    "$HOME/io/gocode/bin"
 
 function __dotfiles_import_posix_exports --argument-names envfile
     test -f $envfile; or return 0

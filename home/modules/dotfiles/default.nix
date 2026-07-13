@@ -9,6 +9,18 @@ in {
       description = "Additional Fish config files enabled for the current host.";
     };
 
+    fish.overrides = mkOption {
+      type = types.attrsOf types.path;
+      default =
+        if pkgs.stdenv.isDarwin then
+          {
+            "conf.d/12_general_path.fish" = ../../files/config/fish/conf.d/12_general_path.macos.fish;
+          }
+        else
+          { };
+      description = "Host-specific Fish config sources keyed by relative path.";
+    };
+
     git = mkOption {
       type = types.path;
       default =
@@ -46,6 +58,7 @@ in {
       default =
         if pkgs.stdenv.isDarwin then
           {
+            "12_general_path.zsh" = ../../files/zsh/12_general_path.macos.zsh;
             "14_general_fzf.zsh" = ../../files/zsh/14_general_fzf.macos.zsh;
             "22_aliases.zsh" = ../../files/zsh/22_aliases.macos.zsh;
           }
