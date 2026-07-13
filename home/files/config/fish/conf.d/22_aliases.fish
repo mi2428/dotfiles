@@ -3,7 +3,7 @@ function f
     if test (count $argv) -gt 0
         set target $argv[1]
     end
-    open -a Finder $target
+    open -a Finder -- "$target"
 end
 
 if command -sq arch
