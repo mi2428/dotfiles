@@ -1,5 +1,5 @@
 {
-  description = "Nix-first dotfiles";
+  description = "mi2428/dotfiles";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
