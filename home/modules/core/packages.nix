@@ -16,6 +16,7 @@ let
     gitflow
     gnugrep
     gnupg
+    go-task
     jq
     neovim
     python313Packages.pynvim
