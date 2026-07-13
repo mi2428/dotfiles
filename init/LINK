@@ -1,95 +1,226 @@
 #!/usr/bin/env python3
-from glob import glob
-from os import path, listdir, makedirs, symlink, remove
+"""Link dotfiles from the repository into the user's home directory.
+
+The repository mostly stores package-specific configuration trees under `etc/`.
+This script maps those trees into either:
+
+- `$HOME/.config/<package>/...` for packages that are XDG-native
+- `$HOME/.<name>` style legacy dotfiles for everything else
+
+Some packages are intentionally excluded because dedicated setup scripts own
+their destination layout.
+"""
+
+from __future__ import annotations
+
 import argparse
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable, Sequence
 
-HOMEDIR = path.expanduser("~")
-CURDIR = path.dirname(path.abspath(__file__))
-DOTFILES = path.join("/", path.relpath(path.join(CURDIR, ".."), "/"))
+HOME_DIR = Path.home()
+CURRENT_DIR = Path(__file__).resolve().parent
+DOTFILES_ROOT = CURRENT_DIR.parent
+ETC_DIR = DOTFILES_ROOT / "etc"
+HOSTS_DIR = ETC_DIR / "hosts"
 
-XDG_SUPPORTED_PACKAGES = [
-    "bat", "compton", "dusnt", "eza", "fish", "fzf", "gtk-3.0", "herdr", "hunk", "karabiner", "nvim", "psd", "rofi", "starship", "systemd"
-]
-
-
-def get_avail_patches():
-    hostsdir = path.join(CURDIR, "../etc/hosts")
-    return listdir(hostsdir)
-
-
-def get_symlinks(basedir, excludes=[]):
-    packages = [d for d in listdir(basedir) if d not in excludes]
-    links = []
-
-    for package in packages:
-        srcdir = path.join(basedir, package)
-        srcpaths = [p for p in glob(path.join(srcdir, "**", "*"), recursive=True) if path.isfile(p)]
-
-        for srcpath in srcpaths:
-            relpath = path.relpath(srcpath, srcdir)
-            subdir = path.dirname(relpath)
-
-            is_xdg_supported = package in XDG_SUPPORTED_PACKAGES
-            dstdir = HOMEDIR
-            dstpath = None
-            if is_xdg_supported:
-                dstdir = path.join(dstdir, ".config", package)
-                if subdir:
-                    dstdir = path.join(dstdir, subdir)
-                dstpath = path.join(dstdir, path.basename(srcpath))
-            else:
-                srcbase = path.basename(srcpath)
-                if subdir:
-                    dstdir = path.join(dstdir, f".{subdir}")
-                    dstpath = path.join(dstdir, srcbase)
-                else:
-                    dstpath = path.join(dstdir, f".{srcbase}")
-
-            links.append([srcpath, dstdir, dstpath])
-    return links
+XDG_SUPPORTED_PACKAGES = {
+    "bat",
+    "compton",
+    "dusnt",
+    "eza",
+    "fish",
+    "fzf",
+    "ghostty",
+    "glow",
+    "gtk-3.0",
+    "herdr",
+    "hunk",
+    "k9s",
+    "karabiner",
+    "lazygit",
+    "nvim",
+    "psd",
+    "rofi",
+    "starship",
+    "systemd",
+}
+SETUP_MANAGED_PACKAGES = {"vscode"}
 
 
-def create_symlinks(basedir, excludes=[], force=False, dry=False):
-    links = get_symlinks(basedir, excludes=excludes)
-    for link in links:
-        srcpath, dstdir, dstpath = link
-        print(f"ln -snf {srcpath} {dstpath}")
-        if dry:
+@dataclass(frozen=True)
+class LinkSpec:
+    """Describe one symlink to be created or removed."""
+
+    source: Path
+    destination_dir: Path
+    destination: Path
+
+
+def get_available_patches() -> list[str]:
+    """Return supported host patch names in deterministic order."""
+
+    return sorted(path.name for path in HOSTS_DIR.iterdir() if path.is_dir())
+
+
+def iter_source_files(source_dir: Path) -> list[Path]:
+    """Return regular files below ``source_dir`` in deterministic order."""
+
+    return sorted(path for path in source_dir.rglob("*") if path.is_file())
+
+
+def build_link_spec(package: str, source_dir: Path, source_path: Path) -> LinkSpec:
+    """Translate one repository file into its destination symlink."""
+
+    relative_path = source_path.relative_to(source_dir)
+    subdir = relative_path.parent
+
+    if package in XDG_SUPPORTED_PACKAGES:
+        destination_dir = HOME_DIR / ".config" / package / subdir
+        destination = destination_dir / source_path.name
+        return LinkSpec(source=source_path, destination_dir=destination_dir, destination=destination)
+
+    if subdir == Path("."):
+        destination_dir = HOME_DIR
+        destination = destination_dir / f".{source_path.name}"
+        return LinkSpec(source=source_path, destination_dir=destination_dir, destination=destination)
+
+    destination_dir = HOME_DIR / f".{subdir}"
+    destination = destination_dir / source_path.name
+    return LinkSpec(source=source_path, destination_dir=destination_dir, destination=destination)
+
+
+def resolve_link_specs(base_dir: Path, excludes: Iterable[str] | None = None) -> list[LinkSpec]:
+    """Collect all link operations for ``base_dir``.
+
+    Parameters
+    ----------
+    base_dir:
+        Package root to scan, such as ``etc`` or ``etc/hosts/macos``.
+    excludes:
+        Package directory names to skip entirely.
+    """
+
+    excluded = set(excludes or ())
+    package_dirs = sorted(
+        path for path in base_dir.iterdir() if path.is_dir() and path.name not in excluded
+    )
+    specs: list[LinkSpec] = []
+
+    for package_dir in package_dirs:
+        for source_path in iter_source_files(package_dir):
+            specs.append(build_link_spec(package_dir.name, package_dir, source_path))
+
+    return specs
+
+
+def remove_existing_path(target: Path) -> None:
+    """Remove an existing file or symlink at ``target``.
+
+    The linker only creates file symlinks, so directories are treated as an
+    unexpected state and left to the caller to resolve explicitly.
+    """
+
+    if target.is_dir() and not target.is_symlink():
+        raise IsADirectoryError(f"refusing to remove directory target: {target}")
+    target.unlink()
+
+
+def create_symlinks(
+    base_dir: Path,
+    excludes: Iterable[str] | None = None,
+    *,
+    force: bool = False,
+    dry_run: bool = False,
+) -> None:
+    """Create the symlinks implied by ``base_dir``."""
+
+    for spec in resolve_link_specs(base_dir, excludes=excludes):
+        print(f"ln -snf {spec.source} {spec.destination}")
+        if dry_run:
             continue
-        if path.exists(dstpath):
+
+        if spec.destination.exists() or spec.destination.is_symlink():
             if not force:
                 continue
-            remove(dstpath)
-        makedirs(dstdir, exist_ok=True)
-        symlink(srcpath, dstpath)
+            remove_existing_path(spec.destination)
+
+        spec.destination_dir.mkdir(parents=True, exist_ok=True)
+        spec.destination.symlink_to(spec.source)
 
 
-def remove_symlinks(basedir, excludes=[], dry=False):
-    links = get_symlinks(basedir, excludes=excludes)
-    for link in links:
-        _, _, dstpath = link
-        print(f"unlink -f {dstpath}")
-        if dry:
+def remove_symlinks(
+    base_dir: Path,
+    excludes: Iterable[str] | None = None,
+    *,
+    dry_run: bool = False,
+) -> None:
+    """Remove the symlinks implied by ``base_dir`` when they exist."""
+
+    for spec in resolve_link_specs(base_dir, excludes=excludes):
+        print(f"unlink -f {spec.destination}")
+        if dry_run:
             continue
-        if path.exists(dstpath):
-            remove(dstpath)
+
+        if spec.destination.exists() or spec.destination.is_symlink():
+            remove_existing_path(spec.destination)
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parse CLI arguments."""
+
+    parser = argparse.ArgumentParser(
+        description="create or remove symbolic links to $HOME/dotfiles"
+    )
+    parser.add_argument(
+        "--patch",
+        dest="patch",
+        help="overwrite default configs",
+        choices=get_available_patches(),
+    )
+    parser.add_argument(
+        "--force",
+        dest="force",
+        help="force overwrite existing files",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--unlink",
+        dest="unlink",
+        help="unlink all symbolic links",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--dry",
+        dest="dryrun",
+        help="show ln commands and exit (dryrun)",
+        action="store_true",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the linker CLI."""
+
+    args = parse_args(argv)
+
+    if args.unlink:
+        remove_symlinks(ETC_DIR, excludes=SETUP_MANAGED_PACKAGES, dry_run=args.dryrun)
+        for patch in get_available_patches():
+            remove_symlinks(HOSTS_DIR / patch, dry_run=args.dryrun)
+        return 0
+
+    create_symlinks(
+        ETC_DIR,
+        excludes={"hosts", *SETUP_MANAGED_PACKAGES},
+        force=args.force,
+        dry_run=args.dryrun,
+    )
+    if args.patch:
+        create_symlinks(HOSTS_DIR / args.patch, force=True, dry_run=args.dryrun)
+
+    return 0
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="create or remove symbolic links to $HOME/dotfiles")
-    parser.add_argument("--patch", dest="patch", help="overwrite default configs", choices=get_avail_patches())
-    parser.add_argument("--force", dest="force", help="force overwrite existing files", action="store_true")
-    parser.add_argument("--unlink", dest="unlink", help="unlink all symbolic links", action="store_true")
-    parser.add_argument("--dry", dest="dryrun", help="show ln commands and exit (dryrun)", action="store_true")
-    args = parser.parse_args()
-
-    if args.unlink:
-        remove_symlinks(path.join(DOTFILES, "etc"), dry=args.dryrun)
-        for patch in get_avail_patches():
-            patchdir = path.join("etc", "hosts", patch)
-            remove_symlinks(path.join(DOTFILES, patchdir), dry=args.dryrun)
-    else:
-        create_symlinks(path.join(DOTFILES, "etc"), excludes=["hosts"], force=args.force, dry=args.dryrun)
-        if args.patch:
-            patchdir = path.join("etc", "hosts", args.patch)
-            create_symlinks(path.join(DOTFILES, patchdir), force=True, dry=args.dryrun)
+    raise SystemExit(main())

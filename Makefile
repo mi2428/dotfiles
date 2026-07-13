@@ -15,7 +15,7 @@ help: ## Display this help
 default: ubuntu-server  ## Setup as a Ubuntu Server
 
 .PHONY: archlinux
-archlinux: install.arch link.linux-desktop  ## Setup Arch Linux
+archlinux: install.archlinux link.linux-desktop  ## Setup Arch Linux
 
 .PHONY: macos
 macos: install.macos link.macos  ## Setup macOS
