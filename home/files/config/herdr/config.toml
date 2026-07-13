@@ -7,7 +7,7 @@ shell_mode = "login"
 [keys]
 prefix = "ctrl+t"
 
-# Carry over the tmux muscle memory from home/files/tmux/tmux.conf.
+# Carry over the tmux muscle memory from etc/tmux/tmux.conf.
 detach = "prefix+d"
 new_tab = "prefix+c"
 goto = ""

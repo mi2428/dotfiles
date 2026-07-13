@@ -1,0 +1,8 @@
+#!/usr/bin/env perl
+$latex                       = '/Library/TeX/texbin/platex -synctex=1 -halt-on-error %O %S';
+$dvipdf                      = '/Library/TeX/texbin/dvipdfmx %O -o %D %S';
+$makeindex                   = 'mendex -U %O -o %D %S';
+$max_repeat                  = 5;
+$pdf_mode                    = 3;
+$pvc_view_file_via_temporary = 0;
+$pdf_previewer               = 'open -a /Applications/Skim.app';

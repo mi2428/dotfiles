@@ -29,7 +29,9 @@ in {
     "bat" = mkLink ../../files/config/bat;
     "eza" = mkLink ../../files/config/eza;
     "fzf" = mkLink ../../files/config/fzf;
-    "ghostty" = mkLink ../../files/config/ghostty;
+    "ghostty/config" = mkLink ../../files/config/ghostty/config.ghostty;
+    "ghostty/config.ghostty" = mkLink ../../files/config/ghostty/config.ghostty;
+    "ghostty/themes" = mkLink ../../files/config/ghostty/themes;
     "glow" = mkLink ../../files/config/glow;
     "herdr" = mkLink ../../files/config/herdr;
     "hunk" = mkLink ../../files/config/hunk;
@@ -43,5 +45,7 @@ in {
     ".lesskey" = mkLink ../../files/less/lesskey;
     ".screenrc" = mkLink ../../files/screen/screenrc;
     ".wgetrc" = mkLink ../../files/wget/wgetrc;
+  } // lib.optionalAttrs pkgs.stdenv.isDarwin {
+    ".latexmkrc" = mkLink ../../files/latexmk/latexmkrc;
   };
 }
