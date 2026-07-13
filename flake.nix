@@ -15,16 +15,19 @@
       macos = mkHome {
         system = "aarch64-darwin";
         hostModule = ./home/hosts/macos.nix;
+        hostName = "macos";
       };
 
       "linux-server" = mkHome {
         system = "x86_64-linux";
         hostModule = ./home/hosts/linux-server.nix;
+        hostName = "linux-server";
       };
 
       "docker-dev" = mkHome {
         system = "x86_64-linux";
         hostModule = ./home/hosts/docker-dev.nix;
+        hostName = "docker-dev";
       };
     };
   };
