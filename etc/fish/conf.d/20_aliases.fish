@@ -46,9 +46,19 @@ alias gc='git commit -s -m'
 
 function __git_delta_lazygit
     set -l paging never
+    set -l added_label (printf '\033[1;38;2;166;227;161mA\033[0m')
+    set -l copied_label (printf '\033[1;38;2;148;226;213mC\033[0m')
+    set -l modified_label (printf '\033[1;38;2;249;226;175mM\033[0m')
+    set -l removed_label (printf '\033[1;38;2;243;139;168mD\033[0m')
+    set -l renamed_label (printf '\033[1;38;2;137;180;250mR\033[0m')
     set -l delta_args \
         --features=catppuccin-lazygit-mocha \
         --dark \
+        "--file-added-label=$added_label" \
+        "--file-copied-label=$copied_label" \
+        "--file-modified-label=$modified_label" \
+        "--file-removed-label=$removed_label" \
+        "--file-renamed-label=$renamed_label" \
         --line-numbers \
         --side-by-side
 
@@ -66,7 +76,7 @@ function __git_delta_lazygit
 end
 
 function gd
-    git diff --no-color $argv | __git_delta_lazygit
+    git-delta-input -- $argv | __git_delta_lazygit
     return $pipestatus[1]
 end
 
@@ -148,7 +158,7 @@ function gdd
         return 1
     end
 
-    git diff --no-color "$base_ref"...HEAD $argv | __git_delta_lazygit
+    git-delta-input --range "$base_ref"...HEAD -- $argv | __git_delta_lazygit
     return $pipestatus[1]
 end
 

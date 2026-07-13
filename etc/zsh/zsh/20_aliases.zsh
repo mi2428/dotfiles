@@ -722,6 +722,11 @@ alias gb='git branch'
 alias gc='git commit -s -m'
 __git_delta_lazygit() {
   local paging='never'
+  local added_label=$'\033[1;38;2;166;227;161mA\033[0m'
+  local copied_label=$'\033[1;38;2;148;226;213mC\033[0m'
+  local modified_label=$'\033[1;38;2;249;226;175mM\033[0m'
+  local removed_label=$'\033[1;38;2;243;139;168mD\033[0m'
+  local renamed_label=$'\033[1;38;2;137;180;250mR\033[0m'
   local -a pager_opts=()
   local -a hyperlink_opts=(
     --hyperlinks
@@ -742,6 +747,11 @@ __git_delta_lazygit() {
     delta
     --features=catppuccin-lazygit-mocha
     --dark
+    "--file-added-label=${added_label}"
+    "--file-copied-label=${copied_label}"
+    "--file-modified-label=${modified_label}"
+    "--file-removed-label=${removed_label}"
+    "--file-renamed-label=${renamed_label}"
     "--paging=${paging}"
     "${pager_opts[@]}"
     --line-numbers
@@ -753,7 +763,7 @@ __git_delta_lazygit() {
 }
 gd() {
   setopt local_options pipefail
-  git diff --no-color "$@" | __git_delta_lazygit
+  git-delta-input -- "$@" | __git_delta_lazygit
 }
 gdd() {
   local base_ref
@@ -770,7 +780,7 @@ gdd() {
     return 1
   fi
 
-  git diff --no-color "${base_ref}...HEAD" "$@" | __git_delta_lazygit
+  git-delta-input --range "${base_ref}...HEAD" -- "$@" | __git_delta_lazygit
 }
 alias gf='git fetch'
 alias gp='git push'
