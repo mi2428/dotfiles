@@ -80,7 +80,7 @@ The full `chezmoi` + `Nix` bootstrap flow is being prepared under `bootstrap/`,
 
 * First-wave managed config lives under `home/files/` and `home/`
 * The legacy Linux desktop tree has been removed
-* Host-specific leftovers under `etc/hosts/` are being retired incrementally
+* The legacy `etc/hosts/` tree has been retired; host-specific overlays now live under `home/files/hosts/`
 
 ## Deploy hints
 
