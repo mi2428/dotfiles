@@ -1,26 +1,21 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-MATCHED_NOTES=()
+matched_notes=()
+notes_dir="${NOTES_DIR:-$HOME/notes}"
+quicknote_format="quicknote-%Y-%m-%d-%H%M"
+note_ext="md"
+basename_cmd="$(basename "$0")"
 
-if [[ -z ${NOTES_DIR:-} ]]; then
-  echo "[E] Environment variable is missing: NOTES_DIR"
-  echo "[I] Use $HOME/notes as notes directory."
-  NOTES_DIR="$HOME/notes"
-fi
+ensure_notes_dir() {
+  mkdir -p "$notes_dir" || {
+    printf '[E] Failed to create notes directory: %s\n' "$notes_dir" >&2
+    exit 254
+  }
+  cd "$notes_dir" || exit 254
+}
 
-if ! mkdir -p "$NOTES_DIR" 2>/dev/null; then
-  echo "[E] Failed to create notes directory, perhaps invalid path was specified?"
-  echo "[I] NOTES_DIR=${NOTES_DIR}"
-  exit 254
-fi
-
-QUICKNOTE_FORMAT="quicknote-%Y-%m-%d-%H%M"  # date format string
-NOTE_EXT="md"
-BASENAME="$(basename "$0")"
-
-cd "$NOTES_DIR" || exit 254
-
-ls_notes() {
+list_notes() {
   local -a ls_opts=("$@")
 
   if (($# == 0)); then
@@ -38,27 +33,27 @@ open_note_dir() {
   elif command -v xdg-open >/dev/null 2>&1; then
     xdg-open .
   else
-    echo "[E] No supported file browser command was found." >&2
+    printf '[E] No supported file browser command was found.\n' >&2
     return 127
   fi
 }
 
 collect_matching_notes() {
-  local -a keywords=("$@")
   local file=""
   local file_lc=""
   local keyword=""
   local keyword_lc=""
   local matches_all=1
+  local -a keywords=("$@")
 
-  MATCHED_NOTES=()
+  matched_notes=()
   shopt -s nullglob
 
   for file in *; do
     [[ -f "$file" ]] || continue
 
     if ((${#keywords[@]} == 0)); then
-      MATCHED_NOTES+=("$file")
+      matched_notes+=("$file")
       continue
     fi
 
@@ -72,9 +67,7 @@ collect_matching_notes() {
       fi
     done
 
-    if ((matches_all == 1)); then
-      MATCHED_NOTES+=("$file")
-    fi
+    (( matches_all )) && matched_notes+=("$file")
   done
 
   shopt -u nullglob
@@ -83,54 +76,55 @@ collect_matching_notes() {
 select_note() {
   collect_matching_notes "$@"
 
-  case ${#MATCHED_NOTES[@]} in
+  case "${#matched_notes[@]}" in
     0)
-      echo "[E] No matching notes were found." >&2
-      return 1 ;;
+      printf '[E] No matching notes were found.\n' >&2
+      return 1
+      ;;
     1)
-      printf '%s\n' "${MATCHED_NOTES[0]}"
-      return 0 ;;
+      printf '%s\n' "${matched_notes[0]}"
+      ;;
     *)
-      if ! command -v fzf >/dev/null 2>&1; then
-        echo "[E] Multiple notes matched and fzf is unavailable." >&2
-        printf '%s\n' "${MATCHED_NOTES[@]}" >&2
+      command -v fzf >/dev/null 2>&1 || {
+        printf '[E] Multiple notes matched and fzf is unavailable.\n' >&2
+        printf '%s\n' "${matched_notes[@]}" >&2
         return 1
-      fi
-      printf '%s\n' "${MATCHED_NOTES[@]}" | fzf
+      }
+      printf '%s\n' "${matched_notes[@]}" | fzf
       ;;
   esac
 }
 
-new_note() {
-  local -a keywords=("$@")
-  local notename=""
-  local keyword=""
-
-  if ((${#keywords[@]} == 0)); then
-    notename="$(date +"${QUICKNOTE_FORMAT}")"
-  else
-    for keyword in "${keywords[@]}"; do
-      keyword="${keyword// /-}"
-      [[ -n $notename ]] && notename="${notename}-"
-      notename="${notename}${keyword}"
-    done
-  fi
-  notename="${notename}.${NOTE_EXT}"
-
-  touch -- "$notename" || return $?
-  vim_note "$notename"
-}
-
-vim_note() {
-  local -a editor_cmd=()
+edit_note() {
   local note=""
+  local -a editor_cmd=()
 
   note="$(select_note "$@")" || return $?
   read -r -a editor_cmd <<< "${EDITOR:-nvim}"
   "${editor_cmd[@]}" "$note"
 }
 
-rm_notes() {
+new_note() {
+  local note_name=""
+  local keyword=""
+  local -a keywords=("$@")
+
+  if ((${#keywords[@]} == 0)); then
+    note_name="$(date +"$quicknote_format")"
+  else
+    for keyword in "${keywords[@]}"; do
+      keyword="${keyword// /-}"
+      [[ -n "$note_name" ]] && note_name+="-"
+      note_name+="$keyword"
+    done
+  fi
+
+  note_name="${note_name}.${note_ext}"
+  touch "$note_name"
+  edit_note "$note_name"
+}
+
+remove_note() {
   local note=""
 
   note="$(select_note "$@")" || return $?
@@ -142,36 +136,28 @@ usage() {
 A command line note taking utility.
 
 Usage:
-  $BASENAME new|n <name>      # Create new note
-  $BASENAME vim <name>        # Open existing note
-  $BASENAME ls <options>      # List notes, support ls options
-  $BASENAME open|o            # Open notes directory
-  $BASENAME rm                # Remove note
+  $basename_cmd new|n <name>      Create a new note
+  $basename_cmd vim <name>        Open an existing note
+  $basename_cmd ls <options>      List notes with ls options
+  $basename_cmd open|o            Open the notes directory
+  $basename_cmd rm                Remove a note
 EOF
 }
 
-cli() {
+main() {
   local command="${1:-}"
 
-  if (($# > 0)); then
-    shift
-  fi
+  ensure_notes_dir
+  (($# > 0)) && shift
 
   case "$command" in
-    new|n)
-      new_note "$@" ;;
-    nvim|vim|vi|v)
-      vim_note "$@" ;;
-    ls)
-      ls_notes "$@" ;;
-    open|o)
-      open_note_dir "$@" ;;
-    rm)
-      rm_notes "$@" ;;
-    *)
-      usage
-      return 1 ;;
+    new|n) new_note "$@" ;;
+    nvim|vim|vi|v) edit_note "$@" ;;
+    ls) list_notes "$@" ;;
+    open|o) open_note_dir ;;
+    rm) remove_note "$@" ;;
+    *) usage; return 1 ;;
   esac
 }
 
-cli "$@"
+main "$@"
