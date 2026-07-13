@@ -6,6 +6,7 @@ path=(
   $HOME/bin
   $HOME/dotfiles/bin
   $HOME/.local/bin
+  $HOME/.nix-profile/bin
   $DENO_INSTALL/bin
   $CARGO_HOME/bin
   $VOLTA_HOME/bin
@@ -22,5 +23,7 @@ path=(
 export GOPATH="$HOME/io/gocode"
 export ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE="fg=${CTP_OVERLAY0}"
 export ZSH_HIGHLIGHT_HIGHLIGHTERS_DIR=$HOME/.local/share/zsh/zsh-syntax-highlighting/highlighters
-source $HOME/.local/share/zsh/zsh-autosuggestions/zsh-autosuggestions.zsh
-source $HOME/.local/share/zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+[[ -r "$HOME/.local/share/zsh/zsh-autosuggestions/zsh-autosuggestions.zsh" ]] &&
+  source "$HOME/.local/share/zsh/zsh-autosuggestions/zsh-autosuggestions.zsh"
+[[ -r "$HOME/.local/share/zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]] &&
+  source "$HOME/.local/share/zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"

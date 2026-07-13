@@ -1,3 +1,10 @@
+for profile_script in \
+  "$HOME/.nix-profile/etc/profile.d/nix.sh" \
+  "$HOME/.nix-profile/etc/profile.d/hm-session-vars.sh"
+do
+  [[ -r "$profile_script" ]] && . "$profile_script"
+done
+
 # Fig pre block. Keep at the top of this file.
 [[ -f "$HOME/.fig/shell/zshrc.pre.zsh" ]] && . "$HOME/.fig/shell/zshrc.pre.zsh"
 
