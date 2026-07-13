@@ -45,7 +45,5 @@ in {
     ".lesskey" = mkLink ../../files/less/lesskey;
     ".screenrc" = mkLink ../../files/screen/screenrc;
     ".wgetrc" = mkLink ../../files/wget/wgetrc;
-  } // lib.optionalAttrs pkgs.stdenv.isDarwin {
-    ".latexmkrc" = mkLink ../../files/latexmk/latexmkrc;
   };
 }
