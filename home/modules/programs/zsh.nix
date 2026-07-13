@@ -25,12 +25,18 @@ let
     relativeFiles);
 in {
   home.file = zshFiles // {
-    ".local/share/zsh/site-functions".source =
-      "${pkgs.zsh-completions}/share/zsh/site-functions";
-    ".local/share/zsh/zsh-autosuggestions".source =
-      "${pkgs.zsh-autosuggestions}/share/zsh-autosuggestions";
-    ".local/share/zsh/zsh-syntax-highlighting".source =
-      "${pkgs.zsh-syntax-highlighting}/share/zsh-syntax-highlighting";
+    ".local/share/zsh/site-functions" = {
+      force = true;
+      source = "${pkgs.zsh-completions}/share/zsh/site-functions";
+    };
+    ".local/share/zsh/zsh-autosuggestions" = {
+      force = true;
+      source = "${pkgs.zsh-autosuggestions}/share/zsh-autosuggestions";
+    };
+    ".local/share/zsh/zsh-syntax-highlighting" = {
+      force = true;
+      source = "${pkgs.zsh-syntax-highlighting}/share/zsh-syntax-highlighting";
+    };
   } // {
     ".zlogin" = {
       force = true;

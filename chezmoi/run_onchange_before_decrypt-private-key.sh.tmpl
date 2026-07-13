@@ -1,0 +1,15 @@
+{{- with .secrets }}
+{{- if .ageRecipient }}
+#!/bin/sh
+set -eu
+
+key_file="${HOME}/.config/chezmoi/key.txt"
+encrypted_key="{{ $.chezmoi.sourceDir }}/key.txt.age"
+
+if [ -f "$encrypted_key" ] && [ ! -f "$key_file" ]; then
+    mkdir -p "${HOME}/.config/chezmoi"
+    chezmoi age decrypt --output "$key_file" --passphrase "$encrypted_key"
+    chmod 600 "$key_file"
+fi
+{{- end }}
+{{- end }}

@@ -27,17 +27,46 @@
     enable = true;
     user = userName;
     taps = [
-      "aws/tap"
-      "fujiwara/tap"
-      "hashicorp/tap"
-      "homebrew/cask-fonts"
-      "mi2428/clockping"
-      "mi2428/fing"
-      "mi2428/iperf3-rs"
-      "textualize/rich"
-      "thatmattlove/oui"
-      "wader/tap"
-      "ynqa/tap"
+      {
+        name = "aws/tap";
+        trusted = true;
+      }
+      {
+        name = "fujiwara/tap";
+        trusted = true;
+      }
+      {
+        name = "hashicorp/tap";
+        trusted = true;
+      }
+      {
+        name = "mi2428/clockping";
+        trusted = true;
+      }
+      {
+        name = "mi2428/fing";
+        trusted = true;
+      }
+      {
+        name = "mi2428/iperf3-rs";
+        trusted = true;
+      }
+      {
+        name = "textualize/rich";
+        trusted = true;
+      }
+      {
+        name = "thatmattlove/oui";
+        trusted = true;
+      }
+      {
+        name = "wader/tap";
+        trusted = true;
+      }
+      {
+        name = "ynqa/tap";
+        trusted = true;
+      }
     ];
     global = {
       autoUpdate = true;
@@ -52,7 +81,7 @@
       "chrony"
       "hunk"
       "ifstat"
-      "iperf3-rs"
+      "mi2428/iperf3-rs/iperf3-rs"
       "ruby-build"
       "trash"
       "zsh-git-prompt"
@@ -60,15 +89,21 @@
     casks = [
       "android-studio"
       "blackhole-16ch"
-      "codex-app"
       "font-hack-nerd-font"
       "ghostty"
+      "chatgpt"
       "karabiner-elements"
       "kiro"
       "multipass"
       "visual-studio-code"
     ];
   };
+
+  system.activationScripts.cleanupLegacyCodexApp.text = ''
+    if [ -L /opt/homebrew/Caskroom/codex-app ]; then
+      rm -f /opt/homebrew/Caskroom/codex-app
+    fi
+  '';
 
   system.configurationRevision = self.rev or self.dirtyRev or null;
   system.stateVersion = 6;

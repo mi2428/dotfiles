@@ -105,6 +105,7 @@ log "applying chezmoi source state to $runtime_home"
 HOME="$runtime_home" USER="$runtime_user" \
 "$chezmoi_bin" apply \
   --force \
+  --init \
   --no-tty \
   --source "$repo_root/chezmoi" \
   --destination "$runtime_home"

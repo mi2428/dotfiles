@@ -6,9 +6,18 @@ let
   '';
 in {
   home.file = {
-    ".gnupg/gpg-agent.conf".text = mkAgentConf currentPinentry;
-    ".gnupg/gpg-agent.conf.apple".text = mkAgentConf "/opt/homebrew/bin/pinentry-mac";
-    ".gnupg/gpg-agent.conf.intel".text = mkAgentConf "/usr/local/bin/pinentry-mac";
+    ".gnupg/gpg-agent.conf" = {
+      force = true;
+      text = mkAgentConf currentPinentry;
+    };
+    ".gnupg/gpg-agent.conf.apple" = {
+      force = true;
+      text = mkAgentConf "/opt/homebrew/bin/pinentry-mac";
+    };
+    ".gnupg/gpg-agent.conf.intel" = {
+      force = true;
+      text = mkAgentConf "/usr/local/bin/pinentry-mac";
+    };
   };
 
   home.activation.gnupgPermissions = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

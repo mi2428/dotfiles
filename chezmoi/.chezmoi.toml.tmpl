@@ -1,0 +1,8 @@
+{{- with .secrets }}
+{{- if .ageRecipient }}
+encryption = "age"
+[age]
+    identity = "{{ $.chezmoi.homeDir }}/.config/chezmoi/key.txt"
+    recipient = "{{ .ageRecipient }}"
+{{- end }}
+{{- end }}
