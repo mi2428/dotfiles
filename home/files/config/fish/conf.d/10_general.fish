@@ -67,7 +67,28 @@ function __dotfiles_import_posix_exports --argument-names envfile
 end
 
 function __dotfiles_eza
-    env -u LS_COLORS -u EXA_COLORS -u EZA_COLORS eza $argv
+    if not set -q __dotfiles_eza_hyperlink_mode
+        if env -u LS_COLORS -u EXA_COLORS -u EZA_COLORS eza --help 2>/dev/null | string match -rq -- '--hyperlink \[<WHEN>\]'
+            set -g __dotfiles_eza_hyperlink_mode when
+        else
+            set -g __dotfiles_eza_hyperlink_mode bare
+        end
+    end
+
+    set -l args
+    for arg in $argv
+        if test "$arg" = '--hyperlink=auto'
+            if test "$__dotfiles_eza_hyperlink_mode" = when
+                set -a args $arg
+            else if isatty stdout
+                set -a args --hyperlink
+            end
+        else
+            set -a args $arg
+        end
+    end
+
+    env -u LS_COLORS -u EXA_COLORS -u EZA_COLORS eza $args
 end
 
 function __dotfiles_list_dir

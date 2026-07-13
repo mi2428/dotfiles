@@ -1,5 +1,28 @@
 __dotfiles_eza() {
-  env -u LS_COLORS -u EXA_COLORS -u EZA_COLORS eza "$@"
+  local -a args=()
+  local arg
+
+  if [[ -z ${__DOTFILES_EZA_HYPERLINK_MODE-} ]]; then
+    if env -u LS_COLORS -u EXA_COLORS -u EZA_COLORS eza --help 2>/dev/null | grep -Fq -- '--hyperlink [<WHEN>]'; then
+      __DOTFILES_EZA_HYPERLINK_MODE='when'
+    else
+      __DOTFILES_EZA_HYPERLINK_MODE='bare'
+    fi
+  fi
+
+  for arg in "$@"; do
+    if [[ "$arg" == '--hyperlink=auto' ]]; then
+      if [[ "$__DOTFILES_EZA_HYPERLINK_MODE" == 'when' ]]; then
+        args+=("$arg")
+      elif [[ -t 1 ]]; then
+        args+=(--hyperlink)
+      fi
+    else
+      args+=("$arg")
+    fi
+  done
+
+  env -u LS_COLORS -u EXA_COLORS -u EZA_COLORS eza "${args[@]}"
 }
 
 cd() {
