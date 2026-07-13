@@ -11,7 +11,7 @@ let
     "40_grc.zsh"
   ];
   pickSource = import ../../lib/pick-legacy-source.nix { inherit hostName; } {
-    baseRoot = ../../../etc/zsh/zsh;
+    baseRoot = ../../../home/files/zsh/zsh;
     overlays = {
       macos = ../../../etc/hosts/macos/zsh/zsh;
       "docker-dev" = ../../../etc/hosts/docker/zsh/zsh;
@@ -27,7 +27,7 @@ in {
   home.packages = [ pkgs.zsh ];
 
   home.file = zshFiles // {
-    ".zshrc".source = ../../../etc/zsh/zshrc;
-    ".zlogin".source = ../../../etc/zsh/zlogin;
+    ".zshrc".source = ../../../home/files/zsh/zshrc;
+    ".zlogin".source = ../../../home/files/zsh/zlogin;
   };
 }

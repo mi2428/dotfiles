@@ -11,7 +11,7 @@ let
     "statusbar.conf"
   ];
   pickSource = import ../../lib/pick-legacy-source.nix { inherit hostName; } {
-    baseRoot = ../../../etc/tmux/tmux;
+    baseRoot = ../../../home/files/tmux/tmux;
     overlays = {
       macos = ../../../etc/hosts/macos/tmux/tmux;
       "linux-server" = ../../../etc/hosts/linux-server/tmux/tmux;
@@ -28,6 +28,6 @@ in {
   home.packages = [ pkgs.tmux ];
 
   home.file = tmuxFiles // {
-    ".tmux.conf".source = ../../../etc/tmux/tmux.conf;
+    ".tmux.conf".source = ../../../home/files/tmux/tmux.conf;
   };
 }

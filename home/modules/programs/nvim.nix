@@ -2,7 +2,7 @@
   home.packages = [ pkgs.neovim ];
 
   xdg.configFile."nvim" = {
-    source = ../../../etc/nvim;
+    source = ../../../home/files/config/nvim;
     recursive = true;
   };
 }

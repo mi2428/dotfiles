@@ -23,9 +23,9 @@ link-minimal: emergency ## Alias for emergency
 .PHONY: emergency-zsh
 emergency-zsh: ## Link the repository zsh configuration
 	@mkdir -p $(HOME_ZSH)
-	@ln -sfn $(REPO)/etc/zsh/zshrc $(HOME)/.zshrc
-	@ln -sfn $(REPO)/etc/zsh/zlogin $(HOME)/.zlogin
-	@for config in $(REPO)/etc/zsh/zsh/*; do \
+	@ln -sfn $(REPO)/home/files/zsh/zshrc $(HOME)/.zshrc
+	@ln -sfn $(REPO)/home/files/zsh/zlogin $(HOME)/.zlogin
+	@for config in $(REPO)/home/files/zsh/zsh/*; do \
 		[ -f "$$config" ] || continue; \
 		ln -sfn "$$config" "$(HOME_ZSH)/$$(basename "$$config")"; \
 	done
@@ -33,12 +33,12 @@ emergency-zsh: ## Link the repository zsh configuration
 .PHONY: emergency-tmux
 emergency-tmux: ## Link the repository tmux configuration
 	@mkdir -p $(HOME_TMUX) $(HOME_TMUX)/scripts
-	@ln -sfn $(REPO)/etc/tmux/tmux.conf $(HOME)/.tmux.conf
-	@for config in $(REPO)/etc/tmux/tmux/*.conf; do \
+	@ln -sfn $(REPO)/home/files/tmux/tmux.conf $(HOME)/.tmux.conf
+	@for config in $(REPO)/home/files/tmux/tmux/*.conf; do \
 		[ -f "$$config" ] || continue; \
 		ln -sfn "$$config" "$(HOME_TMUX)/$$(basename "$$config")"; \
 	done
-	@for script in $(REPO)/etc/tmux/tmux/scripts/*; do \
+	@for script in $(REPO)/home/files/tmux/tmux/scripts/*; do \
 		[ -f "$$script" ] || continue; \
 		ln -sfn "$$script" "$(HOME_TMUX)/scripts/$$(basename "$$script")"; \
 	done
