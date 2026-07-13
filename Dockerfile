@@ -48,7 +48,7 @@ RUN git clone --depth 1 https://github.com/mi2428/dotfiles \
  && HOME=/etc/skel CARGO_HOME=/etc/skel/.cargo PATH=/etc/skel/.cargo/bin:$PATH \
     make ubuntu-docker
 
-RUN cp ./dotfiles/var/docker/entrypoint.sh /sbin/entrypoint.sh \
+RUN cp ./dotfiles/containers/dotfiles/entrypoint.sh /sbin/entrypoint.sh \
  && chmod +x /sbin/entrypoint.sh
 
 Run apt-get clean \
