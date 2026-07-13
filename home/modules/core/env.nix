@@ -2,7 +2,6 @@
   home.sessionPath = [
     "$HOME/bin"
     "$HOME/io/bin"
-    "$HOME/dotfiles/bin"
     "$HOME/.local/bin"
     "$HOME/.deno/bin"
     "$HOME/.cargo/bin"

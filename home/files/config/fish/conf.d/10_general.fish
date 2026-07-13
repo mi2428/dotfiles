@@ -25,7 +25,6 @@ end
 __dotfiles_set_path \
     "$HOME/bin" \
     "$HOME/io/bin" \
-    "$HOME/dotfiles/bin" \
     "$HOME/.local/bin" \
     "$HOME/.deno/bin" \
     "$HOME/.cargo/bin" \
