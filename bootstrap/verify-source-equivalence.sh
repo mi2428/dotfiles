@@ -80,23 +80,7 @@ link_file() {
   ln -sfn "$source" "$destination"
 }
 
-pick_source() {
-  local base_root="$1"
-  local overlay_root="$2"
-  local relative_path="$3"
-  if [[ -n "$overlay_root" && -e "$overlay_root/$relative_path" ]]; then
-    printf '%s\n' "$overlay_root/$relative_path"
-  else
-    printf '%s\n' "$base_root/$relative_path"
-  fi
-}
-
 materialize_zsh() {
-  local overlay_root=""
-  if [[ "$host" == "macos" ]]; then
-    overlay_root="$repo_root/home/files/hosts/macos/zsh/zsh"
-  fi
-
   link_file "$repo_root/home/files/zsh/zshrc" "$current_home/.zshrc"
   link_file "$repo_root/home/files/zsh/zlogin" "$current_home/.zlogin"
 
@@ -110,16 +94,29 @@ materialize_zsh() {
     30_appearance.zsh \
     40_grc.zsh
   do
-    link_file \
-      "$(pick_source "$repo_root/home/files/zsh/zsh" "$overlay_root" "$relative_path")" \
-      "$current_home/.zsh/$relative_path"
+    local source_path="$repo_root/home/files/zsh/zsh/$relative_path"
+    case "$relative_path:$host" in
+      12_general_path.zsh:macos)
+        source_path="$repo_root/home/files/zsh/zsh/12_general_path.macos.zsh"
+        ;;
+      14_general_fzf.zsh:macos)
+        source_path="$repo_root/home/files/zsh/zsh/14_general_fzf.macos.zsh"
+        ;;
+      22_aliases.zsh:macos)
+        source_path="$repo_root/home/files/zsh/zsh/22_aliases.macos.zsh"
+        ;;
+      22_aliases.zsh:docker-dev)
+        source_path="$repo_root/home/files/zsh/zsh/22_aliases.docker-dev.zsh"
+        ;;
+    esac
+    link_file "$source_path" "$current_home/.zsh/$relative_path"
   done
 }
 
 materialize_git() {
   local gitconfig_source="$repo_root/home/files/git/gitconfig"
   if [[ "$host" == "macos" ]]; then
-    gitconfig_source="$repo_root/home/files/hosts/macos/git/gitconfig"
+    gitconfig_source="$repo_root/home/files/git/gitconfig.macos"
   fi
 
   link_file "$gitconfig_source" "$current_home/.gitconfig"
@@ -132,7 +129,6 @@ materialize_nvim() {
 }
 
 materialize_fish() {
-  local overlay_root=""
   local relative_paths=(
     config.fish
     fish_plugins
@@ -150,29 +146,20 @@ materialize_fish() {
     functions/fish_user_key_bindings.fish
   )
 
-  if [[ "$host" == "macos" ]]; then
-    overlay_root="$repo_root/home/files/hosts/macos/fish"
+  if [[ "$host" == 'macos' ]]; then
     relative_paths+=(conf.d/22_aliases.fish)
   fi
 
   for relative_path in "${relative_paths[@]}"; do
-    link_file \
-      "$(pick_source "$repo_root/home/files/config/fish" "$overlay_root" "$relative_path")" \
-      "$current_home/.config/fish/$relative_path"
+    local source_path="$repo_root/home/files/config/fish/$relative_path"
+    if [[ "$relative_path" == 'conf.d/12_general_path.fish' && "$host" == 'macos' ]]; then
+      source_path="$repo_root/home/files/config/fish/conf.d/12_general_path.macos.fish"
+    fi
+    link_file "$source_path" "$current_home/.config/fish/$relative_path"
   done
 }
 
 materialize_tmux() {
-  local overlay_root=""
-  case "$host" in
-    macos)
-      overlay_root="$repo_root/home/files/hosts/macos/tmux/tmux"
-      ;;
-    linux-server)
-      overlay_root="$repo_root/home/files/hosts/linux-server/tmux/tmux"
-      ;;
-  esac
-
   link_file "$repo_root/home/files/tmux/tmux.conf" "$current_home/.tmux.conf"
 
   for relative_path in \
@@ -185,9 +172,14 @@ materialize_tmux() {
     statusbar-catppuccin.conf \
     statusbar.conf
   do
-    link_file \
-      "$(pick_source "$repo_root/home/files/tmux/tmux" "$overlay_root" "$relative_path")" \
-      "$current_home/.tmux/$relative_path"
+    local source_path="$repo_root/home/files/tmux/tmux/$relative_path"
+    if [[ "$relative_path" == 'scripts/cpu.sh' && "$host" == 'macos' ]]; then
+      source_path="$repo_root/home/files/tmux/tmux/scripts/cpu.macos.sh"
+    fi
+    if [[ "$relative_path" == 'scripts/mem.sh' && "$host" == 'macos' ]]; then
+      source_path="$repo_root/home/files/tmux/tmux/scripts/mem.macos.sh"
+    fi
+    link_file "$source_path" "$current_home/.tmux/$relative_path"
   done
 }
 
