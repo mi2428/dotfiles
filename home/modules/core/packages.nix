@@ -1,53 +1,90 @@
-{ lib, pkgs, ... }:
+{ hostName, lib, pkgs, ... }:
 let
-  commonPackages = with pkgs; [
+  shellPackages = with pkgs; [
+    bash
+    bat
+    coreutils
+    delta
+    direnv
+    eza
+    fd
+    fish
+    fzf
+    gh
+    git
+    git-lfs
+    gitflow
+    gnugrep
+    gnupg
+    jq
+    neovim
+    python313Packages.pynvim
+    ripgrep
+    starship
+    tig
+    tmux
+    tree
+    watch
+    wget
+    yq-go
+    zoxide
+    zsh
+    zsh-autosuggestions
+    zsh-completions
+    zsh-syntax-highlighting
+  ];
+  containerDevPackages = with pkgs; [
     actionlint
+    bash-language-server
+    go
+    go-tools
+    golangci-lint
+    gopls
+    hadolint
+    lua-language-server
+    nixd
+    nodejs
+    pre-commit
+    pyright
+    python313Packages.python-lsp-server
+    ruff
+    rust-analyzer
+    shfmt
+    stylua
+    taplo
+    terraform-ls
+    tflint
+    uv
+    vscode-langservers-extracted
+    yaml-language-server
+    yarn
+  ];
+  nonContainerPackages = with pkgs; [
     aws-cdk-cli
     aws-sam-cli
     awscli2
-    bash
-    bash-language-server
-    bat
     black
     cargo
     cargo-dist
     cmake
     colordiff
-    coreutils
     cowsay
     csvkit
     cue
     deno
     difftastic
-    direnv
     docker
     eksctl
     expect
-    eza
-    fd
     figlet
-    fish
     fq
     frogmouth
-    fzf
-    gh
-    delta
-    git
-    git-lfs
-    gitflow
     glances
     glow
-    gnugrep
-    gnupg
-    go
-    go-tools
-    golangci-lint
     gotools
-    gopls
     gradle
     grc
     gum
-    hadolint
     herdr
     hexyl
     htop
@@ -57,75 +94,47 @@ let
     ipinfo
     isort
     jnv
-    jq
     k9s
     kubectl
     lazygit
     libssh
-    lua-language-server
     most
     mtools
     mtr
     net-snmp
     nfdump
-    neovim
     nkf
     nmap
-    nodejs
     ollama
     oui
     pipenv
     pipx
     playwright-driver
-    podman
     poetry
+    podman
     poppler
-    pre-commit
     procs
     protobuf
     pv
-    pyright
-    python313Packages.pynvim
-    python313Packages.python-lsp-server
     rbenv
     rich-cli
-    ripgrep
-    ruff
-    rust-analyzer
     rustc
     rustup
-    shfmt
     silver-searcher-ng
     sops
     speedtest-cli
-    starship
-    stylua
     tailspin
-    taplo
     terraform
-    terraform-ls
-    tflint
-    tig
-    tmux
-    tmuxinator
     tokei
-    tree
-    uv
+    tmuxinator
     vhs
     viddy
-    vscode-langservers-extracted
-    watch
-    wget
-    yq-go
-    yarn
     yt-dlp
     zig
-    zoxide
-    zsh
-    zsh-autosuggestions
-    zsh-completions
-    zsh-syntax-highlighting
   ];
+  commonPackages = shellPackages
+    ++ containerDevPackages
+    ++ lib.optionals (hostName != "docker-dev") nonContainerPackages;
   linuxPackages = with pkgs; [
     rsyslog
   ];

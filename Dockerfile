@@ -1,58 +1,69 @@
-FROM ubuntu:24.04
-LABEL maintainer "mi2428 <sh@mi2428.io>"
-LABEL org.opencontainers.image.source https://github.com/mi2428/dotfiles
+# hadolint global ignore=DL3008
+FROM ubuntu:26.04 AS base
 
-ENV LANG=en_US.UTF-8
-ENV LANGUAGE=en_US:en
-ENV LC_ALL=en_US.UTF-8
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-## only effective in x86_64 image
-RUN sed -i".bak" -e 's/\/\/archive.ubuntu.com/\/\/ftp.jaist.ac.jp/g' /etc/apt/sources.list 
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+
+ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
- && apt-get upgrade -y \
- && DEBIAN_FRONTEND=noninteractive \
-    apt-get install -y --no-install-recommends \
-      apt-utils \
+ && apt-get install -y --no-install-recommends \
+      bash \
       build-essential \
       ca-certificates \
-      language-pack-ja \
-      locales \
-      software-properties-common \
- && locale-gen en_US.UTF-8 ja_JP.UTF-8 \
- && DEBIAN_FRONTEND=noninteractive \
-    apt-get install -y --no-install-recommends \
       curl \
       git \
-      gnupg-agent \
       iproute2 \
+      iputils-ping \
+      locales \
       make \
+      procps \
       sudo \
       toilet \
- && add-apt-repository ppa:neovim-ppa/unstable \
- && DEBIAN_FRONTEND=noninteractive \
-    apt-get install -y neovim
-
-RUN groupadd wheel \
- && echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
-
-WORKDIR /etc/skel
-
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > /tmp/rustup.sh \
- && chmod +x /tmp/rustup.sh \
- && HOME=/etc/skel \
-    /tmp/rustup.sh -y
-
-RUN git clone --depth 1 https://github.com/mi2428/dotfiles \
- && cd dotfiles \
- && HOME=/etc/skel CARGO_HOME=/etc/skel/.cargo PATH=/etc/skel/.cargo/bin:$PATH \
-    make install
-
-RUN cp ./dotfiles/containers/dotfiles/entrypoint.sh /sbin/entrypoint.sh \
- && chmod +x /sbin/entrypoint.sh
-
-Run apt-get clean \
+      xz-utils \
+ && locale-gen en_US.UTF-8 ja_JP.UTF-8 \
+ && groupadd --system wheel \
+ && printf '%%wheel ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/wheel \
+ && chmod 0440 /etc/sudoers.d/wheel \
  && rm -rf /var/lib/apt/lists/*
 
-ENTRYPOINT ["/sbin/entrypoint.sh"]
-CMD ["/bin/zsh", "--login"]
+FROM base AS builder
+
+WORKDIR /src
+
+ARG TARGETARCH
+
+COPY . /src
+
+RUN useradd --create-home --shell /bin/bash builder \
+ && install -d -m 0755 -o builder -g builder /nix /tmp/skel
+
+RUN case "${TARGETARCH:-amd64}" in \
+      amd64) nix_system='x86_64-linux' ;; \
+      arm64) nix_system='aarch64-linux' ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && su builder -c "HOME=/home/builder USER=builder /src/bootstrap/install-nix.sh" \
+ && su builder -c ". /home/builder/.nix-profile/etc/profile.d/nix.sh && nix build --extra-experimental-features 'nix-command flakes' --impure --file /src/containers/dotfiles/skel-home.nix --argstr system ${nix_system} --out-link /tmp/home-manager-skel" \
+ && su builder -c "PATH=/home/builder/.nix-profile/bin:/nix/var/nix/profiles/default/bin:${PATH} HOME=/tmp/skel USER=skel /tmp/home-manager-skel/activate"
+
+FROM base AS runtime
+
+LABEL org.opencontainers.image.source="https://github.com/mi2428/dotfiles"
+
+ENV PATH=/etc/skel/.nix-profile/bin:/nix/var/nix/profiles/default/bin:${PATH}
+
+WORKDIR /work
+
+COPY --from=builder /nix /nix
+COPY --from=builder /tmp/skel/ /etc/skel/
+COPY --from=builder /src/containers/dotfiles/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+RUN chmod 0755 /usr/local/bin/entrypoint.sh \
+ && install -d -m 0755 /work
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["/etc/skel/.nix-profile/bin/fish", "--login"]
