@@ -34,12 +34,6 @@ in {
   };
 
   xdg.configFile = {
-    "tmux/tmux.conf" = {
-      force = true;
-      text = ''
-        source-file $HOME/.tmux.conf
-      '';
-    };
     "tmux/plugins/catppuccin/tmux" = {
       recursive = true;
       source = catppuccinTmux;
