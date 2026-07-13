@@ -1,6 +1,9 @@
 #!/bin/bash
 
-cd $(dirname `git rev-parse --git-dir`)
+repo_root=""
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 1
+cd "$repo_root" || exit 1
 
 message="keep"
 if [[ "$1" == "--fix" ]] || [[ "$1" == "-f" ]]; then
@@ -11,7 +14,7 @@ fi
 if (( $# == 0 )); then
   git add .
 else
-  git add $@
+  git add "$@"
 fi
 
 git commit -m "$message: $(date)"

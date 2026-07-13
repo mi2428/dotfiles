@@ -11,6 +11,7 @@ PRIVILEGED=0
 COPY_SSH_KEYS=0
 DOOD=0
 ATTACH=0
+CONTAINER_PREFIX="shizk-ubnt"
 
 
 usage() {
@@ -31,18 +32,22 @@ EOF
 
 
 argparse() {
-  while (( "$#" )); do
-    case $1 in
+  while (($#)); do
+    case "$1" in
       --attach|-a)
         ATTACH=1
         shift ;;
       --with|-w)
+        if (($# < 2)); then
+          echo "inside: missing value for $1" >&2
+          return 1
+        fi
         CONTAINER_IMAGE_CODE="$2"
         shift 2 ;;
       --update)
         PULL_BEFORE_RUN=1
         shift ;;
-      --copy-ssh|-s)
+      --copy-ssh|--copy-ssh-keys|-s)
         COPY_SSH_KEYS=1
         shift ;;
       --persist|-p)
@@ -52,9 +57,17 @@ argparse() {
         PRIVILEGED=1
         shift ;;
       --hostname|-H)
+        if (($# < 2)); then
+          echo "inside: missing value for $1" >&2
+          return 1
+        fi
         CONTAINER_HOSTNAME="$2"
         shift 2 ;;
       --name|-n)
+        if (($# < 2)); then
+          echo "inside: missing value for $1" >&2
+          return 1
+        fi
         CONTAINER_NAME="$2"
         shift 2 ;;
       --dood|-D)
@@ -64,36 +77,83 @@ argparse() {
         usage
         exit 0 ;;
       --*|-*)
-        echo $opt
+        echo "inside: unknown option: $1" >&2
         usage
-        exit 1 ;;
+        return 1 ;;
       *)
+        if [[ -n "$WORKDIR" ]]; then
+          echo "inside: unexpected argument: $1" >&2
+          usage
+          return 1
+        fi
         WORKDIR="$1"
         shift ;;
     esac
   done
 }
 
+remote_ip_from_ssh_client() {
+  if [[ -n "${SSH_CLIENT:-}" ]]; then
+    printf '%s\n' "${SSH_CLIENT%% *}"
+  fi
+}
+
+qualify_container_name() {
+  local name="$1"
+
+  if [[ "$name" == "${CONTAINER_PREFIX}"-* ]]; then
+    printf '%s\n' "$name"
+  elif [[ "$name" =~ ^[0-9]+$ ]]; then
+    printf '%s-%s\n' "$CONTAINER_PREFIX" "$name"
+  else
+    printf '%s\n' "$name"
+  fi
+}
+
+resolve_workdir() {
+  local requested_dir="${1:-$PWD}"
+  local resolved_dir=""
+
+  if ! resolved_dir="$(cd -- "$requested_dir" && pwd -P)"; then
+    echo "inside: invalid path: $requested_dir" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$resolved_dir"
+}
+
 
 main() {
-  local args="$@"
-  local remote_ip=$(awk '{print $1}' <<< "${SSH_CLIENT}")
+  local remote_ip=""
+  local host_workdir=""
+  local docker_gid=""
+  local host_uid=""
+  local host_gid=""
+  local host_name=""
+  local candidate=""
+  local i=0
+  local -a docker_args
 
-  if (( $# == 0 )); then
+  if (($# == 0)); then
     usage
     exit 0
   fi
 
-  argparse $args
+  argparse "$@" || exit $?
+  remote_ip="$(remote_ip_from_ssh_client)"
 
-  if (( $ATTACH == 1 )); then
-    if (( $CONTAINER_NAME > 0 )); then
-      CONTAINER_NAME="shizk-ubnt-${CONTAINER_NAME}"
+  if ((ATTACH == 1)); then
+    if [[ -z "$CONTAINER_NAME" ]]; then
+      echo "inside: --attach requires --name" >&2
+      exit 1
     fi
 
-    docker start $CONTAINER_NAME 1>/dev/null 2>&1 && \
-    docker exec -it $CONTAINER_NAME sudo -u shizk OUTSIDE_HOSTNAME=$(hostname) SSH_CLIENT=${remote_ip} zsh --login 
-    exit 0
+    CONTAINER_NAME="$(qualify_container_name "$CONTAINER_NAME")"
+    host_name="$(hostname)"
+
+    docker start "$CONTAINER_NAME" >/dev/null 2>&1 || exit $?
+    exec docker exec -it "$CONTAINER_NAME" \
+      sudo -u shizk env OUTSIDE_HOSTNAME="$host_name" SSH_CLIENT="$remote_ip" zsh --login
   fi
 
   case "$CONTAINER_IMAGE_CODE" in
@@ -107,48 +167,78 @@ main() {
   esac
 
   if [[ -z $CONTAINER_NAME ]]; then
-    for i in $(seq -f "%02g" 1 99); do
-      CONTAINER_NAME="shizk-ubnt-${i}"
-      docker ps -a --format "{{.Names}}" | grep -q $CONTAINER_NAME || break
+    for ((i = 1; i <= 99; i++)); do
+      printf -v candidate '%s-%02d' "$CONTAINER_PREFIX" "$i"
+      if ! docker ps -a --format '{{.Names}}' | grep -Fxq "$candidate"; then
+        CONTAINER_NAME="$candidate"
+        break
+      fi
     done
+  else
+    CONTAINER_NAME="$(qualify_container_name "$CONTAINER_NAME")"
+  fi
+
+  if [[ -z "$CONTAINER_NAME" ]]; then
+    echo "inside: failed to allocate a container name" >&2
+    exit 1
   fi
 
   if [[ -z "$CONTAINER_HOSTNAME" ]]; then
     CONTAINER_HOSTNAME="${CONTAINER_NAME}"
   fi
 
-  if (( $PULL_BEFORE_RUN == 1 )); then
-    docker pull $CONTAINER_IMAGE
+  if ((PULL_BEFORE_RUN == 1)); then
+    docker pull "$CONTAINER_IMAGE"
   fi
 
-  ARGS=""
-  (( $PERSISTENT == 0 ))    && ARGS="${ARGS} --rm"
-  (( $PRIVILEGED == 1 ))    && ARGS="${ARGS} --privileged"
-  (( $COPY_SSH_KEYS == 1 )) && ARGS="${ARGS} -v $HOME/.ssh:/etc/skel/.ssh:ro"
+  host_workdir="$(resolve_workdir "$WORKDIR")" || exit $?
+  host_uid="$(id -u)"
+  host_gid="$(id -g)"
+  host_name="$(hostname)"
 
-  if (( $DOOD == 1 )); then
-    local docker_gid=$(getent group docker | cut -d ":" -f 3)
-    ARGS="${ARGS} -v /var/run/docker.sock:/var/run/docker.sock"
-    ARGS="${ARGS} -e HOST_DOCKER_GID=${docker_gid}"
+  docker_args=(
+    run
+    -it
+    -w /work
+    -v "${host_workdir}:/work"
+    -e TZ=Asia/Tokyo
+    -e "HOST_UID=${host_uid}"
+    -e "HOST_GID=${host_gid}"
+    --dns 9.9.9.9
+    --name "$CONTAINER_NAME"
+    --hostname "$CONTAINER_HOSTNAME"
+    --network host
+  )
+
+  if ((PERSISTENT == 0)); then
+    docker_args+=(--rm)
   fi
 
-  local remote_ip=$(awk '{print $1}' <<< "${SSH_CLIENT}")
+  if ((PRIVILEGED == 1)); then
+    docker_args+=(--privileged)
+  fi
 
-  docker run -it \
-    ${ARGS} \
-    -w /work \
-    -v $(cd $WORKDIR; pwd):/work \
-    -e TZ=Asia/Tokyo \
-    -e HOST_UID=$(id -u $USER) \
-    -e HOST_GID=$(id -g $USER) \
-    --dns 9.9.9.9 \
-    --name $CONTAINER_NAME \
-    --hostname $CONTAINER_HOSTNAME \
-    --privileged \
-    --network host \
-    $CONTAINER_IMAGE \
-    sudo -u shizk OUTSIDE_HOSTNAME=$(hostname) SSH_CLIENT=${remote_ip} zsh --login 
+  if ((COPY_SSH_KEYS == 1)); then
+    docker_args+=(-v "$HOME/.ssh:/etc/skel/.ssh:ro")
+  fi
+
+  if ((DOOD == 1)); then
+    docker_args+=(-v /var/run/docker.sock:/var/run/docker.sock)
+
+    if command -v getent >/dev/null 2>&1; then
+      docker_gid="$(getent group docker | cut -d ":" -f 3)"
+    elif [[ -r /etc/group ]]; then
+      docker_gid="$(awk -F: '$1 == "docker" { print $3; exit }' /etc/group)"
+    fi
+
+    if [[ -n "$docker_gid" ]]; then
+      docker_args+=(-e "HOST_DOCKER_GID=${docker_gid}")
+    fi
+  fi
+
+  exec docker "${docker_args[@]}" "$CONTAINER_IMAGE" \
+    sudo -u shizk env OUTSIDE_HOSTNAME="$host_name" SSH_CLIENT="$remote_ip" zsh --login
 }
 
 
-main $@
+main "$@"

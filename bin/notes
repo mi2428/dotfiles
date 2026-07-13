@@ -1,12 +1,14 @@
 #!/bin/bash
 
-if [[ -z $NOTES_DIR ]]; then
+MATCHED_NOTES=()
+
+if [[ -z ${NOTES_DIR:-} ]]; then
   echo "[E] Environment variable is missing: NOTES_DIR"
   echo "[I] Use $HOME/notes as notes directory."
-  export NOTES_DIR=$HOME/notes
+  NOTES_DIR="$HOME/notes"
 fi
 
-if ! mkdir -p $NOTES_DIR 2>/dev/null; then
+if ! mkdir -p "$NOTES_DIR" 2>/dev/null; then
   echo "[E] Failed to create notes directory, perhaps invalid path was specified?"
   echo "[I] NOTES_DIR=${NOTES_DIR}"
   exit 254
@@ -14,68 +16,125 @@ fi
 
 QUICKNOTE_FORMAT="quicknote-%Y-%m-%d-%H%M"  # date format string
 NOTE_EXT="md"
-BASENAME="$(basename $0)"
+BASENAME="$(basename "$0")"
 
-cd $NOTES_DIR
+cd "$NOTES_DIR" || exit 254
 
 ls_notes() {
-  local ls_opts="$@"
-  [[ -z $ls_opts ]] && ls_opts="-1t"
-  ls $ls_opts && return 1
-  return $?
+  local -a ls_opts=("$@")
+
+  if (($# == 0)); then
+    ls_opts=(-1t)
+  fi
+
+  ls "${ls_opts[@]}"
 }
 
 open_note_dir() {
-  if which open; then
-    open . && return 0
-  elif which nautilus; then
-    nautilus . && return 0
+  if command -v open >/dev/null 2>&1; then
+    open .
+  elif command -v nautilus >/dev/null 2>&1; then
+    nautilus .
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open .
+  else
+    echo "[E] No supported file browser command was found." >&2
+    return 127
   fi
-  return $?
+}
+
+collect_matching_notes() {
+  local -a keywords=("$@")
+  local file=""
+  local file_lc=""
+  local keyword=""
+  local keyword_lc=""
+  local matches_all=1
+
+  MATCHED_NOTES=()
+  shopt -s nullglob
+
+  for file in *; do
+    [[ -f "$file" ]] || continue
+
+    if ((${#keywords[@]} == 0)); then
+      MATCHED_NOTES+=("$file")
+      continue
+    fi
+
+    file_lc="$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')"
+    matches_all=1
+    for keyword in "${keywords[@]}"; do
+      keyword_lc="$(printf '%s' "$keyword" | tr '[:upper:]' '[:lower:]')"
+      if [[ "$file_lc" != *"$keyword_lc"* ]]; then
+        matches_all=0
+        break
+      fi
+    done
+
+    if ((matches_all == 1)); then
+      MATCHED_NOTES+=("$file")
+    fi
+  done
+
+  shopt -u nullglob
+}
+
+select_note() {
+  collect_matching_notes "$@"
+
+  case ${#MATCHED_NOTES[@]} in
+    0)
+      echo "[E] No matching notes were found." >&2
+      return 1 ;;
+    1)
+      printf '%s\n' "${MATCHED_NOTES[0]}"
+      return 0 ;;
+    *)
+      if ! command -v fzf >/dev/null 2>&1; then
+        echo "[E] Multiple notes matched and fzf is unavailable." >&2
+        printf '%s\n' "${MATCHED_NOTES[@]}" >&2
+        return 1
+      fi
+      printf '%s\n' "${MATCHED_NOTES[@]}" | fzf
+      ;;
+  esac
 }
 
 new_note() {
-  local keywords="$@"
+  local -a keywords=("$@")
   local notename=""
+  local keyword=""
 
-  if [[ -z $keywords ]]; then
-    notename="$(date +${QUICKNOTE_FORMAT})"
+  if ((${#keywords[@]} == 0)); then
+    notename="$(date +"${QUICKNOTE_FORMAT}")"
   else
-    for keyword in ${keywords[@]}; do
+    for keyword in "${keywords[@]}"; do
+      keyword="${keyword// /-}"
       [[ -n $notename ]] && notename="${notename}-"
       notename="${notename}${keyword}"
     done
   fi
   notename="${notename}.${NOTE_EXT}"
 
-  touch $notename
-  vim_note $notename
-  return $?
+  touch -- "$notename" || return $?
+  vim_note "$notename"
 }
 
 vim_note() {
-  local keywords="$@"
-  local vim=${EDITOR:-nvim}
-  local pattern="^"
+  local -a editor_cmd=()
+  local note=""
 
-  for keyword in ${keywords[@]}; do
-    pattern="${pattern}.*${keyword}"
-  done
-  pattern="${pattern}.*$"
-
-  local n=$(ls -1 | grep -Eiw "${pattern}" | wc -l)
-  if (( $n == 1 )); then
-    vim "$(ls -1 | grep -Eiw "${pattern}")"
-  else
-    vim "$(ls -1 | grep -Eiw "${pattern}" | fzf)"
-  fi
-
-  return 0
+  note="$(select_note "$@")" || return $?
+  read -r -a editor_cmd <<< "${EDITOR:-nvim}"
+  "${editor_cmd[@]}" "$note"
 }
 
 rm_notes() {
-  echo "Not yet implemented."
-  return 0
+  local note=""
+
+  note="$(select_note "$@")" || return $?
+  rm -i -- "$note"
 }
 
 usage() {
@@ -92,32 +151,27 @@ EOF
 }
 
 cli() {
-  local cmd=""
+  local command="${1:-}"
 
-  case "$1" in
+  if (($# > 0)); then
+    shift
+  fi
+
+  case "$command" in
     new|n)
-      cmd="new_note"
-      ;;
+      new_note "$@" ;;
     nvim|vim|vi|v)
-      cmd="vim_note"
-      ;;
+      vim_note "$@" ;;
     ls)
-      cmd="ls_notes"
-      ;;
+      ls_notes "$@" ;;
     open|o)
-      cmd="open_note_dir"
-      ;;
+      open_note_dir "$@" ;;
     rm)
-      cmd="rm_notes"
-      ;;
+      rm_notes "$@" ;;
     *)
-      cmd="usage"
-      ;;
+      usage
+      return 1 ;;
   esac
-  shift
-
-  $cmd $@
-  exit $?
 }
 
-cli $@
+cli "$@"

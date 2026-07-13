@@ -11,18 +11,22 @@ shorten_path() {
   local prefix="" rest=""
   local -a parts=() shortened=()
   local part=""
+  local tilde_home="~"
+  local tilde_home_prefix
+
+  tilde_home_prefix="$(printf '%s/' "$tilde_home")"
 
   if [[ -z "$path" ]]; then
     return
   fi
 
-  if [[ "$path" == "~" ]]; then
-    printf '~\n'
+  if [[ "$path" == "$tilde_home" ]]; then
+    printf '%s\n' "$tilde_home"
     return
   fi
 
-  if [[ "$path" == "~/"* ]]; then
-    prefix="~/"
+  if [[ $path == \~/* ]]; then
+    prefix="$tilde_home_prefix"
     rest="${path:2}"
   elif [[ "$path" == /* ]]; then
     prefix="/"
@@ -83,7 +87,7 @@ if [[ -n "$current_path" ]]; then
     if [[ -n "$command_prefix" ]]; then
       printf '%s ' "$command_prefix"
     fi
-    shorten_path "~/${current_path#"$home/"}"
+    shorten_path "$(printf '%s/%s' "~" "${current_path#"$home/"}")"
     exit 0
   fi
 
