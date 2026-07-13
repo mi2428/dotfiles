@@ -1,8 +1,8 @@
-{ ... }: {
-  programs.neovim = {
-    enable = true;
-    defaultEditor = true;
-    viAlias = true;
-    vimAlias = true;
+{ pkgs, ... }: {
+  home.packages = [ pkgs.neovim ];
+
+  xdg.configFile."nvim" = {
+    source = ../../../etc/nvim;
+    recursive = true;
   };
 }
