@@ -2,8 +2,7 @@
 set -euo pipefail
 
 self_path="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")"
-dotfiles_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-glow_style_path="${dotfiles_root}/home/files/config/glow/styles/catppuccin-mocha.json"
+glow_style_path="${XDG_CONFIG_HOME:-$HOME/.config}/glow/styles/catppuccin-mocha.json"
 
 usage() {
     cat <<'EOF'
