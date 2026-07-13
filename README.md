@@ -63,19 +63,6 @@ Supported flake hosts are currently `macos`, `linux-server`, and `docker-dev`.
 The old `linux-desktop` and `checkpoint` host trees were intentionally retired
 in this overhaul and are not migrated into the current flake.
 
-### Minimal fallback
-
-Use the Makefile fallback when chezmoi and Nix are unavailable.
-
-```
-% make install
-```
-
-This links:
-
-* a minimal `~/.zshrc` plus `~/.zsh/*`
-* `~/.tmux.conf` and `~/.tmux/*`
-
 ### Bootstrap
 
 ```
