@@ -1,5 +1,5 @@
 f() {
-  open -a Finder ${$1:-'.'}
+  open -a Finder -- "${1:-.}"
 }
 
 
