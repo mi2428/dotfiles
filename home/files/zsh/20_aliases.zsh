@@ -25,104 +25,128 @@ __dotfiles_eza() {
   env -u LS_COLORS -u EXA_COLORS -u EZA_COLORS eza "${args[@]}"
 }
 
-cd() {
-  if whence -p eza 1> /dev/null; then
-    builtin cd $1 && __dotfiles_eza --icons=auto --group-directories-first --hyperlink=auto .
-  elif whence -p exa 1> /dev/null; then
-    builtin cd $1 && EXA_ICON_SPACING=1 exa --icons .
-  else
-    builtin cd $1 && ls --color=auto .
-  fi
-}
-
-
-mcd() {
-  #mkdir -p $1 && pushd $1
-  mkdir -p $1 && cd $1
-}
-
-
-pd() {
-  if (( $# == 1 )); then
-    pushd "$1"
-  else
-    popd
-  fi
-
-  if whence -p eza 1> /dev/null; then
+__dotfiles_list_dir() {
+  if whence -p eza >/dev/null; then
     __dotfiles_eza --icons=auto --group-directories-first --hyperlink=auto .
-  elif whence -p exa 1> /dev/null; then
+  elif whence -p exa >/dev/null; then
     EXA_ICON_SPACING=1 exa --icons .
   else
     ls --color=auto .
   fi
 }
 
+cd() {
+  builtin cd -- "${1:-$HOME}" && __dotfiles_list_dir
+}
+
+
+mcd() {
+  [[ -n "${1:-}" ]] || {
+    echo 'mcd: missing directory operand' >&2
+    return 1
+  }
+  mkdir -p -- "$1" && cd -- "$1"
+}
+
+
+pd() {
+  if (( $# == 1 )); then
+    pushd "$1" >/dev/null
+  else
+    popd >/dev/null
+  fi
+
+  __dotfiles_list_dir
+}
+
 
 bk() {
-  local POSITIONAL_ARGS=()
-  local EXTENSION="bk"
-  local TS_FORMAT_STR="+%Y-%m-%dT%H:%M:%S"
-  local TS_BACKUP_MODE=false
-  local FORCE_MODE=false
+  local -a positional_args=()
+  local -a cp_opts=(-a -i)
+  local extension="bk"
+  local timestamp_format="+%Y-%m-%dT%H:%M:%S"
+  local timestamp_mode=0
+  local force_mode=0
 
   while (( $# > 0 )); do
-    case $1 in 
+    case "$1" in
       -e|--extension)
-        EXTENSION="$2"
-        shift; shift
+        [[ $# -ge 2 ]] || {
+          echo "bk: $1 requires a value" >&2
+          return 1
+        }
+        extension="$2"
+        shift 2
         ;;
       -f|--force)
-        FORCE_MODE=true
+        force_mode=1
         shift
         ;;
       -h|--help)
-        which bk && return 0
+        echo 'Usage: bk [-f] [-t] [-e EXTENSION] PATH...'
+        return 0
         ;;
       -t|--time)
-        TS_BACKUP_MODE=true
+        timestamp_mode=1
         shift
         ;;
       *)
-        POSITIONAL_ARGS+=("$1")
+        positional_args+=("$1")
         shift
         ;;
     esac
   done
 
-  local cpopt=("-a" "-i")
-  if $FORCE_MODE; then
-    cpopt=("-a" "-f")
-  fi
+  (( ${#positional_args[@]} > 0 )) || {
+    echo 'bk: no files provided' >&2
+    return 1
+  }
 
-  if $TS_BACKUP_MODE; then
-    local d=$(date ${TS_FORMAT_STR})
-    mkdir -p $d
-    cp $cpopt $POSITIONAL_ARGS $d
+  (( force_mode )) && cp_opts=(-a -f)
+
+  if (( timestamp_mode )); then
+    local backup_dir
+    backup_dir="$(date "$timestamp_format")"
+    mkdir -p -- "$backup_dir"
+    cp "${cp_opts[@]}" -- "${positional_args[@]}" "$backup_dir"
     return $?
   fi
 
-  for f in "$POSITIONAL_ARGS[@]"; do
-    cp $cpopt $f "${f}.${EXTENSION}"
+  local path
+  for path in "${positional_args[@]}"; do
+    cp "${cp_opts[@]}" -- "$path" "${path}.${extension}"
   done
 }
 
 
 goto() {
   local keyword="${1:-/}"
-  local matched="$(\egrep "$keyword" $PATH_BOOKMARK)"
-  local n_matched=$(wc -l <<< "$matched")
-  local dst="${matched:-''}"
-  if [[ -z "$matched" ]] || (( $n_matched > 1 )); then
-    dst="$(fzf -e --tac --no-sort <<< $matched --preview 'tree -L 3 -C {} | head -200')"
+  local matches
+  local match_count=0
+  local destination=""
+
+  matches="$(grep -i -- "$keyword" "$PATH_BOOKMARK" 2>/dev/null || true)"
+  [[ -n "$matches" ]] || {
+    echo "goto: no bookmark matched: $keyword" >&2
+    return 1
+  }
+
+  match_count="$(grep -c '^' <<< "$matches")"
+  if (( match_count == 1 )); then
+    destination="$matches"
+  else
+    destination="$(fzf -e --tac --no-sort <<< "$matches" --preview 'tree -L 3 -C {} | head -200')"
   fi
-  /usr/bin/sed -i "" -e "/^${dst//\//\\/}$/d" ${PATH_BOOKMARK} && echo "${dst}" >> ${PATH_BOOKMARK}
-  builtin cd "${dst}"
+
+  [[ -n "$destination" ]] || return 1
+  /usr/bin/sed -i "" -e "/^${destination//\//\\/}$/d" "$PATH_BOOKMARK"
+  printf '%s\n' "$destination" >> "$PATH_BOOKMARK"
+  builtin cd -- "$destination"
 }
 
 
 get() {
-  mv -i $@ .
+  mv -i -- "$@" .
 }
 
 
@@ -131,36 +155,31 @@ showopt() {
 }
 
 
+__dotfiles_ping() {
+  local fallback="$1"
+  shift
+
+  if whence -p clockping >/dev/null; then
+    clockping icmp --out.colored "$@"
+  else
+    "$fallback" "$@"
+  fi
+}
+
 p() {
   if (( $# == 0 )); then
-    if whence -p clockping 1> /dev/null; then
-      clockping icmp --out.colored 1.1.1.1
-    else
-      ping 1.1.1.1
-    fi
+    __dotfiles_ping ping 1.1.1.1
   else
-    if whence -p clockping 1> /dev/null; then
-      clockping icmp --out.colored $@
-    else
-      ping $@
-    fi
+    __dotfiles_ping ping "$@"
   fi
 }
 
 
 pp() {
   if (( $# == 0 )); then
-    if whence -p clockping 1> /dev/null; then
-      clockping icmp --out.colored 2001:4860:4860::8888
-    else
-      ping6 2001:4860:4860::8888
-    fi
+    __dotfiles_ping ping6 2001:4860:4860::8888
   else
-    if whence -p clockping 1> /dev/null; then
-      clockping icmp --out.colored $@
-    else
-      ping6 $@
-    fi
+    __dotfiles_ping ping6 "$@"
   fi
 }
 
@@ -181,7 +200,7 @@ m() {
   if (( $# == 0 )); then
     mtr -4 -b -i 0.1 8.8.8.8
   else
-    mtr -4 -b -i 0.1 $@
+    mtr -4 -b -i 0.1 "$@"
   fi
 }
 
@@ -190,115 +209,134 @@ mm() {
   if (( $# == 0 )); then
     mtr -6 -b -i 0.1 2001:4860:4860::8888
   else
-    mtr -6 -b -i 0.1 $@
+    mtr -6 -b -i 0.1 "$@"
   fi
 }
 
 
 mmm() {
-  local opt=""
-  local target=$1
+  local layout='-v'
+  local target='8.8.8.8'
+  local quoted_target
 
-  case $opt in
-    -h)
-      tmux split-window -h -p 66 "sudo grc --colour=auto mtr -4 -b -i 0.1 $target"
-      tmux split-window -h "sudo grc --colour=auto mtr -6 -b -i 0.1 $target"
-      ;;
-    -v|*)
-      tmux split-window -v -p 66 "sudo grc --colour=auto mtr -4 -b -i 0.1 $target"
-      tmux split-window -v "sudo grc --colour=auto mtr -6 -b -i 0.1 $target"
+  case "${1:-}" in
+    -h|-v)
+      layout="$1"
+      shift
       ;;
   esac
+
+  [[ -n "${1:-}" ]] && target="$1"
+  quoted_target="${(q)target}"
+  tmux split-window "$layout" -p 66 "sudo grc --colour=auto mtr -4 -b -i 0.1 ${quoted_target}"
+  tmux split-window "$layout" "sudo grc --colour=auto mtr -6 -b -i 0.1 ${quoted_target}"
 }
 
 
 dk() {
-  case $1 in
+  local action="${1:-}"
+  local -a args=("${@:2}")
+  local -a selected=()
+
+  case "$action" in
     art|rt)
-      docker start ${@:2}
+      docker start "${args[@]}"
       return 0
       ;;
 
     op)
-      docker stop ${@:2}
+      docker stop "${args[@]}"
       return 0
       ;;
 
     im)
-      docker images ${@:2}
+      docker images "${args[@]}"
       return 0
       ;;
 
     bd)
-      docker build ${@:2}
+      docker build "${args[@]}"
       return 0
       ;;
 
     ex)
-      docker exec ${@:2}
+      docker exec "${args[@]}"
       return 0
       ;;
 
     kl)
-      docker kill ${@:2}
+      docker kill "${args[@]}"
       return 0
       ;;
 
     lg)
-      docker logs ${@:2}
+      docker logs "${args[@]}"
       return 0
       ;;
 
     pl)
       if (( $# == 1 )); then
-        for image in $(docker images --format '{{.Repository}}:{{.Tag}}' --filter "dangling=false" | grep -v '<none>' | fzf --multi); do
-          docker pull ${image}
+        selected=("${(@f)$(docker images --format '{{.Repository}}:{{.Tag}}' --filter 'dangling=false' | grep -v '<none>' | fzf --multi)}")
+        (( ${#selected[@]} > 0 )) || return 1
+        local image
+        for image in "${selected[@]}"; do
+          docker pull "$image"
         done
       elif [[ $2 == "ubuntu" ]]; then
         docker pull ghcr.io/mi2428/ubuntu:latest
       else
-        docker pull ${@:2}
+        local image
+        for image in "${args[@]}"; do
+          docker pull "$image"
+        done
       fi
       return 0
       ;;
 
     cc)
-      docker commit ${@:2}
+      docker commit "${args[@]}"
       return 0
       ;;
 
     vl)
-      docker volume ${@:2}
+      docker volume "${args[@]}"
       return 0
       ;;
 
     rmi)
       if (( $# == 1 )); then
-        docker rmi $(docker images --format '{{.Repository}}:{{.Tag}}' --filter "dangling=false" | grep -v '<none>' | fzf --multi)
-        return 0
+        selected=("${(@f)$(docker images --format '{{.Repository}}:{{.Tag}}' --filter 'dangling=false' | grep -v '<none>' | fzf --multi)}")
+        (( ${#selected[@]} > 0 )) || return 1
+        docker rmi "${selected[@]}"
       else
-        docker rmi ${@:2}
+        docker rmi "${args[@]}"
       fi
+      return 0
       ;;
 
     *)
-      docker $@
+      docker "$@"
       ;;
   esac
 }
 
 
 dcx() {
-  local name="$1"
-  local args="${@:2}"
-  [[ -z $args ]] && args="/bin/bash"
-  docker compose exec ${name} ${args}
+  local name="${1:-}"
+  local -a args=("${@:2}")
+
+  [[ -n "$name" ]] || {
+    echo 'dcx: missing compose service name' >&2
+    return 1
+  }
+  (( ${#args[@]} > 0 )) || args=(/bin/bash)
+  docker compose exec "$name" "${args[@]}"
 }
 
 
 dot() {
   if (( $# == 0 )); then
-    cd $HOME/dotfiles
+    cd -- "$HOME/dotfiles"
     return 0
   fi
 
@@ -306,37 +344,37 @@ dot() {
   case $1 in
     cc|commit)
       local message="${@:2}"
-      (builtin cd $HOME/dotfiles 2>/dev/null; git add . 1>/dev/null 2>&1; git commit -m "$message")
+      (builtin cd -- "$HOME/dotfiles" 2>/dev/null; git add . >/dev/null 2>&1; git commit -m "$message")
       return 0
       ;;
 
     k|keep)
-      (builtin cd $HOME/dotfiles 2>/dev/null; git add . 1>/dev/null 2>&1; git commit -m "keep: $(date)")
+      (builtin cd -- "$HOME/dotfiles" 2>/dev/null; git add . >/dev/null 2>&1; git commit -m "keep: $(date)")
       return 0
       ;;
 
     d|diff)
-      (builtin cd $HOME/dotfiles 2>/dev/null; git diff-index --quiet HEAD || git diff)
+      (builtin cd -- "$HOME/dotfiles" 2>/dev/null; git diff-index --quiet HEAD || git diff)
       return 0
       ;;
 
     lg|log)
-      (builtin cd $HOME/dotfiles 2>/dev/null; tig)
+      (builtin cd -- "$HOME/dotfiles" 2>/dev/null; tig)
       return 0
       ;;
 
     pl|pull)
-      (builtin cd $HOME/dotfiles 2>/dev/null; git pull)
+      (builtin cd -- "$HOME/dotfiles" 2>/dev/null; git pull)
       return 0
       ;;
 
     ps|push)
-      (builtin cd $HOME/dotfiles 2>/dev/null; git push)
+      (builtin cd -- "$HOME/dotfiles" 2>/dev/null; git push)
       return 0
       ;;
 
     s|sync)
-      (builtin cd $HOME/dotfiles 2>/dev/null; git pull && git push)
+      (builtin cd -- "$HOME/dotfiles" 2>/dev/null; git pull && git push)
       return 0
       ;;
 
@@ -399,25 +437,26 @@ addr() {
   local addrtxt="$HOME/io/addr/addr.txt"
   local keyword="$1"
 
-  if [[ ! -f ${addrtxt} ]]; then
+  if [[ ! -f "$addrtxt" ]]; then
     echo "missing: ${addrtxt}"
     return 1
   fi
 
-  pushd $(dirname ${addrtxt}) 1>/dev/null 2>&1
+  pushd "$(dirname "$addrtxt")" >/dev/null || return 1
   #git pull 2>/dev/null 1>&2
 
-  if [[ -z ${keyword} ]]; then
-    bat ${addrtxt}
-  elif [[ ${keyword} == "--edit" ]]; then
+  if [[ -z "$keyword" ]]; then
+    bat "$addrtxt"
+  elif [[ "$keyword" == "--edit" ]]; then
     git pull 2>/dev/null || true
-    vim ${addrtxt}
-    git add ${addrtxt} 2>/dev/null && git commit -m "keep: $(date)" 2>/dev/null && git push 2>/dev/null || true
+    vim "$addrtxt"
+    git add "$addrtxt" 2>/dev/null && git commit -m "keep: $(date)" 2>/dev/null && git push 2>/dev/null || true
   else
-    local data=$(cat ${addrtxt} | \grep -v '^#' | \grep -v '^$' | \grep -i "${keyword}")
-    if [[ -n ${data} ]]; then
+    local data
+    data="$(grep -vE '^(#|$)' "$addrtxt" | grep -i -- "$keyword" || true)"
+    if [[ -n "$data" ]]; then
       echo "IP address              Hostname                    Notes"
-      echo ${data}
+      printf '%s\n' "$data"
     else
       echo "nothing matched: ${keyword}"
     fi
@@ -448,9 +487,9 @@ addr() {
 what() {
   local filepath="$1"
 
-  case $(file -b $filepath) in
+  case "$(file -b -- "$filepath")" in
     'PEM certificate')
-      openssl x509 -in $filepath -noout -text
+      openssl x509 -in "$filepath" -noout -text
       ;;
   esac
 }
@@ -474,13 +513,13 @@ man() {
 
 
 tgz() {
-  env COPYFILE_DISABLE=1 tar zcvf $1 --exclude=".DS_Store" ${@:2}
+  env COPYFILE_DISABLE=1 tar zcvf "$1" --exclude=".DS_Store" "${@:2}"
 }
 
 
 ipapi() {
-  if [[ -n $1 ]]; then
-    curl -s http://ip-api.com/json/${1} | jq .
+  if [[ -n "${1:-}" ]]; then
+    curl -s "http://ip-api.com/json/${1}" | jq .
   else
     curl -s http://ip-api.com/json | jq .
   fi
@@ -492,30 +531,40 @@ ghc() {
   if (( $# == 2 )); then
     repo="${1}/${2}"
   fi
-  git clone --recursive git@github.com:${repo}
+  git clone --recursive "git@github.com:${repo}"
 }
 
 
 sshsocks() {
   local host="$1"
   local port="$2"
-  ssh -C -D ${port} -f -N ${host}
+  ssh -C -D "$port" -f -N "$host"
 }
 
 
 xx() {
-  case $1 in
-    *.tar.gz|*.tgz) tar xzvf $1;;
-    *.tar.xz) tar Jxvf $1;;
-    *.zip) unzip $1;;
-    *.lzh) lha e $1;;
-    *.tar.bz2|*.tbz) tar xjvf $1;;
-    *.tar.Z) tar zxvf $1;;
-    *.gz) gzip -d $1;;
-    *.bz2) bzip2 -dc $1;;
-    *.Z) uncompress $1;;
-    *.tar) tar xvf $1;;
-    *.arj) unarj $1;;
+  local archive="${1:-}"
+  [[ -n "$archive" ]] || {
+    echo 'xx: missing archive path' >&2
+    return 1
+  }
+
+  case "$archive" in
+    *.tar.gz|*.tgz) tar xzvf "$archive" ;;
+    *.tar.xz) tar Jxvf "$archive" ;;
+    *.zip) unzip "$archive" ;;
+    *.lzh) lha e "$archive" ;;
+    *.tar.bz2|*.tbz) tar xjvf "$archive" ;;
+    *.tar.Z) tar zxvf "$archive" ;;
+    *.gz) gzip -d "$archive" ;;
+    *.bz2) bzip2 -dc "$archive" ;;
+    *.Z) uncompress "$archive" ;;
+    *.tar) tar xvf "$archive" ;;
+    *.arj) unarj "$archive" ;;
+    *)
+      echo "xx: unsupported archive: $archive" >&2
+      return 1
+      ;;
   esac
 }
 
@@ -527,7 +576,16 @@ dotenv() {
     _path=".env"
   fi
 
-  export $(\grep -v '^#' "$_path" | xargs)
+  [[ -f "$_path" ]] || {
+    echo "dotenv: missing env file: $_path" >&2
+    return 1
+  }
+
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    export "$line"
+  done < "$_path"
 }
 
 
@@ -545,10 +603,10 @@ io() {
   local session="$1"
   if [[ -z ${session} ]]; then
     tmux
-  elif [[ -n $(tmux ls -F "#{session_name}" | \grep -x "${session}") ]]; then
+  elif tmux ls -F "#{session_name}" 2>/dev/null | grep -Fxq -- "$session"; then
     tmux attach -t "${session}"
   else
-    tmux $@
+    tmux "$@"
   fi
 }
 
@@ -556,10 +614,10 @@ io() {
 gk() {
   local target="$@"
   if [[ -z $target ]]; then
-    target=$(dirname `git rev-parse --git-dir`)
+    target="$(dirname "$(git rev-parse --git-dir)")"
   fi
 
-  git add ${target}
+  git add -- "${target}"
   git commit -m "keep: $(date)"
 
   if [[ -n $(git remote -v) ]]; then
@@ -580,68 +638,103 @@ gadd() {
 
 
 fe() {
-  local files
-  IFS=$'\n' files=($(fzf-tmux --query="$1" --multi --select-1 --exit-0))
-  [[ -n "$files" ]] && ${EDITOR:-vim} "${files[@]}"
+  local -a files
+  files=("${(@f)$(fzf-tmux --query="$1" --multi --select-1 --exit-0)}")
+  (( ${#files[@]} > 0 )) && "${EDITOR:-vim}" "${files[@]}"
 }
 
 
 fkill() {
-  local pid
-  pid=$(ps -ef | sed 1d | fzf -m | awk '{print $2}')
-  if [ "x$pid" != "x" ]; then
-    echo $pid | xargs kill -${1:-9}
-  fi
+  local signal="${1:-9}"
+  local -a pids
+
+  pids=("${(@f)$(ps -ef | sed 1d | fzf -m | awk '{print $2}')}")
+  (( ${#pids[@]} > 0 )) || return 0
+  kill "-${signal}" -- "${pids[@]}"
 }
 
 
 dor() {
-  docker run -it $@ `docker images --format "{{.Repository}}:{{.Tag}}" --filter "dangling=false" | fzf`
+  local image
+  image="$(docker images --format '{{.Repository}}:{{.Tag}}' --filter 'dangling=false' | fzf)" || return $?
+  [[ -n "$image" ]] || return 1
+  docker run -it "$@" "$image"
+}
+
+
+dox() {
+  local container
+  container="$(docker ps --format '{{.Names}}' | fzf)" || return $?
+  [[ -n "$container" ]] || return 1
+  docker exec -it "$container"
+}
+
+
+dorm() {
+  local -a containers
+  containers=("${(@f)$(docker ps -qa)}")
+  (( ${#containers[@]} > 0 )) || return 0
+  docker rm "${containers[@]}" 2>/dev/null
+}
+
+
+dormi() {
+  local -a images
+  images=("${(@f)$(docker images --filter 'dangling=true' -q)}")
+  (( ${#images[@]} > 0 )) || return 0
+  docker rmi "${images[@]}" 2>/dev/null
 }
 
 
 ffind() {
-  for key in ${@}; do
-    find . $opt -name "*${key}*" | \grep --color='auto' "${key}"
+  local key
+  for key in "$@"; do
+    find . -name "*${key}*" | grep --color='auto' -- "$key"
   done
 }
 
 
 tenki() {
-  curl http://wttr.in/$1
+  curl "http://wttr.in/${1:-}"
 }
 
 
 copy-aws-session() {
-  mkdir -p ~/.cache
-  cat - << EOS > $HOME/.cache/zsh__copy_aws_session.cache
+  local old_umask
+  old_umask="$(umask)"
+  mkdir -p "$HOME/.cache"
+  umask 077
+  cat <<EOS > "$HOME/.cache/zsh__copy_aws_session.cache"
  export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
  export AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION
  export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
  export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN
 EOS
+  umask "$old_umask"
   echo "AWS session copied."
 }
 
 
 paste-aws-session() {
   local cache="$HOME/.cache/zsh__copy_aws_session.cache"
-  local session="$(cat $cache 2>/dev/null)"
+  local session
 
-  if [[ ! -f $cache ]] || [[ -z $session ]]; then
+  session="$(<"$cache" 2>/dev/null)"
+
+  if [[ ! -f "$cache" ]] || [[ -z "$session" ]]; then
     echo "Missing cached session."
     return 1
   fi
 
   if [[ "$1" == "-e" ]]; then
-    echo -n $session | pbcopy 2>/dev/null
-    echo -n $session
+    printf '%s' "$session" | pbcopy 2>/dev/null
+    printf '%s' "$session"
   else
-    echo -n $session | sed -e 's/ export //g' -e 's/=/\t/'
+    printf '%s' "$session" | sed -e 's/ export //g' -e 's/=/\t/'
   fi
 
   echo
-  eval $session
+  eval "$session"
 }
 
 
@@ -829,7 +922,6 @@ alias dck='docker compose kill && docker compose rm -f'
 alias dcl='docker compose logs -f'
 alias dcp='docker compose ps -a'
 alias dow='cd $HOME/Downloads'
-alias dox='docker exec -it `docker ps --format "{{.Names}}" | fzf`'
 alias gaa='git add -A'
 alias gac='git add -A && git commit -s -m'
 alias gbm='git branch -M'
@@ -847,8 +939,6 @@ alias ssa='ssh-agent zsh'
 
 alias dcrm='docker compose rm -f'
 alias dcup='docker compose up -d && docker compose logs -f'
-alias dorm='docker rm `docker ps -qa` 2>/dev/null'
-alias dormi='docker rmi `docker images --filter "dangling=true" -q` 2>/dev/null'
 alias editssh='vim $HOME/.ssh/config'
 alias egrep='egrep -n --color=auto'
 alias fgrep='fgrep -n --color=auto'
