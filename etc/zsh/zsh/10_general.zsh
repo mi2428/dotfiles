@@ -52,7 +52,7 @@ export PAGER=less
 export LESS='-g -i -M -R -S -W -z-4 -x4'
 export EDITOR="vim"
 bindkey -e  # set explicitly, or zsh use vi-mode binding by default
-bindkey '^O' autosuggest-accept
+(( ${+widgets[autosuggest-accept]} )) && bindkey '^O' autosuggest-accept
 
 
 zstyle ':completion:*'                 completer _expand _expand_alias _complete _match _prefix _approximate _list _history
@@ -174,27 +174,31 @@ autoload -Uz colors && colors
 autoload -Uz compinit && compinit  # all completion settings must be done before
 
 # https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/#enable-shell-autocompletion
-source <(kubectl completion zsh)
+if (( ${+commands[kubectl]} )); then
+  source <(kubectl completion zsh)
+fi
 
 # https://raw.githubusercontent.com/tmuxinator/tmuxinator/master/completion/tmuxinator.zsh
-_tmuxinator() {
-  local commands projects
-  commands=(${(f)"$(tmuxinator commands zsh)"})
-  projects=(${(f)"$(tmuxinator completions start)"})
+if (( ${+commands[tmuxinator]} )); then
+  _tmuxinator() {
+    local commands projects
+    commands=(${(f)"$(tmuxinator commands zsh)"})
+    projects=(${(f)"$(tmuxinator completions start)"})
 
-  if (( CURRENT == 2 )); then
-    _alternative \
-      'commands:: _describe -t commands "tmuxinator subcommands" commands' \
-      'projects:: _describe -t projects "tmuxinator projects" projects'
-  elif (( CURRENT == 3)); then
-    case $words[2] in
-      copy|cp|c|debug|delete|rm|open|o|start|s|edit|e)
-        _arguments '*:projects:($projects)'
-      ;;
-    esac
-  fi
+    if (( CURRENT == 2 )); then
+      _alternative \
+        'commands:: _describe -t commands "tmuxinator subcommands" commands' \
+        'projects:: _describe -t projects "tmuxinator projects" projects'
+    elif (( CURRENT == 3)); then
+      case $words[2] in
+        copy|cp|c|debug|delete|rm|open|o|start|s|edit|e)
+          _arguments '*:projects:($projects)'
+        ;;
+      esac
+    fi
 
-  return
-}
+    return
+  }
 
-compdef _tmuxinator tmuxinator
+  compdef _tmuxinator tmuxinator
+fi

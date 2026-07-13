@@ -94,8 +94,6 @@
 	insteadOf = ssh://git@github.com/
 [url "git@github.com:"]
 	insteadOf = https://github.com/
-[http "https://rudolfs.hubble.soracom.io/api/soracom/hubble2"]
-	extraheader = X-Api-Key: 8BIva9xoc3GihUN70l2BMbbCfwdUm4I4JUe5z78lBxZOBVML
 [filter "lfs"]
 	clean = git-lfs clean -- %f
 	smudge = git-lfs smudge -- %f

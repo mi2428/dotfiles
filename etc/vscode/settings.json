@@ -18,8 +18,8 @@
     "editor.fontSize": 14,
     "editor.glyphMargin": false,
     "editor.inlayHints.enabled": "offUnlessPressed",
-    "editor.semanticHighlighting.enabled": false, // stabilize syntax highlighting
-    "editor.experimental.asyncTokenization": false, // stabilize syntax highlighting
+    "editor.semanticHighlighting.enabled": false,
+    "editor.experimental.asyncTokenization": false,
     "editor.minimap.enabled": false,
     "editor.parameterHints.cycle": false,
     "editor.renderLineHighlight": "all",
@@ -75,8 +75,11 @@
     "terminal.integrated.fontSize": 14,
     "terminal.integrated.profiles.osx": {
         "fish": {
-            "args": ["-l"],
-            "path": "/usr/local/bin/fish"
+            "args": [
+                "-lc",
+                "if command -v fish >/dev/null 2>&1; then exec fish -l; else exec /bin/zsh -l; fi"
+            ],
+            "path": "/bin/zsh"
         }
     },
     "vim.statusBarColorControl": false,
@@ -147,5 +150,5 @@
     "gitlens.ai.model": "vscode",
     "gitlens.ai.vscode.model": "copilot:gpt-4.1",
     "zig.zls.enabled": "on",
-    "accessibility.signalOptions.volume": 0,
+    "accessibility.signalOptions.volume": 0
 }

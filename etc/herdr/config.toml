@@ -1,6 +1,7 @@
 onboarding = false
 [terminal]
-default_shell = "/usr/local/bin/fish"
+# Honor the user's configured shell instead of hardcoding a Homebrew path.
+default_shell = ""
 shell_mode = "login"
 
 [keys]
@@ -23,7 +24,7 @@ key = "prefix+g"
 type = "pane"
 # Launch through fish so lazygit always inherits the Catppuccin merge config,
 # even when the herdr server was started from a stale outer environment.
-command = "/usr/local/bin/fish -lc 'exec lazygit'"
+command = "if command -v fish >/dev/null 2>&1; then exec fish -lc 'exec lazygit'; else exec lazygit; fi"
 description = "run lazygit"
 
 [theme]
