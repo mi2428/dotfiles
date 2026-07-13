@@ -3,25 +3,16 @@ let
   relativeFiles = [
     "scripts/battery-icon.sh"
     "scripts/battery.sh"
-    "scripts/cpu.sh"
-    "scripts/mem.sh"
     "scripts/storage.sh"
     "scripts/window-label.sh"
     "statusbar-catppuccin.conf"
-    "statusbar.conf"
   ];
-  pickSource = import ../../lib/pick-legacy-source.nix { inherit hostName; } {
-    baseRoot = ../../../home/files/tmux/tmux;
-    overlays = {
-      macos = ../../../home/files/hosts/macos/tmux/tmux;
-      "linux-server" = ../../../home/files/hosts/linux-server/tmux/tmux;
-      "docker-dev" = ../../../home/files/hosts/docker-dev/tmux/tmux;
-    };
-  };
+  sourceFor = relativePath:
+    ../../../home/files/tmux/tmux/${relativePath};
   tmuxFiles = lib.listToAttrs (map
     (relativePath:
       lib.nameValuePair ".tmux/${relativePath}" {
-        source = pickSource relativePath;
+        source = sourceFor relativePath;
       })
     relativeFiles);
 in {
@@ -29,5 +20,16 @@ in {
 
   home.file = tmuxFiles // {
     ".tmux.conf".source = ../../../home/files/tmux/tmux.conf;
+    ".tmux/scripts/cpu.sh".source =
+      if hostName == "macos" then
+        ../../../home/files/tmux/tmux/scripts/cpu.macos.sh
+      else
+        ../../../home/files/tmux/tmux/scripts/cpu.sh;
+    ".tmux/scripts/mem.sh".source =
+      if hostName == "macos" then
+        ../../../home/files/tmux/tmux/scripts/mem.macos.sh
+      else
+        ../../../home/files/tmux/tmux/scripts/mem.sh;
+    ".tmux/statusbar.conf".source = ../../../home/files/tmux/tmux/statusbar.conf;
   };
 }
