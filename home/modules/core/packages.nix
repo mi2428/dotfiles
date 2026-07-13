@@ -1,4 +1,4 @@
-{ hostName, lib, pkgs, ... }:
+{ lib, pkgs, platformName, ... }:
 let
   shellPackages = with pkgs; [
     bash
@@ -48,7 +48,6 @@ let
     pyright
     python313Packages.python-lsp-server
     ruff
-    rust-analyzer
     shfmt
     stylua
     taplo
@@ -64,7 +63,6 @@ let
     aws-sam-cli
     awscli2
     black
-    cargo
     cargo-dist
     cmake
     colordiff
@@ -118,7 +116,6 @@ let
     pv
     rbenv
     rich-cli
-    rustc
     rustup
     silver-searcher-ng
     sops
@@ -134,7 +131,7 @@ let
   ];
   commonPackages = shellPackages
     ++ containerDevPackages
-    ++ lib.optionals (hostName != "docker-dev") nonContainerPackages;
+    ++ lib.optionals (platformName != "docker") nonContainerPackages;
   linuxPackages = with pkgs; [
     rsyslog
   ];
