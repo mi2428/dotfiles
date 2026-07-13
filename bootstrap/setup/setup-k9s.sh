@@ -3,9 +3,9 @@ set -e
 set -o pipefail
 
 CURDIR=$(cd "$(dirname "$0")" && pwd)
-DOTFILES=$(cd "$CURDIR/.." && pwd)
+DOTFILES=$(cd "$CURDIR/../.." && pwd)
 
-srcdir="$DOTFILES/etc/k9s"
+srcdir="$DOTFILES/home/files/config/k9s"
 xdgdir="${XDG_CONFIG_HOME:-$HOME/.config}/k9s"
 
 if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then

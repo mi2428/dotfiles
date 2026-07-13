@@ -3,12 +3,12 @@ set -e
 set -o pipefail
 
 CURDIR=$(cd "$(dirname "$0")" && pwd)
-DOTFILES=$(cd "$CURDIR/.." && pwd)
+DOTFILES=$(cd "$CURDIR/../.." && pwd)
 
-src="$DOTFILES/etc/ghostty/config.ghostty"
+src="$DOTFILES/home/files/config/ghostty/config.ghostty"
 dstdir="$HOME/Library/Application Support/com.mitchellh.ghostty"
 dst="$dstdir/config.ghostty"
-themes_src="$DOTFILES/etc/ghostty/themes"
+themes_src="$DOTFILES/home/files/config/ghostty/themes"
 themes_dst="$dstdir/themes"
 xdg_dir="$HOME/.config/ghostty"
 xdg_config="$xdg_dir/config"

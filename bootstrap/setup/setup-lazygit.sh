@@ -3,9 +3,9 @@ set -e
 set -o pipefail
 
 CURDIR=$(cd "$(dirname "$0")" && pwd)
-DOTFILES=$(cd "$CURDIR/.." && pwd)
+DOTFILES=$(cd "$CURDIR/../.." && pwd)
 
-srcdir="$DOTFILES/etc/lazygit"
+srcdir="$DOTFILES/home/files/config/lazygit"
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
   dstdir="$HOME/Library/Application Support/lazygit"

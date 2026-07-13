@@ -3,9 +3,9 @@ set -e
 set -o pipefail
 
 CURDIR=$(cd "$(dirname "$0")" && pwd)
-DOTFILES=$(cd "$CURDIR/.." && pwd)
+DOTFILES=$(cd "$CURDIR/../.." && pwd)
 
-srcdir="$DOTFILES/etc/vscode"
+srcdir="$DOTFILES/home/files/config/vscode"
 src="$srcdir/settings.json"
 extensions="$srcdir/extensions.txt"
 
