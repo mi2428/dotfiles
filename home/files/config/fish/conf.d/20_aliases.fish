@@ -80,6 +80,14 @@ function gd
     return $pipestatus[1]
 end
 
+function __dotfiles_command_words --argument-names command_text fallback
+    if test -n "$command_text"
+        string split ' ' -- "$command_text"
+    else
+        printf '%s\n' "$fallback"
+    end
+end
+
 function Ia
     awk $argv
 end
@@ -117,9 +125,8 @@ function Im
 end
 
 function Ip
-    set -l pager $PAGER
-    test -n "$pager"; or set pager less
-    command $pager $argv
+    set -l pager_cmd (__dotfiles_command_words "$PAGER" less)
+    command $pager_cmd $argv
 end
 
 function Is
@@ -131,9 +138,8 @@ function It
 end
 
 function Iv
-    set -l editor $EDITOR
-    test -n "$editor"; or set editor vi
-    command $editor $argv
+    set -l editor_cmd (__dotfiles_command_words "$EDITOR" vi)
+    command $editor_cmd $argv
 end
 
 function Iw
@@ -254,12 +260,12 @@ function gcb
         set -l local_branch (string replace -r '^[^/]+/' '' -- $branch)
 
         if command git show-ref --verify --quiet "refs/heads/$local_branch"
-            command git switch $local_branch
+            command git switch -- "$local_branch"
         else
-            command git switch --track -c $local_branch $branch
+            command git switch --track -c "$local_branch" "$branch"
         end
     else
-        command git switch $branch
+        command git switch -- "$branch"
     end
 end
 
@@ -296,7 +302,7 @@ function tig
 end
 
 function zl
-    exec env PROMPT_SEVERITY=$PROMPT_SEVERITY OUTSIDE_HOSTNAME=$OUTSIDE_HOSTNAME fish --login
+    exec env PROMPT_SEVERITY="$PROMPT_SEVERITY" OUTSIDE_HOSTNAME="$OUTSIDE_HOSTNAME" fish --login
 end
 
 function dck
@@ -312,12 +318,12 @@ function dcp
 end
 
 function dow
-    cd $HOME/Downloads
+    cd "$HOME/Downloads"
 end
 
 function dox
     set -l name (docker ps --format '{{.Names}}' | fzf)
-    test -n "$name"; and docker exec -it $name $argv
+    test -n "$name"; and docker exec -it "$name" $argv
 end
 
 function gaa
@@ -351,7 +357,8 @@ function dormi
 end
 
 function editssh
-    $EDITOR $HOME/.ssh/config
+    set -l editor_cmd (__dotfiles_command_words "$EDITOR" vi)
+    $editor_cmd "$HOME/.ssh/config"
 end
 
 function myip
