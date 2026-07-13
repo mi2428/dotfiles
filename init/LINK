@@ -22,7 +22,7 @@ HOME_DIR = Path.home()
 CURRENT_DIR = Path(__file__).resolve().parent
 DOTFILES_ROOT = CURRENT_DIR.parent
 ETC_DIR = DOTFILES_ROOT / "etc"
-HOSTS_DIR = ETC_DIR / "hosts"
+HOSTS_DIR = DOTFILES_ROOT / "home" / "files" / "hosts"
 
 XDG_SUPPORTED_PACKAGES = {
     "bat",
@@ -60,6 +60,9 @@ class LinkSpec:
 def get_available_patches() -> list[str]:
     """Return supported host patch names in deterministic order."""
 
+    if not HOSTS_DIR.exists():
+        return []
+
     return sorted(path.name for path in HOSTS_DIR.iterdir() if path.is_dir())
 
 
@@ -96,7 +99,7 @@ def resolve_link_specs(base_dir: Path, excludes: Iterable[str] | None = None) ->
     Parameters
     ----------
     base_dir:
-        Package root to scan, such as ``etc`` or ``etc/hosts/macos``.
+        Package root to scan, such as ``etc`` or ``home/files/hosts/macos``.
     excludes:
         Package directory names to skip entirely.
     """
