@@ -1,210 +1,143 @@
 # dotfiles
-[![GitHub last commit](https://img.shields.io/github/last-commit/mi2428/dotfiles)](https://github.com/mi2428/dotfiles/commit/HEAD) [![GitHub commit activity](https://img.shields.io/github/commit-activity/y/mi2428/dotfiles)](https://github.com/mi2428/dotfiles/commits/master) [![GitHub CI/CD](https://github.com/mi2428/dotfiles/actions/workflows/build.yml/badge.svg)](https://github.com/mi2428/dotfiles/actions/workflows/build.yml)
 
-dotfiles since 2016
+Since 2016.
 
-* zsh
-* neovim
-* tmux with tmuxinator
+Current base stack:
 
-### Terminal color scheme
+- Ghostty + herdr
+- tmux + Neovim
+- zsh
 
-Based on [Google's Material Design Color Palette](https://material.io/design/style/color.html)
+Font policy:
 
-* https://www.martinseeler.com/iterm2-material-design
+- regular text: `Ubuntu Mono`
+- Nerd Font glyphs: rely on Ghostty built-ins
+- not using `Hack Nerd Font`
+- not using `Source Code Pro`
 
-### Terminal fonts
+Layout:
 
-Use the nerd font for non-ascii characters -- you can check icons from the [Cheat Sheet](https://www.nerdfonts.com/cheat-sheet).
+- Nix is the base layer
+- `home/` and `flake.nix` define the steady state
+- `chezmoi/` handles bootstrap and secrets
+- in short: Nix-based, bootstrap with chezmoi
 
-* **Ubuntu:** https://fonts.google.com/specimen/Ubuntu
-* **Ubuntu Mono:** https://fonts.google.com/specimen/Ubuntu+Mono
-* **Source Code Pro:** https://fonts.google.com/specimen/Source+Code+Pro
-* **Hack Nerd Fonts:** https://github.com/ryanoasis/nerd-fonts/blob/master/patched-fonts/Hack/Regular/HackNerdFont-Regular.ttf
+## Bootstrap
 
-## Use with docker
+For a fresh machine:
 
-Type the following to open current directory with [mi2428/dotfiles](https://github.com/mi2428/dotfiles/pkgs/container/dotfiles):
-
-```
-% docker run -it --rm \
-    -w /work \
-    -v $PWD:/work \
-    -e HOST_UID=$(id -u $USER) \
-    -e HOST_GID=$(id -g $USER) \
-    ghcr.io/mi2428/dotfiles:latest
+```console
+bash -c "$(curl -fsLS https://raw.githubusercontent.com/mi2428/dotfiles/refs/heads/master/scripts/setup.sh)"
 ```
 
-To shorten the above docker command, you can copy [bin/inside](https://github.com/mi2428/dotfiles/blob/master/bin/inside) and put it to your `$PATH`.
+[`scripts/setup.sh`](/Users/teo/dotfiles/scripts/setup.sh) clones this repo into `~/dotfiles` and then runs [`bootstrap/bootstrap.sh`](/Users/teo/dotfiles/bootstrap/bootstrap.sh).
 
-```
-% inside .
-```
+`bootstrap/bootstrap.sh` does three things:
 
-## Installation
+- applies `chezmoi/`
+- installs Nix if needed
+- activates the host configuration
 
-Clone this repository just under your `$HOME`.
+If the repo is already present:
 
-```
-% git clone --depth 1 https://github.com/mi2428/dotfiles
-```
-
-The repository uses a `chezmoi` + `Nix` layout:
-
-* `home/` is the source tree for Home Manager-managed files and adjacent static
-  dotfile sources
-* `bootstrap/` contains the scripts that install and apply the declarative setup
-* `chezmoi/` contains secrets and the minimal pre-Nix bootstrap state
-
-XDG config sources are under `home/files/config/`, non-XDG dotfiles are under
-their corresponding `home/files/` directory. Internal platform modules are
-named `macos`, `linux`, and `docker`. Flake configuration names are the target
-machine names, currently `MBP-M4Pro48G-C3VH95F6P6`, `linux-server`, and
-`docker-dev`.
-The old `linux-desktop` and `checkpoint` host trees were intentionally retired
-in this overhaul and are not migrated into the current flake.
-
-### Bootstrap
-
-```
-% ./bootstrap/bootstrap.sh
+```console
+cd ~/dotfiles
+./bootstrap/bootstrap.sh --host MBP-M4Pro48G-C3VH95F6P6
 ```
 
-This is the standard path for installing and applying chezmoi and Nix.
 
-It now does the following:
+> [!NOTE]
+> **Color Note:** With Catppuccin, CLI colors can drift away from the socially expected color name.
+> The reason is the difference between ANSI color slots and truecolor.
+> ANSI uses palette slots like `31` or `36`, so the terminal theme decides the final rendered color.
+> Truecolor uses explicit RGB values like `#89dceb`, so the app can request the intended color directly.
+> In practice, an ANSI-based app may render something that feels closer to green even when the intent was "cyan" or "light blue."
 
-* applies the `chezmoi/` source state for secrets and bootstrap-managed files
-* installs `nix` if needed
-* builds and activates the selected flake host configuration
+## Hints
 
-`bootstrap/bootstrap.sh` auto-detects the current machine name from
-`scutil --get ComputerName` on macOS and `hostname -s` on Linux.
-On macOS, automatic Nix installation is gated behind
-`DOTFILES_BOOTSTRAP_DARWIN_DAEMON_INSTALL=1` because the daemon installer makes
-system-wide changes.
+### Task
 
-### Current status
-
-* Managed config and adjacent static sources live under `home/files/` and
-  `home/`
-* XDG configuration trees live under `home/files/config/`
-* `chezmoi/` owns secrets and minimal pre-Nix bootstrapping
-
-## Deploy hints
-
-### Fix right prompt alignment
-
-Remember to setup locale on your host - both `en_US` and `ja_JP` are requried
-
-```
-% sudo locale-gen en_US.UTF-8 ja_JP.UTF-8
+```console
+task
 ```
 
-### Import GPG key pair to create signed commit
+Common commands:
 
-**NOTE:** The simplest way is to copy-and-paste `.gnupg` directory from one to another -- no need type the followings.
+- `task age.init`
+- `task age.unlock`
+- `task secrets.backup`
+- `task docker.build TAG=latest`
+- `task docker.push TAG=latest`
 
-```
-% gpg --export --armor --output mi2428.public.key
-% gpg --export-secret-keys --armor --output mi2428.secret.key
-% shred --remove mi2428.secret.key
-```
+### Secrets
 
-```
-% chmod 700 ~/.gnupg
-% echo "test" | gpg --clearsign 
-```
+Managed with `chezmoi/` + `age`:
 
-Check `~/.gnupg/gpg-agent.conf` if you encountered "No pinentry" error.
+- `~/.ssh`
+- `~/.gnupg`
 
-```
-% gpg --import mi2428.public.key
-% gpg --import mi2428.secret.key
-% gpg --pinentry-mode loopback --import mi2428.secret.key  # If "No pinentry" error occurred
-% gpg --edit-key E8D3009C6341BDEAF038009685AB6867E2147DDA trust quit
-% gpg --list-keys
-% gpg --list-secret-keys
-% gpgconf --kill gpg-agent
+Normal backup flow:
+
+```console
+task secrets.backup
 ```
 
-To skip password dialogue:
+Decrypt into cache:
 
-```
-% echo "pinentry-program $(which pinentry-mac)" >> ~/.gnupg/gpg-agent.conf
-% gpgconf --kill gpg-agent
-```
-
-### sudo authentication
-Touch ID / Apple Watch sudo is managed by nix-darwin via
-`security.pam.services.sudo_local`. Keep local PAM tweaks out of `/etc/pam.d`
-unless they are intentionally outside the flake.
-### visudo
-
-```
-# root and users in group wheel can run anything on any machine as any user
-root    ALL = (ALL) ALL
-%admin  ALL = (ALL) ALL
-mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/ping6,/usr/sbin/tcpdump,/usr/sbin/purge
+```console
+task secrets.decrypt
 ```
 
-### pam-watchid
-Run sudo with your Apple Watch. See [mostpinkest/pam-watchid](https://github.com/mostpinkest/pam-watchid) to install PAM module.
+Decrypt into the real home only when needed:
 
-```
-% /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/mostpinkest/pam-watchid/HEAD/install.sh)" -- enable
- ```
-
-Add the following line to the top of `/etc/pam.d/sudo`.
-
-```
-auth       sufficient     pam_watchid.so "reason=execute a command as root"
-auth       sufficient     pam_tid.so
+```console
+task secrets.decrypt IMPORT_GPG=1 DECRYPT_HOME=$HOME
 ```
 
-### 1Password
-Remember to activate the integration as below, or you will ask your vault password every time.
-Also you need to install `op` command beforehand.
+### Ghostty
 
-- Settings > Developer > Command-Line Interface (CLI) > Integrate with 1Password CLI
+Ghostty is the outer terminal. Config lives in [`home/files/config/ghostty/config.ghostty`](/Users/teo/dotfiles/home/files/config/ghostty/config.ghostty).
 
-### AWS
+Assumptions:
 
-#### Session Manager
+- `Ubuntu Mono`
+- Catppuccin theme
+- quick terminal enabled
+- Ghostty covers Nerd Font glyphs
 
-Install the Session Manager plugin to use `aws ssm` command.
+### herdr
 
-```
-$ curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/mac_arm64/session-manager-plugin.pkg" -o "session-manager-plugin.pkg"
-$ sudo installer -pkg session-manager-plugin.pkg -target /
-$ sudo ln -s /usr/local/sessionmanagerplugin/bin/session-manager-plugin /usr/local/bin/session-manager-plugin
-```
+The terminal multiplexer I want to use first. Config: [`home/files/config/herdr/config.toml`](/Users/teo/dotfiles/home/files/config/herdr/config.toml).
 
-### NeoVim
+### tmux
 
-```
-:PlugInstall
-:UpdateRemotePlugins
-```
+Still part of the base workflow. Muscle memory remains. Config:
 
-### iTerm2 preferences
+- [`home/modules/programs/tmux.nix`](/Users/teo/dotfiles/home/modules/programs/tmux.nix)
+- [`home/files/tmux/tmux.conf`](/Users/teo/dotfiles/home/files/tmux/tmux.conf)
 
-#### `General` / `Selection`
-- Applications in terminal may access clipboard
+### Neovim
 
-#### `Appearance` / `General`
-- Theme: **Minimal**
-- Tab bar location: **Top**
-- Status bar location: **Bottom**
+Neovim is managed through Home Manager. Config:
 
-#### `Appearance` / `Tabs`
-- Show tab bar even when there is only one tab
+- [`home/modules/programs/nvim.nix`](/Users/teo/dotfiles/home/modules/programs/nvim.nix)
+- [`home/files/config/nvim/init.lua`](/Users/teo/dotfiles/home/files/config/nvim/init.lua)
 
-#### `Appearance` / `Dimming`
-- Uncheck: Dim inactive split panes
+### Packages
 
-#### `Advanced` / `Hotkey`
-- Duration in seconds of the hotkey window animation.: **0**
+CLI packages mainly live in [`home/modules/core/packages.nix`](/Users/teo/dotfiles/home/modules/core/packages.nix).
 
-#### `Advanced` / `Session`
-- Allow sessions to survice logging out and back in: **No**
+Things I care about here:
+
+- `gh`
+- `go-task`
+- `herdr`
+- `tmux`
+- `neovim`
+- `ghostty` is installed outside this repo
+
+### Host Memo
+
+- current macOS bootstrap host name: `MBP-M4Pro48G-C3VH95F6P6`
+- secret template data lives in `chezmoi/.chezmoidata/`
+- if colors look wrong, first check whether the app is using ANSI or truecolor
