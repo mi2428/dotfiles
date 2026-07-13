@@ -9,7 +9,7 @@ end
 
 switch $DOTFILES_CATPPUCCIN_FLAVOUR
     case latte
-        set -gx DOTFILES_CATPPUCCIN_FISH_THEME catppuccin-mocha
+        set -gx DOTFILES_CATPPUCCIN_FISH_THEME catppuccin-latte
         set -gx DOTFILES_CATPPUCCIN_FISH_COLOR_THEME light
         set -gx BAT_THEME "Catppuccin Latte"
         set -gx LSCOLORS "exfxcxdxbxegedabagacad"
