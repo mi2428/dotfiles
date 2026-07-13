@@ -1,13 +1,13 @@
-if whence -p fzf 1> /dev/null && fzf --zsh >/dev/null 2>&1; then
+if whence -p fzf >/dev/null && fzf --zsh >/dev/null 2>&1; then
   source <(fzf --zsh) 2>/dev/null
 fi
 export FZF_COMPLETION_TRIGGER='**'
 if whence -p fd 1> /dev/null; then
   export FZF_FD_BIN='fd'
-  export FZF_DEFAULT_COMMAND='fd'
+  export FZF_DEFAULT_COMMAND='fd --hidden --follow --exclude .git'
 elif whence -p fdfind 1> /dev/null; then
   export FZF_FD_BIN='fdfind'
-  export FZF_DEFAULT_COMMAND='fdfind'
+  export FZF_DEFAULT_COMMAND='fdfind --hidden --follow --exclude .git'
 else
   export FZF_FD_BIN=''
   export FZF_DEFAULT_COMMAND='find . -mindepth 1'
@@ -23,7 +23,7 @@ export FZF_TMUX_HEIGHT=20
 # - See the source code (completion.{bash,zsh}) for the details.
 _fzf_compgen_path() {
   if [[ -n $FZF_FD_BIN ]]; then
-    $FZF_FD_BIN --hidden --follow --exclude ".git" . "$1"
+    $FZF_FD_BIN --hidden --follow --exclude .git . "$1"
   else
     command find "$1" -mindepth 1 \
       \( -path '*/.git' -o -path '*/.git/*' \) -prune -o -print
@@ -33,7 +33,7 @@ _fzf_compgen_path() {
 # Use fd to generate the list for directory completion
 _fzf_compgen_dir() {
   if [[ -n $FZF_FD_BIN ]]; then
-    $FZF_FD_BIN --type d --hidden --follow --exclude ".git" . "$1"
+    $FZF_FD_BIN --type d --hidden --follow --exclude .git . "$1"
   else
     command find "$1" -type d \
       \( -path '*/.git' -o -path '*/.git/*' \) -prune -o -print
