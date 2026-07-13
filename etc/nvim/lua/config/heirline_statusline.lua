@@ -3,6 +3,8 @@ local M = {}
 local conditions = require("heirline.conditions")
 local uv = vim.uv or vim.loop
 
+-- Repo-wide diff stats are too expensive to recompute on every statusline
+-- redraw, so keep a short-lived cache and refresh it asynchronously.
 local git_status_cache = {}
 local git_status_ttl_ms = 1500
 
@@ -135,7 +137,8 @@ local function refresh_git_repo_status(root, sync)
 	}
 
 	vim.system(cmd, { cwd = root, text = true }, function(result)
-		local status = result.code == 0 and parse_git_numstat(result.stdout or "") or { changed = 0, added = 0, removed = 0 }
+		local status = result.code == 0 and parse_git_numstat(result.stdout or "")
+			or { changed = 0, added = 0, removed = 0 }
 		git_status_cache[root] = {
 			status = status,
 			at = uv.now(),

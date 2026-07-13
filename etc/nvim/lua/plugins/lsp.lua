@@ -39,7 +39,10 @@ local function install_lsp_watch_registration_filter()
 				if registration.method ~= "workspace/didChangeWatchedFiles" then
 					registrations[#registrations + 1] = registration
 				else
-					local watchers = (((registration or {}).registerOptions or {}).watchers) or {}
+					-- Some servers register watchers rooted at paths that do not
+					-- exist on this machine. Drop only those entries and keep the
+					-- rest of the capability registration intact.
+					local watchers = ((registration or {}).registerOptions or {}).watchers or {}
 					local kept_watchers = {}
 
 					for _, watcher in ipairs(watchers) do

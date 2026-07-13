@@ -124,8 +124,18 @@ return {
 					augend.date.alias["%H:%M"],
 					augend.constant.alias.bool,
 					augend.constant.alias.Bool,
-					augend.constant.new({ elements = { "yes", "no" }, word = true, cyclic = true, preserve_case = true }),
-					augend.constant.new({ elements = { "on", "off" }, word = true, cyclic = true, preserve_case = true }),
+					augend.constant.new({
+						elements = { "yes", "no" },
+						word = true,
+						cyclic = true,
+						preserve_case = true,
+					}),
+					augend.constant.new({
+						elements = { "on", "off" },
+						word = true,
+						cyclic = true,
+						preserve_case = true,
+					}),
 					augend.constant.new({
 						elements = { "enable", "disable" },
 						word = true,

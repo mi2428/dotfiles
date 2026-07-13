@@ -278,6 +278,9 @@ local function setup_bufferline_pill_renderer()
 			local comp = orig_component(next_item)
 			local filtered = {}
 
+			-- Bufferline still emits indicator segments even after switching to a
+			-- custom pill separator style, so rewrite the generated segment list
+			-- instead of copying the upstream renderer wholesale.
 			for _, segment in ipairs(comp) do
 				if not (segment.highlight and segment.highlight:match("^BufferLineIndicator")) then
 					filtered[#filtered + 1] = segment
@@ -510,7 +513,7 @@ return {
 						padding = { 1, 1 },
 						limit = 5,
 					},
-						dashboard_spacers(4),
+					dashboard_spacers(4),
 					{ section = "startup" },
 				},
 			},

@@ -76,9 +76,10 @@ local function apply_window_matches(winid)
 
 	local matches = {}
 	for index, entry in ipairs(state.patterns) do
-		local ok, match_id = pcall(vim.fn.matchadd, group_names[((index - 1) % #group_names) + 1], entry.pattern, 10, -1, {
-			window = winid,
-		})
+		local ok, match_id =
+			pcall(vim.fn.matchadd, group_names[((index - 1) % #group_names) + 1], entry.pattern, 10, -1, {
+				window = winid,
+			})
 		if ok and match_id then
 			matches[#matches + 1] = match_id
 		end
@@ -159,6 +160,8 @@ end
 local function best_candidate(backward)
 	local best = nil
 
+	-- Prefer the nearest non-wrapped match across all active patterns so `n`
+	-- and `N` still behave like native search, just over a larger match set.
 	for _, entry in ipairs(state.patterns) do
 		local candidate = search_candidate(entry.pattern, backward)
 		if candidate then

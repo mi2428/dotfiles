@@ -57,6 +57,8 @@ local function git(args, cwd)
 end
 
 local function resolve_state()
+	-- Review sessions are driven by environment variables so external tools can
+	-- open Neovim directly inside a PR/worktree context without extra prompts.
 	local env = vim.env
 	if not env.NVIM_REVIEW_MODE or env.NVIM_REVIEW_MODE == "" or env.NVIM_REVIEW_MODE == "0" then
 		return nil
