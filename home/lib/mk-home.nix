@@ -1,5 +1,11 @@
 { inputs }:
-{ system, hostModule, hostName }:
+{
+  system,
+  hostModule,
+  hostName,
+  userName,
+  homeDirectory,
+}:
 let
   pkgs = import inputs.nixpkgs {
     inherit system;
@@ -11,6 +17,6 @@ inputs.home-manager.lib.homeManagerConfiguration {
   modules = [ hostModule ];
   extraSpecialArgs = {
     inherit inputs;
-    inherit hostName;
+    inherit hostName userName homeDirectory;
   };
 }

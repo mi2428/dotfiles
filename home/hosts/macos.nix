@@ -1,16 +1,4 @@
-{ ... }:
-let
-  userName =
-    let
-      value = builtins.getEnv "DOTFILES_USER";
-    in
-    if value != "" then value else "teo";
-  homeDirectory =
-    let
-      value = builtins.getEnv "DOTFILES_HOME";
-    in
-    if value != "" then value else "/Users/teo";
-in {
+{ homeDirectory, userName, ... }: {
   imports = [
     ../profiles/base.nix
     ../profiles/os/macos.nix
