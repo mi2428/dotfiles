@@ -1,12 +1,17 @@
-{ pkgs, ... }: {
+{ lib, pkgs, ... }:
+let
+  shellPackages = lib.optionals pkgs.stdenv.isLinux (with pkgs; [
+    fish
+    zsh
+  ]);
+in {
   # Keep shared command-line tools owned by Home Manager rather than language
   # package manifests that require an imperative update step.
-  home.packages = with pkgs; [
+  home.packages = (with pkgs; [
     bat
     delta
     eza
     fd
-    fish
     fzf
     git
     glow
@@ -30,6 +35,5 @@
     tmux
     tree
     zoxide
-    zsh
-  ];
+  ]) ++ shellPackages;
 }

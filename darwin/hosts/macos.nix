@@ -1,6 +1,5 @@
 { pkgs, self, userName, ... }: {
   nixpkgs.config.allowUnfree = true;
-  nixpkgs.hostPlatform = "aarch64-darwin";
 
   ids.gids.nixbld = 350;
 
