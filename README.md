@@ -60,8 +60,9 @@ The repository uses a `Home Manager` + `chezmoi` layout:
 
 The former top-level `etc/` and `init/` trees have been retired. XDG config
 sources are under `home/files/config/`, non-XDG dotfiles are under their
-corresponding `home/files/` directory, and host-specific overlays remain under
-`home/files/hosts/`.
+corresponding `home/files/` directory, and remaining static host assets are
+under `home/files/hosts/`. Linux hosts share `home/hosts/linux.nix`; the
+`linux-server` and `docker-dev` configuration names remain available.
 
 The old `make install.*` / `make link.*` flows are no longer maintained.
 
@@ -123,7 +124,7 @@ run the full bootstrap comparison against the archived legacy baseline:
 * Managed config and adjacent static sources live under `home/files/` and
   `home/`
 * XDG configuration trees live under `home/files/config/`
-* Host-specific overlays live under `home/files/hosts/`
+* Remaining static host assets live under `home/files/hosts/`
 * Setup helpers live under `bootstrap/setup/`; the former top-level `init/`
   tree and `init/LINK` flow have been retired
 * `chezmoi/` owns the remaining static links
