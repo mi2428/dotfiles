@@ -1,51 +1,119 @@
 #!/usr/bin/env python3
-from argparse import ArgumentParser
-from datetime import datetime as dt
+"""Continuous colored ICMP probe output."""
+
+from __future__ import annotations
+
+from argparse import ArgumentParser, Namespace
+from dataclasses import dataclass
+from datetime import datetime
+import sys
 from time import sleep
-from ping3 import ping
-import asyncio
+from typing import Any, Callable, Sequence
 
 
-COLOR_RESET  = "\033[0m"
-COLOR_WHITE1 = "\033[38;5;255m"
-COLOR_WHITE2 = "\033[38;5;251m"
-COLOR_RED    = "\033[38;5;009m"
-COLOR_GREEN  = "\033[38;5;002m"
+COLOR_RESET = "\033[0m"
+COLOR_WHITE_PRIMARY = "\033[38;5;255m"
+COLOR_WHITE_ALTERNATE = "\033[38;5;251m"
+COLOR_RED = "\033[38;5;009m"
+COLOR_GREEN = "\033[38;5;002m"
 
 
-def verbose_ping(host, args):
-    c = 0
+@dataclass(frozen=True)
+class Config:
+    """Runtime settings for the ping loop."""
+
+    host: str
+    size: int
+    timeout: float
+    interval: float
+    ttl: int
+    alternate_foreground: bool
+
+
+def parse_args(argv: Sequence[str] | None = None) -> Config:
+    """Parse CLI arguments into a typed configuration."""
+
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument("host", help="destination address")
+    parser.add_argument("-l", "--size", type=int, default=56, help="payload size in bytes")
+    parser.add_argument("-w", "--timeout", type=float, default=1.0, help="request timeout in seconds")
+    parser.add_argument("-i", "--interval", type=float, default=1.0, help="request interval in seconds")
+    parser.add_argument("-t", "--ttl", type=int, default=56, help="time to live")
+    parser.add_argument(
+        "-a",
+        "--alternate-foreground",
+        action="store_true",
+        help="alternate the foreground color for each line",
+    )
+    args: Namespace = parser.parse_args(argv)
+    return Config(
+        host=args.host,
+        size=args.size,
+        timeout=args.timeout,
+        interval=args.interval,
+        ttl=args.ttl,
+        alternate_foreground=args.alternate_foreground,
+    )
+
+
+def white_for(sequence: int, enabled: bool) -> str:
+    """Return the alternating neutral color for the current row."""
+
+    if enabled and sequence % 2 == 0:
+        return COLOR_WHITE_ALTERNATE
+    return COLOR_WHITE_PRIMARY
+
+
+def verbose_ping(config: Config) -> None:
+    """Emit ping results until interrupted."""
+
+    ping_fn: Callable[..., Any]
+    try:
+        from ping3 import ping as ping_fn
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("pingu: ping3 is not installed") from exc
+
+    sequence = 0
     while True:
-        time = ping(host, size=args.size, timeout=args.timeout, ttl=args.ttl, unit="ms")
-        ts = dt.now()
-        c += 1
-        COLOR_WHITE = COLOR_WHITE2 if c % 2 == 0 and args.alter_fg else COLOR_WHITE1
+        latency_ms = ping_fn(
+            config.host,
+            size=config.size,
+            timeout=config.timeout,
+            ttl=config.ttl,
+            unit="ms",
+        )
+        timestamp = datetime.now()
+        sequence += 1
+        color = white_for(sequence, config.alternate_foreground)
 
-        if time is not None:
-            time = round(time, 2)
-            if time < 0:
-                time = 1
-            print(f"{COLOR_WHITE}{ts} {COLOR_GREEN}OK{COLOR_RESET}{COLOR_WHITE} {host} seq={c} size={args.size} time={time:.2f} ms{COLOR_RESET}")
-            sleep(args.interval-time/1000)
-        else:
-            print(f"{COLOR_WHITE}{ts} {COLOR_RED}NG{COLOR_RESET}{COLOR_WHITE} {host} seq={c} size={args.size} timeout{COLOR_RESET}")
+        if latency_ms is None:
+            print(
+                f"{color}{timestamp} {COLOR_RED}NG{COLOR_RESET}{color} "
+                f"{config.host} seq={sequence} size={config.size} timeout{COLOR_RESET}"
+            )
+            continue
+
+        latency_ms = max(round(latency_ms, 2), 1.0)
+        print(
+            f"{color}{timestamp} {COLOR_GREEN}OK{COLOR_RESET}{color} "
+            f"{config.host} seq={sequence} size={config.size} "
+            f"time={latency_ms:.2f} ms{COLOR_RESET}"
+        )
+        sleep(max(config.interval - latency_ms / 1000, 0.0))
 
 
-def main():
-    parser = ArgumentParser()
-    parser.add_argument("-l", dest="size",     type=int,   default=56, help="payload size (bytes)")
-    parser.add_argument("-w", dest="timeout",  type=float, default=1,  help="request timeout (sec)")
-    parser.add_argument("-i", dest="interval", type=float, default=1,  help="request interval (sec)")
-    parser.add_argument("-t", dest="ttl",      type=int,   default=56, help="TTL")
-    parser.add_argument("-a", dest="alter_fg", action="store_true", default=False, help="color alternate line")
-    parser.add_argument("host", help="destination addresses")
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the CLI."""
 
-    args = parser.parse_args()
-    verbose_ping(args.host, args)
+    try:
+        verbose_ping(parse_args(argv))
+    except RuntimeError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        return 130
+    return 0
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        pass
+    raise SystemExit(main())
