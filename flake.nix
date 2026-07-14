@@ -31,6 +31,7 @@
       inherit inputs self;
     };
     mkLinux = import ./system/linux/lib/mk-linux.nix { inherit inputs; };
+    mkHome = import ./home/lib/mk-home.nix { inherit inputs; };
     mkLinuxHome = {
       system,
       homeModule,
@@ -47,6 +48,22 @@
       system = "aarch64-darwin";
       darwinModule = ./system/darwin/hosts/macos.nix;
       homeModule = ./home/hosts/macos.nix;
+      platformName = "macos";
+      hostName = "macos";
+      userName = "teo";
+      homeDirectory = "/Users/teo";
+    };
+    macosSystemOnlyConfig = mkDarwin {
+      system = "aarch64-darwin";
+      darwinModule = ./system/darwin/hosts/macos.nix;
+      platformName = "macos";
+      hostName = "macos";
+      userName = "teo";
+      homeDirectory = "/Users/teo";
+    };
+    macosHomeConfig = mkHome {
+      system = "aarch64-darwin";
+      hostModule = ./home/hosts/macos.nix;
       platformName = "macos";
       hostName = "macos";
       userName = "teo";
@@ -83,6 +100,8 @@
     };
 
     homeConfigurations = {
+      "macos" = macosHomeConfig;
+
       "linux" =
         if runtimeLinuxSystem == "x86_64-linux" then
           linuxX86_64Config
@@ -99,6 +118,10 @@
       "linuxX86_64" = linuxX86_64Config;
       "dockerAarch64" = dockerAarch64Config;
       "dockerX86_64" = dockerX86_64Config;
+    };
+
+    packages.aarch64-darwin = {
+      macos-system = macosSystemOnlyConfig.config.system.build.toplevel;
     };
   };
 }
