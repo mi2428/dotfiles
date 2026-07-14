@@ -4,7 +4,7 @@ let
     if [ "${platformName}" = "linux" ] && [ -r /etc/os-release ]; then
       . /etc/os-release
 
-      if [ "${ID:-}" = "ubuntu" ] \
+      if [ "''${ID:-}" = "ubuntu" ] \
         && ! command -v task >/dev/null 2>&1; then
         if ! command -v curl >/dev/null 2>&1; then
           echo "home-manager: curl is required to install task via apt" >&2
