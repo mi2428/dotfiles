@@ -46,8 +46,6 @@ tasks:
         task_fmt='  %b%-18s%b %s\n'
         default_fmt='  %b%-18s%b %s\n'
         printf '%bTasks%b\n' "$bold$cyan" "$reset"
-        printf "$task_fmt" "$green" 'age.init' "$reset" 'Generate the repo age identity and local chezmoi config'
-        printf "$task_fmt" "$green" 'age.unlock' "$reset" 'Decrypt key.txt.age into ~/.config/chezmoi/key.txt'
         printf "$task_fmt" "$green" 'hm.build' "$reset" 'Build the current host activation without switching'
         printf "$task_fmt" "$green" 'hm.switch' "$reset" 'Apply the current host activation and refresh managed symlinks'
         printf "$task_fmt" "$green" 'hm.link' "$reset" 'Re-apply the current host activation to re-create managed symlinks'
@@ -69,7 +67,6 @@ tasks:
         printf "$default_fmt" "$yellow" 'IMPORT_GPG' "$reset" '0'
         printf "$default_fmt" "$yellow" 'DECRYPT_HOME' "$reset" '$HOME/.cache/dotfiles/secrets/decrypted-home'
         printf '\n%bExamples%b\n' "$bold$cyan" "$reset"
-        printf '  %btask age.init%b\n' "$green" "$reset"
         printf '  %btask hm.switch HOST=macos%b\n' "$green" "$reset"
         printf '  %btask hm.switch HOST=linux%b\n' "$green" "$reset"
         printf '  %btask hm.switch HOST=docker%b\n' "$green" "$reset"
