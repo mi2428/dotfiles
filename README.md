@@ -1,6 +1,6 @@
 # dotfiles
 
-Shell environment since 2016.
+Shell environment since 2016. Currently:
 
 - Daily stack: [Ghostty](https://ghostty.org/), fish, [herdr](https://herdr.dev/) (for AI agents), tmux (for humans), and Neovim.
 - Primary font: [Ubuntu Mono](https://fonts.google.com/specimen/Ubuntu+Mono). [Nerd Font](https://www.nerdfonts.com/) glyphs come from Ghostty.
