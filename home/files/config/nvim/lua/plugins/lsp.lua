@@ -81,6 +81,7 @@ return {
 		opts = {
 			keymap = {
 				preset = "default",
+				["<C-l>"] = { "show", "fallback" },
 				["<Tab>"] = { "select_next", "fallback" },
 				["<S-Tab>"] = { "select_prev", "fallback" },
 			},
@@ -93,7 +94,7 @@ return {
 					auto_show_delay_ms = 200,
 				},
 				menu = {
-					auto_show = true,
+					auto_show = false,
 				},
 				list = {
 					selection = {
