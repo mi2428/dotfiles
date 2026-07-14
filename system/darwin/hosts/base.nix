@@ -79,7 +79,6 @@
     };
     brews = [
       "chrony"
-      "go-task"
       "hunk"
       "ifstat"
       "mi2428/iperf3-rs/iperf3-rs"

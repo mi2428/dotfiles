@@ -75,7 +75,7 @@ Examples
 
 Main package list: [`home/modules/core/packages.nix`](/Users/teo/dotfiles/home/modules/core/packages.nix)
 
-- It is worth checking `gh`, `go-task`, `herdr`, `tmux`, and `neovim` there first.
+- It is worth checking `gh`, `herdr`, `tmux`, and `neovim` there first.
 - Ghostty is installed outside this repo.
 
 #### Host Memo

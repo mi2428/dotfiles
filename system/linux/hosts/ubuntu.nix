@@ -1,6 +1,3 @@
 { ... }: {
-  imports = [
-    ./base.nix
-    ../modules/task.nix
-  ];
+  imports = [ ./base.nix ];
 }
