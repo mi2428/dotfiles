@@ -36,14 +36,12 @@ let
   containerDevPackages = with pkgs; [
     actionlint
     bash-language-server
-    go
     go-tools
     golangci-lint
     gopls
     hadolint
     lua-language-server
     nixd
-    nodejs
     pre-commit
     pyright
     python313Packages.python-lsp-server
@@ -54,14 +52,10 @@ let
     terraform-ls
     tflint
     uv
-    vscode-langservers-extracted
     yaml-language-server
     yarn
   ];
   nonContainerPackages = with pkgs; [
-    aws-cdk-cli
-    aws-sam-cli
-    awscli2
     black
     cargo-dist
     cmake
@@ -71,7 +65,6 @@ let
     cue
     deno
     difftastic
-    docker
     eksctl
     expect
     figlet
@@ -80,7 +73,6 @@ let
     glances
     glow
     gotools
-    gradle
     grc
     gum
     herdr
@@ -107,9 +99,7 @@ let
     oui
     pipenv
     pipx
-    playwright-driver
     poetry
-    podman
     poppler
     procs
     protobuf
@@ -124,7 +114,6 @@ let
     terraform
     tokei
     (lib.hiPrio tmuxinator)
-    vhs
     viddy
     yt-dlp
     zig
