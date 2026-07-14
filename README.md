@@ -33,6 +33,10 @@ $ task
 Tasks
   age.init           Generate the repo age identity and local chezmoi config
   age.unlock         Decrypt key.txt.age into ~/.config/chezmoi/key.txt
+  hm.build           Build the current host activation without switching
+  hm.switch          Apply the current host activation and refresh managed symlinks
+  hm.link            Re-apply the current host activation to re-create managed symlinks
+  hm.gc              Delete old generations and collect Nix garbage
   secrets.encrypt    Encrypt ssh and/or gnupg into chezmoi source state
   secrets.decrypt    Decrypt ssh and/or gnupg into a target directory
   secrets.backup     Backup ssh and gnupg into encrypted chezmoi source state
@@ -47,11 +51,14 @@ Defaults
   TAG                latest
   DOCKER_RUNTIME     docker
   PLATFORMS          linux/amd64,linux/arm64
+  HOST               auto-detected from the current machine
   IMPORT_GPG         0
   DECRYPT_HOME       $HOME/.cache/dotfiles/secrets/decrypted-home
 
 Examples
   task age.init
+  task hm.switch HOST=linux-server
+  task hm.gc
   task secrets.encrypt
   task secrets.encrypt BUNDLE=ssh
   task secrets.encrypt BUNDLE=gnupg GPG_KEY_IDS='E8D3009C6341BDEAF038009685AB6867E2147DDA'
@@ -62,31 +69,6 @@ Examples
 ```
 
 ## Hints
-
-#### Secrets
-
-Managed with `chezmoi/` + `age`:
-
-- It manages `~/.ssh`.
-- It manages `~/.gnupg`.
-
-Backup:
-
-```console
-task secrets.backup
-```
-
-Decrypt into cache:
-
-```console
-task secrets.decrypt
-```
-
-Decrypt into the real home when needed:
-
-```console
-task secrets.decrypt IMPORT_GPG=1 DECRYPT_HOME=$HOME
-```
 
 #### Packages
 

@@ -1,0 +1,87 @@
+version: '3'
+
+tasks:
+  hm.build:
+    desc: Build the current host activation without switching
+    cmds:
+      - |
+        host="${HOST:-$("$REPO_ROOT/bootstrap/detect-host.sh")}"
+        nix_bin="$("$REPO_ROOT/bootstrap/install-nix.sh")"
+        nix_bin_dir="$(dirname "$nix_bin")"
+
+        case "$(uname -s):$host" in
+          Darwin:MBP-M4Pro48G-C3VH95F6P6)
+            target="path:${REPO_ROOT}#darwinConfigurations.${host}.system"
+            ;;
+          Linux:linux-server|Linux:docker-dev)
+            target="path:${REPO_ROOT}#homeConfigurations.${host}.activationPackage"
+            ;;
+          Darwin:*)
+            printf '%s\n' "task hm.build: unsupported macOS host: $host" >&2
+            exit 1
+            ;;
+          Linux:*)
+            printf '%s\n' "task hm.build: unsupported Linux host: $host" >&2
+            exit 1
+            ;;
+          *)
+            printf '%s\n' "task hm.build: unsupported platform: $(uname -s)" >&2
+            exit 1
+            ;;
+        esac
+
+        PATH="$nix_bin_dir:$PATH" \
+          "$nix_bin" build \
+            --extra-experimental-features 'nix-command flakes' \
+            --no-link \
+            "$target"
+
+  hm.switch:
+    desc: Apply the current host activation and refresh Home Manager symlinks
+    cmds:
+      - |
+        host="${HOST:-$("$REPO_ROOT/bootstrap/detect-host.sh")}"
+
+        case "$(uname -s):$host" in
+          Darwin:MBP-M4Pro48G-C3VH95F6P6)
+            exec "$REPO_ROOT/bootstrap/apply-darwin.sh" --host "$host"
+            ;;
+          Linux:linux-server|Linux:docker-dev)
+            exec "$REPO_ROOT/bootstrap/apply-home-manager.sh" --host "$host"
+            ;;
+          Darwin:*)
+            printf '%s\n' "task hm.switch: unsupported macOS host: $host" >&2
+            exit 1
+            ;;
+          Linux:*)
+            printf '%s\n' "task hm.switch: unsupported Linux host: $host" >&2
+            exit 1
+            ;;
+          *)
+            printf '%s\n' "task hm.switch: unsupported platform: $(uname -s)" >&2
+            exit 1
+            ;;
+        esac
+
+  hm.link:
+    desc: Re-apply the current host activation to re-create managed symlinks
+    cmds:
+      - task: hm.switch
+        vars:
+          HOST: '{{.HOST}}'
+
+  hm.gc:
+    desc: Delete old generations and collect Nix garbage
+    cmds:
+      - |
+        nix_bin="$("$REPO_ROOT/bootstrap/install-nix.sh")"
+        nix_bin_dir="$(dirname "$nix_bin")"
+
+        PATH="$nix_bin_dir:$PATH" nix-collect-garbage -d
+
+        if [[ "$(uname -s)" == "Darwin" ]]; then
+          sudo env PATH="$nix_bin_dir:$PATH" nix-collect-garbage -d
+        fi
+
+        PATH="$nix_bin_dir:$PATH" \
+          "$nix_bin" store optimise --extra-experimental-features 'nix-command flakes'
