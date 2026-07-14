@@ -33,7 +33,7 @@ in {
     "ghostty/config.ghostty" = mkLink ../../files/config/ghostty/config.ghostty;
     "ghostty/themes" = mkLink ../../files/config/ghostty/themes;
     "glow" = mkLink ../../files/config/glow;
-    "herdr" = mkLink ../../files/config/herdr;
+    "herdr/config.toml" = mkLink ../../files/config/herdr/config.toml;
     "hunk" = mkLink ../../files/config/hunk;
     "k9s" = mkLink ../../files/config/k9s;
     "lazygit" = mkLink ../../files/config/lazygit;
