@@ -1,4 +1,0 @@
-eza
-fd-find
-procs
-ripgrep
