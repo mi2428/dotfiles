@@ -1,37 +1,13 @@
 { lib, pkgs, platformName, ... }:
 let
-  shellPackages = with pkgs; [
-    bash
-    bat
-    coreutils
-    delta
-    direnv
+  linuxEssentialPackages = with pkgs; [
     eza
     fd
-    fish
     fzf
-    gh
     git
-    git-lfs
-    gitflow
-    gnugrep
-    gnupg
-    jq
-    neovim
-    python313Packages.pynvim
     ripgrep
     starship
-    tig
-    tmux
-    tree
-    watch
-    wget
-    yq-go
     zoxide
-    zsh
-    zsh-autosuggestions
-    zsh-completions
-    zsh-syntax-highlighting
   ];
   containerDevPackages = with pkgs; [
     actionlint
@@ -54,6 +30,26 @@ let
     uv
     yaml-language-server
     yarn
+  ];
+  darwinBasePackages = with pkgs; [
+    bash
+    bat
+    coreutils
+    delta
+    gh
+    git-lfs
+    gitflow
+    gnugrep
+    gnupg
+    jq
+    neovim
+    python313Packages.pynvim
+    tig
+    tmux
+    tree
+    watch
+    wget
+    yq-go
   ];
   nonContainerPackages = with pkgs; [
     black
@@ -118,13 +114,7 @@ let
     yt-dlp
     zig
   ];
-  commonPackages = shellPackages
-    ++ containerDevPackages
-    ++ lib.optionals (platformName != "docker") nonContainerPackages;
-  linuxPackages = with pkgs; [
-    rsyslog
-  ];
-  darwinPackages = with pkgs; [
+  darwinPackages = darwinBasePackages ++ containerDevPackages ++ nonContainerPackages ++ (with pkgs; [
     _1password-cli
     android-tools
     claude-code
@@ -138,11 +128,17 @@ let
     swiftformat
     swiftlint
     temurin-bin-17
-  ];
+  ]);
+  dockerPackages = linuxEssentialPackages ++ containerDevPackages;
+  linuxPackages = linuxEssentialPackages;
 in {
-  # Keep shared command-line tools owned by Home Manager instead of imperative
-  # per-language global installs.
-  home.packages = commonPackages
-    ++ lib.optionals pkgs.stdenv.isLinux linuxPackages
-    ++ lib.optionals pkgs.stdenv.isDarwin darwinPackages;
+  # Keep Linux minimal: only lightweight interactive tools that are commonly
+  # missing on fresh systems but materially improve the managed shell setup.
+  home.packages =
+    if pkgs.stdenv.isDarwin then
+      darwinPackages
+    else if platformName == "docker" then
+      dockerPackages
+    else
+      linuxPackages;
 }
