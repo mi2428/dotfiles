@@ -24,7 +24,7 @@ Existing repo:
 
 ```console
 cd ~/dotfiles
-./bootstrap/bootstrap.sh --host MBP-M4Pro48G-C3VH95F6P6
+./bootstrap/bootstrap.sh --host macos
 ```
 
 ```console
@@ -57,7 +57,8 @@ Defaults
 
 Examples
   task age.init
-  task hm.switch HOST=linux-server
+  task hm.switch HOST=linux
+  task hm.switch HOST=docker
   task hm.gc
   task secrets.encrypt
   task secrets.encrypt BUNDLE=ssh
@@ -79,7 +80,9 @@ Main package list: [`home/modules/core/packages.nix`](/Users/teo/dotfiles/home/m
 
 #### Host Memo
 
-- The current macOS bootstrap host name is `MBP-M4Pro48G-C3VH95F6P6`.
+- The macOS bootstrap host key is `macos`.
+- On macOS, host auto-detection resolves from the machine serial number.
+- On Linux, host auto-detection resolves from container markers first and then `/etc/machine-id`.
 - Secret template data lives in `chezmoi/.chezmoidata/`.
 - If colors look wrong, check ANSI versus truecolor first.
 
