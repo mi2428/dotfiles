@@ -5,7 +5,7 @@ let
       . /etc/os-release
 
       if [ "${ID:-}" = "ubuntu" ] \
-        && ! dpkg-query -W task >/dev/null 2>&1; then
+        && ! command -v task >/dev/null 2>&1; then
         if ! command -v curl >/dev/null 2>&1; then
           echo "home-manager: curl is required to install task via apt" >&2
           exit 1
@@ -22,8 +22,8 @@ let
           curl -1sLf 'https://dl.cloudsmith.io/public/task/task/setup.deb.sh' | sudo -E bash
         fi
 
-        sudo apt-get update
-        sudo apt-get install -y task
+        sudo env DEBIAN_FRONTEND=noninteractive apt-get update
+        sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y task
       fi
     fi
   '';
