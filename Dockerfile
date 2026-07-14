@@ -1,5 +1,5 @@
 # hadolint global ignore=DL3008
-FROM ubuntu:26.04 AS base
+FROM ubuntu:26.04 AS runtime-base
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -12,25 +12,30 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       bash \
-      build-essential \
       ca-certificates \
-      curl \
-      git \
       iproute2 \
       iputils-ping \
       locales \
-      make \
       procps \
       sudo \
       toilet \
-      xz-utils \
  && locale-gen en_US.UTF-8 ja_JP.UTF-8 \
  && groupadd --system wheel \
  && printf '%%wheel ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/wheel \
  && chmod 0440 /etc/sudoers.d/wheel \
  && rm -rf /var/lib/apt/lists/*
 
-FROM base AS builder
+FROM runtime-base AS builder-base
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      build-essential \
+      curl \
+      git \
+      xz-utils \
+ && rm -rf /var/lib/apt/lists/*
+
+FROM builder-base AS builder
 
 WORKDIR /src
 
@@ -50,7 +55,7 @@ RUN case "${TARGETARCH:-amd64}" in \
  && su builder -c ". /home/builder/.nix-profile/etc/profile.d/nix.sh && nix build --extra-experimental-features 'nix-command flakes' --impure --file /src/containers/dotfiles/skel-home.nix --argstr system ${nix_system} --out-link /tmp/home-manager-skel" \
  && su builder -c "PATH=/home/builder/.nix-profile/bin:/nix/var/nix/profiles/default/bin:${PATH} HOME=/tmp/skel USER=skel /tmp/home-manager-skel/activate"
 
-FROM base AS runtime
+FROM runtime-base AS runtime
 
 LABEL org.opencontainers.image.source="https://github.com/mi2428/dotfiles"
 
