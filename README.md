@@ -90,6 +90,7 @@ $ mkdir -p "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
 ```
 
 Then launch the target app from that shell, which uses the repo's in-progress config before re-applying Home Manager.
+Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `tmux.dev`.
 
 >[!WARNING]
 > `age.init` and `age.unlock` are maintenance commands.

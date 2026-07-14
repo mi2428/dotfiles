@@ -1,0 +1,224 @@
+#!/bin/sh
+set -eu
+
+die() {
+    printf 'dotfiles-dev: %s\n' "$*" >&2
+    exit 1
+}
+
+script_dir=$(
+    CDPATH= cd -- "$(dirname -- "$0")" && pwd
+) || exit 1
+repo_root=$(
+    CDPATH= cd -- "$script_dir/.." && pwd
+) || exit 1
+real_home=${HOME:?}
+
+usage() {
+    cat <<'EOF'
+Usage:
+  dotfiles-dev xdg <app> [args...]
+  dotfiles-dev curl [args...]
+  dotfiles-dev git [args...]
+  dotfiles-dev tmux [args...]
+  dotfiles-dev wget [args...]
+  dotfiles-dev zsh [args...]
+
+Commands:
+  xdg    Run an XDG-aware app against the repo config tree.
+  curl   Run curl with the repo curlrc.
+  git    Run git with the repo gitconfig.
+  tmux   Run tmux with a dev home overlay.
+  wget   Run wget with the repo wgetrc.
+  zsh    Run zsh with a dev home overlay.
+EOF
+}
+
+ensure_dir() {
+    [ "$#" -gt 0 ] || return 0
+    mkdir -p -- "$@"
+}
+
+ensure_link() {
+    target=$1
+    source=$2
+
+    ensure_dir "$(dirname "$target")"
+
+    if [ -L "$target" ]; then
+        current_target=$(readlink "$target") || exit 1
+        [ "$current_target" = "$source" ] && return 0
+    fi
+
+    if [ -e "$target" ] || [ -L "$target" ]; then
+        rm -rf -- "$target"
+    fi
+
+    ln -s "$source" "$target"
+}
+
+prepare_dev_home() {
+    app_name=$1
+    dev_home=$real_home/.local/share/dotfiles-dev/home/$app_name
+
+    ensure_dir "$dev_home"
+    printf '%s\n' "$dev_home"
+}
+
+set_xdg_env() {
+    app_name=$1
+
+    : "${XDG_CONFIG_HOME:=$repo_root/home/files/config}"
+    : "${XDG_STATE_HOME:=$real_home/.local/state/dotfiles-dev/$app_name}"
+    : "${XDG_CACHE_HOME:=$real_home/.cache/dotfiles-dev/$app_name}"
+    : "${XDG_DATA_HOME:=$real_home/.local/share/dotfiles-dev/$app_name}"
+
+    export XDG_CONFIG_HOME
+    export XDG_STATE_HOME
+    export XDG_CACHE_HOME
+    export XDG_DATA_HOME
+
+    ensure_dir \
+        "$XDG_CONFIG_HOME" \
+        "$XDG_STATE_HOME" \
+        "$XDG_CACHE_HOME" \
+        "$XDG_DATA_HOME"
+}
+
+run_xdg_app() {
+    [ "$#" -gt 0 ] || die 'missing app name for xdg command'
+
+    app_name=$1
+    shift
+
+    set_xdg_env "$app_name"
+    exec "$app_name" "$@"
+}
+
+run_curl() {
+    curl_config=$repo_root/home/files/curl/curlrc
+    exec curl --config "$curl_config" "$@"
+}
+
+run_git() {
+    export GIT_CONFIG_GLOBAL=$repo_root/home/files/git/gitconfig
+    export GIT_CONFIG_COUNT=1
+    export GIT_CONFIG_KEY_0=include.path
+    export GIT_CONFIG_VALUE_0=$repo_root/home/files/git/catppuccin-delta.gitconfig
+
+    exec git "$@"
+}
+
+prepare_tmux_home() {
+    dev_home=$(prepare_dev_home tmux)
+
+    ensure_link "$dev_home/.tmux.conf" "$repo_root/home/files/tmux/tmux.conf"
+    ensure_link "$dev_home/.tmux" "$repo_root/home/files/tmux"
+
+    tmux_plugin_dir=$real_home/.config/tmux/plugins/catppuccin/tmux
+    if [ -d "$tmux_plugin_dir" ]; then
+        ensure_link \
+            "$dev_home/.config/tmux/plugins/catppuccin/tmux" \
+            "$tmux_plugin_dir"
+    fi
+
+    printf '%s\n' "$dev_home"
+}
+
+run_tmux() {
+    set_xdg_env tmux
+    dev_home=$(prepare_tmux_home)
+
+    export DOTFILES_REAL_HOME=$real_home
+    export HOME=$dev_home
+
+    exec tmux -L dotfiles-dev -f "$dev_home/.tmux.conf" "$@"
+}
+
+run_wget() {
+    wget_config=$repo_root/home/files/wget/wgetrc
+    export WGETRC=$wget_config
+    exec wget "$@"
+}
+
+prepare_zsh_home() {
+    dev_home=$(prepare_dev_home zsh)
+    zsh_home=$dev_home/.zsh
+
+    ensure_dir "$zsh_home"
+    ensure_link "$dev_home/.zshrc" "$repo_root/home/files/zsh/zshrc"
+    ensure_link "$dev_home/.zlogin" "$repo_root/home/files/zsh/zlogin"
+
+    for source_path in "$repo_root"/home/files/zsh/*; do
+        file_name=$(basename "$source_path")
+
+        case "$file_name" in
+            zshrc|zlogin)
+                continue
+                ;;
+        esac
+
+        if [ -f "$source_path" ]; then
+            ensure_link "$zsh_home/$file_name" "$source_path"
+        fi
+    done
+
+    for extra_name in .antigravity .fig .openclaw .sdkman .zshrc_functions; do
+        extra_source=$real_home/$extra_name
+        if [ -e "$extra_source" ] || [ -L "$extra_source" ]; then
+            ensure_link "$dev_home/$extra_name" "$extra_source"
+        fi
+    done
+
+    printf '%s\n' "$dev_home"
+}
+
+run_zsh() {
+    set_xdg_env zsh
+    dev_home=$(prepare_zsh_home)
+
+    export DOTFILES_REAL_HOME=$real_home
+    export HOME=$dev_home
+    export ZDOTDIR=$dev_home
+
+    exec zsh "$@"
+}
+
+main() {
+    [ "$#" -gt 0 ] || {
+        usage >&2
+        exit 1
+    }
+
+    command_name=$1
+    shift
+
+    case "$command_name" in
+        xdg)
+            run_xdg_app "$@"
+            ;;
+        curl)
+            run_curl "$@"
+            ;;
+        git)
+            run_git "$@"
+            ;;
+        tmux)
+            run_tmux "$@"
+            ;;
+        wget)
+            run_wget "$@"
+            ;;
+        zsh)
+            run_zsh "$@"
+            ;;
+        --help|-h)
+            usage
+            ;;
+        *)
+            die "unknown command: $command_name"
+            ;;
+    esac
+}
+
+main "$@"
