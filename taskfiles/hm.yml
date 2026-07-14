@@ -1,6 +1,24 @@
 version: '3'
 
 tasks:
+  hm.update:
+    desc: Update nixpkgs in flake.lock and apply the current host activation
+    cmds:
+      - |
+        set -eu
+        repo_root='{{.REPO_ROOT}}'
+        nix_bin="$("$repo_root/bootstrap/install-nix.sh")"
+        nix_bin_dir="$(dirname "$nix_bin")"
+
+        PATH="$nix_bin_dir:$PATH" \
+          "$nix_bin" flake lock \
+            --extra-experimental-features 'nix-command flakes' \
+            --update-input nixpkgs \
+            "path:${repo_root}"
+      - task: hm.switch
+        vars:
+          HOST: '{{.HOST}}'
+
   hm.build:
     desc: Build the current host activation without switching
     cmds:

@@ -44,6 +44,7 @@ Tasks
   hm.build           Build the current host activation without switching
   hm.switch          Apply the current host activation and refresh managed symlinks
   hm.link            Re-apply the current host activation to re-create managed symlinks
+  hm.update          Update nixpkgs in flake.lock and apply the current host activation
   hm.gc              Delete old generations and collect Nix garbage
   secrets.encrypt    Encrypt ssh and/or gnupg into chezmoi source state
   secrets.decrypt    Decrypt ssh and/or gnupg into a target directory
@@ -64,6 +65,8 @@ Defaults
   DECRYPT_HOME       $HOME/.cache/dotfiles/secrets/decrypted-home
 
 Examples
+  task hm.update HOST=macos
+  task hm.switch HOST=macos
   task hm.switch HOST=linux
   task hm.switch HOST=docker
   task hm.gc
