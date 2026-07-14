@@ -5,16 +5,18 @@ tasks:
     desc: Build the current host activation without switching
     cmds:
       - |
-        host="${HOST:-$("$REPO_ROOT/bootstrap/detect-host.sh")}"
-        nix_bin="$("$REPO_ROOT/bootstrap/install-nix.sh")"
+        set -eu
+        repo_root='{{.REPO_ROOT}}'
+        host="$("$repo_root/bootstrap/resolve-host.sh" '{{default "" .HOST}}')"
+        nix_bin="$("$repo_root/bootstrap/install-nix.sh")"
         nix_bin_dir="$(dirname "$nix_bin")"
 
         case "$(uname -s):$host" in
-          Darwin:MBP-M4Pro48G-C3VH95F6P6)
-            target="path:${REPO_ROOT}#darwinConfigurations.${host}.system"
+          Darwin:macos)
+            target="path:${repo_root}#darwinConfigurations.${host}.system"
             ;;
-          Linux:linux-server|Linux:docker-dev)
-            target="path:${REPO_ROOT}#homeConfigurations.${host}.activationPackage"
+          Linux:linux|Linux:docker)
+            target="path:${repo_root}#homeConfigurations.${host}.activationPackage"
             ;;
           Darwin:*)
             printf '%s\n' "task hm.build: unsupported macOS host: $host" >&2
@@ -40,14 +42,16 @@ tasks:
     desc: Apply the current host activation and refresh Home Manager symlinks
     cmds:
       - |
-        host="${HOST:-$("$REPO_ROOT/bootstrap/detect-host.sh")}"
+        set -eu
+        repo_root='{{.REPO_ROOT}}'
+        host="$("$repo_root/bootstrap/resolve-host.sh" '{{default "" .HOST}}')"
 
         case "$(uname -s):$host" in
-          Darwin:MBP-M4Pro48G-C3VH95F6P6)
-            exec "$REPO_ROOT/bootstrap/apply-darwin.sh" --host "$host"
+          Darwin:macos)
+            exec "$repo_root/bootstrap/apply-darwin.sh" --host "$host"
             ;;
-          Linux:linux-server|Linux:docker-dev)
-            exec "$REPO_ROOT/bootstrap/apply-home-manager.sh" --host "$host"
+          Linux:linux|Linux:docker)
+            exec "$repo_root/bootstrap/apply-home-manager.sh" --host "$host"
             ;;
           Darwin:*)
             printf '%s\n' "task hm.switch: unsupported macOS host: $host" >&2
@@ -74,13 +78,20 @@ tasks:
     desc: Delete old generations and collect Nix garbage
     cmds:
       - |
-        nix_bin="$("$REPO_ROOT/bootstrap/install-nix.sh")"
+        set -eu
+        repo_root='{{.REPO_ROOT}}'
+        nix_bin="$("$repo_root/bootstrap/install-nix.sh")"
         nix_bin_dir="$(dirname "$nix_bin")"
+        nix_collect_garbage_bin="$nix_bin_dir/nix-collect-garbage"
 
-        PATH="$nix_bin_dir:$PATH" nix-collect-garbage -d
+        if [ ! -x "$nix_collect_garbage_bin" ]; then
+          nix_collect_garbage_bin="$(command -v nix-collect-garbage)"
+        fi
 
-        if [[ "$(uname -s)" == "Darwin" ]]; then
-          sudo env PATH="$nix_bin_dir:$PATH" nix-collect-garbage -d
+        PATH="$nix_bin_dir:$PATH" "$nix_collect_garbage_bin" -d
+
+        if [ "$(uname -s)" = "Darwin" ]; then
+          sudo env PATH="$nix_bin_dir:$PATH" "$nix_collect_garbage_bin" -d
         fi
 
         PATH="$nix_bin_dir:$PATH" \

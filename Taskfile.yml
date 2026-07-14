@@ -70,7 +70,9 @@ tasks:
         printf "$default_fmt" "$yellow" 'DECRYPT_HOME' "$reset" '$HOME/.cache/dotfiles/secrets/decrypted-home'
         printf '\n%bExamples%b\n' "$bold$cyan" "$reset"
         printf '  %btask age.init%b\n' "$green" "$reset"
-        printf '  %btask hm.switch HOST=linux-server%b\n' "$green" "$reset"
+        printf '  %btask hm.switch HOST=macos%b\n' "$green" "$reset"
+        printf '  %btask hm.switch HOST=linux%b\n' "$green" "$reset"
+        printf '  %btask hm.switch HOST=docker%b\n' "$green" "$reset"
         printf '  %btask hm.gc%b\n' "$green" "$reset"
         printf '  %btask secrets.encrypt%b\n' "$green" "$reset"
         printf '  %btask secrets.encrypt BUNDLE=ssh%b\n' "$green" "$reset"
