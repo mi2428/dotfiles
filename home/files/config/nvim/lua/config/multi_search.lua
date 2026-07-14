@@ -15,6 +15,7 @@ local group_names = {
 	"DotfilesMultiSearch5",
 	"DotfilesMultiSearch6",
 }
+local match_priority = 100
 
 local function contrast_fg()
 	if catppuccin.flavour == "latte" then
@@ -77,7 +78,7 @@ local function apply_window_matches(winid)
 	local matches = {}
 	for index, entry in ipairs(state.patterns) do
 		local ok, match_id =
-			pcall(vim.fn.matchadd, group_names[((index - 1) % #group_names) + 1], entry.pattern, 10, -1, {
+			pcall(vim.fn.matchadd, group_names[((index - 1) % #group_names) + 1], entry.pattern, match_priority, -1, {
 				window = winid,
 			})
 		if ok and match_id then
@@ -212,9 +213,11 @@ function M.add(pattern)
 
 	if not find_pattern(pattern) then
 		state.patterns[#state.patterns + 1] = { pattern = pattern }
-		refresh_all_windows()
 	end
 
+	-- Re-apply matches even for an already tracked pattern so repeated
+	-- `<leader>/` runs recover from stale window match state.
+	refresh_all_windows()
 	set_search_register(pattern)
 end
 
@@ -271,10 +274,13 @@ function M.setup()
 	vim.api.nvim_create_autocmd("ColorScheme", {
 		group = vim.api.nvim_create_augroup("dotfiles-multi-search-colors", { clear = true }),
 		pattern = "*",
-		callback = set_highlights,
+		callback = function()
+			set_highlights()
+			refresh_all_windows()
+		end,
 	})
 
-	vim.api.nvim_create_autocmd({ "BufWinEnter", "WinNew" }, {
+	vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter", "WinEnter", "WinNew" }, {
 		group = vim.api.nvim_create_augroup("dotfiles-multi-search-window-refresh", { clear = true }),
 		callback = function()
 			apply_window_matches(vim.api.nvim_get_current_win())
