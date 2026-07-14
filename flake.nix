@@ -12,7 +12,7 @@
   outputs = inputs@{ self, ... }:
   let
     mkHome = import ./home/lib/mk-home.nix { inherit inputs; };
-    mkDarwin = import ./darwin/lib/mk-darwin.nix {
+    mkDarwin = import ./system/darwin/lib/mk-darwin.nix {
       inherit inputs self;
     };
   in
@@ -20,7 +20,7 @@
     darwinConfigurations = {
       "MBP-M4Pro48G-C3VH95F6P6" = mkDarwin {
         system = "aarch64-darwin";
-        darwinModule = ./darwin/hosts/macos.nix;
+        darwinModule = ./system/darwin/hosts/macos.nix;
         homeModule = ./home/hosts/macos.nix;
         platformName = "macos";
         hostName = "MBP-M4Pro48G-C3VH95F6P6";
