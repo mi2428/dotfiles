@@ -11,6 +11,11 @@
 
   outputs = inputs@{ self, ... }:
   let
+    envOr = name: fallback:
+      let
+        value = builtins.getEnv name;
+      in
+      if value != "" then value else fallback;
     mkDarwin = import ./system/darwin/lib/mk-darwin.nix {
       inherit inputs self;
     };
@@ -37,8 +42,8 @@
         homeModule = ./home/hosts/linux.nix;
         platformName = "linux";
         hostName = "linux";
-        userName = "teo";
-        homeDirectory = "/home/teo";
+        userName = envOr "DOTFILES_RUNTIME_USER" "teo";
+        homeDirectory = envOr "DOTFILES_RUNTIME_HOME" "/home/teo";
       };
 
       "docker" = mkLinux {
@@ -47,8 +52,8 @@
         homeModule = ./home/hosts/docker.nix;
         platformName = "docker";
         hostName = "docker";
-        userName = "teo";
-        homeDirectory = "/home/teo";
+        userName = envOr "DOTFILES_RUNTIME_USER" "teo";
+        homeDirectory = envOr "DOTFILES_RUNTIME_HOME" "/home/teo";
       };
     };
   };

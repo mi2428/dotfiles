@@ -66,7 +66,10 @@ activation_link="$cache_dir/home-manager-${host}"
 mkdir -p "$cache_dir"
 
 PATH="$nix_bin_dir:$PATH" \
+DOTFILES_RUNTIME_USER="$runtime_user" \
+DOTFILES_RUNTIME_HOME="$runtime_home" \
   "$nix_bin" build \
+    --impure \
     --extra-experimental-features 'nix-command flakes' \
     "path:${repo_root}#homeConfigurations.${host}.activationPackage" \
     --out-link "$activation_link"
