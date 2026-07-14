@@ -3,7 +3,7 @@
   imports = [
     ../profiles/base.nix
     ../profiles/os/linux.nix
-    ../../system/linux/default.nix
+    ../../system/linux/hosts/linux.nix
   ];
 
   home.username = userName;

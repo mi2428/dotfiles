@@ -1,5 +1,5 @@
 { ... }: {
   imports = [
-    ./modules/task.nix
+    ../modules/task.nix
   ];
 }
