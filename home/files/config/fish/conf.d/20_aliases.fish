@@ -52,7 +52,7 @@ function __git_delta_lazygit
     set -l removed_label (printf '\033[1;38;2;243;139;168mD\033[0m')
     set -l renamed_label (printf '\033[1;38;2;137;180;250mR\033[0m')
     set -l delta_args \
-        --features=catppuccin-lazygit-mocha \
+        --features=catppuccin-mocha \
         --dark \
         "--file-added-label=$added_label" \
         "--file-copied-label=$copied_label" \
