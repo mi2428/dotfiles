@@ -1,5 +1,14 @@
 { lib, pkgs, platformName, ... }:
 let
+  podmanLatest = pkgs.podman.overrideAttrs (_: rec {
+    version = "6.0.1";
+    src = pkgs.fetchFromGitHub {
+      owner = "containers";
+      repo = "podman";
+      tag = "v${version}";
+      hash = "sha256-EUoxguIMBhpUBOtfNyA7rxPE2y1tB+Y2lu0UVHpXe8o=";
+    };
+  });
   linuxEssentialPackages = with pkgs; [
     eza
     fd
@@ -117,17 +126,32 @@ let
   darwinPackages = darwinBasePackages ++ containerDevPackages ++ nonContainerPackages ++ (with pkgs; [
     _1password-cli
     android-tools
+    aws-cdk-cli
+    aws-sam-cli
+    awscli2
+    buildah
     claude-code
     codex
+    docker
+    docker-compose
+    go
+    gradle
     iproute2mac
     mas
+    nodejs
     pinentry_mac
+    playwright-driver
+    podmanLatest
+    podman-compose
     postgresql_14
+    skopeo
     ssm-session-manager-plugin
     swift-format
     swiftformat
     swiftlint
     temurin-bin-17
+    vhs
+    vscode-langservers-extracted
   ]);
   dockerPackages = linuxEssentialPackages ++ containerDevPackages;
   linuxPackages = linuxEssentialPackages;
