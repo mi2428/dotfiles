@@ -18,8 +18,12 @@ This mostly affects apps that use ANSI color slots, which the terminal maps thro
 
 ## Bootstrap Guide
 
-[Ghostty](https://ghostty.org/docs/install/binary) is installed outside this repo.
 If you already have the repo checked out and want to run bootstrap directly, use [`bootstrap/bootstrap.sh`](https://github.com/mi2428/dotfiles/blob/master/bootstrap/bootstrap.sh).
+
+```console
+$ brew install --cask ghostty
+$ brew install go-task/tap/go-task
+```
 
 ```console
 $ cd ~/dotfiles
