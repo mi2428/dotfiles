@@ -16,11 +16,11 @@ let
   baseRelativeFiles = [
     "conf.d/05_catppuccin_theme.fish"
     "conf.d/10_general.fish"
-    "conf.d/11_starship.fish"
     "conf.d/12_general_path.fish"
     "conf.d/13_zoxide.fish"
     "conf.d/14_fzf_git.fish"
     "conf.d/15_fzf_theme.fish"
+    "conf.d/16_starship.fish"
     "conf.d/20_aliases.fish"
     "conf.d/21_functions.fish"
     "conf.d/40_grc.fish"
@@ -60,6 +60,11 @@ in {
     };
     "fish/fish_plugins".source = ../../../home/files/config/fish/fish_plugins;
   };
+
+  home.activation.removeLegacyOmfFishConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    rm -f "${config.home.homeDirectory}/.config/fish/conf.d/omf.fish"
+  '';
+
   xdg.dataFile."fzf-git" = {
     source = fzfGitSource;
   };
