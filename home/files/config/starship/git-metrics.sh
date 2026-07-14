@@ -1,4 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-exec python3 "$HOME/.config/starship/git-metrics.py" "$@"
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+exec python3 "$config_home/starship/git-metrics.py" "$@"

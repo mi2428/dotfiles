@@ -6,7 +6,12 @@ if not command -sq starship
     return
 end
 
-set -gx STARSHIP_CONFIG $HOME/.config/starship/starship.toml
+set -l starship_config_root "$HOME/.config"
+if set -q XDG_CONFIG_HOME
+    set starship_config_root "$XDG_CONFIG_HOME"
+end
+
+set -gx STARSHIP_CONFIG "$starship_config_root/starship/starship.toml"
 
 function starship_transient_prompt_func
     starship prompt $argv
