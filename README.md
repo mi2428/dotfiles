@@ -89,15 +89,7 @@ $ export XDG_CACHE_HOME=/tmp/dotfiles-test/cache
 $ mkdir -p "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
 ```
 
-Then launch the target app from that shell.
-This works well for tools such as Neovim and fish:
-
-```console
-$ nvim
-$ fish
-```
-
-That uses the repo's in-progress config before re-applying Home Manager.
+Then launch the target app from that shell, which uses the repo's in-progress config before re-applying Home Manager.
 
 >[!WARNING]
 > `age.init` and `age.unlock` are maintenance commands.
