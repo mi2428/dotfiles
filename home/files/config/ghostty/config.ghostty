@@ -2,13 +2,23 @@ keybind = super+shift+r=reload_config
 keybind = global:cmd+shift+enter=toggle_quick_terminal
 keybind = cmd+g>d=new_split:right
 keybind = cmd+g>shift+d=new_split:down
+keybind = cmd+g>minus=new_split:down
+keybind = cmd+g>backslash=new_split:right
 keybind = cmd+g>h=goto_split:left
 keybind = cmd+g>j=goto_split:bottom
 keybind = cmd+g>k=goto_split:top
 keybind = cmd+g>l=goto_split:right
+keybind = cmd+g>r=activate_key_table:resize
 keybind = cmd+g>z=toggle_split_zoom
 keybind = cmd+g>e=equalize_splits
 keybind = cmd+g>escape=end_key_sequence
+keybind = resize/
+keybind = resize/h=resize_split:left,10
+keybind = resize/j=resize_split:down,10
+keybind = resize/k=resize_split:up,10
+keybind = resize/l=resize_split:right,10
+keybind = resize/escape=deactivate_key_table
+keybind = resize/catch_all=ignore
 font-family = Ubuntu Mono
 font-family-bold = Ubuntu Mono
 font-family-italic = Ubuntu Mono
