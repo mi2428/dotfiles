@@ -1,31 +1,41 @@
 # dotfiles
 
-My shell stack since 2016.
+Shell environment since 2016.
 
-- The everyday stack is Ghostty, fish, herdr, tmux, and Neovim.
-- Regular text uses `Ubuntu Mono`. Nerd Font glyphs come from Ghostty itself.
-- The terminal theme is [Catppuccin](https://github.com/catppuccin/catppuccin), usually Mocha.
-- This repo is Nix-based: `home/` and `flake.nix` define the steady state, while `chezmoi/` handles bootstrap and secrets.
+- Daily stack: [Ghostty](https://ghostty.org/), fish, [herdr](https://herdr.dev/) (for AI agents), tmux (for humans), and Neovim.
+- Primary font: [Ubuntu Mono](https://fonts.google.com/specimen/Ubuntu+Mono). [Nerd Font](https://www.nerdfonts.com/) glyphs come from Ghostty.
+- Terminal theme: [Catppuccin](https://github.com/catppuccin/catppuccin), usually [Mocha](https://catppuccin.com/palette/).
+- Managed state is split between [Nix](https://github.com/nix-community/home-manager) and [chezmoi](https://github.com/twpayne/chezmoi): `flake.nix` and `home/` define the steady state, while `chezmoi/` handles bootstrap and encrypted secrets.
+
+Catppuccin can shift expected color names a bit, so cyan or light blue may look slightly green in CLI output.
+This mostly affects apps that use ANSI color slots, which the terminal maps through the active theme palette.
 
 >[!TIP]
-> **TL;DR** This curl clones repo into `~/dotfiles` and runs [`bootstrap/bootstrap.sh`](/Users/teo/dotfiles/bootstrap/bootstrap.sh).
+> **TL;DR** This one-liner clones or updates the repo in `~/dotfiles` and then runs [`bootstrap/bootstrap.sh`](/Users/teo/dotfiles/bootstrap/bootstrap.sh).
 > ```console
 > bash -c "$(curl -fsLS https://raw.githubusercontent.com/mi2428/dotfiles/refs/heads/master/scripts/setup.sh)"
 > ```
 
-> [!NOTE]
-> Catppuccin can shift socially expected color names a bit, so something intended as cyan or light blue may look slightly greenish in CLI output.
-> This mostly happens when an application uses ANSI color slots, because the terminal maps those slots through the active theme palette instead of using an explicit RGB value.
-> When an application uses truecolor, it can request the intended RGB color directly, so the result is usually closer to what the app meant.
+## Bootstrap Guide
 
-## Getting Started
-
-Existing repo:
+[Ghostty](https://ghostty.org/docs/install/binary) is installed outside this repo.
+If you already have the repo checked out and want to run bootstrap directly, use `bootstrap/bootstrap.sh`.
 
 ```console
-cd ~/dotfiles
-./bootstrap/bootstrap.sh --host macos
+$ cd ~/dotfiles
+$ ./bootstrap/bootstrap.sh --host macos  # macOS
+$ ./bootstrap/bootstrap.sh --host linux  # Linux
 ```
+
+What bootstrap does:
+
+- `scripts/setup.sh` clones or fast-forwards the repo in `~/dotfiles`, then runs `bootstrap/bootstrap.sh`.
+- `bootstrap/bootstrap.sh` applies chezmoi state first, then runs the host-specific Nix activation.
+- On macOS, host auto-detection resolves from the machine serial number.
+- On Linux, host auto-detection resolves from container markers first and then `/etc/machine-id`.
+- Secret template data lives in `chezmoi/.chezmoidata/`.
+
+After bootstrap, `task` shows the common maintenance commands:
 
 ```console
 $ task
@@ -66,89 +76,52 @@ Examples
   task docker.push TAG=latest
 ```
 
-## Secrets Bootstrap
+>[!WARN]
+> `age.init` and `age.unlock` are maintenance commands.
+> Create a new age identity only on the very first machine setup:
+> 
+> ```console
+> $ task age.init
+> ```
+> 
+> If `~/.config/chezmoi/key.txt`, `chezmoi/key.txt.age`, or `chezmoi/.chezmoidata/secrets.yaml` already exists, `task age.init` refuses to run.
+> Rekey only when you intentionally want to rotate the repo recipient and re-encrypt every bundle:
+> 
+> ```console
+> $ task age.init FORCE=1
+> $ task secrets.backup
+> ```
+> 
+> Use `age.unlock` on a machine that should reuse the existing committed repo identity:
+> 
+> ```console
+> $ task age.unlock
+> ```
 
-`age.init` and `age.unlock` are maintenance commands. They are intentionally left out of the everyday `task` help output because they operate on the repo recipient and local `chezmoi` identity.
+## Random Notes
 
-Initialize a new age identity only on the first machine setup:
+#### PAM
 
-```console
-task age.init
-```
+Touch ID and Apple Watch sudo are managed by nix-darwin via `security.pam.services.sudo_local`.
+On a new macOS machine, apply the flake and keep manual PAM edits out of `/etc/pam.d`.
+If Apple Watch sudo does not appear after activation, re-check the toggle in `System Settings > Touch ID & Password`.
 
-If `~/.config/chezmoi/key.txt`, `chezmoi/key.txt.age`, or `chezmoi/.chezmoidata/secrets.yaml` already exists, `task age.init` refuses to run. Rekey only when you really mean to rotate the repo recipient and re-encrypt every bundle:
+#### sudoers
 
-```console
-task age.init FORCE=1
-task secrets.backup
-```
-
-Unlock an existing repo identity onto a machine that already has `chezmoi/key.txt.age` committed:
-
-```console
-task age.unlock
-```
-
-## Hints
-
-#### Packages
-
-Main package list: [`home/modules/core/packages.nix`](/Users/teo/dotfiles/home/modules/core/packages.nix)
-
-- It is worth checking `gh`, `herdr`, `tmux`, and `neovim` there first.
-- Ghostty is installed outside this repo.
-
-#### Host Memo
-
-- The macOS bootstrap host key is `macos`.
-- On macOS, host auto-detection resolves from the machine serial number.
-- On Linux, host auto-detection resolves from container markers first and then `/etc/machine-id`.
-- Secret template data lives in `chezmoi/.chezmoidata/`.
-- If colors look wrong, check ANSI versus truecolor first.
-
-#### sudo authentication
-
-Touch ID and Apple Watch sudo are managed by nix-darwin via `security.pam.services.sudo_local`. Keep local PAM edits out of `/etc/pam.d` unless they are intentionally outside the flake.
-
-#### visudo
-
-This is the memo I want to keep for local sudoers shape:
+Use `visudo` only for machine-local exceptions that are intentionally outside the flake.
+Do not copy the stock `root` or `%admin` entries into local notes unless they actually need to change.
 
 ```console
-# root and users in group wheel can run anything on any machine as any user
-root    ALL = (ALL) ALL
-%admin  ALL = (ALL) ALL
-mi      ALL = NOPASSWD: /usr/local/sbin/mtr,/usr/local/bin/grc,/sbin/ping,/sbin/ping6,/usr/sbin/tcpdump,/usr/sbin/purge
-```
+$ sudo visudo
 
-#### pam-watchid
-
-Apple Watch sudo used to be enabled with `pam-watchid`. If I ever need to re-check the old path, this was the installer:
-
-```console
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/mostpinkest/pam-watchid/HEAD/install.sh)" -- enable
-```
-
-And this was the corresponding `/etc/pam.d/sudo` snippet:
-
-```console
-auth       sufficient     pam_watchid.so "reason=execute a command as root"
-auth       sufficient     pam_tid.so
+# local exceptions only
+mi      ALL = NOPASSWD: /usr/sbin/tcpdump,/usr/sbin/purge
 ```
 
 #### 1Password
 
-Remember to enable CLI integration in 1Password or it will keep asking for the vault password. The path was `Settings > Developer > Command-Line Interface (CLI) > Integrate with 1Password CLI`.
-
-#### AWS Session Manager
-
-If `aws ssm` is missing the Session Manager plugin on macOS, this was the install path:
-
-```console
-curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/mac_arm64/session-manager-plugin.pkg" -o "session-manager-plugin.pkg"
-sudo installer -pkg session-manager-plugin.pkg -target /
-sudo ln -s /usr/local/sessionmanagerplugin/bin/session-manager-plugin /usr/local/bin/session-manager-plugin
-```
+Remember to enable CLI integration in 1Password or it will keep asking for the vault password.
+The path was `Settings > Developer > Command-Line Interface (CLI) > Integrate with 1Password CLI`.
 
 #### iTerm2 Preferences
 
@@ -160,3 +133,7 @@ Old iTerm2 preferences worth remembering:
 - Under `Appearance / Dimming`, keep inactive split dimming disabled.
 - Under `Advanced / Hotkey`, set the hotkey window animation duration to `0`.
 - Under `Advanced / Session`, keep "Allow sessions to survive logging out and back in" set to `No`.
+
+## References
+
+- https://rycee.net/posts/2017-07-02-manage-your-home-with-nix.html
