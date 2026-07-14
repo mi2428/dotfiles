@@ -18,6 +18,8 @@ Environment:
   DOTFILES_BOOTSTRAP_DARWIN_DAEMON_INSTALL=1
   DOTFILES_BOOTSTRAP_CHEZMOI_BIN     Path to a preinstalled chezmoi binary
   DOTFILES_BOOTSTRAP_NIX_BIN         Path to a preinstalled nix binary
+  DOTFILES_BOOTSTRAP_NIX_INSTALLER_URL
+                                   Override the Nix installer URL
 EOF
 }
 

@@ -40,20 +40,23 @@ FROM builder-base AS builder
 WORKDIR /src
 
 ARG TARGETARCH
+ARG NIX_VERSION=2.35.1
 
 COPY . /src
 
 RUN useradd --create-home --shell /bin/bash builder \
- && install -d -m 0755 -o builder -g builder /nix /tmp/skel
+ && install -d -m 0755 -o builder -g builder /nix /tmp/skel \
+ && install -d -m 0755 /etc/nix \
+ && printf '%s\n' 'filter-syscalls = false' > /etc/nix/nix.conf
 
 RUN case "${TARGETARCH:-amd64}" in \
       amd64) nix_system='x86_64-linux' ;; \
       arm64) nix_system='aarch64-linux' ;; \
       *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
     esac \
- && su builder -c "HOME=/home/builder USER=builder NIX_CONFIG='filter-syscalls = false' /src/bootstrap/install-nix.sh" \
- && su builder -c ". /home/builder/.nix-profile/etc/profile.d/nix.sh && NIX_CONFIG='filter-syscalls = false' nix build --extra-experimental-features 'nix-command flakes' --impure --file /src/containers/dotfiles/skel-home.nix --argstr system ${nix_system} --out-link /tmp/home-manager-skel" \
- && su builder -c "PATH=/home/builder/.nix-profile/bin:/nix/var/nix/profiles/default/bin:${PATH} HOME=/tmp/skel USER=skel NIX_CONFIG='filter-syscalls = false' /tmp/home-manager-skel/activate"
+ && su builder -c "HOME=/home/builder USER=builder DOTFILES_BOOTSTRAP_NIX_INSTALLER_URL='https://releases.nixos.org/nix/nix-${NIX_VERSION}/install' /src/bootstrap/install-nix.sh" \
+ && su builder -c ". /home/builder/.nix-profile/etc/profile.d/nix.sh && nix build --extra-experimental-features 'nix-command flakes' --impure --file /src/containers/dotfiles/skel-home.nix --argstr system ${nix_system} --out-link /tmp/home-manager-skel" \
+ && su builder -c "PATH=/home/builder/.nix-profile/bin:/nix/var/nix/profiles/default/bin:${PATH} HOME=/tmp/skel USER=skel /tmp/home-manager-skel/activate"
 
 FROM runtime-base AS runtime
 

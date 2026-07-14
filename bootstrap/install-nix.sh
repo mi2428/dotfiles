@@ -55,6 +55,27 @@ prepare_linux_store() {
   sudo chown "$(id -un)" /nix
 }
 
+download_nix_installer() {
+  local destination="$1"
+  local installer_url="${DOTFILES_BOOTSTRAP_NIX_INSTALLER_URL:-https://nixos.org/nix/install}"
+
+  if curl \
+    --fail \
+    --silent \
+    --show-error \
+    --location \
+    --retry 5 \
+    --retry-delay 2 \
+    --retry-all-errors \
+    "$installer_url" \
+    -o "$destination"; then
+    return 0
+  fi
+
+  printf '%s\n' "bootstrap: failed to download the Nix installer from $installer_url" >&2
+  return 1
+}
+
 if nix_bin="$(resolve_existing_nix)"; then
   printf '%s\n' "$nix_bin"
   exit 0
@@ -73,7 +94,7 @@ fi
 installer="$(mktemp "${TMPDIR:-/tmp}/nix-install.XXXXXX.sh")"
 trap 'rm -f "$installer"' EXIT
 
-curl -fsSL https://nixos.org/nix/install -o "$installer"
+download_nix_installer "$installer"
 installer_args=(--yes --no-modify-profile)
 
 if [[ -n "${DOTFILES_BOOTSTRAP_NIX_EXTRA_CONF_FILE:-}" ]]; then
