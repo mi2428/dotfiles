@@ -31,8 +31,6 @@ cd ~/dotfiles
 $ task
 
 Tasks
-  age.init           Generate the repo age identity and local chezmoi config
-  age.unlock         Decrypt key.txt.age into ~/.config/chezmoi/key.txt
   hm.build           Build the current host activation without switching
   hm.switch          Apply the current host activation and refresh managed symlinks
   hm.link            Re-apply the current host activation to re-create managed symlinks
@@ -56,7 +54,6 @@ Defaults
   DECRYPT_HOME       $HOME/.cache/dotfiles/secrets/decrypted-home
 
 Examples
-  task age.init
   task hm.switch HOST=linux
   task hm.switch HOST=docker
   task hm.gc
@@ -67,6 +64,29 @@ Examples
   task secrets.backup
   task docker.build TAG=latest
   task docker.push TAG=latest
+```
+
+## Secrets Bootstrap
+
+`age.init` and `age.unlock` are maintenance commands. They are intentionally left out of the everyday `task` help output because they operate on the repo recipient and local `chezmoi` identity.
+
+Initialize a new age identity only on the first machine setup:
+
+```console
+task age.init
+```
+
+If `~/.config/chezmoi/key.txt`, `chezmoi/key.txt.age`, or `chezmoi/.chezmoidata/secrets.yaml` already exists, `task age.init` refuses to run. Rekey only when you really mean to rotate the repo recipient and re-encrypt every bundle:
+
+```console
+task age.init FORCE=1
+task secrets.backup
+```
+
+Unlock an existing repo identity onto a machine that already has `chezmoi/key.txt.age` committed:
+
+```console
+task age.unlock
 ```
 
 ## Hints
