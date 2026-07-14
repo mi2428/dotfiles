@@ -16,10 +16,33 @@
         value = builtins.getEnv name;
       in
       if value != "" then value else fallback;
+    runtimeLinuxSystem =
+      let
+        value = envOr "DOTFILES_RUNTIME_SYSTEM" "";
+      in
+      if builtins.elem value [
+        "aarch64-linux"
+        "x86_64-linux"
+      ] then
+        value
+      else
+        "aarch64-linux";
     mkDarwin = import ./system/darwin/lib/mk-darwin.nix {
       inherit inputs self;
     };
     mkLinux = import ./system/linux/lib/mk-linux.nix { inherit inputs; };
+    mkLinuxHome = {
+      system,
+      homeModule,
+      platformName,
+      hostName,
+    }:
+      mkLinux {
+        inherit system homeModule platformName hostName;
+        systemModule = ./system/linux/hosts/ubuntu.nix;
+        userName = envOr "DOTFILES_RUNTIME_USER" "teo";
+        homeDirectory = envOr "DOTFILES_RUNTIME_HOME" "/home/teo";
+      };
     macosConfig = mkDarwin {
       system = "aarch64-darwin";
       darwinModule = ./system/darwin/hosts/macos.nix;
@@ -29,6 +52,30 @@
       userName = "teo";
       homeDirectory = "/Users/teo";
     };
+    linuxAarch64Config = mkLinuxHome {
+      system = "aarch64-linux";
+      homeModule = ./home/hosts/linux.nix;
+      platformName = "linux";
+      hostName = "linux";
+    };
+    linuxX86_64Config = mkLinuxHome {
+      system = "x86_64-linux";
+      homeModule = ./home/hosts/linux.nix;
+      platformName = "linux";
+      hostName = "linux";
+    };
+    dockerAarch64Config = mkLinuxHome {
+      system = "aarch64-linux";
+      homeModule = ./home/hosts/docker.nix;
+      platformName = "docker";
+      hostName = "docker";
+    };
+    dockerX86_64Config = mkLinuxHome {
+      system = "x86_64-linux";
+      homeModule = ./home/hosts/docker.nix;
+      platformName = "docker";
+      hostName = "docker";
+    };
   in
   {
     darwinConfigurations = {
@@ -36,25 +83,22 @@
     };
 
     homeConfigurations = {
-      "linux" = mkLinux {
-        system = "aarch64-linux";
-        systemModule = ./system/linux/hosts/ubuntu.nix;
-        homeModule = ./home/hosts/linux.nix;
-        platformName = "linux";
-        hostName = "linux";
-        userName = envOr "DOTFILES_RUNTIME_USER" "teo";
-        homeDirectory = envOr "DOTFILES_RUNTIME_HOME" "/home/teo";
-      };
+      "linux" =
+        if runtimeLinuxSystem == "x86_64-linux" then
+          linuxX86_64Config
+        else
+          linuxAarch64Config;
 
-      "docker" = mkLinux {
-        system = "x86_64-linux";
-        systemModule = ./system/linux/hosts/ubuntu.nix;
-        homeModule = ./home/hosts/docker.nix;
-        platformName = "docker";
-        hostName = "docker";
-        userName = envOr "DOTFILES_RUNTIME_USER" "teo";
-        homeDirectory = envOr "DOTFILES_RUNTIME_HOME" "/home/teo";
-      };
+      "docker" =
+        if runtimeLinuxSystem == "x86_64-linux" then
+          dockerX86_64Config
+        else
+          dockerAarch64Config;
+
+      "linuxAarch64" = linuxAarch64Config;
+      "linuxX86_64" = linuxX86_64Config;
+      "dockerAarch64" = dockerAarch64Config;
+      "dockerX86_64" = dockerX86_64Config;
     };
   };
 }

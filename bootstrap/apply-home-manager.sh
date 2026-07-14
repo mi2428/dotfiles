@@ -55,19 +55,21 @@ esac
 
 runtime_user="$(id -un)"
 runtime_home="${HOME:?bootstrap: HOME must be set}"
+runtime_system="$("$repo_root/bootstrap/detect-system.sh")"
 
 mkdir -p "$runtime_home"
 
 nix_bin="$("$repo_root/bootstrap/install-nix.sh")"
 nix_bin_dir="$(dirname "$nix_bin")"
 cache_dir="${XDG_CACHE_HOME:-$runtime_home/.cache}/dotfiles/bootstrap"
-activation_link="$cache_dir/home-manager-${host}"
+activation_link="$cache_dir/home-manager-${host}-${runtime_system}"
 
 mkdir -p "$cache_dir"
 
 PATH="$nix_bin_dir:$PATH" \
 DOTFILES_RUNTIME_USER="$runtime_user" \
 DOTFILES_RUNTIME_HOME="$runtime_home" \
+DOTFILES_RUNTIME_SYSTEM="$runtime_system" \
   "$nix_bin" build \
     --impure \
     --extra-experimental-features 'nix-command flakes' \

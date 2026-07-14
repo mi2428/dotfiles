@@ -10,6 +10,9 @@ tasks:
         host="$("$repo_root/bootstrap/resolve-host.sh" '{{default "" .HOST}}')"
         nix_bin="$("$repo_root/bootstrap/install-nix.sh")"
         nix_bin_dir="$(dirname "$nix_bin")"
+        runtime_user="$(id -un)"
+        runtime_home="${HOME:?task hm.build: HOME must be set}"
+        runtime_system="$("$repo_root/bootstrap/detect-system.sh")"
 
         case "$(uname -s):$host" in
           Darwin:macos)
@@ -33,7 +36,11 @@ tasks:
         esac
 
         PATH="$nix_bin_dir:$PATH" \
+          DOTFILES_RUNTIME_USER="$runtime_user" \
+          DOTFILES_RUNTIME_HOME="$runtime_home" \
+          DOTFILES_RUNTIME_SYSTEM="$runtime_system" \
           "$nix_bin" build \
+            --impure \
             --extra-experimental-features 'nix-command flakes' \
             --no-link \
             "$target"
