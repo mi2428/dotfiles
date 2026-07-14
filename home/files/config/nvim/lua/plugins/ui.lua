@@ -1,27 +1,45 @@
 local catppuccin = require("config.catppuccin")
 local colors = catppuccin.palette()
 
-local function dashboard_square()
-	return {
-		{ " ▀ █ █ ▀ ", hl = "SnacksDashboardSquareRed" },
-		{ " ▀ █ █ ▀ ", hl = "SnacksDashboardSquareGreen" },
-		{ " ▀ █ █ ▀ ", hl = "SnacksDashboardSquareYellow" },
-		{ " ▀ █ █ ▀ ", hl = "SnacksDashboardSquareBlue" },
-		{ " ▀ █ █ ▀ ", hl = "SnacksDashboardSquareMagenta" },
-		{ " ▀ █ █ ▀ \n", hl = "SnacksDashboardSquareCyan" },
-		{ " ██   ██ ", hl = "SnacksDashboardSquareRed" },
-		{ " ██   ██ ", hl = "SnacksDashboardSquareGreen" },
-		{ " ██   ██ ", hl = "SnacksDashboardSquareYellow" },
-		{ " ██   ██ ", hl = "SnacksDashboardSquareBlue" },
-		{ " ██   ██ ", hl = "SnacksDashboardSquareMagenta" },
-		{ " ██   ██ \n", hl = "SnacksDashboardSquareCyan" },
-		{ " ▄ █ █ ▄ ", hl = "SnacksDashboardSquareRed" },
-		{ " ▄ █ █ ▄ ", hl = "SnacksDashboardSquareGreen" },
-		{ " ▄ █ █ ▄ ", hl = "SnacksDashboardSquareYellow" },
-		{ " ▄ █ █ ▄ ", hl = "SnacksDashboardSquareBlue" },
-		{ " ▄ █ █ ▄ ", hl = "SnacksDashboardSquareMagenta" },
-		{ " ▄ █ █ ▄ ", hl = "SnacksDashboardSquareCyan" },
+local function dashboard_square_row(glyphs)
+	local groups = {
+		"SnacksDashboardSquareRed",
+		"SnacksDashboardSquareGreen",
+		"SnacksDashboardSquareYellow",
+		"SnacksDashboardSquareBlue",
+		"SnacksDashboardSquareMagenta",
+		"SnacksDashboardSquareCyan",
 	}
+	local row = {}
+
+	for index, glyph in ipairs(glyphs) do
+		row[#row + 1] = { glyph, hl = groups[index] }
+		if index < #glyphs then
+			row[#row + 1] = { "  " }
+		end
+	end
+
+	return row
+end
+
+local function dashboard_square()
+	local rows = {
+		dashboard_square_row({ "▀ █ █ ▀", "▀ █ █ ▀", "▀ █ █ ▀", "▀ █ █ ▀", "▀ █ █ ▀", "▀ █ █ ▀" }),
+		dashboard_square_row({ "██   ██", "██   ██", "██   ██", "██   ██", "██   ██", "██   ██" }),
+		dashboard_square_row({ "▄ █ █ ▄", "▄ █ █ ▄", "▄ █ █ ▄", "▄ █ █ ▄", "▄ █ █ ▄", "▄ █ █ ▄" }),
+	}
+	local text = {}
+
+	for row_index, row in ipairs(rows) do
+		for _, segment in ipairs(row) do
+			text[#text + 1] = segment
+		end
+		if row_index < #rows then
+			text[#text][1] = text[#text][1] .. "\n"
+		end
+	end
+
+	return text
 end
 
 local function dashboard_spacers(count)
@@ -493,6 +511,7 @@ return {
 					{
 						pane = 2,
 						text = dashboard_square(),
+						align = "center",
 						padding = { 5, 1 },
 					},
 					{
