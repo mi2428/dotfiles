@@ -2,13 +2,14 @@
 let
   repoRoot = ../..;
   flake = builtins.getFlake (toString repoRoot);
-  mkHome = import ../../home/lib/mk-home.nix {
+  mkLinux = import ../../system/linux/lib/mk-linux.nix {
     inherit (flake) inputs;
   };
 in
-(mkHome {
+(mkLinux {
   inherit system;
-  hostModule = ../../home/hosts/docker.nix;
+  systemModule = ../../system/linux/hosts/ubuntu.nix;
+  homeModule = ../../home/hosts/docker.nix;
   platformName = "docker";
   hostName = "docker-dev";
   userName = "skel";

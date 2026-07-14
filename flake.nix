@@ -11,10 +11,10 @@
 
   outputs = inputs@{ self, ... }:
   let
-    mkHome = import ./home/lib/mk-home.nix { inherit inputs; };
     mkDarwin = import ./system/darwin/lib/mk-darwin.nix {
       inherit inputs self;
     };
+    mkLinux = import ./system/linux/lib/mk-linux.nix { inherit inputs; };
   in
   {
     darwinConfigurations = {
@@ -30,18 +30,20 @@
     };
 
     homeConfigurations = {
-      "linux-server" = mkHome {
+      "linux-server" = mkLinux {
         system = "aarch64-linux";
-        hostModule = ./home/hosts/linux.nix;
+        systemModule = ./system/linux/hosts/ubuntu.nix;
+        homeModule = ./home/hosts/linux.nix;
         platformName = "linux";
         hostName = "linux-server";
         userName = "teo";
         homeDirectory = "/home/teo";
       };
 
-      "docker-dev" = mkHome {
+      "docker-dev" = mkLinux {
         system = "x86_64-linux";
-        hostModule = ./home/hosts/docker.nix;
+        systemModule = ./system/linux/hosts/ubuntu.nix;
+        homeModule = ./home/hosts/docker.nix;
         platformName = "docker";
         hostName = "docker-dev";
         userName = "teo";
