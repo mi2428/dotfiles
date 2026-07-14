@@ -76,7 +76,7 @@ Examples
   task docker.push TAG=latest
 ```
 
->[!WARN]
+>[!WARNING]
 > `age.init` and `age.unlock` are maintenance commands.
 > Create a new age identity only on the very first machine setup:
 > 
