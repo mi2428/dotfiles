@@ -79,26 +79,25 @@ Examples
   task docker.push TAG=latest
 ```
 
->[!TIP]
-> For quick config checks, you do not need to run `hm.switch` for every small change.
-> Point XDG-aware apps directly at the repo working tree instead:
-> 
-> ```console
-> $ export XDG_CONFIG_HOME=$HOME/dotfiles/home/files/config
-> $ export XDG_STATE_HOME=/tmp/dotfiles-test/state
-> $ export XDG_CACHE_HOME=/tmp/dotfiles-test/cache
-> $ mkdir -p "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
-> ```
->
-> Then launch the target app from that shell.
-> This works well for tools such as Neovim and fish:
->
-> ```console
-> $ nvim
-> $ fish
-> ```
->
-> That uses the repo's in-progress config before re-applying Home Manager.
+For quick config checks, you do not need to run `hm.switch` for every small change.
+Point XDG-aware apps directly at the repo working tree instead:
+
+```console
+$ export XDG_CONFIG_HOME=$HOME/dotfiles/home/files/config
+$ export XDG_STATE_HOME=/tmp/dotfiles-test/state
+$ export XDG_CACHE_HOME=/tmp/dotfiles-test/cache
+$ mkdir -p "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
+```
+
+Then launch the target app from that shell.
+This works well for tools such as Neovim and fish:
+
+```console
+$ nvim
+$ fish
+```
+
+That uses the repo's in-progress config before re-applying Home Manager.
 
 >[!WARNING]
 > `age.init` and `age.unlock` are maintenance commands.
