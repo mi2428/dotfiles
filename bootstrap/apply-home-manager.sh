@@ -43,8 +43,10 @@ if [[ "$(uname -s)" != "Linux" ]]; then
   exit 1
 fi
 
+host="$("$repo_root/bootstrap/resolve-host.sh" "$host")"
+
 case "$host" in
-  linux-server|docker-dev) ;;
+  linux|docker) ;;
   *)
     printf '%s\n' "bootstrap: unsupported Linux host: $host" >&2
     exit 1

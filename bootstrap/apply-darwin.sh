@@ -43,7 +43,9 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
-if [[ "$host" != "MBP-M4Pro48G-C3VH95F6P6" ]]; then
+host="$("$repo_root/bootstrap/resolve-host.sh" "$host")"
+
+if [[ "$host" != "macos" ]]; then
   printf '%s\n' "bootstrap: unsupported darwin host: $host" >&2
   exit 1
 fi

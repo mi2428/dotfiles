@@ -26,18 +26,7 @@ log() {
 }
 
 detect_host() {
-  case "$(uname -s)" in
-    Darwin)
-      scutil --get ComputerName 2>/dev/null || hostname -s
-      ;;
-    Linux)
-      hostname -s
-      ;;
-    *)
-      printf '%s\n' "bootstrap: unsupported platform: $(uname -s)" >&2
-      return 1
-      ;;
-  esac
+  "$repo_root/bootstrap/resolve-host.sh" "${1:-}"
 }
 
 host="${DOTFILES_BOOTSTRAP_HOST:-}"
@@ -74,15 +63,13 @@ while (($# > 0)); do
   esac
 done
 
-if [[ -z "$host" ]]; then
-  host="$(detect_host)"
-fi
+host="$(detect_host "$host")"
 
 runtime_user="$(id -un)"
 runtime_home="${HOME:?bootstrap: HOME must be set}"
 
 case "$(uname -s):$host" in
-  Darwin:MBP-M4Pro48G-C3VH95F6P6|Linux:linux-server|Linux:docker-dev) ;;
+  Darwin:macos|Linux:linux|Linux:docker) ;;
   Darwin:*)
     printf '%s\n' "bootstrap: unsupported macOS host: $host" >&2
     exit 1
@@ -117,11 +104,11 @@ fi
 
 log "applying Nix activation for host '$host'"
 case "$host" in
-  MBP-M4Pro48G-C3VH95F6P6)
+  macos)
     DOTFILES_BOOTSTRAP_SKIP_NIX_INSTALL="$skip_nix_install" \
       "$repo_root/bootstrap/apply-darwin.sh" --host "$host"
     ;;
-  linux-server|docker-dev)
+  linux|docker)
     DOTFILES_BOOTSTRAP_SKIP_NIX_INSTALL="$skip_nix_install" \
       "$repo_root/bootstrap/apply-home-manager.sh" --host "$host"
     ;;

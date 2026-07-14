@@ -11,7 +11,7 @@ in
   systemModule = ../../system/linux/hosts/ubuntu.nix;
   homeModule = ../../home/hosts/docker.nix;
   platformName = "docker";
-  hostName = "docker-dev";
+  hostName = "docker";
   userName = "skel";
   homeDirectory = "/tmp/skel";
 }).activationPackage

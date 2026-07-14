@@ -15,37 +15,38 @@
       inherit inputs self;
     };
     mkLinux = import ./system/linux/lib/mk-linux.nix { inherit inputs; };
+    macosConfig = mkDarwin {
+      system = "aarch64-darwin";
+      darwinModule = ./system/darwin/hosts/macos.nix;
+      homeModule = ./home/hosts/macos.nix;
+      platformName = "macos";
+      hostName = "macos";
+      userName = "teo";
+      homeDirectory = "/Users/teo";
+    };
   in
   {
     darwinConfigurations = {
-      "MBP-M4Pro48G-C3VH95F6P6" = mkDarwin {
-        system = "aarch64-darwin";
-        darwinModule = ./system/darwin/hosts/macos.nix;
-        homeModule = ./home/hosts/macos.nix;
-        platformName = "macos";
-        hostName = "MBP-M4Pro48G-C3VH95F6P6";
-        userName = "teo";
-        homeDirectory = "/Users/teo";
-      };
+      "macos" = macosConfig;
     };
 
     homeConfigurations = {
-      "linux-server" = mkLinux {
+      "linux" = mkLinux {
         system = "aarch64-linux";
         systemModule = ./system/linux/hosts/ubuntu.nix;
         homeModule = ./home/hosts/linux.nix;
         platformName = "linux";
-        hostName = "linux-server";
+        hostName = "linux";
         userName = "teo";
         homeDirectory = "/home/teo";
       };
 
-      "docker-dev" = mkLinux {
+      "docker" = mkLinux {
         system = "x86_64-linux";
         systemModule = ./system/linux/hosts/ubuntu.nix;
         homeModule = ./home/hosts/docker.nix;
         platformName = "docker";
-        hostName = "docker-dev";
+        hostName = "docker";
         userName = "teo";
         homeDirectory = "/home/teo";
       };
