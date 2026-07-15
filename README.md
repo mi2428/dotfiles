@@ -84,16 +84,15 @@ Examples
 ```
 
 For quick config checks, you do not need to run `hm.switch` for every small change.
-Point XDG-aware apps directly at the repo working tree instead:
+Use [`bin/dotfiles-dev`](/Users/teo/dotfiles/bin/dotfiles-dev), which builds a writable projected `XDG_CONFIG_HOME` per app from the repo tree:
 
 ```console
-$ export XDG_CONFIG_HOME=$HOME/dotfiles/home/files/config
-$ export XDG_STATE_HOME=/tmp/dotfiles-test/state
-$ export XDG_CACHE_HOME=/tmp/dotfiles-test/cache
-$ mkdir -p "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
+$ ./bin/dotfiles-dev xdg fish
+$ ./bin/dotfiles-dev ghostty
+$ ./bin/dotfiles-dev zsh
 ```
 
-Then launch the target app from that shell, which uses the repo's in-progress config before re-applying Home Manager.
+Each app gets its own projected config root under `~/.local/share/dotfiles-dev/config/`, so runtime files stay out of the tracked repo while the app still reads the in-progress config from `home/files/config`.
 Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `tmux.dev`.
 
 >[!WARNING]
