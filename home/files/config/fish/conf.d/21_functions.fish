@@ -2,7 +2,7 @@ function cd --wraps cd
     set -l max_dir_hist 25
 
     if status is-command-substitution
-        builtin cd -- $argv
+        builtin cd $argv
         return $status
     end
 
@@ -20,7 +20,7 @@ function cd --wraps cd
         return $cd_status
     end
 
-    builtin cd -- $argv
+    builtin cd $argv
     set -l cd_status $status
 
     if test $cd_status -eq 0 -a "$PWD" != "$previous"
@@ -55,7 +55,7 @@ function mcd
     end
 
     mkdir -p -- $argv[1]
-    and cd -- "$argv[1]"
+    and cd "$argv[1]"
 end
 
 function cdf
@@ -75,7 +75,7 @@ function cdf
 
     if command -sq fd
         set dst (begin
-            builtin cd -- "$root"
+            builtin cd "$root"
             fd --type d --hidden --follow --exclude .git .
         end | fzf $fzf_opts --query "$query" --preview $preview)
     else

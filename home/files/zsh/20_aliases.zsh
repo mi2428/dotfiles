@@ -36,7 +36,17 @@ __dotfiles_list_dir() {
 }
 
 cd() {
-  builtin cd -- "${1:-$HOME}" && __dotfiles_list_dir
+  local cd_status
+
+  if (( $# == 0 )); then
+    builtin cd
+  else
+    builtin cd "$@"
+  fi
+  cd_status=$?
+
+  (( cd_status == 0 )) && __dotfiles_list_dir
+  return $cd_status
 }
 
 
