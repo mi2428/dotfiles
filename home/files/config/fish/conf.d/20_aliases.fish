@@ -33,6 +33,13 @@ alias be='bundle exec'
 alias bi='bundle install'
 alias bu='bundle update'
 alias dc='docker compose'
+alias ga='g a'
+alias gb='g b'
+alias gc='g c'
+alias gd='g d'
+alias gf='g f'
+alias gp='g p'
+alias gs='g s'
 
 function __git_delta_lazygit
     set -l paging never
