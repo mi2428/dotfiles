@@ -27,7 +27,6 @@
     NOTES_DIRECTORY = "$HOME/notes";
     PAGER = "less";
     PROMPT_SEVERITY = "0";
-    TERM = "xterm-256color";
     TRASHBIN = "$HOME/.trash";
     VIRTUAL_ENV_DISABLE_PROMPT = "1";
     VISUAL = "nvim";
