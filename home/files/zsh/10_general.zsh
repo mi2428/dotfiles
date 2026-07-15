@@ -37,8 +37,6 @@ export NOTES_DIRECTORY=$HOME/notes
 
 [[ -f "$PATH_BOOKMARK" ]] || touch "$PATH_BOOKMARK"
 
-#export TERM=screen-256color
-export TERM=xterm-256color
 export LANG=en_US.UTF-8
 export LANGUAGE=$LANG
 export LC_CTYPE=$LANG
