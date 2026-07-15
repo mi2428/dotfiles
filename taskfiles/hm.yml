@@ -122,10 +122,11 @@ tasks:
           nix_collect_garbage_bin="$(command -v nix-collect-garbage)"
         fi
 
-        PATH="$nix_bin_dir:$PATH" "$nix_collect_garbage_bin" -d
-
         if [ "$(uname -s)" = "Darwin" ]; then
           sudo env PATH="$nix_bin_dir:$PATH" "$nix_collect_garbage_bin" -d
+          PATH="$nix_bin_dir:$PATH" "$nix_collect_garbage_bin" -d
+        else
+          PATH="$nix_bin_dir:$PATH" "$nix_collect_garbage_bin" -d
         fi
 
         PATH="$nix_bin_dir:$PATH" \
