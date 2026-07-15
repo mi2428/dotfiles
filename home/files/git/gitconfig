@@ -32,7 +32,6 @@
 
 [alias]
   ad      = add
-  br      = branch
   cancel  = reset --soft HEAD^
   cc      = commit -s
   ck      = checkout
