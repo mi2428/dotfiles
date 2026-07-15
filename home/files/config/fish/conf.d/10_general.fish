@@ -1,6 +1,5 @@
 set -gx NOTES_DIR $HOME/notes
 set -gx NOTES_DIRECTORY $HOME/notes
-set -gx TERM xterm-256color
 set -gx LANG en_US.UTF-8
 set -gx LANGUAGE $LANG
 set -gx LC_CTYPE $LANG
