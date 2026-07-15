@@ -256,17 +256,39 @@ function gcb
 
     set -l branch (string split -m 1 $tab -- $selected)[1]
 
+    function __gcb_switch_or_cd --no-scope-shadowing
+        set -l output ($argv 2>&1)
+        set -l status_code $status
+
+        if test $status_code -eq 0
+            test -n "$output"; and printf '%s\n' "$output"
+            return 0
+        end
+
+        set -l worktree_path (string match -rg "already used by worktree at '([^']+)'" -- "$output")
+        if test -n "$worktree_path"
+            builtin cd -- "$worktree_path"
+            and __dotfiles_list_dir
+            return 0
+        end
+
+        printf '%s\n' "$output" >&2
+        return $status_code
+    end
+
     if command git show-ref --verify --quiet "refs/remotes/$branch"
         set -l local_branch (string replace -r '^[^/]+/' '' -- $branch)
 
         if command git show-ref --verify --quiet "refs/heads/$local_branch"
-            command git switch -- "$local_branch"
+            __gcb_switch_or_cd git switch -- "$local_branch"
         else
-            command git switch --track -c "$local_branch" "$branch"
+            __gcb_switch_or_cd git switch --track -c "$local_branch" "$branch"
         end
     else
-        command git switch -- "$branch"
+        __gcb_switch_or_cd git switch -- "$branch"
     end
+
+    functions -e __gcb_switch_or_cd
 end
 
 alias gf='git fetch'

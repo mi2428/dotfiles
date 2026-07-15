@@ -82,38 +82,109 @@ function yy
     return $yazi_status
 end
 
-function cdf
-    set -l root .
-    set -l query_args $argv
-    set -l fzf_opts --select-1 --exit-0
-    set -l preview 'tree -L 3 -C -- "$CDF_ROOT"/{} | head -200'
-    set -l dst
-
-    if test (count $argv) -gt 0; and test -d "$argv[1]"
-        set root $argv[1]
-        set query_args $argv[2..-1]
+function zz
+    command -sq fzf
+    or begin
+        echo 'zz: fzf is not installed' >&2
+        return 1
     end
 
-    set -l query (string join ' ' -- $query_args)
-    set -lx CDF_ROOT $root
+    argparse a/all h/help -- $argv
+    or return 1
+
+    if set -q _flag_help
+        printf '%s\n' 'Usage: zz [-a] [DIR|/] [QUERY...]'
+        return 0
+    end
+
+    set -l root .
+    if test (count $argv) -gt 0
+        if test "$argv[1]" = /
+            set root /
+        else
+            set root "./$argv[1]"
+        end
+        set -e argv[1]
+    end
+
+    test -d "$root"
+    or begin
+        printf 'zz: directory not found: %s\n' "$root" >&2
+        return 1
+    end
+
+    set root (path resolve "$root")
+    set -l query (string join ' ' -- $argv)
+    set -l fzf_opts --select-1 --exit-0 --height=70% --scheme=path
+    set -l dst
+    set -l excludes \
+        .git \
+        .svn \
+        .hg \
+        .jj \
+        .direnv \
+        .devenv \
+        .cache \
+        .config \
+        .local \
+        .mypy_cache \
+        .npm \
+        .pytest_cache \
+        .ruff_cache \
+        .terraform \
+        .venv \
+        .bundle \
+        .cargo \
+        .cursor \
+        .gem \
+        .rustup \
+        .vscode \
+        .Trash \
+        __pycache__ \
+        node_modules \
+        vendor \
+        dist \
+        build \
+        target
+
+    if not set -q _flag_all
+        set -a excludes Library tmp
+    end
 
     if command -sq fd
+        set -l fd_args \
+            --absolute-path \
+            --type d \
+            --hidden \
+            --follow
+
+        for exclude in $excludes
+            set -a fd_args --exclude "$exclude"
+        end
+
+        set -a fd_args . "$root"
         set dst (begin
-            builtin cd "$root"
-            fd --type d --hidden --follow --exclude .git .
-        end | fzf $fzf_opts --query "$query" --preview $preview)
+            printf '%s\n' "$root"
+            fd $fd_args
+        end | fzf $fzf_opts --query "$query")
     else
+        set -l find_args "$root" "("
+
+        for idx in (seq (count $excludes))
+            test $idx -gt 1
+            and set -a find_args -o
+            set -a find_args -name "$excludes[$idx]"
+        end
+
+        set -a find_args ")" -prune -o -type d -print
         set dst (begin
-            builtin cd -- "$root"
-            command find . \
-                \( -path '*/.git' -o -path '*/.git/*' \) -prune -o \
-                -type d -print 2>/dev/null
-        end | string replace -r '^\./' '' | fzf $fzf_opts --query "$query" --preview $preview)
+            printf '%s\n' "$root"
+            command find $find_args 2>/dev/null
+        end | fzf $fzf_opts --query "$query")
     end
 
     test -n "$dst"; or return 1
-    set -l target $dst[1]
-    builtin cd -- "$root/$target"
+    builtin cd -- "$dst[1]"
     and __dotfiles_list_dir
 end
 
