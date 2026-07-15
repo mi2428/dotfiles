@@ -1,0 +1,2 @@
+-- Intentionally empty for now. Keep the file so local plugins have a stable
+-- entrypoint in both Home Manager and dotfiles-dev projections.

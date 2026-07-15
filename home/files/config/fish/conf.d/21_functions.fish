@@ -58,6 +58,30 @@ function mcd
     and cd "$argv[1]"
 end
 
+function yy
+    command -sq yazi
+    or begin
+        echo 'yy: yazi is not installed' >&2
+        return 1
+    end
+
+    set -l cwd_file (mktemp -t yazi-cwd.XXXXXX)
+    or return 1
+
+    yazi $argv --cwd-file="$cwd_file"
+    set -l yazi_status $status
+
+    if test -s "$cwd_file"
+        set -l new_dir (string trim -- (cat "$cwd_file"))
+        if test -n "$new_dir" -a "$new_dir" != "$PWD"
+            builtin cd -- "$new_dir"
+        end
+    end
+
+    rm -f -- "$cwd_file"
+    return $yazi_status
+end
+
 function cdf
     set -l root .
     set -l query_args $argv

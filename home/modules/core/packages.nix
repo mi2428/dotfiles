@@ -17,6 +17,7 @@ let
     git
     ripgrep
     starship
+    yazi
     zoxide
   ];
   containerDevPackages = with pkgs; [
@@ -60,6 +61,7 @@ let
     tree
     watch
     wget
+    yazi
     yq-go
   ];
   nonContainerPackages = with pkgs; [

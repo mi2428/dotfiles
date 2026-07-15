@@ -59,6 +59,28 @@ mcd() {
 }
 
 
+yy() {
+  whence -p yazi >/dev/null || {
+    echo 'yy: yazi is not installed' >&2
+    return 1
+  }
+
+  local cwd_file
+  cwd_file="$(mktemp -t yazi-cwd.XXXXXX)" || return 1
+  yazi "$@" --cwd-file="$cwd_file"
+  local yazi_status=$?
+
+  if [[ -s "$cwd_file" ]]; then
+    local new_dir
+    new_dir="$(<"$cwd_file")"
+    [[ -n "$new_dir" && "$new_dir" != "$PWD" ]] && builtin cd -- "$new_dir"
+  fi
+
+  rm -f -- "$cwd_file"
+  return $yazi_status
+}
+
+
 pd() {
   if (( $# == 1 )); then
     pushd "$1" >/dev/null

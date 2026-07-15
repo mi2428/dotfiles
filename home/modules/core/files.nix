@@ -4,6 +4,27 @@ let
     force = true;
     inherit source;
   };
+  catppuccinYazi = pkgs.fetchFromGitHub {
+    owner = "catppuccin";
+    repo = "yazi";
+    rev = "baaf5d1c9427b836fbefd126aa855f9eab7a9d0d";
+    hash = "sha256-L6SApM07CSQk0znEsFP8WaxW+ZHcindXo612r1XcwIg=";
+  };
+  catppuccinBat = pkgs.fetchFromGitHub {
+    owner = "catppuccin";
+    repo = "bat";
+    rev = "6810349b28055dce54076712fc05fc68da4b8ec0";
+    hash = "sha256-lJapSgRVENTrbmpVyn+UQabC9fpV1G1e+CdlJ090uvg=";
+  };
+  yaziConfig = pkgs.runCommandLocal "dotfiles-yazi-config" { } ''
+    mkdir -p "$out"
+    ln -s "${catppuccinYazi}/themes/mocha/catppuccin-mocha-green.toml" "$out/theme.toml"
+    ln -s "${catppuccinBat}/themes/Catppuccin Mocha.tmTheme" "$out/Catppuccin-mocha.tmTheme"
+    ln -s "${../../files/config/yazi/keymap.toml}" "$out/keymap.toml"
+    ln -s "${../../files/config/yazi/init.lua}" "$out/init.lua"
+    mkdir -p "$out/plugins"
+    ln -s "${../../files/config/yazi/plugins/enter-cd-or-open.yazi}" "$out/plugins/enter-cd-or-open.yazi"
+  '';
   binRoot = ../../../bin;
   binFiles = lib.mapAttrs'
     (name: _: lib.nameValuePair ".local/bin/${name}" (mkLink (binRoot + "/${name}")))
@@ -38,6 +59,7 @@ in {
     "k9s" = mkLink ../../files/config/k9s;
     "lazygit" = mkLink ../../files/config/lazygit;
     "starship" = mkLink ../../files/config/starship;
+    "yazi" = mkLink yaziConfig;
   };
 
   home.file = binFiles // macCompatibilityFiles // {

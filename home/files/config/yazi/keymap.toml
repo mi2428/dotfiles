@@ -1,0 +1,4 @@
+[mgr]
+prepend_keymap = [
+  { on = "<Enter>", run = "plugin enter-cd-or-open", desc = "Cd into the directory and quit, or open the file" },
+]
