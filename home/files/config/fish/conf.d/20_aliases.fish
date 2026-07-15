@@ -27,7 +27,6 @@ alias ..5='cd ../../../../..'
 
 alias b='bat'
 alias c='pbcopy'
-alias g='git'
 alias n='notes'
 alias o='open'
 alias r='rm -i'
@@ -78,6 +77,53 @@ end
 function gd
     git-delta-input -- $argv | __git_delta_lazygit
     return $pipestatus[1]
+end
+
+function __dotfiles_git_handler_name --argument-names subcmd
+    string replace -a '-' '_' -- "__dotfiles_git_subcommand_$subcmd"
+end
+
+function __dotfiles_git_subcommand_b
+    if test (count $argv) -gt 0
+        command git branch $argv
+        return $status
+    end
+
+    set -l result (command git-b __resolve-action)
+    set -l status_code $status
+    test $status_code -eq 0
+    or return $status_code
+
+    set -l parts (string split \t -- $result)
+    switch $parts[1]
+        case cd
+            builtin cd -- $parts[2]
+            and __dotfiles_list_dir
+        case switch
+            command git switch -- $parts[2]
+        case track
+            command git switch --track -c $parts[2] $parts[3]
+        case '*'
+            printf 'g b: unknown action: %s\n' "$parts[1]" >&2
+            return 1
+    end
+end
+
+function g
+    if test (count $argv) -eq 0
+        command git
+        return $status
+    end
+
+    set -l subcmd $argv[1]
+    set -l handler (__dotfiles_git_handler_name $subcmd)
+    set -l rest $argv[2..-1]
+
+    if functions -q $handler
+        $handler $rest
+    else
+        command git $argv
+    end
 end
 
 function __dotfiles_command_words --argument-names command_text fallback
@@ -166,129 +212,6 @@ function gdd
 
     git-delta-input --range "$base_ref"...HEAD -- $argv | __git_delta_lazygit
     return $pipestatus[1]
-end
-
-function gcb
-    command git rev-parse --is-inside-work-tree >/dev/null 2>/dev/null
-    or begin
-        echo 'gcb: not inside a git work tree' >&2
-        return 1
-    end
-
-    command -sq fzf
-    or begin
-        echo 'gcb: fzf is not installed' >&2
-        return 1
-    end
-
-    set -l tab (printf '\t')
-    set -l cols
-
-    if set -q TMUX
-        set cols (command tmux display-message -p '#{pane_width}' 2>/dev/null)
-    end
-
-    if test -z "$cols"
-        set cols $COLUMNS
-    end
-
-    if test -z "$cols"
-        set cols (command tput cols 2>/dev/null)
-    end
-
-    test -n "$cols"
-    or set cols 160
-
-    set -l preview_pct 42
-    set -l list_width (math "floor($cols * (100 - $preview_pct) / 100) - 4")
-    test $list_width -gt 72
-    or set list_width 72
-
-    set -l branch_width 34
-    set -l age_width 11
-    set -l subject_width (math "$list_width - $branch_width - $age_width - 4")
-    test $subject_width -gt 20
-    or set subject_width 20
-
-    set -l selected (command git for-each-ref \
-        --sort=-committerdate \
-        --format='%(refname:short)%09%(committerdate:relative)%09%(subject)' \
-        --exclude='refs/remotes/*/HEAD' \
-        refs/heads refs/remotes \
-        | awk -F '\t' -v branch_width="$branch_width" -v age_width="$age_width" -v subject_width="$subject_width" 'BEGIN { OFS = "\t" } {
-            branch = $1
-            age = $2
-            subject = $3
-
-            if (length(branch) > branch_width) {
-                branch = substr(branch, 1, branch_width - 3) "..."
-            }
-
-            if (length(age) > age_width) {
-                age = substr(age, 1, age_width - 3) "..."
-            }
-
-            if (length(subject) > subject_width) {
-                subject = substr(subject, 1, subject_width - 3) "..."
-            }
-
-            printf "%s\t%-*s  %-*s  %-*s\n", $1, branch_width, branch, age_width, age, subject_width, subject
-        }' \
-        | fzf \
-            --ansi \
-            --no-sort \
-            --prompt='branch> ' \
-            --delimiter=$tab \
-            --with-nth=2 \
-            --preview-window='right,42%,border-left,wrap' \
-            --preview="set -l branch {1}; \
-                git for-each-ref --format='branch: %(refname:short)%0aupdated: %(committerdate:relative)%0asubject: %(subject)' refs/heads/\$branch refs/remotes/\$branch; \
-                echo; \
-                git log --max-count=10 --oneline --graph --date=short --color=always --pretty='format:%C(auto)%cd %h%d %s' \$branch --; \
-                echo; \
-                printf '%s\n' '────────────────────────────────────────'; \
-                echo 'diff vs HEAD'; \
-                git diff --stat --color=always HEAD...\$branch" \
-            --bind='ctrl-/:change-preview-window(right,42%,border-left,wrap|down,55%,border-top,wrap)')
-
-    test -n "$selected"
-    or return 1
-
-    set -l branch (string split -m 1 $tab -- $selected)[1]
-
-    function __gcb_switch_or_cd --no-scope-shadowing
-        set -l output ($argv 2>&1)
-        set -l status_code $status
-
-        if test $status_code -eq 0
-            test -n "$output"; and printf '%s\n' "$output"
-            return 0
-        end
-
-        set -l worktree_path (string match -rg "already used by worktree at '([^']+)'" -- "$output")
-        if test -n "$worktree_path"
-            builtin cd -- "$worktree_path"
-            and __dotfiles_list_dir
-            return 0
-        end
-
-        printf '%s\n' "$output" >&2
-        return $status_code
-    end
-
-    if command git show-ref --verify --quiet "refs/remotes/$branch"
-        set -l local_branch (string replace -r '^[^/]+/' '' -- $branch)
-
-        if command git show-ref --verify --quiet "refs/heads/$local_branch"
-            __gcb_switch_or_cd git switch -- "$local_branch"
-        else
-            __gcb_switch_or_cd git switch --track -c "$local_branch" "$branch"
-        end
-    else
-        __gcb_switch_or_cd git switch -- "$branch"
-    end
-
-    functions -e __gcb_switch_or_cd
 end
 
 alias gf='git fetch'

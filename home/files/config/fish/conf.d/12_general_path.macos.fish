@@ -12,6 +12,7 @@ switch (uname -m)
 
         __dotfiles_set_path \
             $HOME/bin \
+            $HOME/dotfiles/bin \
             $HOME/io/bin \
             $HOME/.nix-profile/bin \
             /run/current-system/sw/bin \
@@ -39,6 +40,7 @@ switch (uname -m)
 
         __dotfiles_set_path \
             $HOME/bin \
+            $HOME/dotfiles/bin \
             $HOME/io/bin \
             $HOME/.nix-profile/bin \
             /run/current-system/sw/bin \

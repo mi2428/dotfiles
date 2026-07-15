@@ -1,0 +1,332 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+tab=$'\t'
+
+die() {
+  printf 'git-b: %s\n' "$*" >&2
+  exit 1
+}
+
+canonical_path() {
+  [[ -d "$1" ]] || return 1
+  cd -- "$1" && pwd -P
+}
+
+prune_worktrees() {
+  git worktree prune >/dev/null 2>&1 || true
+}
+
+current_worktree_root() {
+  canonical_path "$(git rev-parse --show-toplevel)"
+}
+
+branch_worktree_path() {
+  local branch=$1
+  git for-each-ref --format='%(worktreepath)' "refs/heads/${branch}" | head -n 1
+}
+
+print_preview() {
+  local ref=${1:-}
+  local kind=${2:-}
+  local worktree_path=${3:-}
+  local info_ref="refs/heads/${ref}"
+
+  if [[ "$worktree_path" == "-" ]]; then
+    worktree_path=""
+  fi
+
+  if [[ "$kind" == "remote" ]]; then
+    info_ref="refs/remotes/${ref}"
+  fi
+
+  git for-each-ref \
+    --format=$'branch: %(refname:short)\nupdated: %(committerdate:relative)\nauthor: %(authorname)\nsubject: %(subject)\nupstream: %(upstream:short)\nworktree: %(worktreepath)' \
+    "$info_ref"
+
+  if [[ -n "$worktree_path" ]]; then
+    printf '\nworktree path: %s\n' "$worktree_path"
+  fi
+
+  printf '\n'
+  git log --max-count=10 --oneline --graph --date=short --color=always \
+    --pretty='format:%C(auto)%cd %h%d %s' "$ref" -- || true
+
+  printf '\n%s\n' '────────────────────────────────────────'
+  printf '%s\n' 'diff vs HEAD'
+  git diff --stat --color=always "HEAD...$ref" || true
+}
+
+branch_picker() {
+  command -v fzf >/dev/null 2>&1 || die 'fzf is not installed'
+  command -v python3 >/dev/null 2>&1 || die 'python3 is not installed'
+
+  local cols formatter list_width selected
+  cols=""
+
+  if [[ -n "${TMUX:-}" ]]; then
+    cols=$(tmux display-message -p '#{pane_width}' 2>/dev/null || true)
+  fi
+
+  if [[ -z "$cols" && -n "${COLUMNS:-}" ]]; then
+    cols=$COLUMNS
+  fi
+
+  if [[ -z "$cols" ]]; then
+    cols=$(tput cols 2>/dev/null || printf '160\n')
+  fi
+
+  [[ "$cols" =~ ^[0-9]+$ ]] || cols=160
+
+  prune_worktrees
+
+  list_width=$(( cols - (cols * 42 / 100) - 5 ))
+  (( list_width > 72 )) || list_width=72
+
+  formatter="$(cat <<'PY'
+import csv
+import sys
+
+list_width = int(sys.argv[1])
+home = sys.argv[2]
+
+rows = []
+reader = csv.reader(sys.stdin, delimiter="\t")
+for ref_short, ref_full, age, author, subject, worktree in reader:
+    kind = "local" if ref_full.startswith("refs/heads/") else "remote"
+    marker = "[L]" if kind == "local" else "[R]"
+    switch_target = ref_short.split("/", 1)[1] if kind == "remote" and "/" in ref_short else ref_short
+    rows.append(
+        {
+            "ref_short": ref_short,
+            "kind": kind,
+            "marker": marker,
+            "switch_target": switch_target,
+            "age": age,
+            "author": author,
+            "subject": subject,
+            "worktree": worktree,
+        }
+    )
+
+if not rows:
+    raise SystemExit(0)
+
+def ellipsize(text: str, width: int) -> str:
+    if width <= 0:
+        return ""
+    if len(text) <= width:
+        return text
+    if width <= 3:
+        return text[:width]
+    return text[: width - 3] + "..."
+
+def shorten_path(path: str, width: int) -> str:
+    if not path:
+        return "-"
+    absolute = path.startswith("/")
+    body = path
+    prefix = ""
+    if home and path.startswith(home):
+        prefix = "~/"
+        body = path[len(home):].lstrip("/")
+    elif absolute:
+        prefix = "/"
+        body = path.lstrip("/")
+
+    parts = [part for part in body.split("/") if part]
+    if not parts:
+        return prefix.rstrip("/") or path
+
+    basename = parts[-1]
+    parents = [part[:1] for part in parts[:-1]]
+    compressed = prefix + "/".join(parents + [basename])
+    if len(compressed) <= width:
+        return compressed
+
+    tail = [basename]
+    for parent in reversed(parents):
+        candidate = prefix + ".../" + "/".join([parent] + tail)
+        if len(candidate) > width:
+            break
+        tail.insert(0, parent)
+
+    if len(tail) > 1:
+        return prefix + ".../" + "/".join(tail)
+
+    reserved = len(prefix) + 4
+    tail_width = max(1, width - reserved)
+    return prefix + ".../" + ellipsize(basename, tail_width)
+
+branch_cap = 32
+branch_min = 12
+age_cap = 12
+age_min = 8
+author_cap = 14
+author_min = 8
+worktree_cap = 28
+worktree_min = 3
+subject_min = 16
+fixed_width = 12
+
+branch_width = min(branch_cap, max(len(row["ref_short"]) for row in rows))
+branch_width = max(branch_width, branch_min)
+age_width = min(age_cap, max(len(row["age"]) for row in rows))
+age_width = max(age_width, age_min)
+author_width = min(author_cap, max(len(row["author"]) for row in rows))
+author_width = max(author_width, author_min)
+
+for row in rows:
+    row["worktree_display"] = shorten_path(row["worktree"], worktree_cap)
+
+worktree_width = min(worktree_cap, max(len(row["worktree_display"]) for row in rows))
+worktree_width = max(worktree_width, worktree_min)
+
+subject_width = list_width - fixed_width - branch_width - age_width - author_width - worktree_width
+if subject_width < subject_min:
+    shortage = subject_min - subject_width
+    reduce_worktree = min(shortage, max(0, worktree_width - worktree_min))
+    worktree_width -= reduce_worktree
+    shortage -= reduce_worktree
+
+    reduce_author = min(shortage, max(0, author_width - author_min))
+    author_width -= reduce_author
+    shortage -= reduce_author
+
+    reduce_branch = min(shortage, max(0, branch_width - branch_min))
+    branch_width -= reduce_branch
+
+    subject_width = list_width - fixed_width - branch_width - age_width - author_width - worktree_width
+
+if subject_width < subject_min:
+    subject_width = subject_min
+
+for row in rows:
+    branch_display = ellipsize(row["ref_short"], branch_width)
+    author_display = ellipsize(row["author"], author_width)
+    worktree_display = shorten_path(row["worktree"], worktree_width)
+    subject_display = ellipsize(row["subject"], subject_width)
+    display = f"{row['marker']:<3} {branch_display:<{branch_width}}  {row['age']:<{age_width}}  {author_display:<{author_width}}  {worktree_display:<{worktree_width}}  {subject_display}"
+    worktree_hidden = row["worktree"] or "-"
+    print("\t".join([row["ref_short"], row["kind"], row["switch_target"], worktree_hidden, display]))
+PY
+)"
+
+  selected="$(
+    git for-each-ref \
+      --sort=-committerdate \
+      --format='%(refname:short)%09%(refname)%09%(committerdate:relative)%09%(authorname)%09%(subject)%09%(worktreepath)' \
+      --exclude='refs/remotes/*/HEAD' \
+      refs/heads refs/remotes \
+      | python3 -c "$formatter" "$list_width" "${HOME:-}" \
+      | fzf \
+          --ansi \
+          --no-sort \
+          --prompt='branch> ' \
+          --delimiter="$tab" \
+          --with-nth=5 \
+          --preview-window='right,42%,border-left,wrap' \
+          --preview="bash '$0' __preview {1} {2} {4}" \
+          --bind='ctrl-/:change-preview-window(right,42%,border-left,wrap|down,55%,border-top,wrap)'
+  )"
+
+  [[ -n "$selected" ]] || return 1
+  printf '%s\n' "$selected"
+}
+
+switch_to_selected() {
+  local ref=$1
+  local kind=$2
+  local switch_target=$3
+  local selected_worktree=$4
+  local current_root target_worktree
+
+  current_root=$(current_worktree_root)
+  target_worktree=$selected_worktree
+
+  if [[ "$target_worktree" == "-" ]]; then
+    target_worktree=""
+  fi
+
+  prune_worktrees
+
+  if [[ "$kind" == "remote" ]] && git show-ref --verify --quiet "refs/heads/${switch_target}"; then
+    target_worktree=$(branch_worktree_path "$switch_target")
+  fi
+
+  if [[ -n "$target_worktree" ]]; then
+    if ! target_worktree=$(canonical_path "$target_worktree"); then
+      target_worktree=""
+    fi
+  fi
+
+  if [[ -n "$target_worktree" && "$target_worktree" != "$current_root" ]]; then
+    printf 'cd\t%s\t%s\n' "$target_worktree" "$switch_target"
+    return 0
+  fi
+
+  if [[ "$kind" == "remote" ]]; then
+    if git show-ref --verify --quiet "refs/heads/${switch_target}"; then
+      printf 'switch\t%s\n' "$switch_target"
+    else
+      printf 'track\t%s\t%s\n' "$switch_target" "$ref"
+    fi
+    return 0
+  fi
+
+  printf 'switch\t%s\n' "$ref"
+}
+
+execute_action() {
+  local action=${1:-}
+  local arg1=${2:-}
+  local arg2=${3:-}
+
+  case "$action" in
+    cd)
+      printf 'git-b: branch %s is already checked out at %s\n' "$arg2" "$arg1" >&2
+      return 2
+      ;;
+    switch)
+      exec git switch -- "$arg1"
+      ;;
+    track)
+      exec git switch --track -c "$arg1" "$arg2"
+      ;;
+    *)
+      die "unknown action: $action"
+      ;;
+  esac
+}
+
+main() {
+  if [[ "${1:-}" == "__preview" ]]; then
+    shift
+    print_preview "${1:-}" "${2:-}" "${3:-}"
+    return 0
+  fi
+
+  if [[ "${1:-}" == "__resolve-action" ]]; then
+    shift
+    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die 'not inside a git work tree'
+
+    local selected ref kind switch_target worktree_path
+    selected=$(branch_picker) || return $?
+    IFS=$'\t' read -r ref kind switch_target worktree_path _ <<<"$selected"
+    switch_to_selected "$ref" "$kind" "$switch_target" "$worktree_path"
+    return $?
+  fi
+
+  if (( $# > 0 )); then
+    exec git branch "$@"
+  fi
+
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die 'not inside a git work tree'
+
+  local action_line action arg1 arg2
+  action_line=$(main __resolve-action) || return $?
+  IFS=$'\t' read -r action arg1 arg2 <<<"$action_line"
+  execute_action "$action" "$arg1" "$arg2"
+}
+
+main "$@"

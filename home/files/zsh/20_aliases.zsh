@@ -859,7 +859,6 @@ alias ..5='cd ../../../../..'
 
 alias b='bat'
 alias c='pbcopy'
-alias g='git'
 alias j='jmp'
 alias n='notes'
 alias o='open'
@@ -923,6 +922,58 @@ gd() {
   setopt local_options pipefail
   git-delta-input -- "$@" | __git_delta_lazygit
 }
+__dotfiles_git_handler_name() {
+  local subcmd="${1:-}"
+  print -r -- "__dotfiles_git_subcommand_${subcmd//-/_}"
+}
+
+__dotfiles_git_subcommand_b() {
+  if (( $# > 0 )); then
+    command git branch "$@"
+    return $?
+  fi
+
+  local result status_code action arg1 arg2
+  result="$(command git-b __resolve-action)"
+  status_code=$?
+  (( status_code == 0 )) || return $status_code
+
+  IFS=$'\t' read -r action arg1 arg2 _ <<< "$result"
+  case "$action" in
+    cd)
+      builtin cd -- "$arg1" && __dotfiles_list_dir
+      ;;
+    switch)
+      command git switch -- "$arg1"
+      ;;
+    track)
+      command git switch --track -c "$arg1" "$arg2"
+      ;;
+    *)
+      printf 'g b: unknown action: %s\n' "$action" >&2
+      return 1
+      ;;
+  esac
+}
+
+g() {
+  if (( $# == 0 )); then
+    command git
+    return $?
+  fi
+
+  local subcmd="$1"
+  shift
+  local handler
+  handler="$(__dotfiles_git_handler_name "$subcmd")"
+
+  if (( $+functions[$handler] )); then
+    "$handler" "$@"
+  else
+    command git "$subcmd" "$@"
+  fi
+}
+
 gdd() {
   local base_ref
   setopt local_options pipefail

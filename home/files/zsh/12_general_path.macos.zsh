@@ -12,6 +12,7 @@ x86_64|i386)
   typeset -U path PATH
   path=(
     $HOME/bin
+    $HOME/dotfiles/bin
     $HOME/io/bin
     $HOME/.nix-profile/bin
     /run/current-system/sw/bin
@@ -40,6 +41,7 @@ arm64*)
   typeset -U path PATH
   path=(
     $HOME/bin
+    $HOME/dotfiles/bin
     $HOME/io/bin
     $HOME/.nix-profile/bin
     /run/current-system/sw/bin
