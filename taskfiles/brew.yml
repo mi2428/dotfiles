@@ -1,0 +1,17 @@
+version: '3'
+
+vars:
+  BREWFILE: '{{.REPO_ROOT}}/Brewfile'
+
+tasks:
+  brew.check:
+    desc: Check the repo-managed Brewfile against the local Homebrew state
+    cmds:
+      - /opt/homebrew/bin/brew bundle check --file '{{.BREWFILE}}' --no-upgrade
+
+  brew.sync:
+    desc: Update and upgrade Homebrew, then apply the repo-managed Brewfile
+    cmds:
+      - /opt/homebrew/bin/brew update
+      - /opt/homebrew/bin/brew upgrade
+      - /opt/homebrew/bin/brew bundle install --file '{{.BREWFILE}}'

@@ -9,6 +9,12 @@ vars:
     sh: ./bootstrap/install-chezmoi.sh
 
 includes:
+  brew:
+    taskfile: ./taskfiles/brew.yml
+    flatten: true
+    vars:
+      REPO_ROOT:
+        ref: .REPO_ROOT
   hm:
     taskfile: ./taskfiles/hm.yml
     flatten: true
@@ -51,6 +57,8 @@ tasks:
         printf "$task_fmt" "$green" 'hm.link' "$reset" 'Re-apply the current host activation to re-create managed symlinks'
         printf "$task_fmt" "$green" 'hm.update' "$reset" 'Update nixpkgs in flake.lock and apply the current host activation'
         printf "$task_fmt" "$green" 'hm.gc' "$reset" 'Delete old generations and collect Nix garbage'
+        printf "$task_fmt" "$green" 'brew.check' "$reset" 'Check the repo-managed Brewfile against the local Homebrew state'
+        printf "$task_fmt" "$green" 'brew.sync' "$reset" 'Update and upgrade Homebrew, then apply the repo-managed Brewfile'
         printf "$task_fmt" "$green" 'secrets.encrypt' "$reset" 'Encrypt ssh and/or gnupg into chezmoi source state'
         printf "$task_fmt" "$green" 'secrets.decrypt' "$reset" 'Decrypt ssh and/or gnupg into a target directory'
         printf "$task_fmt" "$green" 'secrets.backup' "$reset" 'Backup ssh and gnupg into encrypted chezmoi source state'
@@ -69,8 +77,6 @@ tasks:
         printf "$default_fmt" "$yellow" 'DECRYPT_HOME' "$reset" '$HOME/.cache/dotfiles/secrets/decrypted-home'
         printf '\n%bExamples%b\n' "$bold$cyan" "$reset"
         printf '  %btask hm.update HOST=macos%b\n' "$green" "$reset"
-        printf '  %btask hm.switch HOST=macos%b\n' "$green" "$reset"
-        printf '  %btask hm.switch HOST=linux%b\n' "$green" "$reset"
         printf '  %btask hm.switch HOST=docker%b\n' "$green" "$reset"
         printf '  %btask hm.gc%b\n' "$green" "$reset"
         printf '  %btask secrets.encrypt%b\n' "$green" "$reset"
