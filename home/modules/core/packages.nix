@@ -6,6 +6,7 @@ let
     fd
     fzf
     git
+    gnupg
     ripgrep
     starship
     yazi
