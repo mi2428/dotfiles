@@ -1,4 +1,12 @@
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
+local function lockfile_path()
+	local preferred = vim.fn.expand("~/dotfiles/home/files/config/nvim/lazy-lock.json")
+	if vim.uv.fs_stat(preferred) ~= nil then
+		return preferred
+	end
+
+	return vim.fn.stdpath("data") .. "/lazy/lazy-lock.json"
+end
 
 if not vim.uv.fs_stat(lazypath) then
 	local out = vim.fn.system({
@@ -17,7 +25,7 @@ end
 vim.opt.rtp:prepend(lazypath)
 
 require("lazy").setup("plugins", {
-	lockfile = vim.fn.stdpath("config") .. "/lazy-lock.json",
+	lockfile = lockfile_path(),
 	change_detection = {
 		notify = false,
 	},
