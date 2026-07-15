@@ -18,7 +18,7 @@ let
   };
   yaziConfig = pkgs.runCommandLocal "dotfiles-yazi-config" { } ''
     mkdir -p "$out"
-    ln -s "${catppuccinYazi}/themes/mocha/catppuccin-mocha-green.toml" "$out/theme.toml"
+    ln -s "${../../files/config/yazi/theme.toml}" "$out/theme.toml"
     ln -s "${catppuccinBat}/themes/Catppuccin Mocha.tmTheme" "$out/Catppuccin-mocha.tmTheme"
     ln -s "${../../files/config/yazi/keymap.toml}" "$out/keymap.toml"
     ln -s "${../../files/config/yazi/init.lua}" "$out/init.lua"
