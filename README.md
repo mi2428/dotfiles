@@ -83,20 +83,19 @@ Examples
   task docker.push TAG=latest
 ```
 
+On macOS, Homebrew is intentionally decoupled from `darwin-rebuild`.
+Use the repo-root `Brewfile` with `task brew.check` and `task brew.sync` for Homebrew state, then use `task hm.switch HOST=macos` for Nix-managed changes.
+
 For quick config checks, you do not need to run `hm.switch` for every small change.
 Use [`bin/dotfiles-dev`](/Users/teo/dotfiles/bin/dotfiles-dev), which builds a writable projected `XDG_CONFIG_HOME` per app from the repo tree:
 
 ```console
 $ ./bin/dotfiles-dev xdg fish  # or ./bin/fish.dev
 $ ./bin/dotfiles-dev ghostty   # or ./bin/ghostty.dev
-$ ./bin/dotfiles-dev zsh       # or ./bin/zsh.dev
 ```
 
 Each app gets its own projected config root under `~/.local/share/dotfiles-dev/config/`, so runtime files stay out of the tracked repo while the app still reads the in-progress config from `home/files/config`.
 Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `tmux.dev`.
-
-On macOS, Homebrew is intentionally decoupled from `darwin-rebuild`.
-Use the repo-root `Brewfile` with `task brew.check` and `task brew.sync` for Homebrew state, then use `task hm.switch HOST=macos` for Nix-managed changes.
 
 >[!WARNING]
 > `age.init` and `age.unlock` are maintenance commands.
