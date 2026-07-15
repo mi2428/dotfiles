@@ -50,6 +50,8 @@ Tasks
   hm.link            Re-apply the current host activation to re-create managed symlinks
   hm.update          Update nixpkgs in flake.lock and apply the current host activation
   hm.gc              Delete old generations and collect Nix garbage
+  brew.check         Check the repo-managed Brewfile against the local Homebrew state
+  brew.sync          Update and upgrade Homebrew, then apply the repo-managed Brewfile
   secrets.encrypt    Encrypt ssh and/or gnupg into chezmoi source state
   secrets.decrypt    Decrypt ssh and/or gnupg into a target directory
   secrets.backup     Backup ssh and gnupg into encrypted chezmoi source state
@@ -70,8 +72,6 @@ Defaults
 
 Examples
   task hm.update HOST=macos
-  task hm.switch HOST=macos
-  task hm.switch HOST=linux
   task hm.switch HOST=docker
   task hm.gc
   task secrets.encrypt
@@ -87,13 +87,16 @@ For quick config checks, you do not need to run `hm.switch` for every small chan
 Use [`bin/dotfiles-dev`](/Users/teo/dotfiles/bin/dotfiles-dev), which builds a writable projected `XDG_CONFIG_HOME` per app from the repo tree:
 
 ```console
-$ ./bin/dotfiles-dev xdg fish
-$ ./bin/dotfiles-dev ghostty
-$ ./bin/dotfiles-dev zsh
+$ ./bin/dotfiles-dev xdg fish  # or ./bin/fish.dev
+$ ./bin/dotfiles-dev ghostty   # or ./bin/ghostty.dev
+$ ./bin/dotfiles-dev zsh       # or ./bin/zsh.dev
 ```
 
 Each app gets its own projected config root under `~/.local/share/dotfiles-dev/config/`, so runtime files stay out of the tracked repo while the app still reads the in-progress config from `home/files/config`.
 Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `tmux.dev`.
+
+On macOS, Homebrew is intentionally decoupled from `darwin-rebuild`.
+Use the repo-root `Brewfile` with `task brew.check` and `task brew.sync` for Homebrew state, then use `task hm.switch HOST=macos` for Nix-managed changes.
 
 >[!WARNING]
 > `age.init` and `age.unlock` are maintenance commands.
