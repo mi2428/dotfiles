@@ -2,12 +2,6 @@ for stale_abbr in Ia Iag Ic Ieg Ig Igr Ih Ik Im Ip Is It Iv Iw Ix
     abbr --erase -- $stale_abbr 2>/dev/null
 end
 
-abbr --add -- gcan 'git commit --amend --no-edit'
-abbr --add -- gcaa 'git commit --amend'
-abbr --add -- gpf 'git push --force-with-lease'
-abbr --add -- gclean 'git clean -fd'
-abbr --add -- gri 'git rebase -i'
-abbr --add -- glg 'git log --oneline --graph --decorate --all'
 abbr --add -- dcu 'docker compose up'
 abbr --add -- dcub 'docker compose up --build'
 abbr --add -- dce 'docker compose exec'
@@ -39,9 +33,6 @@ alias be='bundle exec'
 alias bi='bundle install'
 alias bu='bundle update'
 alias dc='docker compose'
-alias ga='git add'
-alias gb='git branch'
-alias gc='git commit -s -m'
 
 function __git_delta_lazygit
     set -l paging never
@@ -74,13 +65,72 @@ function __git_delta_lazygit
     delta --paging="$paging" $delta_args
 end
 
-function gd
+function __dotfiles_git_handler_name --argument-names subcmd
+    string replace -a '-' '_' -- "__dotfiles_git_subcommand_$subcmd"
+end
+
+function __dotfiles_git_subcommand_a
+    command git add $argv
+end
+
+function __dotfiles_git_subcommand_aa
+    command git add -A $argv
+end
+
+function __dotfiles_git_subcommand_ac
+    command git add -A
+    and command git commit -s -m (string join ' ' -- $argv)
+end
+
+function __dotfiles_git_subcommand_c
+    command git commit -s -m $argv
+end
+
+function __dotfiles_git_subcommand_can
+    command git commit --amend --no-edit $argv
+end
+
+function __dotfiles_git_subcommand_caa
+    command git commit --amend $argv
+end
+
+function __dotfiles_git_subcommand_d
     git-delta-input -- $argv | __git_delta_lazygit
     return $pipestatus[1]
 end
 
-function __dotfiles_git_handler_name --argument-names subcmd
-    string replace -a '-' '_' -- "__dotfiles_git_subcommand_$subcmd"
+function __dotfiles_git_subcommand_dd
+    set -l base_ref
+
+    if git rev-parse --verify --quiet refs/remotes/origin/HEAD >/dev/null 2>/dev/null
+        set base_ref origin/HEAD
+    else if git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null 2>/dev/null
+        set base_ref origin/main
+    else if git rev-parse --verify --quiet refs/remotes/origin/master >/dev/null 2>/dev/null
+        set base_ref origin/master
+    else
+        echo 'g dd: could not determine a default base ref (tried origin/HEAD, origin/main, origin/master)' >&2
+        return 1
+    end
+
+    git-delta-input --range "$base_ref"...HEAD -- $argv | __git_delta_lazygit
+    return $pipestatus[1]
+end
+
+function __dotfiles_git_subcommand_f
+    command git fetch $argv
+end
+
+function __dotfiles_git_subcommand_p
+    command git push $argv
+end
+
+function __dotfiles_git_subcommand_pf
+    command git push --force-with-lease $argv
+end
+
+function __dotfiles_git_subcommand_s
+    command git status $argv
 end
 
 function __dotfiles_git_subcommand_b
@@ -107,6 +157,42 @@ function __dotfiles_git_subcommand_b
             printf 'g b: unknown action: %s\n' "$parts[1]" >&2
             return 1
     end
+end
+
+function __dotfiles_git_subcommand_bm
+    command git branch -M $argv
+end
+
+function __dotfiles_git_subcommand_co
+    command git checkout $argv
+end
+
+function __dotfiles_git_subcommand_dc
+    command git diff --cached $argv
+end
+
+function __dotfiles_git_subcommand_pl
+    command git pull $argv
+end
+
+function __dotfiles_git_subcommand_wa
+    command git worktree add $argv
+end
+
+function __dotfiles_git_subcommand_wr
+    command git worktree remove $argv
+end
+
+function __dotfiles_git_subcommand_clean
+    command git clean -fd $argv
+end
+
+function __dotfiles_git_subcommand_ri
+    command git rebase -i $argv
+end
+
+function __dotfiles_git_subcommand_lg
+    command git log --oneline --graph --decorate --all $argv
 end
 
 function g
@@ -196,37 +282,10 @@ function Ix
     xargs $argv
 end
 
-function gdd
-    set -l base_ref
-
-    if git rev-parse --verify --quiet refs/remotes/origin/HEAD >/dev/null 2>/dev/null
-        set base_ref origin/HEAD
-    else if git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null 2>/dev/null
-        set base_ref origin/main
-    else if git rev-parse --verify --quiet refs/remotes/origin/master >/dev/null 2>/dev/null
-        set base_ref origin/master
-    else
-        echo 'gdd: could not determine a default base ref (tried origin/HEAD, origin/main, origin/master)' >&2
-        return 1
-    end
-
-    git-delta-input --range "$base_ref"...HEAD -- $argv | __git_delta_lazygit
-    return $pipestatus[1]
-end
-
-alias gf='git fetch'
-alias gp='git push'
-alias gs='git status'
 alias kc='kubectl'
 alias py='python3'
 alias rc='bundle exec rails c'
 alias tf='terraform'
-alias gbm='git branch -M'
-alias gco='git checkout'
-alias gdc='git diff --cached'
-alias gpl='git pull'
-alias gwa='git worktree add'
-alias gwr='git worktree remove'
 alias ipf='iperf3'
 alias ipp='ip -6'
 alias ipy='ipython3'
@@ -269,14 +328,6 @@ end
 function dox
     set -l name (docker ps --format '{{.Names}}' | fzf)
     test -n "$name"; and docker exec -it "$name" $argv
-end
-
-function gaa
-    git add -A $argv
-end
-
-function gac
-    git add -A; and git commit -s -m (string join ' ' -- $argv)
 end
 
 function ssa

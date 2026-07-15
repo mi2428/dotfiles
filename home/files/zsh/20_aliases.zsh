@@ -874,9 +874,6 @@ alias be='bundle exec'
 alias bi='bundle install'
 alias bu='bundle update'
 alias dc='docker compose'
-alias ga='git add'
-alias gb='git branch'
-alias gc='git commit -s -m'
 __git_delta_lazygit() {
   local paging='never'
   local added_label=$'\033[1;38;2;166;227;161mA\033[0m'
@@ -918,13 +915,72 @@ __git_delta_lazygit() {
 
   "${delta_cmd[@]}"
 }
-gd() {
-  setopt local_options pipefail
-  git-delta-input -- "$@" | __git_delta_lazygit
-}
 __dotfiles_git_handler_name() {
   local subcmd="${1:-}"
   print -r -- "__dotfiles_git_subcommand_${subcmd//-/_}"
+}
+
+__dotfiles_git_subcommand_a() {
+  command git add "$@"
+}
+
+__dotfiles_git_subcommand_aa() {
+  command git add -A "$@"
+}
+
+__dotfiles_git_subcommand_ac() {
+  command git add -A && command git commit -s -m "$*"
+}
+
+__dotfiles_git_subcommand_c() {
+  command git commit -s -m "$@"
+}
+
+__dotfiles_git_subcommand_can() {
+  command git commit --amend --no-edit "$@"
+}
+
+__dotfiles_git_subcommand_caa() {
+  command git commit --amend "$@"
+}
+
+__dotfiles_git_subcommand_d() {
+  setopt local_options pipefail
+  git-delta-input -- "$@" | __git_delta_lazygit
+}
+
+__dotfiles_git_subcommand_dd() {
+  local base_ref
+  setopt local_options pipefail
+
+  if git rev-parse --verify --quiet refs/remotes/origin/HEAD >/dev/null; then
+    base_ref='origin/HEAD'
+  elif git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null; then
+    base_ref='origin/main'
+  elif git rev-parse --verify --quiet refs/remotes/origin/master >/dev/null; then
+    base_ref='origin/master'
+  else
+    echo 'g dd: could not determine a default base ref (tried origin/HEAD, origin/main, origin/master)' >&2
+    return 1
+  fi
+
+  git-delta-input --range "${base_ref}...HEAD" -- "$@" | __git_delta_lazygit
+}
+
+__dotfiles_git_subcommand_f() {
+  command git fetch "$@"
+}
+
+__dotfiles_git_subcommand_p() {
+  command git push "$@"
+}
+
+__dotfiles_git_subcommand_pf() {
+  command git push --force-with-lease "$@"
+}
+
+__dotfiles_git_subcommand_s() {
+  command git status "$@"
 }
 
 __dotfiles_git_subcommand_b() {
@@ -956,6 +1012,42 @@ __dotfiles_git_subcommand_b() {
   esac
 }
 
+__dotfiles_git_subcommand_bm() {
+  command git branch -M "$@"
+}
+
+__dotfiles_git_subcommand_co() {
+  command git checkout "$@"
+}
+
+__dotfiles_git_subcommand_dc() {
+  command git diff --cached "$@"
+}
+
+__dotfiles_git_subcommand_pl() {
+  command git pull "$@"
+}
+
+__dotfiles_git_subcommand_wa() {
+  command git worktree add "$@"
+}
+
+__dotfiles_git_subcommand_wr() {
+  command git worktree remove "$@"
+}
+
+__dotfiles_git_subcommand_clean() {
+  command git clean -fd "$@"
+}
+
+__dotfiles_git_subcommand_ri() {
+  command git rebase -i "$@"
+}
+
+__dotfiles_git_subcommand_lg() {
+  command git log --oneline --graph --decorate --all "$@"
+}
+
 g() {
   if (( $# == 0 )); then
     command git
@@ -973,27 +1065,6 @@ g() {
     command git "$subcmd" "$@"
   fi
 }
-
-gdd() {
-  local base_ref
-  setopt local_options pipefail
-
-  if git rev-parse --verify --quiet refs/remotes/origin/HEAD >/dev/null; then
-    base_ref='origin/HEAD'
-  elif git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null; then
-    base_ref='origin/main'
-  elif git rev-parse --verify --quiet refs/remotes/origin/master >/dev/null; then
-    base_ref='origin/master'
-  else
-    echo 'gdd: could not determine a default base ref (tried origin/HEAD, origin/main, origin/master)' >&2
-    return 1
-  fi
-
-  git-delta-input --range "${base_ref}...HEAD" -- "$@" | __git_delta_lazygit
-}
-alias gf='git fetch'
-alias gp='git push'
-alias gs='git status'
 alias kc='kubectl'
 alias py='python3'
 alias rc='bundle exec rails c'
@@ -1005,14 +1076,6 @@ alias dck='docker compose kill && docker compose rm -f'
 alias dcl='docker compose logs -f'
 alias dcp='docker compose ps -a'
 alias dow='cd $HOME/Downloads'
-alias gaa='git add -A'
-alias gac='git add -A && git commit -s -m'
-alias gbm='git branch -M'
-alias gco='git checkout'
-alias gdc='git diff --cached'
-alias gpl='git pull'
-alias gwa='git worktree add'
-alias gwr='git worktree remove'
 alias ipf='iperf3'
 alias ipp='ip -6'
 alias ipy='ipython3'
