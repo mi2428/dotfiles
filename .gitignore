@@ -225,6 +225,11 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# Local Herdr runtime files must not live in the tracked config tree.
+home/files/config/herdr/*.log
+home/files/config/herdr/*.sock
+home/files/config/herdr/session.json
+
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore

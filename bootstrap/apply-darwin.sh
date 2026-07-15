@@ -52,6 +52,7 @@ fi
 
 runtime_user="$(id -un)"
 runtime_home="${HOME:?bootstrap: HOME must be set}"
+stage_repo="$("$repo_root/bootstrap/stage-flake-source.sh")"
 
 nix_bin="$("$repo_root/bootstrap/install-nix.sh")"
 nix_bin_dir="$(dirname "$nix_bin")"
@@ -64,16 +65,18 @@ nix_config='experimental-features = nix-command flakes'
 
 mkdir -p "$cache_dir"
 
+trap 'rm -rf "$stage_repo"' EXIT
+
 PATH="$nix_bin_dir:$PATH" \
 NIX_CONFIG="$nix_config" \
   "$nix_bin" build \
-    "path:${repo_root}#packages.aarch64-darwin.${host}-system" \
+    "path:${stage_repo}#packages.aarch64-darwin.${host}-system" \
     --out-link "$system_only_link"
 
 PATH="$nix_bin_dir:$PATH" \
 NIX_CONFIG="$nix_config" \
   "$nix_bin" build \
-    "path:${repo_root}#homeConfigurations.${host}.activationPackage" \
+    "path:${stage_repo}#homeConfigurations.${host}.activationPackage" \
     --out-link "$home_link"
 
 desired_system_only_path="$(readlink "$system_only_link")"
@@ -93,7 +96,7 @@ fi
 PATH="$nix_bin_dir:$PATH" \
 NIX_CONFIG="$nix_config" \
   "$nix_bin" build \
-    "path:${repo_root}#darwinConfigurations.${host}.system" \
+    "path:${stage_repo}#darwinConfigurations.${host}.system" \
     --out-link "$system_link"
 
 sudo env \
@@ -101,6 +104,6 @@ sudo env \
   USER="$runtime_user" \
   PATH="$nix_bin_dir:$PATH" \
   NIX_CONFIG="$nix_config" \
-  "$system_link/sw/bin/darwin-rebuild" switch --flake "path:${repo_root}#${host}"
+  "$system_link/sw/bin/darwin-rebuild" switch --flake "path:${stage_repo}#${host}"
 
 printf '%s\n' "$desired_system_only_path" > "$system_only_state"

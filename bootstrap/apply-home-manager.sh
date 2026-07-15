@@ -56,6 +56,9 @@ esac
 runtime_user="$(id -un)"
 runtime_home="${HOME:?bootstrap: HOME must be set}"
 runtime_system="$("$repo_root/bootstrap/detect-system.sh")"
+stage_repo="$("$repo_root/bootstrap/stage-flake-source.sh")"
+
+trap 'rm -rf "$stage_repo"' EXIT
 
 mkdir -p "$runtime_home"
 
@@ -73,7 +76,7 @@ DOTFILES_RUNTIME_SYSTEM="$runtime_system" \
   "$nix_bin" build \
     --impure \
     --extra-experimental-features 'nix-command flakes' \
-    "path:${repo_root}#homeConfigurations.${host}.activationPackage" \
+    "path:${stage_repo}#homeConfigurations.${host}.activationPackage" \
     --out-link "$activation_link"
 
 HOME="$runtime_home" \

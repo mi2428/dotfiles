@@ -14,6 +14,7 @@ let
     hash = "sha256-3ho7Kn84q36bj9N+Nj+5XEdkXIN4xwYk7h7g/ou3TRM=";
   };
   baseRelativeFiles = [
+    "conf.d/01_home_manager_plugins.fish"
     "conf.d/05_catppuccin_theme.fish"
     "conf.d/10_general.fish"
     "conf.d/12_general_path.fish"
@@ -24,6 +25,7 @@ let
     "conf.d/20_aliases.fish"
     "conf.d/21_functions.fish"
     "conf.d/40_grc.fish"
+    "functions/herdr.fish"
     "functions/fish_title.fish"
     "functions/fish_user_key_bindings.fish"
   ];
