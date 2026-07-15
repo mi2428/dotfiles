@@ -155,11 +155,27 @@ prepare_dev_home() {
     printf '%s\n' "$dev_home"
 }
 
+apply_xdg_host_overrides() {
+    target_root=$1
+
+    case "$(uname -s)" in
+        Darwin)
+            ensure_link \
+                "$target_root/fish/conf.d/12_general_path.fish" \
+                "$repo_root/home/files/config/fish/conf.d/12_general_path.macos.fish"
+            ensure_link \
+                "$target_root/fish/conf.d/22_aliases.fish" \
+                "$repo_root/home/files/config/fish/conf.d/22_aliases.fish"
+            ;;
+    esac
+}
+
 set_xdg_env() {
     app_name=$1
     projected_config_root=$real_home/.local/share/dotfiles-dev/config/$app_name
 
     sync_projected_config_tree "$repo_root/home/files/config" "$projected_config_root"
+    apply_xdg_host_overrides "$projected_config_root"
 
     XDG_CONFIG_HOME=$projected_config_root
     XDG_STATE_HOME=$real_home/.local/state/dotfiles-dev/$app_name
@@ -276,7 +292,21 @@ prepare_zsh_home() {
         fi
     done
 
-    for extra_name in .antigravity .fig .openclaw .sdkman .zshrc_functions; do
+    case "$(uname -s)" in
+        Darwin)
+            ensure_link \
+                "$zsh_home/12_general_path.zsh" \
+                "$repo_root/home/files/zsh/12_general_path.macos.zsh"
+            ensure_link \
+                "$zsh_home/14_general_fzf.zsh" \
+                "$repo_root/home/files/zsh/14_general_fzf.macos.zsh"
+            ensure_link \
+                "$zsh_home/22_aliases.zsh" \
+                "$repo_root/home/files/zsh/22_aliases.macos.zsh"
+            ;;
+    esac
+
+    for extra_name in .antigravity .fig .nix-profile .openclaw .sdkman .zshrc_functions; do
         extra_source=$real_home/$extra_name
         if [ -e "$extra_source" ] || [ -L "$extra_source" ]; then
             ensure_link "$dev_home/$extra_name" "$extra_source"

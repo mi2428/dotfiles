@@ -171,6 +171,16 @@ bindkey '^[h' sanitize_history
 autoload -Uz colors && colors
 autoload -Uz compinit && compinit  # all completion settings must be done before
 
+if (( ${+commands[atuin]} )); then
+  # Keep ctrl-r on fzf and invoke Atuin through a dedicated terminal-level
+  # escape sequence. Atuin's zsh init registers the public `atuin-search`
+  # widget, so we bind that widget directly instead of shelling out ourselves.
+  # References:
+  # - https://github.com/atuinsh/atuin/blob/main/crates/atuin/src/shell/atuin.zsh
+  eval "$(atuin init zsh --disable-ctrl-r)"
+  (( ${+widgets[atuin-search]} )) && bindkey '\e[9001u' atuin-search
+fi
+
 # https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/#enable-shell-autocompletion
 if (( ${+commands[kubectl]} )); then
   source <(kubectl completion zsh)

@@ -10,6 +10,7 @@ let
     };
   });
   linuxEssentialPackages = with pkgs; [
+    atuin
     eza
     fd
     fzf
@@ -41,6 +42,7 @@ let
     yarn
   ];
   darwinBasePackages = with pkgs; [
+    atuin
     bash
     bat
     coreutils

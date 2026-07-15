@@ -1,4 +1,15 @@
 keybind = super+shift+r=reload_config
+# Keep plain ctrl-r available for fzf's native history widget. Trigger Atuin
+# through a dedicated Ghostty chord that emits a private CSI sequence.
+# A chord is used instead of ctrl+shift+r because the modified-letter trigger
+# proved unreliable in real use after config reloads, while the chord remained
+# stable across sessions and keyboard/input modes.
+# The shell side binds this private sequence directly to Atuin's published
+# widgets/functions, so the terminal chord is the canonical entry point.
+# References:
+# - https://github.com/atuinsh/atuin/blob/main/crates/atuin/src/shell/atuin.zsh
+# - https://github.com/atuinsh/atuin/blob/main/crates/atuin/src/shell/atuin.fish
+keybind = ctrl+g>r=text:\x1b[9001u
 keybind = global:cmd+shift+enter=toggle_quick_terminal
 keybind = cmd+g>d=new_split:right
 keybind = cmd+g>shift+d=new_split:down

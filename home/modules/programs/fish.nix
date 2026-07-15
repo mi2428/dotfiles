@@ -22,6 +22,7 @@ let
     "conf.d/14_fzf_git.fish"
     "conf.d/15_fzf_theme.fish"
     "conf.d/16_starship.fish"
+    "conf.d/17_atuin.fish"
     "conf.d/20_aliases.fish"
     "conf.d/21_functions.fish"
     "conf.d/40_grc.fish"

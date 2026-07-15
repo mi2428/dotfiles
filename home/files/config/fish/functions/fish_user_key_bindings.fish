@@ -9,4 +9,5 @@ function fish_user_key_bindings
     bind \e4 _severity_level4
     bind \es _toggle_ssh_prompt
     bind \eh _sanitize_history
+    bind \e\[9001u __dotfiles_atuin_search
 end
