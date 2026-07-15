@@ -14,10 +14,10 @@ tasks:
         nix_bin_dir="$(dirname "$nix_bin")"
 
         PATH="$nix_bin_dir:$PATH" \
-          "$nix_bin" flake lock \
+          "$nix_bin" flake update \
             --extra-experimental-features 'nix-command flakes' \
-            --update-input nixpkgs \
-            "path:${stage_repo}"
+            nixpkgs \
+            --flake "path:${stage_repo}"
 
         cp "$stage_repo/flake.lock" "$repo_root/flake.lock"
       - task: hm.switch
