@@ -12,6 +12,7 @@ set -gx LESS '-g -i -M -R -S -W -z-4 -x4'
 set -gx EDITOR vim
 set -gx PROMPT_SEVERITY 0
 set -gx TRASHBIN $HOME/.trash
+set -g fish_cursor_default block blink
 
 if test -t 0
     set -gx GPG_TTY (tty)
