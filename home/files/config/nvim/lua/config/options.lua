@@ -1,6 +1,7 @@
 local catppuccin = require("config.catppuccin")
 local opt = vim.opt
 local colors = catppuccin.palette()
+local mode_styles = {}
 
 vim.g.mapleader = " "
 vim.g.maplocalleader = " "
@@ -62,8 +63,140 @@ end
 
 patch_lua_highlights_query()
 
-local function set_statuscolumn_highlights()
-	vim.api.nvim_set_hl(0, "CursorLineNr", { fg = colors.peach, bold = true })
+local function blend(fg, bg, alpha)
+	local function hex_to_rgb(hex)
+		hex = hex:gsub("#", "")
+		return {
+			tonumber(hex:sub(1, 2), 16),
+			tonumber(hex:sub(3, 4), 16),
+			tonumber(hex:sub(5, 6), 16),
+		}
+	end
+
+	local function rgb_to_hex(rgb)
+		return string.format("#%02x%02x%02x", rgb[1], rgb[2], rgb[3])
+	end
+
+	local fg_rgb = hex_to_rgb(fg)
+	local bg_rgb = hex_to_rgb(bg)
+	local out = {}
+
+	for index = 1, 3 do
+		out[index] = math.floor((alpha * fg_rgb[index]) + ((1 - alpha) * bg_rgb[index]) + 0.5)
+	end
+
+	return rgb_to_hex(out)
+end
+
+local function refresh_mode_styles()
+	colors = catppuccin.palette()
+	mode_styles = {
+		default = {
+			fg = colors.peach,
+			bg = colors.surface0,
+		},
+		copy = {
+			fg = colors.yellow,
+			bg = blend(colors.yellow, colors.base, 0.18),
+		},
+		delete = {
+			fg = colors.red,
+			bg = blend(colors.red, colors.base, 0.18),
+		},
+		change = {
+			fg = colors.peach,
+			bg = blend(colors.peach, colors.base, 0.18),
+		},
+		format = {
+			fg = colors.rosewater,
+			bg = blend(colors.rosewater, colors.base, 0.18),
+		},
+		insert = {
+			fg = colors.teal,
+			bg = blend(colors.teal, colors.base, 0.2),
+		},
+		replace = {
+			fg = colors.blue,
+			bg = blend(colors.blue, colors.base, 0.2),
+		},
+		select = {
+			fg = colors.mauve,
+			bg = blend(colors.mauve, colors.base, 0.2),
+		},
+		visual = {
+			fg = colors.lavender,
+			bg = blend(colors.lavender, colors.base, 0.2),
+		},
+	}
+end
+
+local function cursorline_enabled(buf)
+	local ignored_filetypes = {
+		DiffviewFiles = true,
+		dashboard = true,
+		fzf = true,
+		help = true,
+		lazy = true,
+		lspinfo = true,
+		man = true,
+		mason = true,
+		oil = true,
+		prompt = true,
+		qf = true,
+		snacks_dashboard = true,
+		terminal = true,
+		toggleterm = true,
+		Trouble = true,
+	}
+
+	return vim.bo[buf].buftype == "" and ignored_filetypes[vim.bo[buf].filetype] ~= true
+end
+
+local function current_mode_scene()
+	local mode = vim.api.nvim_get_mode().mode
+	if mode:match("^i") then
+		return "insert"
+	end
+
+	if mode:match("^[Rr]") then
+		return "replace"
+	end
+
+	if mode:match("^[vV\22]") then
+		return "visual"
+	end
+
+	if mode:match("^[sS\19]") then
+		return "select"
+	end
+
+	if mode:match("^no") then
+		local operator = vim.v.operator or ""
+		if operator == "y" then
+			return "copy"
+		end
+		if operator == "d" then
+			return "delete"
+		end
+		if operator == "c" then
+			return "change"
+		end
+		if operator:match("[=!><g]") then
+			return "format"
+		end
+	end
+
+	return "default"
+end
+
+local function set_statuscolumn_highlights(scene)
+	scene = scene or "default"
+	local style = mode_styles[scene] or mode_styles.default
+
+	vim.api.nvim_set_hl(0, "CursorLine", { bg = style.bg })
+	vim.api.nvim_set_hl(0, "CursorLineSign", { bg = style.bg })
+	vim.api.nvim_set_hl(0, "CursorLineFold", { bg = style.bg })
+	vim.api.nvim_set_hl(0, "CursorLineNr", { fg = style.fg, bg = style.bg, bold = true })
 
 	local cursorline = vim.api.nvim_get_hl(0, { name = "CursorLineNr", link = false })
 	if not cursorline or vim.tbl_isempty(cursorline) then
@@ -73,6 +206,22 @@ local function set_statuscolumn_highlights()
 
 	cursorline.bold = true
 	vim.api.nvim_set_hl(0, "DotfilesStatuscolumnMarker", cursorline)
+end
+
+local function apply_mode_ui()
+	local win = vim.api.nvim_get_current_win()
+	local buf = vim.api.nvim_get_current_buf()
+	if not vim.api.nvim_win_is_valid(win) or not vim.api.nvim_buf_is_valid(buf) then
+		return
+	end
+
+	if cursorline_enabled(buf) then
+		vim.wo[win].cursorline = true
+		set_statuscolumn_highlights(current_mode_scene())
+	else
+		vim.wo[win].cursorline = false
+		set_statuscolumn_highlights("default")
+	end
 end
 
 local function statuscolumn_number_width()
@@ -178,9 +327,20 @@ opt.completeopt = { "menu", "menuone", "noselect" }
 vim.api.nvim_create_autocmd("ColorScheme", {
 	group = vim.api.nvim_create_augroup("dotfiles-statuscolumn-highlights", { clear = true }),
 	pattern = "*",
-	callback = set_statuscolumn_highlights,
+	callback = function()
+		refresh_mode_styles()
+		apply_mode_ui()
+	end,
 })
-set_statuscolumn_highlights()
+refresh_mode_styles()
+apply_mode_ui()
+
+vim.api.nvim_create_autocmd({ "BufEnter", "FileType", "ModeChanged", "WinEnter" }, {
+	group = vim.api.nvim_create_augroup("dotfiles-cursorline-mode", { clear = true }),
+	callback = function()
+		vim.schedule(apply_mode_ui)
+	end,
+})
 
 vim.api.nvim_create_autocmd("InsertEnter", {
 	group = vim.api.nvim_create_augroup("dotfiles-relative-number-mode", { clear = true }),
