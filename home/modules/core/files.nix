@@ -49,6 +49,7 @@ let
   };
 in {
   xdg.configFile = {
+    "atuin/config.toml" = mkLink ../../files/config/atuin/config.toml;
     "bat" = mkLink ../../files/config/bat;
     "eza" = mkLink ../../files/config/eza;
     "fzf" = mkLink ../../files/config/fzf;
