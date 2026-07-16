@@ -905,6 +905,11 @@ __dotfiles_git_subcommand_s() {
 }
 
 __dotfiles_git_subcommand_b() {
+  if (( $# == 1 )) && [[ "$1" == "-D" ]]; then
+    command git-b -D
+    return $?
+  fi
+
   if (( $# > 0 )); then
     command git branch "$@"
     return $?

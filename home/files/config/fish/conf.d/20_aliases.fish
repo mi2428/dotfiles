@@ -143,6 +143,11 @@ function __dotfiles_git_subcommand_s
 end
 
 function __dotfiles_git_subcommand_b
+    if test (count $argv) -eq 1 && test "$argv[1]" = "-D"
+        command git-b -D
+        return $status
+    end
+
     if test (count $argv) -gt 0
         command git branch $argv
         return $status
