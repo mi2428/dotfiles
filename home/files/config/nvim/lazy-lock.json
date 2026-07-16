@@ -23,6 +23,10 @@
     "branch": "master",
     "commit": "619363c30309d29ffa631e67c8183f2a72caa373"
   },
+  "crates.nvim": {
+    "branch": "main",
+    "commit": "694357861ec9ebf12475ddcdd04ea45a0923c32d"
+  },
   "dial.nvim": {
     "branch": "master",
     "commit": "f2634758455cfa52a8acea6f142dcd6271a1bf57"
@@ -71,9 +75,25 @@
     "branch": "main",
     "commit": "92fbaf895f83c59575ec599df532b297ebf62b14"
   },
+  "neotest": {
+    "branch": "master",
+    "commit": "4e2cd42c4252ee9d2435571d9adcdbc1d47931fe"
+  },
+  "neotest-go": {
+    "branch": "main",
+    "commit": "59b50505053f9c45a9febb79e11a56206c3e3901"
+  },
+  "neotest-python": {
+    "branch": "master",
+    "commit": "1b56ca4ba51c6014f986d6548ee629bdc95589d1"
+  },
   "nvim-lspconfig": {
     "branch": "master",
     "commit": "d5b6e3db4c17b0146f63a2fc47e2027a754b2cb1"
+  },
+  "nvim-nio": {
+    "branch": "master",
+    "commit": "edcc181a875301dd21840189aa2f2f9ad69fc172"
   },
   "nvim-treesitter": {
     "branch": "main",
@@ -110,6 +130,10 @@
   "render-markdown.nvim": {
     "branch": "main",
     "commit": "f422cb5c6855f150e2ddcfaf44e7157b98b34f6a"
+  },
+  "rustaceanvim": {
+    "branch": "main",
+    "commit": "88575b98bb9937fb9983ddec5e532b67e75ce677"
   },
   "snacks.nvim": {
     "branch": "main",

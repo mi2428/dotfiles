@@ -134,6 +134,44 @@ return {
 		},
 	},
 	{
+		"mrcjkb/rustaceanvim",
+		version = "^6",
+		ft = { "rust" },
+		init = function()
+			local rust_analyzer = resolve_rust_analyzer()
+
+			vim.g.rustaceanvim = {
+				server = {
+					cmd = rust_analyzer and { rust_analyzer } or nil,
+					default_settings = {
+						["rust-analyzer"] = {
+							checkOnSave = true,
+							check = {
+								command = "check",
+								allTargets = false,
+							},
+							cargo = {
+								allTargets = false,
+							},
+						},
+					},
+				},
+			}
+		end,
+	},
+	{
+		"saecki/crates.nvim",
+		event = { "BufRead Cargo.toml", "BufNewFile Cargo.toml" },
+		dependencies = { "nvim-lua/plenary.nvim" },
+		opts = {
+			completion = {
+				crates = {
+					enabled = true,
+				},
+			},
+		},
+	},
+	{
 		"neovim/nvim-lspconfig",
 		event = { "BufReadPre", "BufNewFile" },
 		config = function()
@@ -197,25 +235,6 @@ return {
 					},
 				},
 			})
-
-			local rust_analyzer = resolve_rust_analyzer()
-			if rust_analyzer then
-				enable("rust_analyzer", rust_analyzer, {
-					cmd = { rust_analyzer },
-					settings = {
-						["rust-analyzer"] = {
-							checkOnSave = true,
-							check = {
-								command = "check",
-								allTargets = false,
-							},
-							cargo = {
-								allTargets = false,
-							},
-						},
-					},
-				})
-			end
 
 			if executable("pyright-langserver") then
 				enable("pyright", "pyright-langserver")
