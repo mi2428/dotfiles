@@ -1,6 +1,30 @@
 local autocmd = vim.api.nvim_create_autocmd
 local augroup = vim.api.nvim_create_augroup
 
+local function is_ansible_yaml_path(path)
+	local patterns = {
+		"/group_vars/.*%.ya?ml$",
+		"/host_vars/.*%.ya?ml$",
+		"/roles/[^/]+/tasks/.*%.ya?ml$",
+		"/roles/[^/]+/handlers/.*%.ya?ml$",
+		"/roles/[^/]+/defaults/.*%.ya?ml$",
+		"/roles/[^/]+/vars/.*%.ya?ml$",
+		"/playbooks/.*%.ya?ml$",
+		"/ansible/.*%.ya?ml$",
+		"/playbook%.ya?ml$",
+		"/site%.ya?ml$",
+		"/main%.ya?ml$",
+	}
+
+	for _, pattern in ipairs(patterns) do
+		if path:match(pattern) then
+			return true
+		end
+	end
+
+	return false
+end
+
 autocmd("TextYankPost", {
 	desc = "Highlight when yanking text",
 	group = augroup("dotfiles-highlight-yank", { clear = true }),
@@ -17,6 +41,17 @@ autocmd({ "BufNewFile", "BufRead" }, {
 		vim.opt_local.tabstop = 4
 		vim.opt_local.shiftwidth = 4
 		vim.opt_local.softtabstop = 4
+	end,
+})
+
+autocmd("FileType", {
+	pattern = "yaml",
+	group = augroup("dotfiles-ansible-filetype", { clear = true }),
+	callback = function(args)
+		local path = vim.api.nvim_buf_get_name(args.buf)
+		if is_ansible_yaml_path(path) then
+			vim.bo[args.buf].filetype = "yaml.ansible"
+		end
 	end,
 })
 

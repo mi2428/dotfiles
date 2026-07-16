@@ -184,6 +184,10 @@ return {
 		lazy = false,
 	},
 	{
+		"pearofducks/ansible-vim",
+		ft = { "yaml.ansible", "ansible_hosts" },
+	},
+	{
 		"folke/lazydev.nvim",
 		ft = "lua",
 		opts = {
@@ -388,9 +392,29 @@ return {
 					},
 				},
 			})
+			enable("ansiblels", "ansible-language-server", {
+				filetypes = { "ansible", "yaml.ansible" },
+				settings = {
+					ansible = {
+						ansible = {
+							path = "ansible",
+						},
+						python = {
+							interpreterPath = "python3",
+						},
+						validation = {
+							enabled = true,
+							lint = {
+								enabled = true,
+								path = "ansible-lint",
+							},
+						},
+					},
+				},
+			})
 			enable("jsonls", "vscode-json-language-server")
 			enable("yamlls", "yaml-language-server", {
-				filetypes = { "yaml", "yaml.docker-compose", "yaml.gitlab" },
+				filetypes = { "ansible", "yaml", "yaml.ansible", "yaml.docker-compose", "yaml.gitlab" },
 				settings = {
 					redhat = {
 						telemetry = {
@@ -480,12 +504,14 @@ return {
 			}
 
 			lint.linters_by_ft = {
+				ansible = { "yamllint" },
 				dockerfile = { "hadolint" },
 				go = { "golangcilint" },
 				python = { "ruff" },
 				terraform = { "tflint" },
 				["terraform-vars"] = { "tflint" },
 				yaml = { "yamllint" },
+				["yaml.ansible"] = { "yamllint" },
 			}
 
 			local function try_lint()
