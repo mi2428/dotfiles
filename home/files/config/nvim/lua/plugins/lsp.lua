@@ -244,7 +244,24 @@ return {
 
 			enable("terraformls", "terraform-ls")
 			enable("bashls", "bash-language-server")
+			enable("dockerls", "docker-langserver")
 			enable("jsonls", "vscode-json-language-server")
+			enable("yamlls", "yaml-language-server", {
+				settings = {
+					redhat = {
+						telemetry = {
+							enabled = false,
+						},
+					},
+					yaml = {
+						format = {
+							enable = true,
+						},
+						keyOrdering = false,
+						validate = true,
+					},
+				},
+			})
 
 			for _, server in ipairs(enabled_servers) do
 				vim.lsp.enable(server)
@@ -270,10 +287,40 @@ return {
 				go = { "goimports", "gofmt" },
 				lua = { "stylua" },
 				python = { "ruff_format", "isort", "black" },
+				rust = { "rustfmt" },
 				sh = { "shfmt" },
 				terraform = { "terraform_fmt" },
 				["terraform-vars"] = { "terraform_fmt" },
 			},
 		},
+	},
+	{
+		"mfussenegger/nvim-lint",
+		event = { "BufReadPost", "BufWritePost", "InsertLeave" },
+		config = function()
+			local lint = require("lint")
+			local lint_augroup = vim.api.nvim_create_augroup("dotfiles-nvim-lint", { clear = true })
+
+			lint.linters_by_ft = {
+				dockerfile = { "hadolint" },
+				go = { "golangcilint" },
+				terraform = { "tflint" },
+				["terraform-vars"] = { "tflint" },
+			}
+
+			local function try_lint()
+				lint.try_lint()
+
+				local path = vim.api.nvim_buf_get_name(0)
+				if path:match("/%.github/workflows/.*%.ya?ml$") then
+					lint.try_lint("actionlint")
+				end
+			end
+
+			vim.api.nvim_create_autocmd({ "BufEnter", "BufWritePost", "InsertLeave" }, {
+				group = lint_augroup,
+				callback = try_lint,
+			})
+		end,
 	},
 }

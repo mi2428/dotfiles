@@ -37,6 +37,7 @@ return {
 			},
 		},
 		dependencies = {
+			"mrcjkb/rustaceanvim",
 			"nvim-neotest/nvim-nio",
 			"nvim-neotest/neotest-go",
 			"nvim-neotest/neotest-python",
@@ -54,6 +55,9 @@ return {
 					python = vim.fn.exepath("python3") ~= "" and vim.fn.exepath("python3") or "python3",
 					runner = "pytest",
 				})
+			end
+			if executable("cargo") then
+				adapters[#adapters + 1] = require("rustaceanvim.neotest")
 			end
 
 			return {

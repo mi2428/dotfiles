@@ -1,5 +1,6 @@
 local parsers = {
 	"bash",
+	"dockerfile",
 	"go",
 	"gomod",
 	"gosum",

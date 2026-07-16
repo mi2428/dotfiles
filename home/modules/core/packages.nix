@@ -14,29 +14,36 @@ let
     yazi
     zoxide
   ];
-  containerDevPackages = with pkgs; [
+  neovimPackages = with pkgs; [
     actionlint
     bash-language-server
+    black
+    dockerfile-language-server
     go-tools
     golangci-lint
     gopls
     hadolint
     lua-language-server
-    nixd
-    pre-commit
     pyright
-    python313Packages.python-lsp-server
     ruff
+    rust-analyzer
+    rustfmt
     shfmt
     stylua
-    taplo
     terraform-ls
     tflint
+    vscode-langservers-extracted
     yaml-language-server
-    yarn
   ];
+  containerDevPackages = neovimPackages ++ (with pkgs; [
+    nixd
+    pre-commit
+    python313Packages.python-lsp-server
+    taplo
+    yarn
+  ]);
   dockerPackages = sharedPackages ++ containerDevPackages;
-  linuxPackages = sharedPackages;
+  linuxPackages = sharedPackages ++ neovimPackages;
 in {
   # NOTE: Keep Nix package management limited to cross-platform shell-stack
   # basics. macOS-specific CLI and GUI packages live in the repo-root Brewfile
