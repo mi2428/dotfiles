@@ -375,9 +375,18 @@ function dot
                 and git pull
                 and git push
             end
+        case switch
+            begin
+                builtin cd -- "$HOME/dotfiles" 2>/dev/null
+                and task hm.switch
+            end
         case upgrade
-            if test (uname) = Darwin
-                brew upgrade
+            begin
+                builtin cd -- "$HOME/dotfiles" 2>/dev/null
+                and if test (uname) = Darwin
+                    task brew.sync
+                end
+                and task hm.update
             end
         case rollback
             begin
@@ -393,14 +402,6 @@ function dot
                     end
                 end
             end
-        case actions
-            if command -sq open
-                open https://github.com/mi2428/dotfiles/actions https://github.com/mi2428/ubuntu/actions
-            else
-                echo 'open your browser and visit:'
-                echo ' - https://github.com/mi2428/dotfiles/actions'
-                echo ' - https://github.com/mi2428/ubuntu/actions'
-            end
         case '*'
             echo 'usage: dot [options...]'
             echo " (empty)               move to $HOME/dotfiles"
@@ -413,7 +414,6 @@ function dot
             echo ' s,  sync              run pull and then push'
             echo '     upgrade           run package upgrade'
             echo '     rollback          discard unstaged tracked-file changes after confirmation'
-            echo '     actions           open GitHub Actions'
             echo ' h,  help              this help text'
     end
 end

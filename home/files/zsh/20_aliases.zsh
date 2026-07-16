@@ -322,10 +322,19 @@ dot() {
       return 0
       ;;
 
+    switch)
+      (builtin cd -- "$HOME/dotfiles" 2>/dev/null; task hm.switch)
+      return 0
+      ;;
+
     upgrade)
-      if [[ $(uname) == "Darwin" ]]; then
-        brew upgrade
-      fi
+      (
+        builtin cd -- "$HOME/dotfiles" 2>/dev/null || exit 1
+        if [[ $(uname) == "Darwin" ]]; then
+          task brew.sync || exit 1
+        fi
+        task hm.update
+      )
       return 0
       ;;
 
@@ -347,17 +356,6 @@ dot() {
       return 0
       ;;
 
-    actions)
-      if whence -p open 2>/dev/null 1>&2; then
-        open https://github.com/mi2428/dotfiles/actions https://github.com/mi2428/ubuntu/actions
-      else
-        echo "open your browser and visit:"
-        echo " - https://github.com/mi2428/dotfiles/actions"
-        echo " - https://github.com/mi2428/ubuntu/actions"
-      fi
-      return 0
-      ;;
-
     -h|--help|*)
       echo "usage: dot [options...]"
       echo " (empty)               move to $HOME/dotfiles"
@@ -370,7 +368,6 @@ dot() {
       echo " s,  sync              run pull and then push"
       echo "     upgrade           run package upgrade"
       echo "     rollback          discard unstaged tracked-file changes after confirmation"
-      echo "     actions           open GitHub Actions"
       echo " h,  help              this help text"
       return 0
       ;;
