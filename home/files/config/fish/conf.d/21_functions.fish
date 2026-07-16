@@ -316,53 +316,6 @@ function mmm
     end
 end
 
-function dk
-    set -l sub $argv[1]
-    set -e argv[1]
-
-    switch $sub
-        case art rt
-            docker start $argv
-        case op
-            docker stop $argv
-        case im
-            docker images $argv
-        case bd
-            docker build $argv
-        case ex
-            docker exec $argv
-        case kl
-            docker kill $argv
-        case lg
-            docker logs $argv
-        case pl
-            if test (count $argv) -eq 0
-                for image in (docker images --format '{{.Repository}}:{{.Tag}}' --filter 'dangling=false' | grep -v '<none>' | fzf --multi)
-                    docker pull $image
-                end
-            else if test "$argv[1]" = ubuntu
-                docker pull ghcr.io/mi2428/ubuntu:latest
-            else
-                for image in $argv
-                    docker pull "$image"
-                end
-            end
-        case cc
-            docker commit $argv
-        case vl
-            docker volume $argv
-        case rmi
-            if test (count $argv) -eq 0
-                set -l images (docker images --format '{{.Repository}}:{{.Tag}}' --filter 'dangling=false' | grep -v '<none>' | fzf --multi)
-                test -n "$images"; and docker rmi $images
-            else
-                docker rmi $argv
-            end
-        case '*'
-            docker $sub $argv
-    end
-end
-
 function dcx
     set -l name $argv[1]
     set -e argv[1]

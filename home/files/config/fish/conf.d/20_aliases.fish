@@ -32,7 +32,7 @@ alias an='ansible'
 alias be='bundle exec'
 alias bi='bundle install'
 alias bu='bundle update'
-alias dc='docker compose'
+alias d='docker'
 alias ga='g a'
 alias gb='g b'
 alias gc='g c'
@@ -40,6 +40,8 @@ alias gd='g d'
 alias gf='g f'
 alias gp='g p'
 alias gs='g s'
+alias k='kubectl'
+alias ldk='lazydocker'
 
 function __git_delta_lazygit
     set -l paging never
@@ -289,7 +291,6 @@ function Ix
     xargs $argv
 end
 
-alias kc='kubectl'
 alias py='python3'
 alias rc='bundle exec rails c'
 alias tf='terraform'

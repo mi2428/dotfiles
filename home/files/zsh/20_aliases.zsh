@@ -265,94 +265,6 @@ mmm() {
 }
 
 
-dk() {
-  local action="${1:-}"
-  local -a args=("${@:2}")
-  local -a selected=()
-
-  case "$action" in
-    art|rt)
-      docker start "${args[@]}"
-      return 0
-      ;;
-
-    op)
-      docker stop "${args[@]}"
-      return 0
-      ;;
-
-    im)
-      docker images "${args[@]}"
-      return 0
-      ;;
-
-    bd)
-      docker build "${args[@]}"
-      return 0
-      ;;
-
-    ex)
-      docker exec "${args[@]}"
-      return 0
-      ;;
-
-    kl)
-      docker kill "${args[@]}"
-      return 0
-      ;;
-
-    lg)
-      docker logs "${args[@]}"
-      return 0
-      ;;
-
-    pl)
-      if (( $# == 1 )); then
-        selected=("${(@f)$(docker images --format '{{.Repository}}:{{.Tag}}' --filter 'dangling=false' | grep -v '<none>' | fzf --multi)}")
-        (( ${#selected[@]} > 0 )) || return 1
-        local image
-        for image in "${selected[@]}"; do
-          docker pull "$image"
-        done
-      elif [[ $2 == "ubuntu" ]]; then
-        docker pull ghcr.io/mi2428/ubuntu:latest
-      else
-        local image
-        for image in "${args[@]}"; do
-          docker pull "$image"
-        done
-      fi
-      return 0
-      ;;
-
-    cc)
-      docker commit "${args[@]}"
-      return 0
-      ;;
-
-    vl)
-      docker volume "${args[@]}"
-      return 0
-      ;;
-
-    rmi)
-      if (( $# == 1 )); then
-        selected=("${(@f)$(docker images --format '{{.Repository}}:{{.Tag}}' --filter 'dangling=false' | grep -v '<none>' | fzf --multi)}")
-        (( ${#selected[@]} > 0 )) || return 1
-        docker rmi "${selected[@]}"
-      else
-        docker rmi "${args[@]}"
-      fi
-      return 0
-      ;;
-
-    *)
-      docker "$@"
-      ;;
-  esac
-}
-
-
 dcx() {
   local name="${1:-}"
   local -a args=("${@:2}")
@@ -873,7 +785,7 @@ alias an='ansible'
 alias be='bundle exec'
 alias bi='bundle install'
 alias bu='bundle update'
-alias dc='docker compose'
+alias d='docker'
 alias ga='g a'
 alias gb='g b'
 alias gc='g c'
@@ -881,6 +793,8 @@ alias gd='g d'
 alias gf='g f'
 alias gp='g p'
 alias gs='g s'
+alias k='kubectl'
+alias ldk='lazydocker'
 __git_delta_lazygit() {
   local paging='never'
   local added_label=$'\033[1;38;2;166;227;161mA\033[0m'
@@ -1072,7 +986,6 @@ g() {
     command git "$subcmd" "$@"
   fi
 }
-alias kc='kubectl'
 alias py='python3'
 alias rc='bundle exec rails c'
 alias tf='terraform'
