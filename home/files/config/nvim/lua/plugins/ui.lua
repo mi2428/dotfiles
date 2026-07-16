@@ -600,6 +600,30 @@ return {
 		},
 	},
 	{
+		"akinsho/toggleterm.nvim",
+		version = "*",
+		cmd = { "ToggleTerm", "TermExec" },
+		keys = {
+			{
+				"<C-\\>",
+				"<cmd>ToggleTerm direction=float<cr>",
+				mode = { "n", "t" },
+				desc = "Toggle floating terminal",
+			},
+		},
+		opts = {
+			direction = "float",
+			float_opts = {
+				border = "curved",
+			},
+			hide_numbers = true,
+			insert_mappings = true,
+			persist_size = true,
+			shade_terminals = false,
+			start_in_insert = true,
+		},
+	},
+	{
 		"MeanderingProgrammer/render-markdown.nvim",
 		ft = { "markdown" },
 		dependencies = {
