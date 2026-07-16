@@ -311,12 +311,12 @@ opt.breakindent = true
 
 opt.list = true
 opt.listchars = {
-	tab = "»-",
-	trail = "-",
-	eol = "↲",
-	extends = "»",
-	precedes = "«",
-	nbsp = "%",
+	tab = "»·",
+	trail = "·",
+	eol = "↵",
+	extends = "⟩",
+	precedes = "⟨",
+	nbsp = "⍽",
 }
 
 opt.splitbelow = true
