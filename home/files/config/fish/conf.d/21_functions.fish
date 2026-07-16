@@ -97,7 +97,7 @@ function zz
         return 0
     end
 
-    set -l root .
+    set -l root /
     if test (count $argv) -gt 0
         if test "$argv[1]" = /
             set root /
