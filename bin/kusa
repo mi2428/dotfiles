@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import calendar
+import json
+import re
+import subprocess
+import sys
+from datetime import date, timedelta
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+
+QUERY = """
+query($login: String!, $from: DateTime!, $to: DateTime!) {
+  user(login: $login) {
+    contributionsCollection(from: $from, to: $to) {
+      contributionCalendar {
+        totalContributions
+        weeks {
+          contributionDays {
+            date
+            contributionCount
+            contributionLevel
+          }
+        }
+      }
+    }
+  }
+}
+"""
+PALETTE = {
+    "text": (205, 214, 244),
+    "subtext0": (166, 173, 200),
+    "mauve": (203, 166, 247),
+    "green": (166, 227, 161),
+    "teal": (148, 226, 213),
+    "surface0": (49, 50, 68),
+    "overlay0": (108, 112, 134),
+    "yellow": (249, 226, 175),
+}
+LEVELS = [PALETTE["surface0"], PALETTE["overlay0"], PALETTE["green"], PALETTE["teal"], PALETTE["yellow"]]
+GLYPHS = ("· ", "░ ", "▒ ", "▓ ", "█ ")
+GRAPHQL_LEVELS = {
+    "NONE": 0,
+    "FIRST_QUARTILE": 1,
+    "SECOND_QUARTILE": 2,
+    "THIRD_QUARTILE": 3,
+    "FOURTH_QUARTILE": 4,
+}
+RESET = "\033[0m"
+ORIGIN_RE = re.compile(r"github\.com[:/](?P<owner>[^/]+)/[^/]+?(?:\.git)?$")
+
+
+def color(rgb: tuple[int, int, int], text: str, *, enabled: bool = True, bold: bool = False) -> str:
+    if not enabled:
+        return text
+    weight = "1;" if bold else ""
+    return f"\033[{weight}38;2;{rgb[0]};{rgb[1]};{rgb[2]}m{text}{RESET}"
+
+
+def gh_token() -> str:
+    try:
+        token = subprocess.run(
+            ["gh", "auth", "token"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+    except FileNotFoundError as e:
+        raise ValueError("gh is not installed; install it and run `gh auth login`") from e
+    except subprocess.CalledProcessError as e:
+        message = (e.stderr or e.stdout).strip()
+        raise ValueError(message or "run `gh auth login` first") from e
+    if not token:
+        raise ValueError("run `gh auth login` first")
+    return token
+
+
+def default_user() -> str:
+    try:
+        url = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (FileNotFoundError, subprocess.CalledProcessError) as e:
+        raise ValueError("pass a GitHub username or run inside a repo with a GitHub origin") from e
+    match = ORIGIN_RE.search(url)
+    if not match:
+        raise ValueError("origin is not a GitHub remote; pass a GitHub username explicitly")
+    return match["owner"]
+
+
+def fetch_api(user: str, token: str, today: date) -> tuple[dict[date, tuple[int, int]], int]:
+    since = today - timedelta(days=364)
+    payload = json.dumps(
+        {
+            "query": QUERY,
+            "variables": {
+                "login": user,
+                "from": f"{since.isoformat()}T00:00:00Z",
+                "to": f"{today.isoformat()}T23:59:59Z",
+            },
+        }
+    ).encode()
+    req = Request(
+        "https://api.github.com/graphql",
+        data=payload,
+        headers={
+            "User-Agent": "kusa",
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+    with urlopen(req, timeout=5) as res:
+        data = json.load(res)
+    try:
+        calendar_data = data["data"]["user"]["contributionsCollection"]["contributionCalendar"]
+    except (KeyError, TypeError):
+        errors = ", ".join(error.get("message", "unknown GraphQL error") for error in data.get("errors", []))
+        raise ValueError(errors or f"no contribution data for {user}")
+    days = {
+        date.fromisoformat(day["date"]): (day["contributionCount"], GRAPHQL_LEVELS[day["contributionLevel"]])
+        for week in calendar_data["weeks"]
+        for day in week["contributionDays"]
+    }
+    return days, calendar_data["totalContributions"]
+
+def month_line(weeks: list[list[date]], since: date) -> str:
+    line, last = [" "] * (len(weeks) * 2), -8
+    for col, week in enumerate(weeks):
+        hits = [d for d in week if d >= since and (d == since or d.day == 1)]
+        if not hits:
+            continue
+        label = calendar.month_abbr[hits[0].month]
+        pos = col * 2
+        if pos - last <= len(label):
+            continue
+        line[pos : pos + len(label)] = label
+        last = pos
+    return "".join(line).rstrip()
+
+
+def render(user: str, days: dict[date, tuple[int, int]], total: int, until: date, ansi: bool) -> str:
+    start, end = min(days), max(days)
+    weeks = [
+        [start + timedelta(days=offset + row) for row in range(7)]
+        for offset in range(0, (end - start).days + 1, 7)
+    ]
+    month_row = f"    {month_line(weeks, start)}"
+    rows = [f"    {color(PALETTE['subtext0'], month_line(weeks, start), enabled=ansi)}"]
+    labels = ("", "Mon", "", "Wed", "", "Fri", "")
+    plain_rows = [month_row]
+    for row, label in enumerate(labels):
+        cells = []
+        for week in weeks:
+            day = week[row]
+            level = days.get(day, (0, 0))[1]
+            cells.append(color(LEVELS[level], GLYPHS[level], enabled=ansi))
+        prefix = f"{label.rjust(3)}  "
+        rows.append(f"{color(PALETTE['subtext0'], label.rjust(3), enabled=ansi)}  {''.join(cells)}")
+        plain_rows.append(prefix + "".join(GLYPHS[days.get(week[row], (0, 0))[1]] for week in weeks))
+    stat = lambda span: sum(days.get(until - timedelta(days=i), (0, 0))[0] for i in range(span))
+    plain_summary = f"{user} {total:,} contributions in the last year (today {stat(1):,}  7d {stat(7):,}  30d {stat(30):,})"
+    stats = "  ".join(
+        [
+            color(PALETTE["subtext0"], "today", enabled=ansi),
+            color(PALETTE["text"], f"{stat(1):,}", enabled=ansi, bold=True),
+            color(PALETTE["subtext0"], "7d", enabled=ansi),
+            color(PALETTE["text"], f"{stat(7):,}", enabled=ansi, bold=True),
+            color(PALETTE["subtext0"], "30d", enabled=ansi),
+            color(PALETTE["text"], f"{stat(30):,}", enabled=ansi, bold=True),
+        ]
+    )
+    summary = " ".join(
+        [
+            color(PALETTE["mauve"], user, enabled=ansi),
+            color(PALETTE["text"], f"{total:,} contributions in the last year", enabled=ansi),
+            color(PALETTE["subtext0"], "(", enabled=ansi) + stats + color(PALETTE["subtext0"], ")", enabled=ansi),
+        ]
+    )
+    pad = " " * max(0, (max(map(len, plain_rows)) - len(plain_summary)) // 2)
+    return "\n".join(["", *rows, "", pad + summary])
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Render a GitHub contribution graph in the terminal.")
+    parser.add_argument("user", nargs="?", help="GitHub username; defaults to origin owner")
+    parser.add_argument("--no-color", action="store_true", help="disable ANSI colors")
+    args = parser.parse_args(argv)
+    today = date.today()
+    user = args.user or default_user()
+    try:
+        days, total = fetch_api(user, gh_token(), today)
+    except HTTPError as e:
+        print(f"kusa: GitHub returned HTTP {e.code} for {user}", file=sys.stderr)
+        return 1
+    except (URLError, ValueError) as e:
+        print(f"kusa: {e}", file=sys.stderr)
+        return 1
+    print(render(user, days, total, today, sys.stdout.isatty() and not args.no_color))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
