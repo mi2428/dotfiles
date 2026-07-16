@@ -146,7 +146,11 @@ def month_line(weeks: list[list[date]], since: date) -> str:
 
 
 def render(user: str, days: dict[date, tuple[int, int]], total: int, until: date, ansi: bool) -> str:
-    start, end = min(days), max(days)
+    # GitHub may return partial weeks at either end of the requested range.
+    # The calendar is Sunday-first, while date.weekday() is Monday-first.
+    first_day, last_day = min(days), max(days)
+    start = first_day - timedelta(days=(first_day.weekday() + 1) % 7)
+    end = last_day + timedelta(days=(5 - last_day.weekday()) % 7)
     weeks = [
         [start + timedelta(days=offset + row) for row in range(7)]
         for offset in range(0, (end - start).days + 1, 7)
