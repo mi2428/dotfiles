@@ -20,3 +20,7 @@ __dotfiles_set_path \
     /usr/local/bin \
     /usr/local/sbin \
     .
+
+if command -sq mise
+    mise activate fish | source
+end

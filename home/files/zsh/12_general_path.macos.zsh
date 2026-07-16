@@ -78,6 +78,10 @@ export ZSH_HIGHLIGHT_HIGHLIGHTERS_DIR="$HOME/.local/share/zsh/zsh-syntax-highlig
 [[ -r "$HOME/.local/share/zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]] \
   && source "$HOME/.local/share/zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 
+if whence -p mise 1>/dev/null; then
+  eval "$(mise activate zsh)"
+fi
+
 if whence -p rbenv 1>/dev/null; then
   eval "$(rbenv init - zsh)"
 fi

@@ -28,3 +28,7 @@ export ZSH_HIGHLIGHT_HIGHLIGHTERS_DIR=$HOME/.local/share/zsh/zsh-syntax-highligh
   && source "$HOME/.local/share/zsh/zsh-autosuggestions/zsh-autosuggestions.zsh"
 [[ -r "$HOME/.local/share/zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]] \
   && source "$HOME/.local/share/zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+
+if whence -p mise 1>/dev/null; then
+  eval "$(mise activate zsh)"
+fi

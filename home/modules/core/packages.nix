@@ -7,8 +7,10 @@ let
     fzf
     git
     gnupg
+    mise
     ripgrep
     starship
+    uv
     yazi
     zoxide
   ];
@@ -30,7 +32,6 @@ let
     taplo
     terraform-ls
     tflint
-    uv
     yaml-language-server
     yarn
   ];

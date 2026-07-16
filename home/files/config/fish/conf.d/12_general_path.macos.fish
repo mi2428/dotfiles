@@ -68,6 +68,10 @@ end
 
 set -gx SDKMAN_DIR "$HOME/.sdkman"
 
+if command -sq mise
+    mise activate fish | source
+end
+
 if command -sq rbenv
     rbenv init - --no-rehash fish | source
 end
