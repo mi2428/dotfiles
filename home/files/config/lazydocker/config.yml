@@ -1,0 +1,23 @@
+gui:
+  # Lazydocker uses terminal ANSI colors here. These names map cleanly onto
+  # the active Catppuccin terminal palette, so the theme follows the flavour.
+  border: rounded
+  theme:
+    activeBorderColor:
+      - blue
+      - bold
+    inactiveBorderColor:
+      - magenta
+    selectedLineBgColor:
+      - black
+    optionsTextColor:
+      - blue
+
+stats:
+  graphs:
+    - caption: CPU (%)
+      statPath: DerivedStats.CPUPercentage
+      color: blue
+    - caption: Memory (%)
+      statPath: DerivedStats.MemoryPercentage
+      color: yellow

@@ -40,6 +40,8 @@ let
       mkLink ../../files/config/lazygit/functions.sh;
     "Library/Application Support/lazygit/themes-mergable" =
       mkLink ../../files/config/lazygit/themes-mergable;
+    "Library/Application Support/jesseduffield/lazydocker/config.yml" =
+      mkLink ../../files/config/lazydocker/config.yml;
     "Library/Application Support/k9s/config.yaml" =
       mkLink ../../files/config/k9s/config.yaml;
     "Library/Application Support/k9s/skins" =
@@ -57,6 +59,7 @@ in {
     "herdr/config.toml" = mkLink ../../files/config/herdr/config.toml;
     "hunk" = mkLink ../../files/config/hunk;
     "k9s" = mkLink ../../files/config/k9s;
+    "lazydocker/config.yml" = mkLink ../../files/config/lazydocker/config.yml;
     "lazygit" = mkLink ../../files/config/lazygit;
     "starship" = mkLink ../../files/config/starship;
     "yazi" = mkLink yaziConfig;
