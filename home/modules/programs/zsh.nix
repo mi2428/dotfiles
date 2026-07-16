@@ -8,6 +8,7 @@ let
     "14_general_fzf.zsh"
     "20_aliases.zsh"
     "22_aliases.zsh"
+    "23_completions.zsh"
     "30_appearance.zsh"
     "40_grc.zsh"
   ];

@@ -181,11 +181,6 @@ if (( ${+commands[atuin]} )); then
   (( ${+widgets[atuin-search]} )) && bindkey '\e[9001u' atuin-search
 fi
 
-# https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/#enable-shell-autocompletion
-if (( ${+commands[kubectl]} )); then
-  source <(kubectl completion zsh)
-fi
-
 # https://raw.githubusercontent.com/tmuxinator/tmuxinator/master/completion/tmuxinator.zsh
 if (( ${+commands[tmuxinator]} )); then
   _tmuxinator() {

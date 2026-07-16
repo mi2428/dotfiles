@@ -7,7 +7,7 @@ if [[ -d "$HOME/.zsh" ]]; then
   done < <(find "$HOME/.zsh" -type l | sort)
 fi
 
-if [ -f "$HOME/.zshrc_functions/assume-role" ]; then
+if ! command -v granted >/dev/null 2>&1 && [ -f "$HOME/.zshrc_functions/assume-role" ]; then
   export SORACOM_AWS_LOGIN_ITEM_ID=jggxzohgplnedvzyftmxinlgdu  # not a secret!!
   source "$HOME/.zshrc_functions/assume-role"
 fi

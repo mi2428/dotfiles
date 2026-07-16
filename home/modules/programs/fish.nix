@@ -25,6 +25,7 @@ let
     "conf.d/17_atuin.fish"
     "conf.d/20_aliases.fish"
     "conf.d/21_functions.fish"
+    "conf.d/23_completions.fish"
     "conf.d/40_grc.fish"
     "functions/herdr.fish"
     "functions/fish_title.fish"
