@@ -2,6 +2,8 @@
 set -euo pipefail
 
 tab=$'\t'
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+git_fzf_format_bin="${script_dir}/git-fzf-format"
 
 die() {
   printf 'git-b: %s\n' "$*" >&2
@@ -62,14 +64,21 @@ branch_picker() {
   local selection_mode=${2:-single}
   local prompt=${3:-branch> }
   command -v fzf >/dev/null 2>&1 || die 'fzf is not installed'
-  command -v python3 >/dev/null 2>&1 || die 'python3 is not installed'
+  [[ -x "$git_fzf_format_bin" ]] || die "missing required helper: $git_fzf_format_bin"
 
-  local cols formatter list_width selected
+  local cols tty_size list_width selected
   local -a ref_args exclude_args fzf_args
   cols=""
 
   if [[ -n "${TMUX:-}" ]]; then
     cols=$(tmux display-message -p '#{pane_width}' 2>/dev/null || true)
+  fi
+
+  if [[ -z "$cols" ]]; then
+    tty_size="$(stty size 2>/dev/null || true)"
+    if [[ "$tty_size" =~ ^([0-9]+)[[:space:]]+([0-9]+)$ ]]; then
+      cols="${BASH_REMATCH[2]}"
+    fi
   fi
 
   if [[ -z "$cols" && -n "${COLUMNS:-}" ]]; then
@@ -101,135 +110,6 @@ branch_picker() {
       ;;
   esac
 
-  formatter="$(cat <<'PY'
-import csv
-import sys
-
-list_width = int(sys.argv[1])
-home = sys.argv[2]
-
-rows = []
-reader = csv.reader(sys.stdin, delimiter="\t")
-for ref_short, ref_full, age, author, subject, worktree in reader:
-    kind = "local" if ref_full.startswith("refs/heads/") else "remote"
-    marker = "[L]" if kind == "local" else "[R]"
-    switch_target = ref_short.split("/", 1)[1] if kind == "remote" and "/" in ref_short else ref_short
-    rows.append(
-        {
-            "ref_short": ref_short,
-            "kind": kind,
-            "marker": marker,
-            "switch_target": switch_target,
-            "age": age,
-            "author": author,
-            "subject": subject,
-            "worktree": worktree,
-        }
-    )
-
-if not rows:
-    raise SystemExit(0)
-
-def ellipsize(text: str, width: int) -> str:
-    if width <= 0:
-        return ""
-    if len(text) <= width:
-        return text
-    if width <= 3:
-        return text[:width]
-    return text[: width - 3] + "..."
-
-def shorten_path(path: str, width: int) -> str:
-    if not path:
-        return "-"
-    absolute = path.startswith("/")
-    body = path
-    prefix = ""
-    if home and path.startswith(home):
-        prefix = "~/"
-        body = path[len(home):].lstrip("/")
-    elif absolute:
-        prefix = "/"
-        body = path.lstrip("/")
-
-    parts = [part for part in body.split("/") if part]
-    if not parts:
-        return prefix.rstrip("/") or path
-
-    basename = parts[-1]
-    parents = [part[:1] for part in parts[:-1]]
-    compressed = prefix + "/".join(parents + [basename])
-    if len(compressed) <= width:
-        return compressed
-
-    tail = [basename]
-    for parent in reversed(parents):
-        candidate = prefix + ".../" + "/".join([parent] + tail)
-        if len(candidate) > width:
-            break
-        tail.insert(0, parent)
-
-    if len(tail) > 1:
-        return prefix + ".../" + "/".join(tail)
-
-    reserved = len(prefix) + 4
-    tail_width = max(1, width - reserved)
-    return prefix + ".../" + ellipsize(basename, tail_width)
-
-branch_cap = 32
-branch_min = 12
-age_cap = 12
-age_min = 8
-author_cap = 14
-author_min = 8
-worktree_cap = 28
-worktree_min = 3
-subject_min = 16
-fixed_width = 12
-
-branch_width = min(branch_cap, max(len(row["ref_short"]) for row in rows))
-branch_width = max(branch_width, branch_min)
-age_width = min(age_cap, max(len(row["age"]) for row in rows))
-age_width = max(age_width, age_min)
-author_width = min(author_cap, max(len(row["author"]) for row in rows))
-author_width = max(author_width, author_min)
-
-for row in rows:
-    row["worktree_display"] = shorten_path(row["worktree"], worktree_cap)
-
-worktree_width = min(worktree_cap, max(len(row["worktree_display"]) for row in rows))
-worktree_width = max(worktree_width, worktree_min)
-
-subject_width = list_width - fixed_width - branch_width - age_width - author_width - worktree_width
-if subject_width < subject_min:
-    shortage = subject_min - subject_width
-    reduce_worktree = min(shortage, max(0, worktree_width - worktree_min))
-    worktree_width -= reduce_worktree
-    shortage -= reduce_worktree
-
-    reduce_author = min(shortage, max(0, author_width - author_min))
-    author_width -= reduce_author
-    shortage -= reduce_author
-
-    reduce_branch = min(shortage, max(0, branch_width - branch_min))
-    branch_width -= reduce_branch
-
-    subject_width = list_width - fixed_width - branch_width - age_width - author_width - worktree_width
-
-if subject_width < subject_min:
-    subject_width = subject_min
-
-for row in rows:
-    branch_display = ellipsize(row["ref_short"], branch_width)
-    author_display = ellipsize(row["author"], author_width)
-    worktree_display = shorten_path(row["worktree"], worktree_width)
-    subject_display = ellipsize(row["subject"], subject_width)
-    display = f"{row['marker']:<3} {branch_display:<{branch_width}}  {row['age']:<{age_width}}  {author_display:<{author_width}}  {worktree_display:<{worktree_width}}  {subject_display}"
-    worktree_hidden = row["worktree"] or "-"
-    print("\t".join([row["ref_short"], row["kind"], row["switch_target"], worktree_hidden, display]))
-PY
-)"
-
   fzf_args=(
     --ansi
     --no-sort
@@ -253,7 +133,7 @@ PY
       --format='%(refname:short)%09%(refname)%09%(committerdate:relative)%09%(authorname)%09%(subject)%09%(worktreepath)' \
       "${exclude_args[@]}" \
       "${ref_args[@]}" \
-      | python3 -c "$formatter" "$list_width" "${HOME:-}" \
+      | "$git_fzf_format_bin" branches "$list_width" "${HOME:-}" \
       | fzf "${fzf_args[@]}"
   )"
 

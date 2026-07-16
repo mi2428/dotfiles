@@ -44,34 +44,7 @@ alias k='kubectl'
 alias ldk='lazydocker'
 
 function __git_delta_lazygit
-    set -l paging never
-    set -l added_label (printf '\033[1;38;2;166;227;161mA\033[0m')
-    set -l copied_label (printf '\033[1;38;2;148;226;213mC\033[0m')
-    set -l modified_label (printf '\033[1;38;2;249;226;175mM\033[0m')
-    set -l removed_label (printf '\033[1;38;2;243;139;168mD\033[0m')
-    set -l renamed_label (printf '\033[1;38;2;137;180;250mR\033[0m')
-    set -l delta_args \
-        --features=catppuccin-mocha \
-        --dark \
-        "--file-added-label=$added_label" \
-        "--file-copied-label=$copied_label" \
-        "--file-modified-label=$modified_label" \
-        "--file-removed-label=$removed_label" \
-        "--file-renamed-label=$renamed_label" \
-        --line-numbers \
-        --side-by-side
-
-    if test -t 1
-        set paging always
-        # Repaint from the top on half-page jumps to reduce visual artifacts in tmux.
-        set -a delta_args --pager 'less -Rc'
-    end
-
-    if not set -q TMUX
-        set -a delta_args --hyperlinks '--hyperlinks-file-link-format=lazygit-edit://{path}:{line}'
-    end
-
-    delta --paging="$paging" $delta_args
+    command git-delta-lazygit
 end
 
 function __dotfiles_git_handler_name --argument-names subcmd

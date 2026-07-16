@@ -1,0 +1,233 @@
+#!/usr/bin/env python3
+import csv
+import sys
+
+
+def die(message: str) -> None:
+    print(f"git-fzf-format: {message}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def ellipsize(text: str, width: int) -> str:
+    if width <= 0:
+        return ""
+    if len(text) <= width:
+        return text
+    if width <= 3:
+        return text[:width]
+    return text[: width - 3] + "..."
+
+
+def colorize(text: str, rgb: str, *, bold: bool = False) -> str:
+    weight = "1;" if bold else ""
+    return f"\033[{weight}38;2;{rgb}m{text}\033[0m"
+
+
+def shorten_path(path: str, home: str, width: int) -> str:
+    if not path:
+        return "-"
+    absolute = path.startswith("/")
+    body = path
+    prefix = ""
+    if home and path.startswith(home):
+        prefix = "~/"
+        body = path[len(home):].lstrip("/")
+    elif absolute:
+        prefix = "/"
+        body = path.lstrip("/")
+
+    parts = [part for part in body.split("/") if part]
+    if not parts:
+        return prefix.rstrip("/") or path
+
+    basename = parts[-1]
+    parents = [part[:1] for part in parts[:-1]]
+    compressed = prefix + "/".join(parents + [basename])
+    if len(compressed) <= width:
+        return compressed
+
+    tail = [basename]
+    for parent in reversed(parents):
+        candidate = prefix + ".../" + "/".join([parent] + tail)
+        if len(candidate) > width:
+            break
+        tail.insert(0, parent)
+
+    if len(tail) > 1:
+        return prefix + ".../" + "/".join(tail)
+
+    reserved = len(prefix) + 4
+    tail_width = max(1, width - reserved)
+    return prefix + ".../" + ellipsize(basename, tail_width)
+
+
+def format_branches(list_width: int, home: str) -> None:
+    rows = []
+    reader = csv.reader(sys.stdin, delimiter="\t")
+    for ref_short, ref_full, age, author, subject, worktree in reader:
+        kind = "local" if ref_full.startswith("refs/heads/") else "remote"
+        marker = "[L]" if kind == "local" else "[R]"
+        switch_target = ref_short.split("/", 1)[1] if kind == "remote" and "/" in ref_short else ref_short
+        rows.append(
+            {
+                "ref_short": ref_short,
+                "kind": kind,
+                "marker": marker,
+                "switch_target": switch_target,
+                "age": age,
+                "author": author,
+                "subject": subject,
+                "worktree": worktree,
+            }
+        )
+
+    if not rows:
+        raise SystemExit(0)
+
+    branch_cap = 32
+    branch_min = 12
+    age_cap = 12
+    age_min = 8
+    author_cap = 14
+    author_min = 8
+    worktree_cap = 28
+    worktree_min = 3
+    subject_min = 16
+    fixed_width = 12
+
+    branch_width = min(branch_cap, max(len(row["ref_short"]) for row in rows))
+    branch_width = max(branch_width, branch_min)
+    age_width = min(age_cap, max(len(row["age"]) for row in rows))
+    age_width = max(age_width, age_min)
+    author_width = min(author_cap, max(len(row["author"]) for row in rows))
+    author_width = max(author_width, author_min)
+
+    for row in rows:
+        row["worktree_display"] = shorten_path(row["worktree"], home, worktree_cap)
+
+    worktree_width = min(worktree_cap, max(len(row["worktree_display"]) for row in rows))
+    worktree_width = max(worktree_width, worktree_min)
+
+    subject_width = list_width - fixed_width - branch_width - age_width - author_width - worktree_width
+    if subject_width < subject_min:
+        shortage = subject_min - subject_width
+        reduce_worktree = min(shortage, max(0, worktree_width - worktree_min))
+        worktree_width -= reduce_worktree
+        shortage -= reduce_worktree
+
+        reduce_author = min(shortage, max(0, author_width - author_min))
+        author_width -= reduce_author
+        shortage -= reduce_author
+
+        reduce_branch = min(shortage, max(0, branch_width - branch_min))
+        branch_width -= reduce_branch
+
+        subject_width = list_width - fixed_width - branch_width - age_width - author_width - worktree_width
+
+    if subject_width < subject_min:
+        subject_width = subject_min
+
+    for row in rows:
+        branch_display = ellipsize(row["ref_short"], branch_width)
+        author_display = ellipsize(row["author"], author_width)
+        worktree_display = shorten_path(row["worktree"], home, worktree_width)
+        subject_display = ellipsize(row["subject"], subject_width)
+        display = (
+            f"{row['marker']:<3} {branch_display:<{branch_width}}  {row['age']:<{age_width}}  "
+            f"{author_display:<{author_width}}  {worktree_display:<{worktree_width}}  {subject_display}"
+        )
+        worktree_hidden = row["worktree"] or "-"
+        print("\t".join([row["ref_short"], row["kind"], row["switch_target"], worktree_hidden, display]))
+
+
+def format_prs(list_width: int) -> None:
+    rows = []
+    reader = csv.reader(sys.stdin, delimiter="\t")
+    for number, head, base, updated, author, title, url in reader:
+        rows.append(
+            {
+                "number": f"#{number}",
+                "head": head,
+                "base": base,
+                "updated": updated,
+                "author": author,
+                "title": title,
+                "url": url,
+            }
+        )
+
+    if not rows:
+        raise SystemExit(0)
+
+    number_width = max(5, min(6, max(len(row["number"]) for row in rows)))
+    for row in rows:
+        row["branch"] = row["head"] if row["base"] == "main" else f"{row['head']} -> {row['base']}"
+
+    branch_cap = 32
+    branch_min = 12
+    date_width = 10
+    author_cap = 14
+    author_min = 8
+    title_min = 20
+    fixed_width = number_width + date_width + 6
+
+    branch_width = min(branch_cap, max(len(row["branch"]) for row in rows))
+    branch_width = max(branch_width, branch_min)
+    author_width = min(author_cap, max(len(row["author"]) for row in rows))
+    author_width = max(author_width, author_min)
+
+    title_width = list_width - fixed_width - branch_width - author_width
+    if title_width < title_min:
+        shortage = title_min - title_width
+        reduce_author = min(shortage, max(0, author_width - author_min))
+        author_width -= reduce_author
+        shortage -= reduce_author
+
+        reduce_branch = min(shortage, max(0, branch_width - branch_min))
+        branch_width -= reduce_branch
+
+        title_width = list_width - fixed_width - branch_width - author_width
+
+    if title_width < title_min:
+        title_width = title_min
+
+    lavender = "180;190;254"
+    green = "166;227;161"
+    overlay = "147;153;178"
+    pink = "245;194;231"
+
+    for row in rows:
+        number = colorize(f"{row['number']:<{number_width}}", lavender, bold=True)
+        branch = colorize(f"{ellipsize(row['branch'], branch_width):<{branch_width}}", green)
+        updated = colorize(f"{row['updated']:<{date_width}}", overlay)
+        author = colorize(f"{ellipsize(row['author'], author_width):<{author_width}}", pink)
+        title = ellipsize(row["title"], title_width)
+        display = f"{number}  {branch}  {updated}  {author}  {title}"
+        print("\t".join([row["number"], row["url"], display]))
+
+
+def main() -> None:
+    if len(sys.argv) < 3:
+        die("usage: git-fzf-format <branches|prs> <list-width> [home]")
+
+    mode = sys.argv[1]
+    try:
+        list_width = int(sys.argv[2])
+    except ValueError as exc:
+        raise SystemExit(f"git-fzf-format: invalid list width: {sys.argv[2]}") from exc
+
+    if mode == "branches":
+        if len(sys.argv) != 4:
+            die("branches mode requires <home>")
+        format_branches(list_width, sys.argv[3])
+        return
+
+    if mode == "prs":
+        format_prs(list_width)
+        return
+
+    die(f"unknown mode: {mode}")
+
+
+if __name__ == "__main__":
+    main()
