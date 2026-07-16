@@ -22,7 +22,6 @@ If you already have the repo checked out and want to run bootstrap directly, use
 
 ```console
 $ brew install --cask ghostty
-$ brew install go-task/tap/go-task
 ```
 
 ```console
