@@ -21,6 +21,7 @@ local parsers = {
 	"vim",
 	"vimdoc",
 	"yaml",
+	"yang",
 }
 
 local indent_filetypes = {
@@ -32,6 +33,7 @@ local indent_filetypes = {
 	toml = true,
 	vim = true,
 	yaml = true,
+	yang = true,
 }
 
 local function start_treesitter(args)

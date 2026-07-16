@@ -70,6 +70,14 @@ autocmd({ "BufNewFile", "BufRead" }, {
 	end,
 })
 
+autocmd({ "BufNewFile", "BufRead" }, {
+	pattern = "*.yang",
+	group = augroup("dotfiles-yang-filetype", { clear = true }),
+	callback = function(args)
+		vim.bo[args.buf].filetype = "yang"
+	end,
+})
+
 autocmd("LspAttach", {
 	group = augroup("dotfiles-lsp-attach", { clear = true }),
 	callback = function(args)
