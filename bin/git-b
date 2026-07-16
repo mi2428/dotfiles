@@ -72,6 +72,7 @@ function branch_picker
     set -l selection_mode single
     set -l prompt 'branch> '
     set -l tab \t
+    set -l exclude_local_ref ''
 
     if test (count $argv) -ge 1
         set scope "$argv[1]"
@@ -81,6 +82,9 @@ function branch_picker
     end
     if test (count $argv) -ge 3
         set prompt "$argv[3]"
+    end
+    if test (count $argv) -ge 4
+        set exclude_local_ref "$argv[4]"
     end
 
     command -q fzf; or die 'fzf is not installed'
@@ -109,6 +113,9 @@ function branch_picker
             set exclude_args '--exclude=refs/remotes/*/HEAD'
         case local
             set ref_args refs/heads
+            if test -n "$exclude_local_ref"
+                set exclude_args "--exclude=refs/heads/$exclude_local_ref"
+            end
         case '*'
             die "unknown branch picker scope: $scope"
     end
@@ -125,7 +132,9 @@ function branch_picker
 
     switch "$selection_mode"
         case multi
-            set -a fzf_args --multi
+            set -a fzf_args \
+                --multi \
+                --bind=tab:toggle+down,btab:toggle+up
         case single
         case '*'
             die "unknown branch picker selection mode: $selection_mode"
@@ -143,20 +152,65 @@ function branch_picker
     or return 1
 
     test -n "$selected"; or return 1
-    printf '%s\n' "$selected"
+    printf '%s\n' $selected
 end
 
 function delete_selected_branches
-    set -l selected (branch_picker local multi 'delete branch> '); or return $status
+    set -l current_branch (git branch --show-current 2>/dev/null)
+    set -l selected_blob (branch_picker local multi 'delete branch> ' "$current_branch" | string collect); or return $status
     set -l branches
 
-    for line in (string split \n -- "$selected")
+    for line in (string split \n -- "$selected_blob")
         set -l fields (string split \t -- "$line")
         test -n "$fields[1]"; and set -a branches "$fields[1]"
     end
 
     test (count $branches) -gt 0; or return 1
-    exec git branch -D -- $branches
+    delete_branches $branches
+end
+
+function delete_branches --argument-names branch_names
+    prune_worktrees
+
+    set -l current_root (current_worktree_root)
+    set -l deletion_branches
+    set -l deletion_worktrees
+
+    for branch in $argv
+        test -n "$branch"; or continue
+
+        set -l worktree_path (branch_worktree_path "$branch")
+        if test -n "$worktree_path"
+            set -l resolved_worktree "$worktree_path"
+            if test -d "$worktree_path"
+                set resolved_worktree (canonical_path "$worktree_path")
+            end
+
+            if test -n "$resolved_worktree"; and test "$resolved_worktree" = "$current_root"
+                printf 'git-b: refusing to delete branch %s checked out in the current worktree\n' "$branch" >&2
+                return 1
+            end
+        end
+
+        set -a deletion_branches "$branch"
+        set -a deletion_worktrees "$worktree_path"
+    end
+
+    for idx in (seq (count $deletion_branches))
+        set -l branch "$deletion_branches[$idx]"
+        set -l worktree_path "$deletion_worktrees[$idx]"
+
+        if test -n "$worktree_path"
+            command git worktree remove --force -- "$worktree_path"; or begin
+                printf 'git-b: failed to remove worktree %s for branch %s\n' "$worktree_path" "$branch" >&2
+                return 1
+            end
+        end
+
+        command git branch -D -- "$branch"; or return $status
+    end
+
+    prune_worktrees
 end
 
 function switch_to_selected --argument-names ref kind switch_target selected_worktree
@@ -226,6 +280,11 @@ function main
                 set -l selected (branch_picker); or return $status
                 set -l fields (string split \t -- "$selected")
                 switch_to_selected "$fields[1]" "$fields[2]" "$fields[3]" "$fields[4]"
+                return $status
+            case __delete-branches
+                git rev-parse --is-inside-work-tree >/dev/null 2>/dev/null || die 'not inside a git work tree'
+                test (count $argv) -ge 2; or die '__delete-branches requires at least one branch'
+                delete_branches $argv[2..-1]
                 return $status
         end
     end

@@ -23,6 +23,40 @@ def colorize(text: str, rgb: str, *, bold: bool = False) -> str:
     return f"\033[{weight}38;2;{rgb}m{text}\033[0m"
 
 
+def compact_relative_age(text: str) -> str:
+    parts = text.split()
+    if len(parts) < 2:
+        return text
+
+    amount = parts[0]
+    unit = parts[1].lower()
+    unit_map = {
+        "second": "s",
+        "seconds": "s",
+        "minute": "m",
+        "minutes": "m",
+        "hour": "h",
+        "hours": "h",
+        "day": "d",
+        "days": "d",
+        "week": "w",
+        "weeks": "w",
+        "month": "mo",
+        "months": "mo",
+        "year": "y",
+        "years": "y",
+    }
+
+    if amount == "just":
+        return "now"
+
+    suffix = unit_map.get(unit)
+    if suffix is None:
+        return text
+
+    return f"{amount}{suffix} ago"
+
+
 def shorten_path(path: str, home: str, width: int) -> str:
     if not path:
         return "-"
@@ -74,7 +108,7 @@ def format_branches(list_width: int, home: str) -> None:
                 "kind": kind,
                 "marker": marker,
                 "switch_target": switch_target,
-                "age": age,
+                "age": compact_relative_age(age),
                 "author": author,
                 "subject": subject,
                 "worktree": worktree,
