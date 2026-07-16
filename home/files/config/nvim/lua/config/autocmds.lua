@@ -20,6 +20,21 @@ autocmd({ "BufNewFile", "BufRead" }, {
 	end,
 })
 
+autocmd({ "BufNewFile", "BufRead" }, {
+	pattern = {
+		"*/templates/*.tpl",
+		"*/templates/*.yaml",
+		"*/templates/*.yml",
+		"*/values*.yaml",
+		"*/values*.yml",
+		"*/Chart.yaml",
+	},
+	group = augroup("dotfiles-helm-filetype", { clear = true }),
+	callback = function(args)
+		vim.bo[args.buf].filetype = "helm"
+	end,
+})
+
 autocmd("LspAttach", {
 	group = augroup("dotfiles-lsp-attach", { clear = true }),
 	callback = function(args)

@@ -74,6 +74,10 @@ end
 
 return {
 	{
+		"towolf/vim-helm",
+		lazy = false,
+	},
+	{
 		"saghen/blink.cmp",
 		version = "1.*",
 		event = { "InsertEnter", "CmdlineEnter" },
@@ -174,10 +178,12 @@ return {
 	{
 		"neovim/nvim-lspconfig",
 		event = { "BufReadPre", "BufNewFile" },
+		dependencies = { "b0o/SchemaStore.nvim" },
 		config = function()
 			install_lsp_watch_registration_filter()
 
 			local blink = require("blink.cmp")
+			local schemastore = require("schemastore")
 			local capabilities = blink.get_lsp_capabilities()
 			local enabled_servers = {}
 
@@ -245,8 +251,19 @@ return {
 			enable("terraformls", "terraform-ls")
 			enable("bashls", "bash-language-server")
 			enable("dockerls", "docker-langserver")
+			enable("helm_ls", "helm_ls", {
+				filetypes = { "helm" },
+				settings = {
+					["helm-ls"] = {
+						yamlls = {
+							path = "yaml-language-server",
+						},
+					},
+				},
+			})
 			enable("jsonls", "vscode-json-language-server")
 			enable("yamlls", "yaml-language-server", {
+				filetypes = { "yaml", "yaml.docker-compose", "yaml.gitlab" },
 				settings = {
 					redhat = {
 						telemetry = {
@@ -258,6 +275,11 @@ return {
 							enable = true,
 						},
 						keyOrdering = false,
+						schemaStore = {
+							enable = false,
+							url = "",
+						},
+						schemas = schemastore.yaml.schemas(),
 						validate = true,
 					},
 				},
