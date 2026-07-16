@@ -435,7 +435,7 @@ return {
 			formatters_by_ft = {
 				go = { "goimports", "gofmt" },
 				lua = { "stylua" },
-				python = { "ruff_format", "isort", "black" },
+				python = { "ruff_organize_imports", "ruff_format" },
 				rust = { "rustfmt" },
 				sh = { "shfmt" },
 				terraform = { "terraform_fmt" },
@@ -482,6 +482,7 @@ return {
 			lint.linters_by_ft = {
 				dockerfile = { "hadolint" },
 				go = { "golangcilint" },
+				python = { "ruff" },
 				terraform = { "tflint" },
 				["terraform-vars"] = { "tflint" },
 				yaml = { "yamllint" },
