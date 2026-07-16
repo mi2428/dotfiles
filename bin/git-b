@@ -1,260 +1,250 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env fish
 
-tab=$'\t'
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-git_fzf_format_bin="${script_dir}/git-fzf-format"
+set -g __dotfiles_git_b_self_path (path resolve (status filename))
+set -l script_dir (path dirname "$__dotfiles_git_b_self_path")
+set -l helper_file (path resolve "$script_dir/../home/files/config/fish/lib/dotfiles_git_ui_helpers.fish")
 
-die() {
-  printf 'git-b: %s\n' "$*" >&2
-  exit 1
-}
+source "$helper_file"; or begin
+    printf 'git-b: failed to source helper: %s\n' "$helper_file" >&2
+    exit 1
+end
 
-canonical_path() {
-  [[ -d "$1" ]] || return 1
-  cd -- "$1" && pwd -P
-}
+function die
+    printf 'git-b: %s\n' (string join ' ' -- $argv) >&2
+    exit 1
+end
 
-prune_worktrees() {
-  git worktree prune >/dev/null 2>&1 || true
-}
+function canonical_path --argument-names dir_path
+    test -d "$dir_path"; or return 1
 
-current_worktree_root() {
-  canonical_path "$(git rev-parse --show-toplevel)"
-}
+    set -l cwd (pwd)
+    builtin cd -- "$dir_path"
+    set -l resolved (pwd -P)
+    builtin cd -- "$cwd"
+    printf '%s\n' "$resolved"
+end
 
-branch_worktree_path() {
-  local branch=$1
-  git for-each-ref --format='%(worktreepath)' "refs/heads/${branch}" | head -n 1
-}
+function prune_worktrees
+    git worktree prune >/dev/null 2>/dev/null || true
+end
 
-print_preview() {
-  local ref=${1:-}
-  local kind=${2:-}
-  local worktree_path=${3:-}
-  local info_ref="refs/heads/${ref}"
+function current_worktree_root
+    canonical_path (git rev-parse --show-toplevel)
+end
 
-  if [[ "$worktree_path" == "-" ]]; then
-    worktree_path=""
-  fi
+function branch_worktree_path --argument-names branch
+    git for-each-ref --format='%(worktreepath)' "refs/heads/$branch" | head -n 1
+end
 
-  if [[ "$kind" == "remote" ]]; then
-    info_ref="refs/remotes/${ref}"
-  fi
+function print_preview --argument-names ref kind worktree_path
+    set -l info_ref "refs/heads/$ref"
 
-  git for-each-ref \
-    --format=$'branch: %(refname:short)\nupdated: %(committerdate:relative)\nauthor: %(authorname)\nsubject: %(subject)\nupstream: %(upstream:short)\nworktree: %(worktreepath)' \
-    "$info_ref"
+    if test "$worktree_path" = '-'
+        set worktree_path ''
+    end
 
-  if [[ -n "$worktree_path" ]]; then
-    printf '\nworktree path: %s\n' "$worktree_path"
-  fi
+    if test "$kind" = remote
+        set info_ref "refs/remotes/$ref"
+    end
 
-  printf '\n'
-  git log --max-count=10 --oneline --graph --date=short --color=always \
-    --pretty='format:%C(auto)%cd %h%d %s' "$ref" -- || true
+    set -l info_line (git for-each-ref --format='%(refname:short)%09%(committerdate:relative)%09%(authorname)%09%(subject)%09%(upstream:short)%09%(worktreepath)' "$info_ref")
+    if test -n "$info_line"
+        set -l fields (string split \t -- "$info_line")
+        printf 'branch: %s\nupdated: %s\nauthor: %s\nsubject: %s\nupstream: %s\nworktree: %s\n' \
+            "$fields[1]" "$fields[2]" "$fields[3]" "$fields[4]" "$fields[5]" "$fields[6]"
+    end
 
-  printf '\n%s\n' '────────────────────────────────────────'
-  printf '%s\n' 'diff vs HEAD'
-  git diff --stat --color=always "HEAD...$ref" || true
-}
+    if test -n "$worktree_path"
+        printf '\nworktree path: %s\n' "$worktree_path"
+    end
 
-branch_picker() {
-  local scope=${1:-all}
-  local selection_mode=${2:-single}
-  local prompt=${3:-branch> }
-  command -v fzf >/dev/null 2>&1 || die 'fzf is not installed'
-  [[ -x "$git_fzf_format_bin" ]] || die "missing required helper: $git_fzf_format_bin"
+    printf '\n'
+    git log --max-count=10 --oneline --graph --date=short --color=always \
+        --pretty='format:%C(auto)%cd %h%d %s' "$ref" -- || true
 
-  local cols tty_size list_width selected
-  local -a ref_args exclude_args fzf_args
-  cols=""
+    printf '\n%s\n' '────────────────────────────────────────'
+    printf '%s\n' 'diff vs HEAD'
+    git diff --stat --color=always "HEAD...$ref" || true
+end
 
-  if [[ -n "${TMUX:-}" ]]; then
-    cols=$(tmux display-message -p '#{pane_width}' 2>/dev/null || true)
-  fi
+function branch_picker
+    set -l scope all
+    set -l selection_mode single
+    set -l prompt 'branch> '
+    set -l tab \t
 
-  if [[ -z "$cols" ]]; then
-    tty_size="$(stty size 2>/dev/null || true)"
-    if [[ "$tty_size" =~ ^([0-9]+)[[:space:]]+([0-9]+)$ ]]; then
-      cols="${BASH_REMATCH[2]}"
-    fi
-  fi
+    if test (count $argv) -ge 1
+        set scope "$argv[1]"
+    end
+    if test (count $argv) -ge 2
+        set selection_mode "$argv[2]"
+    end
+    if test (count $argv) -ge 3
+        set prompt "$argv[3]"
+    end
 
-  if [[ -z "$cols" && -n "${COLUMNS:-}" ]]; then
-    cols=$COLUMNS
-  fi
+    command -q fzf; or die 'fzf is not installed'
+    command -q python3; or die 'python3 is not installed'
 
-  if [[ -z "$cols" ]]; then
-    cols=$(tput cols 2>/dev/null || printf '160\n')
-  fi
+    set -l size (__dotfiles_git_ui_current_terminal_size)
+    set -l cols $size[1]
 
-  [[ "$cols" =~ ^[0-9]+$ ]] || cols=160
+    if not string match -rq '^[0-9]+$' -- "$cols"
+        set cols 160
+    end
 
-  prune_worktrees
+    prune_worktrees
 
-  list_width=$(( cols - (cols * 42 / 100) - 5 ))
-  (( list_width > 72 )) || list_width=72
+    set -l list_width (math -s0 "$cols - ($cols * 42 / 100) - 5")
+    if test "$list_width" -le 72
+        set list_width 72
+    end
 
-  case "$scope" in
-    all)
-      ref_args=(refs/heads refs/remotes)
-      exclude_args=("--exclude=refs/remotes/*/HEAD")
-      ;;
-    local)
-      ref_args=(refs/heads)
-      exclude_args=()
-      ;;
-    *)
-      die "unknown branch picker scope: $scope"
-      ;;
-  esac
+    set -l ref_args
+    set -l exclude_args
 
-  fzf_args=(
-    --ansi
-    --no-sort
-    "--prompt=${prompt}"
-    "--delimiter=${tab}"
-    --with-nth=5
-    "--preview-window=right,42%,border-left,wrap"
-    "--preview=bash '$0' __preview {1} {2} {4}"
-    "--bind=ctrl-/:change-preview-window(right,42%,border-left,wrap|down,55%,border-top,wrap)"
-  )
+    switch "$scope"
+        case all
+            set ref_args refs/heads refs/remotes
+            set exclude_args '--exclude=refs/remotes/*/HEAD'
+        case local
+            set ref_args refs/heads
+        case '*'
+            die "unknown branch picker scope: $scope"
+    end
 
-  if [[ "$selection_mode" == "multi" ]]; then
-    fzf_args+=(--multi)
-  elif [[ "$selection_mode" != "single" ]]; then
-    die "unknown branch picker selection mode: $selection_mode"
-  fi
+    set -l fzf_args \
+        --ansi \
+        --no-sort \
+        "--prompt=$prompt" \
+        "--delimiter=$tab" \
+        --with-nth=5 \
+        --preview-window=right,42%,border-left,wrap \
+        "--preview=$__dotfiles_git_b_self_path __preview {1} {2} {4}" \
+        --bind=ctrl-/:change-preview-window\(right,42%,border-left,wrap\|down,55%,border-top,wrap\)
 
-  selected="$(
-    git for-each-ref \
-      --sort=-committerdate \
-      --format='%(refname:short)%09%(refname)%09%(committerdate:relative)%09%(authorname)%09%(subject)%09%(worktreepath)' \
-      "${exclude_args[@]}" \
-      "${ref_args[@]}" \
-      | "$git_fzf_format_bin" branches "$list_width" "${HOME:-}" \
-      | fzf "${fzf_args[@]}"
-  )"
+    switch "$selection_mode"
+        case multi
+            set -a fzf_args --multi
+        case single
+        case '*'
+            die "unknown branch picker selection mode: $selection_mode"
+    end
 
-  [[ -n "$selected" ]] || return 1
-  printf '%s\n' "$selected"
-}
+    set -l selected (
+        git for-each-ref \
+            --sort=-committerdate \
+            --format='%(refname:short)%09%(refname)%09%(committerdate:relative)%09%(authorname)%09%(subject)%09%(worktreepath)' \
+            $exclude_args \
+            $ref_args \
+        | __dotfiles_git_ui_format_fzf_rows branches "$list_width" "$HOME" \
+        | fzf $fzf_args
+    )
+    or return 1
 
-delete_selected_branches() {
-  local selected
-  local -a branches=()
+    test -n "$selected"; or return 1
+    printf '%s\n' "$selected"
+end
 
-  selected=$(branch_picker local multi 'delete branch> ') || return $?
+function delete_selected_branches
+    set -l selected (branch_picker local multi 'delete branch> '); or return $status
+    set -l branches
 
-  while IFS=$'\t' read -r ref _; do
-    [[ -n "$ref" ]] || continue
-    branches+=("$ref")
-  done <<<"$selected"
+    for line in (string split \n -- "$selected")
+        set -l fields (string split \t -- "$line")
+        test -n "$fields[1]"; and set -a branches "$fields[1]"
+    end
 
-  (( ${#branches[@]} > 0 )) || return 1
-  exec git branch -D -- "${branches[@]}"
-}
+    test (count $branches) -gt 0; or return 1
+    exec git branch -D -- $branches
+end
 
-switch_to_selected() {
-  local ref=$1
-  local kind=$2
-  local switch_target=$3
-  local selected_worktree=$4
-  local current_root target_worktree
+function switch_to_selected --argument-names ref kind switch_target selected_worktree
+    set -l current_root (current_worktree_root)
+    set -l target_worktree "$selected_worktree"
 
-  current_root=$(current_worktree_root)
-  target_worktree=$selected_worktree
+    if test "$target_worktree" = '-'
+        set target_worktree ''
+    end
 
-  if [[ "$target_worktree" == "-" ]]; then
-    target_worktree=""
-  fi
+    prune_worktrees
 
-  prune_worktrees
+    if test "$kind" = remote
+        if git show-ref --verify --quiet "refs/heads/$switch_target"
+            set target_worktree (branch_worktree_path "$switch_target")
+        end
+    end
 
-  if [[ "$kind" == "remote" ]] && git show-ref --verify --quiet "refs/heads/${switch_target}"; then
-    target_worktree=$(branch_worktree_path "$switch_target")
-  fi
+    if test -n "$target_worktree"
+        set -l resolved_target (canonical_path "$target_worktree")
+        if test $status -eq 0
+            set target_worktree "$resolved_target"
+        else
+            set target_worktree ''
+        end
+    end
 
-  if [[ -n "$target_worktree" ]]; then
-    if ! target_worktree=$(canonical_path "$target_worktree"); then
-      target_worktree=""
-    fi
-  fi
+    if test -n "$target_worktree"; and test "$target_worktree" != "$current_root"
+        printf 'cd\t%s\t%s\n' "$target_worktree" "$switch_target"
+        return 0
+    end
 
-  if [[ -n "$target_worktree" && "$target_worktree" != "$current_root" ]]; then
-    printf 'cd\t%s\t%s\n' "$target_worktree" "$switch_target"
-    return 0
-  fi
+    if test "$kind" = remote
+        if git show-ref --verify --quiet "refs/heads/$switch_target"
+            printf 'switch\t%s\n' "$switch_target"
+        else
+            printf 'track\t%s\t%s\n' "$switch_target" "$ref"
+        end
+        return 0
+    end
 
-  if [[ "$kind" == "remote" ]]; then
-    if git show-ref --verify --quiet "refs/heads/${switch_target}"; then
-      printf 'switch\t%s\n' "$switch_target"
-    else
-      printf 'track\t%s\t%s\n' "$switch_target" "$ref"
-    fi
-    return 0
-  fi
+    printf 'switch\t%s\n' "$ref"
+end
 
-  printf 'switch\t%s\n' "$ref"
-}
+function execute_action --argument-names action arg1 arg2
+    switch "$action"
+        case cd
+            printf 'git-b: branch %s is already checked out at %s\n' "$arg2" "$arg1" >&2
+            return 2
+        case switch
+            exec git switch -- "$arg1"
+        case track
+            exec git switch --track -c "$arg1" "$arg2"
+        case '*'
+            die "unknown action: $action"
+    end
+end
 
-execute_action() {
-  local action=${1:-}
-  local arg1=${2:-}
-  local arg2=${3:-}
+function main
+    if test (count $argv) -ge 1
+        switch "$argv[1]"
+            case __preview
+                print_preview "$argv[2]" "$argv[3]" "$argv[4]"
+                return 0
+            case __resolve-action
+                git rev-parse --is-inside-work-tree >/dev/null 2>/dev/null || die 'not inside a git work tree'
+                set -l selected (branch_picker); or return $status
+                set -l fields (string split \t -- "$selected")
+                switch_to_selected "$fields[1]" "$fields[2]" "$fields[3]" "$fields[4]"
+                return $status
+        end
+    end
 
-  case "$action" in
-    cd)
-      printf 'git-b: branch %s is already checked out at %s\n' "$arg2" "$arg1" >&2
-      return 2
-      ;;
-    switch)
-      exec git switch -- "$arg1"
-      ;;
-    track)
-      exec git switch --track -c "$arg1" "$arg2"
-      ;;
-    *)
-      die "unknown action: $action"
-      ;;
-  esac
-}
+    if test (count $argv) -eq 1; and test "$argv[1]" = '-D'
+        git rev-parse --is-inside-work-tree >/dev/null 2>/dev/null || die 'not inside a git work tree'
+        delete_selected_branches
+        return $status
+    end
 
-main() {
-  if [[ "${1:-}" == "__preview" ]]; then
-    shift
-    print_preview "${1:-}" "${2:-}" "${3:-}"
-    return 0
-  fi
+    if test (count $argv) -gt 0
+        exec git branch $argv
+    end
 
-  if [[ "${1:-}" == "__resolve-action" ]]; then
-    shift
-    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die 'not inside a git work tree'
+    git rev-parse --is-inside-work-tree >/dev/null 2>/dev/null || die 'not inside a git work tree'
 
-    local selected ref kind switch_target worktree_path
-    selected=$(branch_picker) || return $?
-    IFS=$'\t' read -r ref kind switch_target worktree_path _ <<<"$selected"
-    switch_to_selected "$ref" "$kind" "$switch_target" "$worktree_path"
-    return $?
-  fi
+    set -l action_line (main __resolve-action); or return $status
+    set -l fields (string split \t -- "$action_line")
+    execute_action "$fields[1]" "$fields[2]" "$fields[3]"
+end
 
-  if (( $# == 1 )) && [[ "${1:-}" == "-D" ]]; then
-    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die 'not inside a git work tree'
-    delete_selected_branches
-    return $?
-  fi
-
-  if (( $# > 0 )); then
-    exec git branch "$@"
-  fi
-
-  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die 'not inside a git work tree'
-
-  local action_line action arg1 arg2
-  action_line=$(main __resolve-action) || return $?
-  IFS=$'\t' read -r action arg1 arg2 <<<"$action_line"
-  execute_action "$action" "$arg1" "$arg2"
-}
-
-main "$@"
+main $argv

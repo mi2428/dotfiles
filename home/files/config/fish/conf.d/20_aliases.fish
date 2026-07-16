@@ -1,3 +1,9 @@
+set -l __dotfiles_git_ui_helper_file "$__fish_config_dir/lib/dotfiles_git_ui_helpers.fish"
+if test -f "$__dotfiles_git_ui_helper_file"
+    source "$__dotfiles_git_ui_helper_file"
+end
+set -e __dotfiles_git_ui_helper_file
+
 for stale_abbr in Ia Iag Ic Ieg Ig Igr Ih Ik Im Ip Is It Iv Iw Ix
     abbr --erase -- $stale_abbr 2>/dev/null
 end
@@ -44,7 +50,7 @@ alias k='kubectl'
 alias ldk='lazydocker'
 
 function __git_delta_lazygit
-    command git-delta-lazygit
+    __dotfiles_git_ui_delta_lazygit
 end
 
 function __dotfiles_git_handler_name --argument-names subcmd

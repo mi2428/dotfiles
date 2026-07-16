@@ -1,439 +1,387 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env fish
 
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-self_path="${script_dir}/$(basename -- "${BASH_SOURCE[0]}")"
-glow_style_path="${XDG_CONFIG_HOME:-$HOME/.config}/glow/styles/catppuccin-mocha.json"
-git_delta_lazygit_bin="${script_dir}/git-delta-lazygit"
-git_fzf_format_bin="${script_dir}/git-fzf-format"
+set -g __dotfiles_gh_review_self_path (path resolve (status filename))
+set -g __dotfiles_gh_review_script_dir (path dirname "$__dotfiles_gh_review_self_path")
+set -l helper_file (path resolve "$__dotfiles_gh_review_script_dir/../home/files/config/fish/lib/dotfiles_git_ui_helpers.fish")
 
-usage() {
-    cat <<'EOF'
-Usage:
-  gh-review [pr-number|pr-url]
-  gh-review --local [base-ref]
-
-Open a tmux review session using:
-  - top pane: the complete review diff, rendered with delta when available
-  - bottom pane: Neovim for editing/navigation
-
-PR reviews create or reuse a detached review worktree under:
-  ~/.cache/gh-review/<owner>/<repo>/pr-<number>
-
-Local reviews stay in the current repository and default to origin's default branch.
-
-Run this from inside the target git repository.
-EOF
-}
-
-die() {
-    printf 'gh-review: %s\n' "$*" >&2
+source "$helper_file"; or begin
+    printf 'gh-review: failed to source helper: %s\n' "$helper_file" >&2
     exit 1
-}
+end
 
-need_cmd() {
-    command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
-}
+set -l glow_style_path "$HOME/.config/glow/styles/catppuccin-mocha.json"
+if set -q XDG_CONFIG_HOME
+    set glow_style_path "$XDG_CONFIG_HOME/glow/styles/catppuccin-mocha.json"
+end
 
-slugify() {
-    printf '%s' "$1" \
-        | tr '[:upper:]' '[:lower:]' \
-        | tr -cs '[:alnum:]' '-' \
-        | sed 's/^-//; s/-$//' \
-        | cut -c1-36
-}
+function die
+    printf 'gh-review: %s\n' (string join ' ' -- $argv) >&2
+    exit 1
+end
 
-render_pr_preview() {
-    local pr_ref="$1"
-    local width="${FZF_PREVIEW_COLUMNS:-100}"
-    local markdown
+function need_cmd --argument-names name
+    command -q -- "$name"; or die "missing required command: $name"
+end
 
-    need_cmd gh
-    need_cmd jq
+function usage
+    printf '%s\n' \
+        'Usage:' \
+        '  gh-review [pr-number|pr-url]' \
+        '  gh-review --local [base-ref]' \
+        '' \
+        'Open a tmux review session using:' \
+        '  - top pane: the complete review diff, rendered with delta when available' \
+        '  - bottom pane: Neovim for editing/navigation' \
+        '' \
+        'PR reviews create or reuse a detached review worktree under:' \
+        '  ~/.cache/gh-review/<owner>/<repo>/pr-<number>' \
+        '' \
+        "Local reviews stay in the current repository and default to origin's default branch." \
+        '' \
+        'Run this from inside the target git repository.'
+end
 
-    markdown="$(
-        gh pr view "$pr_ref" --json number,title,url,author,baseRefName,headRefName,body,reviews,comments \
-        | jq -r '
-            def clip($n): .[0:$n];
-            def body_or_default:
-                if (.body // "") == "" then "_No description._" else .body end;
-            def review_section:
-                (.reviews | clip(4)) as $reviews
-                | if ($reviews | length) == 0 then
-                    "## Reviews\n\n_No reviews yet._"
-                  else
-                    "## Reviews\n\n"
-                    + ($reviews | map("### \(.author.login) [\(.state)]\n\n" + ((.body // "") | if . == "" then "_No body._" else . end)) | join("\n\n"))
-                  end;
-            def comment_section:
-                (.comments | clip(4)) as $comments
-                | if ($comments | length) == 0 then
-                    "## Comments\n\n_No issue comments._"
-                  else
-                    "## Comments\n\n"
-                    + ($comments | map("### \(.author.login)\n\n" + ((.body // "") | if . == "" then "_No body._" else . end)) | join("\n\n"))
-                  end;
-            "# PR #\(.number): \(.title)\n\n"
-            + "- URL: \(.url)\n"
-            + "- Author: \(.author.login)\n"
-            + "- Base: `\(.baseRefName)`\n"
-            + "- Head: `\(.headRefName)`\n\n"
-            + "## Description\n\n"
-            + body_or_default
-            + "\n\n"
-            + review_section
-            + "\n\n"
-            + comment_section
-        '
-    )"
+function run_diff_pane --argument-names diff_ref user_shell
+    set -l less_bin less
+    set -l git_delta_input_bin "$__dotfiles_gh_review_script_dir/git-delta-input"
 
-    if command -v glow >/dev/null 2>&1; then
-        printf '%s\n' "$markdown" | glow -s "$glow_style_path" -w "$width" -
+    if command -q less
+        set less_bin (command -s less)
+    end
+
+    if command -q delta
+        "$git_delta_input_bin" --range "$diff_ref" -- | __dotfiles_git_ui_delta_lazygit
     else
-        printf '%s\n' "$markdown"
-    fi
-}
+        env GIT_PAGER="$less_bin -R -+F" git --paginate diff --color=always "$diff_ref"
+    end
 
-run_diff_pane() {
-    local diff_ref="$1"
-    local git_delta_input_bin="$2"
-    local git_delta_lazygit_bin="$3"
-    local less_bin="${4:-less}"
+    exec "$user_shell"
+end
 
-    if [[ -x "$git_delta_lazygit_bin" ]] && command -v delta >/dev/null 2>&1; then
-        "$git_delta_input_bin" --range "$diff_ref" -- | "$git_delta_lazygit_bin"
+function run_edit_pane --argument-names user_shell target_file
+    if test -n "$target_file"; and test "$target_file" != '-'
+        nvim -- "$target_file"
     else
-        GIT_PAGER="${less_bin} -R -+F" git --paginate diff --color=always "$diff_ref"
-    fi
-}
+        nvim
+    end
 
-switch_or_attach_tmux() {
-    local session="$1"
+    exec "$user_shell"
+end
 
-    if [[ "${GH_REVIEW_NO_ATTACH:-}" == "1" ]]; then
+function switch_or_attach_tmux --argument-names session
+    if set -q GH_REVIEW_NO_ATTACH; and test "$GH_REVIEW_NO_ATTACH" = '1'
         return 0
-    fi
+    end
 
-    if [[ -n "${TMUX:-}" ]]; then
+    if set -q TMUX
         tmux switch-client -t "$session"
     else
         tmux attach-session -t "$session"
-    fi
-}
+    end
+end
 
-current_terminal_size() {
-    local width=""
-    local height=""
-    local tty_size=""
-
-    if [[ -n "${TMUX:-}" ]]; then
-        width="$(tmux display-message -p -t "${TMUX_PANE:-}" '#{client_width}' 2>/dev/null || true)"
-        height="$(tmux display-message -p -t "${TMUX_PANE:-}" '#{client_height}' 2>/dev/null || true)"
-    fi
-
-    if [[ -z "$width" || -z "$height" ]]; then
-        tty_size="$(stty size 2>/dev/null || true)"
-        if [[ "$tty_size" =~ ^([0-9]+)[[:space:]]+([0-9]+)$ ]]; then
-            [[ -n "$height" ]] || height="${BASH_REMATCH[1]}"
-            [[ -n "$width" ]] || width="${BASH_REMATCH[2]}"
-        fi
-    fi
-
-    if [[ -z "$width" && -n "${COLUMNS:-}" ]]; then
-        width="$COLUMNS"
-    fi
-    if [[ -z "$height" && -n "${LINES:-}" ]]; then
-        height="$LINES"
-    fi
-
-    if [[ -z "$width" ]]; then
-        width="$(tput cols 2>/dev/null || printf '160\n')"
-    fi
-    if [[ -z "$height" ]]; then
-        height="$(tput lines 2>/dev/null || printf '48\n')"
-    fi
-
-    printf '%s\t%s\n' "$width" "$height"
-}
-
-session_has_attached_client() {
-    local session="$1"
-
+function session_has_attached_client --argument-names session
     tmux list-clients -F '#{session_name}' 2>/dev/null | grep -Fxq -- "$session"
-}
+end
 
-detect_remote() {
-    local owner="$1"
-    local repo="$2"
-    local remote
-    local url
+function detect_remote --argument-names owner repo
+    set -l owner_re (string escape --style=regex -- "$owner")
+    set -l repo_re (string escape --style=regex -- "$repo")
+    set -l pattern "github\\.com[:/]$owner_re/$repo_re(\\.git)?\$"
 
-    if git remote get-url origin >/dev/null 2>&1; then
-        url="$(git remote get-url origin 2>/dev/null || true)"
-        case "$url" in
-            *github.com[:/]"$owner/$repo"|*github.com[:/]"$owner/$repo.git")
-                echo origin
-                return 0
-                ;;
-        esac
-    fi
+    if git remote get-url origin >/dev/null 2>/dev/null
+        set -l url (git remote get-url origin 2>/dev/null)
+        if string match -rq -- "$pattern" "$url"
+            printf '%s\n' origin
+            return 0
+        end
+    end
 
-    while IFS= read -r remote; do
-        url="$(git remote get-url "$remote" 2>/dev/null || true)"
-        case "$url" in
-            *github.com[:/]"$owner/$repo"|*github.com[:/]"$owner/$repo.git")
-                echo "$remote"
-                return 0
-                ;;
-        esac
-    done < <(git remote)
+    for remote in (git remote)
+        set -l url (git remote get-url "$remote" 2>/dev/null)
+        if string match -rq -- "$pattern" "$url"
+            printf '%s\n' "$remote"
+            return 0
+        end
+    end
 
-    die "could not determine a git remote for ${owner}/${repo}"
-}
+    die "could not determine a git remote for $owner/$repo"
+end
 
-resolve_local_base() {
-    local remote="${1:-origin}"
-    local symbolic_ref
+function resolve_local_base
+    set -l remote origin
+    if test (count $argv) -ge 1
+        set remote "$argv[1]"
+    end
 
-    symbolic_ref="$(git symbolic-ref --quiet --short "refs/remotes/${remote}/HEAD" 2>/dev/null || true)"
-    if [[ -n "$symbolic_ref" ]]; then
+    set -l symbolic_ref (git symbolic-ref --quiet --short "refs/remotes/$remote/HEAD" 2>/dev/null)
+    if test -n "$symbolic_ref"
         printf '%s\n' "$symbolic_ref"
         return 0
-    fi
+    end
 
-    if git show-ref --verify --quiet "refs/remotes/${remote}/main"; then
+    if git show-ref --verify --quiet "refs/remotes/$remote/main"
         printf '%s/main\n' "$remote"
         return 0
-    fi
+    end
 
-    if git show-ref --verify --quiet "refs/remotes/${remote}/master"; then
+    if git show-ref --verify --quiet "refs/remotes/$remote/master"
         printf '%s/master\n' "$remote"
         return 0
-    fi
+    end
 
-    die "could not resolve a default local review base for ${remote}; pass --local <base-ref>"
-}
+    die "could not resolve a default local review base for $remote; pass --local <base-ref>"
+end
 
-normalize_local_base() {
-    local base="$1"
-    local remote="${2:-origin}"
+function normalize_local_base --argument-names base
+    set -l remote origin
+    if test (count $argv) -ge 2
+        set remote "$argv[2]"
+    end
 
-    if [[ "$base" == "${remote}/HEAD" ]]; then
+    if test "$base" = "$remote/HEAD"
         resolve_local_base "$remote"
         return 0
-    fi
+    end
 
     printf '%s\n' "$base"
-}
+end
 
-set_tmux_env() {
-    local session="$1"
-    local key="$2"
-    local value="${3:-}"
-
-    if [[ -n "$value" ]]; then
+function set_tmux_env --argument-names session key value
+    if test -n "$value"
         tmux set-environment -t "$session" "$key" "$value"
-    fi
-}
+    end
+end
 
-select_open_pr() {
+function select_open_pr --argument-names self_path
     need_cmd fzf
-    [[ -x "$git_fzf_format_bin" ]] || die "missing required helper: $git_fzf_format_bin"
+    need_cmd python3
 
-    local tab
-    local selected
-    local cols=""
-    local list_width
-    local preview_width_percent=42
-    tab="$(printf '\t')"
+    set -l tab \t
+    set -l size (__dotfiles_git_ui_current_terminal_size)
+    set -l cols $size[1]
+    set -l preview_width_percent 42
+    set -l preview_cmd "$self_path --preview-pr {1}"
 
-    IFS=$'\t' read -r cols _ <<<"$(current_terminal_size)"
-    [[ "$cols" =~ ^[0-9]+$ ]] || cols=160
+    if not string match -rq '^[0-9]+$' -- "$cols"
+        set cols 160
+    end
 
-    list_width=$(( cols - (cols * preview_width_percent / 100) - 5 ))
-    (( list_width > 72 )) || list_width=72
+    set -l list_width (math -s0 "$cols - ($cols * $preview_width_percent / 100) - 5")
+    if test "$list_width" -le 72
+        set list_width 72
+    end
 
-    selected="$(
+    set -l selected (
         gh pr list \
             --state open \
             --limit 200 \
             --json number,title,author,updatedAt,baseRefName,headRefName,url \
             --jq '.[] | [.number, .headRefName, .baseRefName, .updatedAt[0:10], .author.login, .title, .url] | @tsv' \
-        | "$git_fzf_format_bin" prs "$list_width" \
+        | __dotfiles_git_ui_format_fzf_rows prs "$list_width" '' \
         | fzf \
             --ansi \
             --no-sort \
             --delimiter="$tab" \
             --with-nth=3 \
             --prompt='pr> ' \
-            --preview="'$self_path' --preview-pr {1}" \
-            --preview-window="right,${preview_width_percent}%,border-left,wrap"
-    )"
+            --preview="$preview_cmd" \
+            --preview-window="right,$preview_width_percent%,border-left,wrap"
+    )
+    or return 1
 
-    [[ -n "$selected" ]] || exit 1
-    printf '%s\n' "${selected%%"$tab"*}"
-}
+    test -n "$selected"; or return 1
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-    usage
-    exit 0
-fi
+    set -l fields (string split \t -- "$selected")
+    printf '%s\n' "$fields[1]"
+end
 
-if [[ "${1:-}" == "--preview-pr" ]]; then
-    [[ $# -eq 2 ]] || die "--preview-pr requires a PR number or URL"
-    render_pr_preview "$2"
-    exit 0
-fi
-
-if [[ "${1:-}" == "--diff-pane" ]]; then
-    [[ $# -ge 3 && $# -le 5 ]] || die "--diff-pane requires a diff range and git-delta-input path"
-    need_cmd git
-    run_diff_pane "$2" "$3" "${4:-}" "${5:-less}"
-    exit 0
-fi
+if test (count $argv) -ge 1
+    switch "$argv[1]"
+        case '-h' '--help'
+            usage
+            exit 0
+        case '--preview-pr'
+            test (count $argv) -eq 2; or die '--preview-pr requires a PR number or URL'
+            __dotfiles_git_ui_render_pr_preview "$argv[2]" "$glow_style_path"
+            exit 0
+        case '--diff-pane'
+            test (count $argv) -eq 3; or die '--diff-pane requires a diff range and user shell'
+            need_cmd git
+            run_diff_pane "$argv[2]" "$argv[3]"
+            exit 0
+        case '--edit-pane'
+            test (count $argv) -eq 3; or die '--edit-pane requires a user shell and target file'
+            run_edit_pane "$argv[2]" "$argv[3]"
+            exit 0
+    end
+end
 
 need_cmd git
 need_cmd tmux
 need_cmd nvim
 
-repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || die "run this inside a git repository"
-cd "$repo_root"
+set -l repo_root (git rev-parse --show-toplevel 2>/dev/null); or die 'run this inside a git repository'
+builtin cd "$repo_root"
 
-mode="pr"
-pr_ref=""
-local_base_arg=""
+set -l mode pr
+set -l pr_ref ''
+set -l local_base_arg ''
 
-case "${1:-}" in
-    --local)
-        mode="local"
-        local_base_arg="${2:-}"
-        [[ $# -le 2 ]] || die "expected at most one base ref after --local"
-        ;;
-    "")
-        ;;
-    *)
-        [[ $# -le 1 ]] || die "expected at most one PR argument"
-        pr_ref="$1"
-        ;;
-esac
+if test (count $argv) -ge 1
+    switch "$argv[1]"
+        case '--local'
+            set mode local
+            if test (count $argv) -ge 2
+                set local_base_arg "$argv[2]"
+            end
+            test (count $argv) -le 2; or die 'expected at most one base ref after --local'
+        case '*'
+            test (count $argv) -le 1; or die 'expected at most one PR argument'
+            set pr_ref "$argv[1]"
+    end
+end
 
-repo_name="$(basename "$repo_root")"
-review_base=""
-worktree_path=""
-session_name=""
-window_name=""
-pr_number=""
-head_ref="HEAD"
-user_shell="${SHELL:-/bin/bash}"
-git_delta_input_bin="${script_dir}/git-delta-input"
-less_bin="$(command -v less 2>/dev/null || printf '%s' less)"
-session_width=""
-session_height=""
+set -l repo_name (basename "$repo_root")
+set -l review_base ''
+set -l worktree_path ''
+set -l session_name ''
+set -l window_name ''
+set -l pr_number ''
+set -l head_ref HEAD
+set -l user_shell /bin/bash
+set -l less_bin less
+set -l size (__dotfiles_git_ui_current_terminal_size)
+set -l session_width $size[1]
+set -l session_height $size[2]
 
-[[ -x "$git_delta_input_bin" ]] || die "missing required helper: $git_delta_input_bin"
-[[ -x "$git_delta_lazygit_bin" ]] || die "missing required helper: $git_delta_lazygit_bin"
-[[ -x "$git_fzf_format_bin" ]] || die "missing required helper: $git_fzf_format_bin"
-IFS=$'\t' read -r session_width session_height <<<"$(current_terminal_size)"
+if set -q SHELL
+    set user_shell "$SHELL"
+end
+if command -q less
+    set less_bin (command -s less)
+end
 
-if [[ "$mode" == "local" ]]; then
-    remote="origin"
-    git remote get-url "$remote" >/dev/null 2>&1 || die "local review requires an origin remote"
-    review_base="$(normalize_local_base "${local_base_arg:-$(resolve_local_base "$remote")}" "$remote")"
+if test "$mode" = local
+    set -l remote origin
+    git remote get-url "$remote" >/dev/null 2>/dev/null; or die 'local review requires an origin remote'
 
-    if [[ "$review_base" == "${remote}/"* ]]; then
-        git fetch --prune "$remote" "${review_base#"${remote}"/}" >/dev/null
-    fi
+    set -l resolved_base (resolve_local_base "$remote")
+    if test -n "$local_base_arg"
+        set resolved_base "$local_base_arg"
+    end
+    set review_base (normalize_local_base "$resolved_base" "$remote")
 
-    worktree_path="$repo_root"
-    current_ref="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || git rev-parse --short HEAD)"
-    head_slug="$(slugify "$current_ref")"
-    base_slug="$(slugify "$review_base")"
-    [[ -n "$head_slug" ]] || head_slug="head"
-    [[ -n "$base_slug" ]] || base_slug="base"
-    session_name="review-$(printf '%s' "${repo_name}-local-${head_slug}-${base_slug}" | tr '/._' '-' | tr -cd '[:alnum:]-' | cut -c1-48)"
-    window_name="$(printf '%s' "local-${head_slug}" | cut -c1-48)"
+    if string match -q -- "$remote/*" "$review_base"
+        git fetch --prune "$remote" (string replace "$remote/" '' -- "$review_base") >/dev/null
+    end
+
+    set worktree_path "$repo_root"
+    set -l current_ref (git symbolic-ref --quiet --short HEAD 2>/dev/null)
+    if test -z "$current_ref"
+        set current_ref (git rev-parse --short HEAD)
+    end
+
+    set -l head_slug (__dotfiles_git_ui_slugify "$current_ref")
+    set -l base_slug (__dotfiles_git_ui_slugify "$review_base")
+    test -n "$head_slug"; or set head_slug head
+    test -n "$base_slug"; or set base_slug base
+
+    set session_name (printf '%s' "review-$repo_name-local-$head_slug-$base_slug" | tr '/._' '-' | tr -cd '[:alnum:]-' | cut -c1-48)
+    set window_name (string sub -s 1 -l 48 -- "local-$head_slug")
 else
     need_cmd gh
     need_cmd jq
 
-    repo_name_with_owner="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
-    repo_owner="${repo_name_with_owner%%/*}"
-    repo_name="${repo_name_with_owner##*/}"
+    set -l repo_name_with_owner (gh repo view --json nameWithOwner --jq .nameWithOwner)
+    set -l repo_parts (string split / -- "$repo_name_with_owner")
+    set -l repo_owner "$repo_parts[1]"
+    set repo_name "$repo_parts[2]"
 
-    if [[ -z "$pr_ref" ]]; then
-        pr_ref="$(select_open_pr)"
-    fi
+    if test -z "$pr_ref"
+        set pr_ref (select_open_pr "$__dotfiles_gh_review_self_path"); or exit 1
+    end
 
-    if [[ -n "$pr_ref" ]]; then
-        pr_meta="$(gh pr view "$pr_ref" --json number,title,url,baseRefName,headRefName --jq '[.number,.title,.url,.baseRefName,.headRefName] | @tsv')"
+    set -l pr_meta
+    if test -n "$pr_ref"
+        set pr_meta (gh pr view "$pr_ref" --json number,title,url,baseRefName,headRefName --jq '[.number,.title,.url,.baseRefName,.headRefName] | @tsv')
     else
-        pr_meta="$(gh pr view --json number,title,url,baseRefName,headRefName --jq '[.number,.title,.url,.baseRefName,.headRefName] | @tsv')"
-    fi
+        set pr_meta (gh pr view --json number,title,url,baseRefName,headRefName --jq '[.number,.title,.url,.baseRefName,.headRefName] | @tsv')
+    end
 
-    IFS=$'\t' read -r pr_number _pr_title pr_url base_ref head_ref <<<"$pr_meta"
-    [[ -n "$pr_number" ]] || die "failed to resolve the pull request"
+    set -l pr_fields (string split \t -- "$pr_meta")
+    set pr_number "$pr_fields[1]"
+    set -l pr_url "$pr_fields[3]"
+    set -l base_ref "$pr_fields[4]"
+    set head_ref "$pr_fields[5]"
 
-    pr_owner="$(printf '%s\n' "$pr_url" | cut -d/ -f4)"
-    pr_repo="$(printf '%s\n' "$pr_url" | cut -d/ -f5)"
+    test -n "$pr_number"; or die 'failed to resolve the pull request'
 
-    [[ "$pr_owner" == "$repo_owner" && "$pr_repo" == "$repo_name" ]] \
-        || die "PR ${pr_url} does not belong to the current repository (${repo_name_with_owner})"
+    set -l url_parts (string split / -- "$pr_url")
+    set -l pr_owner "$url_parts[4]"
+    set -l pr_repo "$url_parts[5]"
 
-    remote="$(detect_remote "$repo_owner" "$repo_name")"
-    review_base="${remote}/${base_ref}"
-    cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/gh-review/${repo_owner}/${repo_name}"
-    worktree_path="${cache_root}/pr-${pr_number}"
-    head_slug="$(slugify "$head_ref")"
-    [[ -n "$head_slug" ]] || head_slug="pr-${pr_number}"
-    local_branch="$(printf '%s' "review/pr-${pr_number}-${head_slug}" | cut -c1-72)"
-    session_name="review-$(printf '%s' "${repo_name}-${pr_number}-${head_slug}" | tr '/._' '-' | tr -cd '[:alnum:]-' | cut -c1-48)"
-    window_name="$(printf '%s' "${pr_number}-${head_slug}" | cut -c1-48)"
+    test "$pr_owner" = "$repo_owner"; and test "$pr_repo" = "$repo_name"; or die "PR $pr_url does not belong to the current repository ($repo_name_with_owner)"
+
+    set -l remote (detect_remote "$repo_owner" "$repo_name")
+    set review_base "$remote/$base_ref"
+    set -l cache_home "$HOME/.cache"
+    if set -q XDG_CACHE_HOME
+        set cache_home "$XDG_CACHE_HOME"
+    end
+    set -l cache_root "$cache_home/gh-review/$repo_owner/$repo_name"
+    set worktree_path "$cache_root/pr-$pr_number"
+    set -l head_slug (__dotfiles_git_ui_slugify "$head_ref")
+    test -n "$head_slug"; or set head_slug "pr-$pr_number"
+    set -l local_branch (string sub -s 1 -l 72 -- "review/pr-$pr_number-$head_slug")
+    set session_name (printf '%s' "review-$repo_name-$pr_number-$head_slug" | tr '/._' '-' | tr -cd '[:alnum:]-' | cut -c1-48)
+    set window_name (string sub -s 1 -l 48 -- "$pr_number-$head_slug")
 
     mkdir -p "$cache_root"
 
-    if [[ -e "$worktree_path" ]] && ! git -C "$worktree_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        die "path exists and is not a git worktree: $worktree_path"
-    fi
-
-    if [[ ! -e "$worktree_path" ]]; then
+    if test -e "$worktree_path"
+        git -C "$worktree_path" rev-parse --is-inside-work-tree >/dev/null 2>/dev/null; or die "path exists and is not a git worktree: $worktree_path"
+    else
         git worktree add --detach "$worktree_path" HEAD >/dev/null
-    fi
+    end
 
     git -C "$worktree_path" fetch --prune "$remote" "$base_ref" >/dev/null
-    (cd "$worktree_path" && gh pr checkout "$pr_number" --branch "$local_branch" --force >/dev/null)
-fi
+    set -l cwd (pwd)
+    begin
+        builtin cd "$worktree_path"
+        gh pr checkout "$pr_number" --branch "$local_branch" --force >/dev/null
+    end
+    builtin cd "$cwd"
+end
 
-if tmux has-session -t "$session_name" 2>/dev/null; then
-    if session_has_attached_client "$session_name"; then
+if tmux has-session -t "$session_name" 2>/dev/null
+    if session_has_attached_client "$session_name"
         printf 'gh-review: reusing tmux session %s\n' "$session_name"
         switch_or_attach_tmux "$session_name"
         exit 0
-    fi
+    end
 
     tmux kill-session -t "$session_name"
-fi
+end
 
-first_file="$(
-    git -C "$worktree_path" diff --name-only "${review_base}...HEAD" \
-    | while IFS= read -r path; do
-        if [[ -f "${worktree_path}/${path}" ]]; then
+set -l first_file (
+    git -C "$worktree_path" diff --name-only "$review_base...HEAD" \
+    | while read -l path
+        if test -f "$worktree_path/$path"
             printf '%s\n' "$path"
             break
-        fi
-    done
-)"
+        end
+    end
+)
 
-if [[ -n "$first_file" ]]; then
-    printf -v edit_shell_cmd 'nvim -- %q; exec %q' "$first_file" "$user_shell"
-else
-    printf -v edit_shell_cmd 'nvim; exec %q' "$user_shell"
-fi
-printf -v edit_cmd 'bash -lc %q' "$edit_shell_cmd"
+set -l edit_target -
+if test -n "$first_file"
+    set edit_target "$first_file"
+end
 
-diff_ref="${review_base}...HEAD"
-printf -v diff_shell_cmd '%q --diff-pane %q %q %q %q; exec %q' \
-    "$self_path" "$diff_ref" "$git_delta_input_bin" "$git_delta_lazygit_bin" "$less_bin" "$user_shell"
-printf -v diff_cmd 'bash -lc %q' "$diff_shell_cmd"
+set -l diff_ref "$review_base...HEAD"
+set -l diff_cmd (string join ' ' -- (string escape -- "$__dotfiles_gh_review_self_path" --diff-pane "$diff_ref" "$user_shell"))
+set -l edit_cmd (string join ' ' -- (string escape -- "$__dotfiles_gh_review_self_path" --edit-pane "$user_shell" "$edit_target"))
 
 tmux new-session -d -x "$session_width" -y "$session_height" -s "$session_name" -n "$window_name" -c "$worktree_path" "$diff_cmd"
 set_tmux_env "$session_name" NVIM_REVIEW_MODE 1
@@ -442,16 +390,16 @@ set_tmux_env "$session_name" NVIM_REVIEW_HEAD HEAD
 set_tmux_env "$session_name" NVIM_REVIEW_PR "$pr_number"
 set_tmux_env "$session_name" NVIM_REVIEW_REPO_ROOT "$repo_root"
 set_tmux_env "$session_name" NVIM_REVIEW_WORKTREE "$worktree_path"
-tmux resize-window -x "$session_width" -y "$session_height" -t "${session_name}:${window_name}"
-tmux split-window -v -p 55 -t "${session_name}:${window_name}.0" -c "$worktree_path" "$edit_cmd"
-tmux select-pane -t "${session_name}:${window_name}.1"
+tmux resize-window -x "$session_width" -y "$session_height" -t "$session_name:$window_name"
+tmux split-window -v -p 55 -t "$session_name:$window_name.0" -c "$worktree_path" "$edit_cmd"
+tmux select-pane -t "$session_name:$window_name.1"
 
-if [[ -n "$pr_number" ]]; then
+if test -n "$pr_number"
     printf 'gh-review: session=%s pr=#%s base=%s worktree=%s\n' \
         "$session_name" "$pr_number" "$review_base" "$worktree_path"
 else
     printf 'gh-review: session=%s base=%s worktree=%s\n' \
         "$session_name" "$review_base" "$worktree_path"
-fi
+end
 
 switch_or_attach_tmux "$session_name"

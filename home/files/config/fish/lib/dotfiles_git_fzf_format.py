@@ -4,7 +4,7 @@ import sys
 
 
 def die(message: str) -> None:
-    print(f"git-fzf-format: {message}", file=sys.stderr)
+    print(f"dotfiles_git_fzf_format: {message}", file=sys.stderr)
     raise SystemExit(2)
 
 
@@ -127,14 +127,24 @@ def format_branches(list_width: int, home: str) -> None:
     if subject_width < subject_min:
         subject_width = subject_min
 
+    lavender = "180;190;254"
+    green = "166;227;161"
+    blue = "137;180;250"
+    overlay = "147;153;178"
+    pink = "245;194;231"
+
     for row in rows:
-        branch_display = ellipsize(row["ref_short"], branch_width)
-        author_display = ellipsize(row["author"], author_width)
-        worktree_display = shorten_path(row["worktree"], home, worktree_width)
+        marker_rgb = green if row["kind"] == "local" else blue
+        branch_rgb = lavender if row["kind"] == "local" else blue
+        marker = colorize(f"{row['marker']:<3}", marker_rgb, bold=True)
+        branch_display = colorize(f"{ellipsize(row['ref_short'], branch_width):<{branch_width}}", branch_rgb, bold=True)
+        age_display = colorize(f"{row['age']:<{age_width}}", overlay)
+        author_display = colorize(f"{ellipsize(row['author'], author_width):<{author_width}}", pink)
+        worktree_display = colorize(f"{shorten_path(row['worktree'], home, worktree_width):<{worktree_width}}", overlay)
         subject_display = ellipsize(row["subject"], subject_width)
         display = (
-            f"{row['marker']:<3} {branch_display:<{branch_width}}  {row['age']:<{age_width}}  "
-            f"{author_display:<{author_width}}  {worktree_display:<{worktree_width}}  {subject_display}"
+            f"{marker} {branch_display}  {age_display}  "
+            f"{author_display}  {worktree_display}  {subject_display}"
         )
         worktree_hidden = row["worktree"] or "-"
         print("\t".join([row["ref_short"], row["kind"], row["switch_target"], worktree_hidden, display]))
@@ -208,18 +218,18 @@ def format_prs(list_width: int) -> None:
 
 def main() -> None:
     if len(sys.argv) < 3:
-        die("usage: git-fzf-format <branches|prs> <list-width> [home]")
+        die("usage: dotfiles_git_fzf_format.py <branches|prs> <list-width> [home]")
 
     mode = sys.argv[1]
     try:
         list_width = int(sys.argv[2])
     except ValueError as exc:
-        raise SystemExit(f"git-fzf-format: invalid list width: {sys.argv[2]}") from exc
+        raise SystemExit(f"dotfiles_git_fzf_format.py: invalid list width: {sys.argv[2]}") from exc
+
+    home = sys.argv[3] if len(sys.argv) > 3 else ""
 
     if mode == "branches":
-        if len(sys.argv) != 4:
-            die("branches mode requires <home>")
-        format_branches(list_width, sys.argv[3])
+        format_branches(list_width, home)
         return
 
     if mode == "prs":
