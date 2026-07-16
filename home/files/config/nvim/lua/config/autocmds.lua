@@ -38,6 +38,7 @@ autocmd({ "BufNewFile", "BufRead" }, {
 autocmd("LspAttach", {
 	group = augroup("dotfiles-lsp-attach", { clear = true }),
 	callback = function(args)
+		local client = vim.lsp.get_client_by_id(args.data.client_id)
 		local map = function(mode, lhs, rhs, desc)
 			vim.keymap.set(mode, lhs, rhs, { buffer = args.buf, desc = desc })
 		end
@@ -64,5 +65,9 @@ autocmd("LspAttach", {
 		map("n", "<leader>ds", vim.diagnostic.open_float, "Line diagnostics")
 		map("n", "[d", vim.diagnostic.goto_prev, "Previous diagnostic")
 		map("n", "]d", vim.diagnostic.goto_next, "Next diagnostic")
+
+		if client and client:supports_method("textDocument/inlayHint") then
+			vim.lsp.inlay_hint.enable(true, { bufnr = args.buf })
+		end
 	end,
 })
