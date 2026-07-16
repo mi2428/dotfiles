@@ -494,6 +494,7 @@ xx() {
     *.tar.gz|*.tgz) tar xzvf "$archive" ;;
     *.tar.xz) tar Jxvf "$archive" ;;
     *.zip) unzip "$archive" ;;
+    *.rar) unar "$archive" ;;
     *.lzh) lha e "$archive" ;;
     *.tar.bz2|*.tbz) tar xjvf "$archive" ;;
     *.tar.Z) tar zxvf "$archive" ;;

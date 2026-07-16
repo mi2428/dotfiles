@@ -412,6 +412,7 @@ function dot
             echo ' pl, pull              alias of `git pull` command'
             echo ' ps, push              alias of `git push` command'
             echo ' s,  sync              run pull and then push'
+            echo '     switch            run `task hm.switch` in ~/dotfiles'
             echo '     upgrade           run package upgrade'
             echo '     rollback          discard unstaged tracked-file changes after confirmation'
             echo ' h,  help              this help text'
@@ -509,6 +510,8 @@ function xx
             tar Jxvf "$archive"
         case '*.zip'
             unzip "$archive"
+        case '*.rar'
+            unar "$archive"
         case '*.lzh'
             lha e "$archive"
         case '*.tar.bz2' '*.tbz'
