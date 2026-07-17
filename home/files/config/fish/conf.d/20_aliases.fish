@@ -396,7 +396,9 @@ else
     alias la='ls --color=auto -A'
 end
 
-if command -sq htop
+if command -sq btop
+    alias top='btop'
+else if command -sq htop
     alias top='htop'
 end
 

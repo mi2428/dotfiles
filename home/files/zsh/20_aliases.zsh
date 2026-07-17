@@ -1074,7 +1074,9 @@ else
 fi
 
 
-if whence -p htop 1> /dev/null; then
+if whence -p btop 1> /dev/null; then
+  alias top='btop'
+elif whence -p htop 1> /dev/null; then
   alias top='htop'
 fi
 
