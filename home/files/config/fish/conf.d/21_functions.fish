@@ -93,6 +93,7 @@ function zz
     set -q XDG_CONFIG_HOME; and set config_home "$XDG_CONFIG_HOME"
     set -l fzf_rows "$config_home/fish/lib/fzf_rows.py"
     set -l fish_shell (command -s fish)
+    set -l preview "command python3 '$fzf_rows' preview-directory {1}"
 
     argparse a/all h/help -- $argv
     or return 1
@@ -122,7 +123,11 @@ function zz
     set -l query (string join ' ' -- $argv)
     # The candidate source streams.  With --select-1, fzf would accept the
     # first directory before fd has produced the remaining candidates.
-    set -l fzf_opts --height=70% --scheme=path
+    set -l fzf_opts \
+        --height=70% \
+        --scheme=path \
+        --preview="$preview" \
+        --preview-window='down,30%,sharp'
     set -l dst
     set -l excludes \
         .git \
@@ -174,7 +179,7 @@ function zz
             printf '%s\n' "$root"
             fd $fd_args
         end |
-            command python3 "$fzf_rows" path |
+            command python3 "$fzf_rows" directory |
             command env NO_COLOR= SHELL="$fish_shell" fzf --ansi --with-nth=2.. --nth=2.. --accept-nth=1 $fzf_opts --query "$query" |
             command python3 "$fzf_rows" decode)
     else
@@ -191,7 +196,7 @@ function zz
             printf '%s\n' "$root"
             command find $find_args 2>/dev/null
         end |
-            command python3 "$fzf_rows" path |
+            command python3 "$fzf_rows" directory |
             command env NO_COLOR= SHELL="$fish_shell" fzf --ansi --with-nth=2.. --nth=2.. --accept-nth=1 $fzf_opts --query "$query" |
             command python3 "$fzf_rows" decode)
     end

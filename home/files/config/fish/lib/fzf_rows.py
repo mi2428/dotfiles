@@ -103,6 +103,27 @@ def relative_time(timestamp: float) -> bytes:
     return b"now"
 
 
+def path_metadata(path: bytes) -> tuple[bytes, bytes]:
+    """Return displayable POSIX permissions and relative modification time."""
+    try:
+        metadata = os.stat(path)
+    except OSError:
+        return b"??????????", b"unavailable"
+    return stat.filemode(metadata.st_mode).encode(), relative_time(metadata.st_mtime)
+
+
+def directory_display(path: bytes) -> bytes:
+    """Render a filesystem-search result without a zoxide score column."""
+    permissions, updated = path_metadata(path)
+    return b"  ".join(
+        (
+            color(permissions, OVERLAY),
+            color(updated.rjust(10), YELLOW),
+            color(path, BLUE, bold=True),
+        )
+    )
+
+
 def zoxide_parts(raw: bytes) -> tuple[bytes, bytes]:
     """Split zoxide's score/path output without breaking paths with spaces."""
     score, separator, path = raw.partition(b"\t")
@@ -120,13 +141,7 @@ def zoxide_display(raw: bytes) -> bytes:
     if not score or not path:
         return simple_display(raw)
 
-    try:
-        metadata = os.stat(path)
-        permissions = stat.filemode(metadata.st_mode).encode()
-        updated = relative_time(metadata.st_mtime)
-    except OSError:
-        permissions = b"??????????"
-        updated = b"unavailable"
+    permissions, updated = path_metadata(path)
 
     return b"  ".join(
         (
@@ -145,20 +160,11 @@ def emit_zoxide(raw: bytes) -> None:
     sys.stdout.buffer.flush()
 
 
-def preview_zoxide(encoded: str) -> None:
-    """Render the selected zoxide directory with the configured eza theme."""
-    try:
-        raw = base64.b64decode(encoded, validate=True)
-    except ValueError as exc:
-        raise SystemExit("fzf_rows.py: invalid zoxide preview value") from exc
-
-    _, path = zoxide_parts(raw)
-    if not path:
-        raise SystemExit("fzf_rows.py: invalid zoxide row")
-
+def preview_eza(path: bytes) -> None:
+    """Render a directory with the active eza and Catppuccin configuration."""
     eza = shutil.which("eza")
     if eza is None:
-        raise SystemExit("zi: eza is not installed")
+        raise SystemExit("fzf: eza is not installed")
 
     env = os.environ.copy()
     for name in ("NO_COLOR", "LS_COLORS", "EXA_COLORS", "EZA_COLORS"):
@@ -175,6 +181,29 @@ def preview_zoxide(encoded: str) -> None:
         command.extend(("--width", columns))
     command.append(os.fsdecode(path))
     raise SystemExit(subprocess.run(command, env=env, check=False).returncode)
+
+
+def decode_preview_value(encoded: str) -> bytes:
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except ValueError as exc:
+        raise SystemExit("fzf_rows.py: invalid preview value") from exc
+
+
+def preview_zoxide(encoded: str) -> None:
+    """Render the selected zoxide directory with the configured eza theme."""
+    _, path = zoxide_parts(decode_preview_value(encoded))
+    if not path:
+        raise SystemExit("fzf_rows.py: invalid zoxide row")
+    preview_eza(path)
+
+
+def preview_directory(encoded: str) -> None:
+    """Render the selected filesystem-search directory with eza."""
+    path = decode_preview_value(encoded)
+    if not path:
+        raise SystemExit("fzf_rows.py: invalid directory row")
+    preview_eza(path)
 
 
 def status_color(code: bytes) -> bytes:
@@ -240,6 +269,7 @@ def emit_lines(mode: str) -> None:
     display_for = {
         "simple": simple_display,
         "path": simple_display,
+        "directory": directory_display,
         "image": image_display,
         "process": process_display,
     }.get(mode)
@@ -286,15 +316,18 @@ def main() -> None:
     if len(sys.argv) == 3 and sys.argv[1] == "preview-zoxide":
         preview_zoxide(sys.argv[2])
         return
+    if len(sys.argv) == 3 and sys.argv[1] == "preview-directory":
+        preview_directory(sys.argv[2])
+        return
 
     if len(sys.argv) != 2:
         raise SystemExit(
-            "usage: fzf_rows.py <simple|path|image|process|zoxide|git-status|history-display|decode|decode-zoxide>"
+            "usage: fzf_rows.py <simple|path|directory|image|process|zoxide|git-status|history-display|decode|decode-zoxide>"
         )
 
     mode = sys.argv[1]
 
-    if mode in {"simple", "path", "image", "process"}:
+    if mode in {"simple", "path", "directory", "image", "process"}:
         emit_lines(mode)
         return
 
