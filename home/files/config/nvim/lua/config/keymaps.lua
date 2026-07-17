@@ -31,8 +31,34 @@ map("x", "p", [["_dP]], { desc = "Paste without yanking replaced text" })
 map("n", "-", function()
 	require("oil").open()
 end, { desc = "Open parent directory" })
-map("n", "[", "<cmd>BufferLineCyclePrev<cr>", { desc = "Previous buffer" })
-map("n", "]", "<cmd>BufferLineCycleNext<cr>", { desc = "Next buffer" })
+-- Keep buffer cycling on doubled brackets so a lone `[` or `]` does not wait
+-- for a longer mapping. This deliberately replaces Neovim's section motions.
+-- Use built-in buffer commands: BufferLine is lazy-loaded and unavailable early
+-- in startup. Its visual order is the inverse of :bnext/:bprevious here.
+local function map_buffer_cycles(bufnr)
+	local opts = { nowait = true }
+	if bufnr then
+		opts.buffer = bufnr
+	end
+
+	map("n", "[[", "<cmd>bnext<cr>", vim.tbl_extend("force", opts, { desc = "Previous buffer" }))
+	map("n", "]]", "<cmd>bprevious<cr>", vim.tbl_extend("force", opts, { desc = "Next buffer" }))
+end
+
+map_buffer_cycles()
+-- Some ftplugins (notably Go's) install buffer-local [[ / ]] section motions,
+-- which take precedence over the global mappings above. Reapply asynchronously
+-- after FileType/BufEnter processing so the buffer-cycle mappings win.
+vim.api.nvim_create_autocmd({ "BufEnter", "FileType" }, {
+	group = vim.api.nvim_create_augroup("dotfiles-buffer-cycle-keymaps", { clear = true }),
+	callback = function(args)
+		vim.schedule(function()
+			if vim.api.nvim_buf_is_valid(args.buf) and vim.bo[args.buf].buftype == "" then
+				map_buffer_cycles(args.buf)
+			end
+		end)
+	end,
+})
 map("n", "[b", "<cmd>BufferLineCyclePrev<cr>", { desc = "Previous buffer" })
 map("n", "]b", "<cmd>BufferLineCycleNext<cr>", { desc = "Next buffer" })
 map("n", "[t", "<cmd>tabprevious<cr>", { desc = "Previous tab" })
