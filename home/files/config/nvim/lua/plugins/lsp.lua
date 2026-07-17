@@ -251,7 +251,21 @@ return {
 	{
 		"dnlhc/glance.nvim",
 		cmd = "Glance",
-		opts = {},
+		config = function()
+			local glance = require("glance")
+
+			glance.setup({
+				border = {
+					enable = true,
+				},
+				hooks = {
+					before_open = function(results, open)
+						open(results)
+						vim.schedule(glance.actions.enter_win("preview"))
+					end,
+				},
+			})
+		end,
 	},
 	{
 		"rachartier/tiny-inline-diagnostic.nvim",
