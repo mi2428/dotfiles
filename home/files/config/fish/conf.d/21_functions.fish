@@ -380,6 +380,11 @@ function dot
                 builtin cd -- "$HOME/dotfiles" 2>/dev/null
                 and task hm.switch
             end
+        case gc
+            begin
+                builtin cd -- "$HOME/dotfiles" 2>/dev/null
+                and task hm.gc
+            end
         case upgrade
             begin
                 builtin cd -- "$HOME/dotfiles" 2>/dev/null
@@ -413,6 +418,7 @@ function dot
             echo ' ps, push              alias of `git push` command'
             echo ' s,  sync              run pull and then push'
             echo '     switch            run `task hm.switch` in ~/dotfiles'
+            echo '     gc                run `task hm.gc` in ~/dotfiles'
             echo '     upgrade           run package upgrade'
             echo '     rollback          discard unstaged tracked-file changes after confirmation'
             echo ' h,  help              this help text'

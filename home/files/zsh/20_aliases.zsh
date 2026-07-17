@@ -327,6 +327,11 @@ dot() {
       return 0
       ;;
 
+    gc)
+      (builtin cd -- "$HOME/dotfiles" 2>/dev/null; task hm.gc)
+      return 0
+      ;;
+
     upgrade)
       (
         builtin cd -- "$HOME/dotfiles" 2>/dev/null || exit 1
@@ -366,6 +371,7 @@ dot() {
       echo " pl, pull              alias of \`git pull\` command"
       echo " ps, push              alias of \`git push\` command"
       echo " s,  sync              run pull and then push"
+      echo "     gc                run \`task hm.gc\` in ~/dotfiles"
       echo "     upgrade           run package upgrade"
       echo "     rollback          discard unstaged tracked-file changes after confirmation"
       echo " h,  help              this help text"
