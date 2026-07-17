@@ -45,6 +45,7 @@ ARG NIX_VERSION=2.35.1
 COPY . /src
 
 RUN useradd --create-home --shell /bin/bash builder \
+ && chown -R builder:builder /src \
  && install -d -m 0755 -o builder -g builder /nix /tmp/skel \
  && install -d -m 0755 /etc/nix \
  && printf '%s\n' 'filter-syscalls = false' > /etc/nix/nix.conf
