@@ -48,7 +48,8 @@ Tasks
   hm.switch          Apply the current host activation and refresh managed symlinks
   hm.link            Re-apply the current host activation to re-create managed symlinks
   hm.update          Update nixpkgs in flake.lock and apply the current host activation
-  hm.gc              Delete old generations and collect Nix garbage
+  hm.gc              Delete old generations and collect Nix garbage (run without sudo)
+  hm.gc.repair-macl  Remove macOS metadata blocking GC for an unreferenced store path
   brew.check         Check the repo-managed Brewfile against the local Homebrew state
   brew.sync          Update and upgrade Homebrew, then apply the repo-managed Brewfile
   secrets.encrypt    Encrypt ssh and/or gnupg into chezmoi source state
@@ -73,6 +74,7 @@ Examples
   task hm.update HOST=macos
   task hm.switch HOST=docker
   task hm.gc
+  task hm.gc.repair-macl STORE_PATH=/nix/store/<path>
   task secrets.encrypt
   task secrets.encrypt BUNDLE=ssh
   task secrets.encrypt BUNDLE=gnupg GPG_KEY_IDS='E8D3009C6341BDEAF038009685AB6867E2147DDA'
@@ -84,6 +86,11 @@ Examples
 
 On macOS, Homebrew is intentionally decoupled from `darwin-rebuild`.
 Use the repo-root `Brewfile` with `task brew.check` and `task brew.sync` for Homebrew state, then use `task hm.switch HOST=macos` for Nix-managed changes.
+
+Run `task hm.gc` as the login user, never as `sudo task hm.gc`; it elevates only
+the system garbage-collection pass. If macOS metadata prevents Nix from deleting
+an unreferenced path, run `task hm.gc.repair-macl STORE_PATH=/nix/store/<path>`
+with the path printed by Nix, then retry `task hm.gc`.
 
 For quick config checks, you do not need to run `hm.switch` for every small change.
 Use [`bin/dotfiles-dev`](/Users/teo/dotfiles/bin/dotfiles-dev), which builds a writable projected `XDG_CONFIG_HOME` per app from the repo tree:

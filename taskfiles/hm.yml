@@ -109,10 +109,15 @@ tasks:
           HOST: '{{.HOST}}'
 
   hm.gc:
-    desc: Delete old generations and collect Nix garbage
+    desc: Delete old generations and collect Nix garbage (run without sudo)
     cmds:
       - |
         set -eu
+        if [ "$(id -u)" -eq 0 ]; then
+          printf '%s\n' 'task hm.gc: run task hm.gc as your login user, not with sudo; the task elevates only the system GC pass.' >&2
+          exit 2
+        fi
+
         repo_root='{{.REPO_ROOT}}'
         nix_bin="$("$repo_root/bootstrap/install-nix.sh")"
         nix_bin_dir="$(dirname "$nix_bin")"
@@ -123,7 +128,7 @@ tasks:
         fi
 
         if [ "$(uname -s)" = "Darwin" ]; then
-          sudo env PATH="$nix_bin_dir:$PATH" "$nix_collect_garbage_bin" -d
+          sudo -H env PATH="$nix_bin_dir:$PATH" "$nix_collect_garbage_bin" -d
           PATH="$nix_bin_dir:$PATH" "$nix_collect_garbage_bin" -d
         else
           PATH="$nix_bin_dir:$PATH" "$nix_collect_garbage_bin" -d
@@ -131,3 +136,60 @@ tasks:
 
         PATH="$nix_bin_dir:$PATH" \
           "$nix_bin" store optimise --extra-experimental-features 'nix-command flakes'
+
+  hm.gc.repair-macl:
+    desc: Remove macOS metadata that blocks GC for an unreferenced Nix store path
+    cmds:
+      - |
+        set -eu
+        if [ "$(id -u)" -eq 0 ]; then
+          printf '%s\n' 'task hm.gc.repair-macl: run as your login user, not with sudo.' >&2
+          exit 2
+        fi
+
+        if [ "$(uname -s)" != "Darwin" ]; then
+          printf '%s\n' 'task hm.gc.repair-macl: this recovery task is only needed on macOS.' >&2
+          exit 2
+        fi
+
+        store_path='{{default "" .STORE_PATH}}'
+        if [ -z "$store_path" ]; then
+          printf '%s\n' 'task hm.gc.repair-macl: pass STORE_PATH=/nix/store/<path> from the GC error.' >&2
+          exit 2
+        fi
+
+        case "$store_path" in
+          /nix/store/*) ;;
+          *)
+            printf '%s\n' 'task hm.gc.repair-macl: STORE_PATH must be under /nix/store.' >&2
+            exit 2
+            ;;
+        esac
+
+        if [ ! -e "$store_path" ]; then
+          printf '%s\n' "task hm.gc.repair-macl: store path does not exist: $store_path" >&2
+          exit 2
+        fi
+
+        repo_root='{{.REPO_ROOT}}'
+        nix_bin="$("$repo_root/bootstrap/install-nix.sh")"
+        nix_bin_dir="$(dirname "$nix_bin")"
+        nix_store_bin="$nix_bin_dir/nix-store"
+        if [ ! -x "$nix_store_bin" ]; then
+          nix_store_bin="$(command -v nix-store)"
+        fi
+
+        roots="$(PATH="$nix_bin_dir:$PATH" "$nix_store_bin" --query --roots "$store_path")"
+        if [ -n "$roots" ]; then
+          printf '%s\n' "task hm.gc.repair-macl: refusing to alter rooted store path: $store_path" >&2
+          printf '%s\n' "$roots" >&2
+          exit 2
+        fi
+
+        if ! xattr -lr "$store_path" 2>/dev/null | grep -q 'com\.apple\.macl:'; then
+          printf '%s\n' "task hm.gc.repair-macl: no com.apple.macl metadata found: $store_path"
+          exit 0
+        fi
+
+        sudo -H xattr -dr com.apple.macl "$store_path"
+        printf '%s\n' "task hm.gc.repair-macl: removed com.apple.macl metadata: $store_path"
