@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import calendar
 import json
-import re
 import subprocess
 import sys
 from datetime import date, timedelta
@@ -12,24 +11,36 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-QUERY = """
-query($login: String!, $from: DateTime!, $to: DateTime!) {
-  user(login: $login) {
-    contributionsCollection(from: $from, to: $to) {
-      contributionCalendar {
-        totalContributions
-        weeks {
-          contributionDays {
-            date
-            contributionCount
-            contributionLevel
-          }
+CALENDAR_FRAGMENT = """
+fragment CalendarFields on User {
+  contributionsCollection(from: $from, to: $to) {
+    contributionCalendar {
+      weeks {
+        contributionDays {
+          date
+          contributionCount
+          contributionLevel
         }
       }
     }
   }
 }
 """
+USER_QUERY = """
+query($login: String!, $from: DateTime!, $to: DateTime!) {
+  user(login: $login) {
+    ...CalendarFields
+  }
+}
+""" + CALENDAR_FRAGMENT
+VIEWER_QUERY = """
+query($from: DateTime!, $to: DateTime!) {
+  viewer {
+    login
+    ...CalendarFields
+  }
+}
+""" + CALENDAR_FRAGMENT
 PALETTE = {
     "text": (205, 214, 244),
     "subtext0": (166, 173, 200),
@@ -51,7 +62,6 @@ GRAPHQL_LEVELS = {
 }
 MAX_DAYS_PER_QUERY = 182
 RESET = "\033[0m"
-ORIGIN_RE = re.compile(r"github\.com[:/](?P<owner>[^/]+)/[^/]+?(?:\.git)?$")
 
 
 def color(rgb: tuple[int, int, int], text: str, *, enabled: bool = True, bold: bool = False) -> str:
@@ -80,33 +90,19 @@ def gh_token() -> str:
     return token
 
 
-def default_user() -> str:
-    try:
-        url = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-    except (FileNotFoundError, subprocess.CalledProcessError) as e:
-        raise ValueError("pass a GitHub username or run inside a repo with a GitHub origin") from e
-    match = ORIGIN_RE.search(url)
-    if not match:
-        raise ValueError("origin is not a GitHub remote; pass a GitHub username explicitly")
-    return match["owner"]
-
-
 def fetch_calendar(
-    user: str, token: str, since: date, until: date
-) -> dict[date, tuple[int, int]]:
+    user: str | None, token: str, since: date, until: date
+) -> tuple[str, dict[date, tuple[int, int]]]:
+    variables = {
+        "from": f"{since.isoformat()}T00:00:00Z",
+        "to": f"{until.isoformat()}T23:59:59Z",
+    }
+    if user is not None:
+        variables["login"] = user
     payload = json.dumps(
         {
-            "query": QUERY,
-            "variables": {
-                "login": user,
-                "from": f"{since.isoformat()}T00:00:00Z",
-                "to": f"{until.isoformat()}T23:59:59Z",
-            },
+            "query": USER_QUERY if user is not None else VIEWER_QUERY,
+            "variables": variables,
         }
     ).encode()
     req = Request(
@@ -121,11 +117,12 @@ def fetch_calendar(
     with urlopen(req, timeout=5) as res:
         data = json.load(res)
     try:
-        calendar_data = data["data"]["user"]["contributionsCollection"]["contributionCalendar"]
+        account = data["data"]["user" if user is not None else "viewer"]
+        calendar_data = account["contributionsCollection"]["contributionCalendar"]
     except (KeyError, TypeError):
         errors = ", ".join(error.get("message", "unknown GraphQL error") for error in data.get("errors", []))
         raise ValueError(errors or f"no contribution data for {user}")
-    return {
+    return account.get("login", user or "unknown"), {
         day_date: (day["contributionCount"], GRAPHQL_LEVELS[day["contributionLevel"]])
         for week in calendar_data["weeks"]
         for day in week["contributionDays"]
@@ -133,15 +130,17 @@ def fetch_calendar(
     }
 
 
-def fetch_api(user: str, token: str, today: date) -> tuple[dict[date, tuple[int, int]], int]:
+def fetch_api(user: str | None, token: str, today: date) -> tuple[str, dict[date, tuple[int, int]], int]:
     since = today - timedelta(days=364)
     days: dict[date, tuple[int, int]] = {}
+    resolved_user = user
     range_start = since
     while range_start <= today:
         range_end = min(range_start + timedelta(days=MAX_DAYS_PER_QUERY - 1), today)
-        days.update(fetch_calendar(user, token, range_start, range_end))
+        resolved_user, calendar_days = fetch_calendar(resolved_user, token, range_start, range_end)
+        days.update(calendar_days)
         range_start = range_end + timedelta(days=1)
-    return days, sum(count for count, _ in days.values())
+    return resolved_user or "unknown", days, sum(count for count, _ in days.values())
 
 def month_line(weeks: list[list[date]], since: date) -> str:
     line, last = [" "] * (len(weeks) * 2), -8
@@ -206,13 +205,13 @@ def render(user: str, days: dict[date, tuple[int, int]], total: int, until: date
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Render a GitHub contribution graph in the terminal.")
-    parser.add_argument("user", nargs="?", help="GitHub username; defaults to origin owner")
+    parser.add_argument("user", nargs="?", help="GitHub username; defaults to the authenticated user")
     parser.add_argument("--no-color", action="store_true", help="disable ANSI colors")
     args = parser.parse_args(argv)
     today = date.today()
-    user = args.user or default_user()
+    user = args.user or "the authenticated user"
     try:
-        days, total = fetch_api(user, gh_token(), today)
+        user, days, total = fetch_api(args.user, gh_token(), today)
     except HTTPError as e:
         print(f"kusa: GitHub returned HTTP {e.code} for {user}", file=sys.stderr)
         return 1
