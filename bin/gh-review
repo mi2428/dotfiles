@@ -59,7 +59,7 @@ function run_diff_pane --argument-names diff_ref user_shell
 end
 
 function run_edit_pane --argument-names user_shell target_file
-    if test -n "$target_file"; and test "$target_file" != '-'
+    if test -n "$target_file"; and test "$target_file" != -
         nvim -- "$target_file"
     else
         nvim
@@ -69,7 +69,7 @@ function run_edit_pane --argument-names user_shell target_file
 end
 
 function switch_or_attach_tmux --argument-names session
-    if set -q GH_REVIEW_NO_ATTACH; and test "$GH_REVIEW_NO_ATTACH" = '1'
+    if set -q GH_REVIEW_NO_ATTACH; and test "$GH_REVIEW_NO_ATTACH" = 1
         return 0
     end
 
@@ -172,6 +172,9 @@ function select_open_pr --argument-names self_path
         set list_width 72
     end
 
+    # Keep ANSI columns visible when the parent terminal exports NO_COLOR.
+    set -lx NO_COLOR ''
+
     set -l selected (
         gh pr list \
             --state open \
@@ -198,19 +201,19 @@ end
 
 if test (count $argv) -ge 1
     switch "$argv[1]"
-        case '-h' '--help'
+        case -h --help
             usage
             exit 0
-        case '--preview-pr'
+        case --preview-pr
             test (count $argv) -eq 2; or die '--preview-pr requires a PR number or URL'
             __dotfiles_git_ui_render_pr_preview "$argv[2]" "$glow_style_path"
             exit 0
-        case '--diff-pane'
+        case --diff-pane
             test (count $argv) -eq 3; or die '--diff-pane requires a diff range and user shell'
             need_cmd git
             run_diff_pane "$argv[2]" "$argv[3]"
             exit 0
-        case '--edit-pane'
+        case --edit-pane
             test (count $argv) -eq 3; or die '--edit-pane requires a user shell and target file'
             run_edit_pane "$argv[2]" "$argv[3]"
             exit 0
@@ -230,7 +233,7 @@ set -l local_base_arg ''
 
 if test (count $argv) -ge 1
     switch "$argv[1]"
-        case '--local'
+        case --local
             set mode local
             if test (count $argv) -ge 2
                 set local_base_arg "$argv[2]"

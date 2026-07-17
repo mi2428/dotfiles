@@ -39,7 +39,7 @@ end
 function print_preview --argument-names ref kind worktree_path
     set -l info_ref "refs/heads/$ref"
 
-    if test "$worktree_path" = '-'
+    if test "$worktree_path" = -
         set worktree_path ''
     end
 
@@ -130,6 +130,9 @@ function branch_picker
         "--preview=$__dotfiles_git_b_self_path __preview {1} {2} {4}" \
         --bind=ctrl-/:change-preview-window\(right,42%,border-left,wrap\|down,55%,border-top,wrap\)
 
+    # Keep ANSI columns visible when the parent terminal exports NO_COLOR.
+    set -lx NO_COLOR ''
+
     switch "$selection_mode"
         case multi
             set -a fzf_args \
@@ -217,7 +220,7 @@ function switch_to_selected --argument-names ref kind switch_target selected_wor
     set -l current_root (current_worktree_root)
     set -l target_worktree "$selected_worktree"
 
-    if test "$target_worktree" = '-'
+    if test "$target_worktree" = -
         set target_worktree ''
     end
 
@@ -289,7 +292,7 @@ function main
         end
     end
 
-    if test (count $argv) -eq 1; and test "$argv[1]" = '-D'
+    if test (count $argv) -eq 1; and test "$argv[1]" = -D
         git rev-parse --is-inside-work-tree >/dev/null 2>/dev/null || die 'not inside a git work tree'
         delete_selected_branches
         return $status

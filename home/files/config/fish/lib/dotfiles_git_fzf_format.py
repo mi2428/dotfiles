@@ -65,7 +65,7 @@ def shorten_path(path: str, home: str, width: int) -> str:
     prefix = ""
     if home and path.startswith(home):
         prefix = "~/"
-        body = path[len(home):].lstrip("/")
+        body = path[len(home) :].lstrip("/")
     elif absolute:
         prefix = "/"
         body = path.lstrip("/")
@@ -101,7 +101,11 @@ def format_branches(list_width: int, home: str) -> None:
     for ref_short, ref_full, age, author, subject, worktree in reader:
         kind = "local" if ref_full.startswith("refs/heads/") else "remote"
         marker = "[L]" if kind == "local" else "[R]"
-        switch_target = ref_short.split("/", 1)[1] if kind == "remote" and "/" in ref_short else ref_short
+        switch_target = (
+            ref_short.split("/", 1)[1]
+            if kind == "remote" and "/" in ref_short
+            else ref_short
+        )
         rows.append(
             {
                 "ref_short": ref_short,
@@ -139,10 +143,19 @@ def format_branches(list_width: int, home: str) -> None:
     for row in rows:
         row["worktree_display"] = shorten_path(row["worktree"], home, worktree_cap)
 
-    worktree_width = min(worktree_cap, max(len(row["worktree_display"]) for row in rows))
+    worktree_width = min(
+        worktree_cap, max(len(row["worktree_display"]) for row in rows)
+    )
     worktree_width = max(worktree_width, worktree_min)
 
-    subject_width = list_width - fixed_width - branch_width - age_width - author_width - worktree_width
+    subject_width = (
+        list_width
+        - fixed_width
+        - branch_width
+        - age_width
+        - author_width
+        - worktree_width
+    )
     if subject_width < subject_min:
         shortage = subject_min - subject_width
         reduce_worktree = min(shortage, max(0, worktree_width - worktree_min))
@@ -156,7 +169,14 @@ def format_branches(list_width: int, home: str) -> None:
         reduce_branch = min(shortage, max(0, branch_width - branch_min))
         branch_width -= reduce_branch
 
-        subject_width = list_width - fixed_width - branch_width - age_width - author_width - worktree_width
+        subject_width = (
+            list_width
+            - fixed_width
+            - branch_width
+            - age_width
+            - author_width
+            - worktree_width
+        )
 
     if subject_width < subject_min:
         subject_width = subject_min
@@ -171,17 +191,36 @@ def format_branches(list_width: int, home: str) -> None:
         marker_rgb = green if row["kind"] == "local" else blue
         branch_rgb = lavender if row["kind"] == "local" else blue
         marker = colorize(f"{row['marker']:<3}", marker_rgb, bold=True)
-        branch_display = colorize(f"{ellipsize(row['ref_short'], branch_width):<{branch_width}}", branch_rgb, bold=True)
+        branch_display = colorize(
+            f"{ellipsize(row['ref_short'], branch_width):<{branch_width}}",
+            branch_rgb,
+            bold=True,
+        )
         age_display = colorize(f"{row['age']:<{age_width}}", overlay)
-        author_display = colorize(f"{ellipsize(row['author'], author_width):<{author_width}}", pink)
-        worktree_display = colorize(f"{shorten_path(row['worktree'], home, worktree_width):<{worktree_width}}", overlay)
+        author_display = colorize(
+            f"{ellipsize(row['author'], author_width):<{author_width}}", pink
+        )
+        worktree_display = colorize(
+            f"{shorten_path(row['worktree'], home, worktree_width):<{worktree_width}}",
+            overlay,
+        )
         subject_display = ellipsize(row["subject"], subject_width)
         display = (
             f"{marker} {branch_display}  {age_display}  "
             f"{author_display}  {worktree_display}  {subject_display}"
         )
         worktree_hidden = row["worktree"] or "-"
-        print("\t".join([row["ref_short"], row["kind"], row["switch_target"], worktree_hidden, display]))
+        print(
+            "\t".join(
+                [
+                    row["ref_short"],
+                    row["kind"],
+                    row["switch_target"],
+                    worktree_hidden,
+                    display,
+                ]
+            )
+        )
 
 
 def format_prs(list_width: int) -> None:
@@ -205,7 +244,9 @@ def format_prs(list_width: int) -> None:
 
     number_width = max(5, min(6, max(len(row["number"]) for row in rows)))
     for row in rows:
-        row["branch"] = row["head"] if row["base"] == "main" else f"{row['head']} -> {row['base']}"
+        row["branch"] = (
+            row["head"] if row["base"] == "main" else f"{row['head']} -> {row['base']}"
+        )
 
     branch_cap = 32
     branch_min = 12
@@ -213,7 +254,9 @@ def format_prs(list_width: int) -> None:
     author_cap = 14
     author_min = 8
     title_min = 20
-    fixed_width = number_width + date_width + 6
+    # Five columns are separated by four two-space gaps.  Keep this in plain
+    # display cells; ANSI is added only after widths have been determined.
+    fixed_width = number_width + date_width + 8
 
     branch_width = min(branch_cap, max(len(row["branch"]) for row in rows))
     branch_width = max(branch_width, branch_min)
@@ -242,9 +285,13 @@ def format_prs(list_width: int) -> None:
 
     for row in rows:
         number = colorize(f"{row['number']:<{number_width}}", lavender, bold=True)
-        branch = colorize(f"{ellipsize(row['branch'], branch_width):<{branch_width}}", green)
+        branch = colorize(
+            f"{ellipsize(row['branch'], branch_width):<{branch_width}}", green
+        )
         updated = colorize(f"{row['updated']:<{date_width}}", overlay)
-        author = colorize(f"{ellipsize(row['author'], author_width):<{author_width}}", pink)
+        author = colorize(
+            f"{ellipsize(row['author'], author_width):<{author_width}}", pink
+        )
         title = ellipsize(row["title"], title_width)
         display = f"{number}  {branch}  {updated}  {author}  {title}"
         print("\t".join([row["number"], row["url"], display]))
@@ -258,7 +305,9 @@ def main() -> None:
     try:
         list_width = int(sys.argv[2])
     except ValueError as exc:
-        raise SystemExit(f"dotfiles_git_fzf_format.py: invalid list width: {sys.argv[2]}") from exc
+        raise SystemExit(
+            f"dotfiles_git_fzf_format.py: invalid list width: {sys.argv[2]}"
+        ) from exc
 
     home = sys.argv[3] if len(sys.argv) > 3 else ""
 

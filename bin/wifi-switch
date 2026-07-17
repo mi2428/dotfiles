@@ -111,9 +111,20 @@ print_networks() {
 
 format_fzf_rows() {
   awk -v sep="$SEP" -F "$SEP" '
+    BEGIN {
+      lavender = "\033[38;2;180;190;254m"
+      peach = "\033[38;2;250;179;135m"
+      overlay = "\033[38;2;147;153;178m"
+      reset = "\033[0m"
+    }
     {
       device = ($4 == "" ? "auto" : $4)
-      display = sprintf("%-18s  %-28s  %-6s  %s", $1, $2, device, $5)
+      # Pad before injecting ANSI; escape bytes must not participate in the
+      # display-width calculation of the fixed columns.
+      label = sprintf("%-18s", $1)
+      ssid = sprintf("%-28s", $2)
+      device_column = sprintf("%-6s", device)
+      display = lavender label reset "  " peach ssid reset "  " overlay device_column reset "  " $5
       print display sep $1 sep $2 sep $3 sep $4
     }
   '
@@ -125,25 +136,25 @@ quote_cmd() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -c|--config)
+    -c | --config)
       [[ $# -ge 2 ]] || die "$1 requires a path"
       CONFIG="$2"
       shift 2
       ;;
-    -d|--device|--interface)
+    -d | --device | --interface)
       [[ $# -ge 2 ]] || die "$1 requires a device"
       DEVICE="$2"
       shift 2
       ;;
-    -l|--list)
+    -l | --list)
       LIST_ONLY=1
       shift
       ;;
-    -n|--dry-run)
+    -n | --dry-run)
       DRY_RUN=1
       shift
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;
@@ -159,7 +170,7 @@ need_command ruby
 NETWORKS="$(parse_config "$CONFIG")" || die "Failed to parse config: $CONFIG"
 [[ -n "$NETWORKS" ]] || die "No Wi-Fi networks found in config: $CONFIG"
 
-if (( LIST_ONLY )); then
+if ((LIST_ONLY)); then
   printf "%s\n" "$NETWORKS" | print_networks
   exit 0
 fi
@@ -171,7 +182,7 @@ HEADER="$(printf "%-18s  %-28s  %-6s  %s" "LABEL" "SSID" "DEVICE" "NOTE")"
 SELECTION="$(
   printf "%s\n" "$NETWORKS" |
     format_fzf_rows |
-    fzf \
+    NO_COLOR='' fzf --ansi \
       --delimiter="$SEP" \
       --with-nth=1 \
       --nth=1 \
@@ -199,7 +210,7 @@ fi
 
 [[ -n "$DEVICE" ]] || die "Could not detect Wi-Fi device. Pass --device en0."
 
-if (( DRY_RUN )); then
+if ((DRY_RUN)); then
   printf "networksetup -setairportnetwork "
   quote_cmd "$DEVICE"
   printf " "

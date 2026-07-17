@@ -67,7 +67,7 @@ collect_matching_notes() {
       fi
     done
 
-    (( matches_all )) && matched_notes+=("$file")
+    ((matches_all)) && matched_notes+=("$file")
   done
 
   shopt -u nullglob
@@ -90,7 +90,11 @@ select_note() {
         printf '%s\n' "${matched_notes[@]}" >&2
         return 1
       }
-      printf '%s\n' "${matched_notes[@]}" | fzf
+      # fzf removes ANSI sequences from the accepted value, so this colours
+      # the list without altering the filename passed to the editor.
+      printf '%s\n' "${matched_notes[@]}" |
+        sed $'s/^/\033[38;2;180;190;254m/; s/$/\033[0m/' |
+        NO_COLOR='' fzf --ansi
       ;;
   esac
 }
@@ -100,7 +104,7 @@ edit_note() {
   local -a editor_cmd=()
 
   note="$(select_note "$@")" || return $?
-  read -r -a editor_cmd <<< "${EDITOR:-nvim}"
+  read -r -a editor_cmd <<<"${EDITOR:-nvim}"
   "${editor_cmd[@]}" "$note"
 }
 
@@ -151,12 +155,15 @@ main() {
   (($# > 0)) && shift
 
   case "$command" in
-    new|n) new_note "$@" ;;
-    nvim|vim|vi|v) edit_note "$@" ;;
+    new | n) new_note "$@" ;;
+    nvim | vim | vi | v) edit_note "$@" ;;
     ls) list_notes "$@" ;;
-    open|o) open_note_dir ;;
+    open | o) open_note_dir ;;
     rm) remove_note "$@" ;;
-    *) usage; return 1 ;;
+    *)
+      usage
+      return 1
+      ;;
   esac
 }
 
