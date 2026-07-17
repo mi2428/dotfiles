@@ -57,7 +57,7 @@ function __git_delta_lazygit
 end
 
 function __dotfiles_git_handler_name --argument-names subcmd
-    string replace -a '-' '_' -- "__dotfiles_git_subcommand_$subcmd"
+    string replace -a - _ -- "__dotfiles_git_subcommand_$subcmd"
 end
 
 function __dotfiles_git_subcommand_a
@@ -125,7 +125,7 @@ function __dotfiles_git_subcommand_s
 end
 
 function __dotfiles_git_subcommand_b
-    if test (count $argv) -eq 1 && test "$argv[1]" = "-D"
+    if test (count $argv) -eq 1 && test "$argv[1]" = -D
         command git-b -D
         return $status
     end
@@ -321,7 +321,14 @@ function dow
 end
 
 function dox
-    set -l name (docker ps --format '{{.Names}}' | fzf)
+    set -l config_home "$HOME/.config"
+    set -q XDG_CONFIG_HOME; and set config_home "$XDG_CONFIG_HOME"
+    set -l fzf_rows "$config_home/fish/lib/fzf_rows.py"
+    set -l fish_shell (command -s fish)
+    set -l name (docker ps --format '{{.Names}}' |
+        command python3 "$fzf_rows" simple |
+        command env NO_COLOR= SHELL="$fish_shell" fzf --ansi --with-nth=2.. --nth=2.. --accept-nth=1 |
+        command python3 "$fzf_rows" decode)
     test -n "$name"; and docker exec -it "$name" $argv
 end
 

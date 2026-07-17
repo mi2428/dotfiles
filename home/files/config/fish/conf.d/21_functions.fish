@@ -8,7 +8,7 @@ function cd --wraps cd
 
     set -l previous $PWD
 
-    if test "$argv[1]" = "-"
+    if test "$argv[1]" = -
         if test "$__fish_cd_direction" = next
             nextd
         else
@@ -89,6 +89,11 @@ function zz
         return 1
     end
 
+    set -l config_home "$HOME/.config"
+    set -q XDG_CONFIG_HOME; and set config_home "$XDG_CONFIG_HOME"
+    set -l fzf_rows "$config_home/fish/lib/fzf_rows.py"
+    set -l fish_shell (command -s fish)
+
     argparse a/all h/help -- $argv
     or return 1
 
@@ -115,7 +120,9 @@ function zz
 
     set root (path resolve "$root")
     set -l query (string join ' ' -- $argv)
-    set -l fzf_opts --select-1 --exit-0 --height=70% --scheme=path
+    # The candidate source streams.  With --select-1, fzf would accept the
+    # first directory before fd has produced the remaining candidates.
+    set -l fzf_opts --height=70% --scheme=path
     set -l dst
     set -l excludes \
         .git \
@@ -166,7 +173,10 @@ function zz
         set dst (begin
             printf '%s\n' "$root"
             fd $fd_args
-        end | fzf $fzf_opts --query "$query")
+        end |
+            command python3 "$fzf_rows" path |
+            command env NO_COLOR= SHELL="$fish_shell" fzf --ansi --with-nth=2.. --nth=2.. --accept-nth=1 $fzf_opts --query "$query" |
+            command python3 "$fzf_rows" decode)
     else
         set -l find_args "$root" "("
 
@@ -180,7 +190,10 @@ function zz
         set dst (begin
             printf '%s\n' "$root"
             command find $find_args 2>/dev/null
-        end | fzf $fzf_opts --query "$query")
+        end |
+            command python3 "$fzf_rows" path |
+            command env NO_COLOR= SHELL="$fish_shell" fzf --ansi --with-nth=2.. --nth=2.. --accept-nth=1 $fzf_opts --query "$query" |
+            command python3 "$fzf_rows" decode)
     end
 
     test -n "$dst"; or return 1
@@ -605,7 +618,7 @@ function __dotfiles_sync_herdr_pane_label --argument-names pane_id dry_run
 end
 
 function herdr-pane-labels
-    argparse 'i/interval=' 'o/once' 'd/dry-run' 'h/help' -- $argv
+    argparse 'i/interval=' o/once d/dry-run h/help -- $argv
     or return 1
 
     if set -q _flag_help
@@ -697,15 +710,40 @@ function gk
 end
 
 function gadd
-    set -l selected (command git status -s | fzf -m --ansi --preview="echo {} | awk '{print \$2}' | xargs git diff --color" | awk '{print $2}')
-    if test -n "$selected"
-        git add $selected
-        echo "Completed: git add $selected"
+    set -l config_home "$HOME/.config"
+    set -q XDG_CONFIG_HOME; and set config_home "$XDG_CONFIG_HOME"
+    set -l fzf_rows "$config_home/fish/lib/fzf_rows.py"
+    set -l fish_shell (command -s fish)
+    set -l preview (string join '' -- 'set -l file (printf "%s\n" {1} | command python3 ' (string escape -- "$fzf_rows") ' decode); git diff --color -- "$file"')
+    set -l files (command git status --porcelain=v1 -z |
+        command python3 "$fzf_rows" git-status |
+        command env NO_COLOR= SHELL="$fish_shell" fzf --ansi --with-nth=2.. --nth=2.. --accept-nth=1 -m --preview="$preview" |
+        command python3 "$fzf_rows" decode)
+    if test (count $files) -gt 0
+        git add -- $files
+        echo "Completed: git add "(string join ' ' -- $files)
+    end
+end
+
+function __dotfiles_fzf_default_command
+    if set -q FZF_DEFAULT_COMMAND; and test -n "$FZF_DEFAULT_COMMAND"
+        command sh -c "$FZF_DEFAULT_COMMAND"
+    else if command -sq fd
+        command fd --hidden --follow --exclude .git
+    else
+        command find . -type f
     end
 end
 
 function fe
-    set -l files (fzf-tmux --query="$argv[1]" --multi --select-1 --exit-0)
+    set -l config_home "$HOME/.config"
+    set -q XDG_CONFIG_HOME; and set config_home "$XDG_CONFIG_HOME"
+    set -l fzf_rows "$config_home/fish/lib/fzf_rows.py"
+    set -l fish_shell (command -s fish)
+    set -l files (__dotfiles_fzf_default_command |
+        command python3 "$fzf_rows" path |
+        command env NO_COLOR= SHELL="$fish_shell" fzf-tmux --ansi --with-nth=2.. --nth=2.. --accept-nth=1 --query="$argv[1]" --multi |
+        command python3 "$fzf_rows" decode)
     if test -n "$files"
         set -l editor_cmd (__dotfiles_command_words "$EDITOR" vi)
         $editor_cmd $files
@@ -713,14 +751,33 @@ function fe
 end
 
 function fkill
-    set -l pid (ps -ef | sed 1d | fzf -m | awk '{print $2}')
-    if test -n "$pid"
-        printf '%s\n' $pid | xargs kill -$argv[1]
+    set -l config_home "$HOME/.config"
+    set -q XDG_CONFIG_HOME; and set config_home "$XDG_CONFIG_HOME"
+    set -l fzf_rows "$config_home/fish/lib/fzf_rows.py"
+    set -l fish_shell (command -s fish)
+    set -l processes (ps -ef | sed 1d |
+        command python3 "$fzf_rows" process |
+        command env NO_COLOR= SHELL="$fish_shell" fzf --ansi --with-nth=2.. --nth=2.. --accept-nth=1 -m |
+        command python3 "$fzf_rows" decode)
+    set -l pids
+    for process in $processes
+        set -l fields (string split --no-empty ' ' -- "$process")
+        test (count $fields) -ge 2; and set -a pids $fields[2]
+    end
+    if test (count $pids) -gt 0
+        command kill -$argv[1] $pids
     end
 end
 
 function dor
-    set -l image (docker images --format '{{.Repository}}:{{.Tag}}' --filter 'dangling=false' | fzf)
+    set -l config_home "$HOME/.config"
+    set -q XDG_CONFIG_HOME; and set config_home "$XDG_CONFIG_HOME"
+    set -l fzf_rows "$config_home/fish/lib/fzf_rows.py"
+    set -l fish_shell (command -s fish)
+    set -l image (docker images --format '{{.Repository}}:{{.Tag}}' --filter 'dangling=false' |
+        command python3 "$fzf_rows" image |
+        command env NO_COLOR= SHELL="$fish_shell" fzf --ansi --with-nth=2.. --nth=2.. --accept-nth=1 |
+        command python3 "$fzf_rows" decode)
     test -n "$image"; and docker run -it $argv "$image"
 end
 
@@ -741,8 +798,7 @@ function copy-aws-session
         " export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" \
         " export AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION" \
         " export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" \
-        " export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" \
-        >"$cache_path"
+        " export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >"$cache_path"
     chmod 600 "$cache_path" 2>/dev/null
     echo 'AWS session copied.'
 end
@@ -813,7 +869,14 @@ function kcc
     set -l context (kubectl config current-context 2>/dev/null)
     or return $status
 
-    set -l namespace (kubectl get namespaces -o custom-columns=':metadata.name' --no-headers 2>/dev/null | fzf --prompt='namespace> ')
+    set -l config_home "$HOME/.config"
+    set -q XDG_CONFIG_HOME; and set config_home "$XDG_CONFIG_HOME"
+    set -l fzf_rows "$config_home/fish/lib/fzf_rows.py"
+    set -l fish_shell (command -s fish)
+    set -l namespace (kubectl get namespaces -o custom-columns=':metadata.name' --no-headers 2>/dev/null |
+        command python3 "$fzf_rows" simple |
+        command env NO_COLOR= SHELL="$fish_shell" fzf --ansi --with-nth=2.. --nth=2.. --accept-nth=1 --prompt='namespace> ' |
+        command python3 "$fzf_rows" decode)
     or return 0
 
     test -n "$namespace"; or return 0
