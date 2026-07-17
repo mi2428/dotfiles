@@ -12,16 +12,34 @@ from __future__ import annotations
 import base64
 import os
 import re
+import shutil
+import stat
+import subprocess
 import sys
+import time
 
 
-LAVENDER = b"180;190;254"
-BLUE = b"137;180;250"
-GREEN = b"166;227;161"
-PEACH = b"250;179;135"
-RED = b"243;139;168"
-YELLOW = b"249;226;175"
-OVERLAY = b"147;153;178"
+def catppuccin_rgb(name: str, fallback: bytes) -> bytes:
+    """Read the active Fish flavour, falling back to Catppuccin Mocha."""
+    rgb = os.environ.get(f"CTP_{name}_RGB")
+    if rgb:
+        return rgb.encode()
+    hex_color = os.environ.get(f"CTP_{name}", "")
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", hex_color):
+        return ";".join(
+            str(int(hex_color[index : index + 2], 16)) for index in (1, 3, 5)
+        ).encode()
+    return fallback
+
+
+LAVENDER = catppuccin_rgb("LAVENDER", b"180;190;254")
+BLUE = catppuccin_rgb("BLUE", b"137;180;250")
+GREEN = catppuccin_rgb("GREEN", b"166;227;161")
+MAUVE = catppuccin_rgb("MAUVE", b"203;166;247")
+PEACH = catppuccin_rgb("PEACH", b"250;179;135")
+RED = catppuccin_rgb("RED", b"243;139;168")
+YELLOW = catppuccin_rgb("YELLOW", b"249;226;175")
+OVERLAY = catppuccin_rgb("OVERLAY0", b"147;153;178")
 RESET = b"\x1b[0m"
 HISTORY_PREFIX = re.compile(rb"^([^\n]*? \xe2\x94\x82 )")
 
@@ -65,6 +83,98 @@ def process_display(raw: bytes) -> bytes:
     if len(fields) == 2:
         return bullet() + leading
     return bullet() + leading + b"  " + b" ".join(fields[2:])
+
+
+def relative_time(timestamp: float) -> bytes:
+    """Use a compact, eza-like age for a directory's last modification."""
+    seconds = max(0, int(time.time() - timestamp))
+    units = (
+        (365 * 24 * 60 * 60, "year"),
+        (30 * 24 * 60 * 60, "month"),
+        (24 * 60 * 60, "day"),
+        (60 * 60, "hour"),
+        (60, "min"),
+    )
+    for unit_seconds, label in units:
+        if seconds >= unit_seconds:
+            value = seconds // unit_seconds
+            suffix = "" if value == 1 else "s"
+            return f"{value} {label}{suffix}".encode()
+    return b"now"
+
+
+def zoxide_parts(raw: bytes) -> tuple[bytes, bytes]:
+    """Split zoxide's score/path output without breaking paths with spaces."""
+    score, separator, path = raw.partition(b"\t")
+    if separator:
+        return score.strip(), path
+    parts = raw.split(None, 1)
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    return b"", b""
+
+
+def zoxide_display(raw: bytes) -> bytes:
+    """Show score, permissions, modification time, and path for zoxide."""
+    score, path = zoxide_parts(raw)
+    if not score or not path:
+        return simple_display(raw)
+
+    try:
+        metadata = os.stat(path)
+        permissions = stat.filemode(metadata.st_mode).encode()
+        updated = relative_time(metadata.st_mtime)
+    except OSError:
+        permissions = b"??????????"
+        updated = b"unavailable"
+
+    return b"  ".join(
+        (
+            color(score.rjust(6), MAUVE, bold=True),
+            color(permissions, OVERLAY),
+            color(updated.rjust(10), YELLOW),
+            color(path, BLUE, bold=True),
+        )
+    )
+
+
+def emit_zoxide(raw: bytes) -> None:
+    """Emit an fzf row whose first whitespace field is the raw entry."""
+    encoded = base64.b64encode(raw)
+    sys.stdout.buffer.write(encoded + b" " + zoxide_display(raw) + b"\n")
+    sys.stdout.buffer.flush()
+
+
+def preview_zoxide(encoded: str) -> None:
+    """Render the selected zoxide directory with the configured eza theme."""
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except ValueError as exc:
+        raise SystemExit("fzf_rows.py: invalid zoxide preview value") from exc
+
+    _, path = zoxide_parts(raw)
+    if not path:
+        raise SystemExit("fzf_rows.py: invalid zoxide row")
+
+    eza = shutil.which("eza")
+    if eza is None:
+        raise SystemExit("zi: eza is not installed")
+
+    env = os.environ.copy()
+    for name in ("NO_COLOR", "LS_COLORS", "EXA_COLORS", "EZA_COLORS"):
+        env.pop(name, None)
+
+    command = [
+        eza,
+        "--icons=always",
+        "--group-directories-first",
+        "--color=always",
+        "--hyperlink=never",
+    ]
+    if columns := env.get("FZF_PREVIEW_COLUMNS"):
+        command.extend(("--width", columns))
+    command.append(os.fsdecode(path))
+    raise SystemExit(subprocess.run(command, env=env, check=False).returncode)
 
 
 def status_color(code: bytes) -> bytes:
@@ -157,16 +267,42 @@ def decode(data: bytes, terminator: bytes) -> None:
         sys.stdout.buffer.write(raw + terminator)
 
 
+def decode_zoxide(data: bytes) -> None:
+    for record in data.split(b"\n"):
+        if not record:
+            continue
+        encoded = record.split(None, 1)[0]
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+        except ValueError as exc:
+            raise SystemExit("fzf_rows.py: invalid selected zoxide value") from exc
+        _, path = zoxide_parts(raw)
+        if not path:
+            raise SystemExit("fzf_rows.py: invalid zoxide row")
+        sys.stdout.buffer.write(path + b"\n")
+
+
 def main() -> None:
+    if len(sys.argv) == 3 and sys.argv[1] == "preview-zoxide":
+        preview_zoxide(sys.argv[2])
+        return
+
     if len(sys.argv) != 2:
         raise SystemExit(
-            "usage: fzf_rows.py <simple|path|image|process|git-status|history-display|decode>"
+            "usage: fzf_rows.py <simple|path|image|process|zoxide|git-status|history-display|decode|decode-zoxide>"
         )
 
     mode = sys.argv[1]
 
     if mode in {"simple", "path", "image", "process"}:
         emit_lines(mode)
+        return
+
+    if mode == "zoxide":
+        for raw in sys.stdin.buffer:
+            raw = raw.rstrip(b"\r\n")
+            if raw:
+                emit_zoxide(raw)
         return
 
     data = sys.stdin.buffer.read()
@@ -176,6 +312,8 @@ def main() -> None:
         emit_history_display(data)
     elif mode == "decode":
         decode(data, b"\n")
+    elif mode == "decode-zoxide":
+        decode_zoxide(data)
     else:
         raise SystemExit(f"fzf_rows.py: unsupported mode: {mode}")
 
