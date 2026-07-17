@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   inherit (config.dotfiles) platform;
   catppuccinFish = pkgs.fetchFromGitHub {
@@ -28,24 +33,29 @@ let
     "conf.d/23_completions.fish"
     "conf.d/40_grc.fish"
     "lib/dotfiles_git_fzf_format.py"
+    "lib/fzf_rows.py"
     "lib/dotfiles_git_ui_helpers.fish"
     "functions/herdr.fish"
     "functions/fish_title.fish"
     "functions/fish_user_key_bindings.fish"
   ];
   relativeFiles = baseRelativeFiles ++ platform.fish.extraFiles;
-  sourceFor = relativePath:
+  sourceFor =
+    relativePath:
     if builtins.hasAttr relativePath platform.fish.overrides then
       platform.fish.overrides.${relativePath}
     else
       ../../../home/files/config/fish/${relativePath};
-  fishFiles = lib.listToAttrs (map
-    (relativePath:
+  fishFiles = lib.listToAttrs (
+    map (
+      relativePath:
       lib.nameValuePair "fish/${relativePath}" {
         source = sourceFor relativePath;
-      })
-    relativeFiles);
-in {
+      }
+    ) relativeFiles
+  );
+in
+{
   programs.fish = {
     enable = true;
     plugins = [
@@ -65,6 +75,10 @@ in {
       source = ../../../home/files/config/fish/config.fish;
     };
     "fish/fish_plugins".source = ../../../home/files/config/fish/fish_plugins;
+    "fish/functions/_fzf_search_history.fish" = {
+      source = ../../../home/files/config/fish/functions/_fzf_search_history.fish;
+      force = true;
+    };
   };
 
   home.activation.removeLegacyOmfFishConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
