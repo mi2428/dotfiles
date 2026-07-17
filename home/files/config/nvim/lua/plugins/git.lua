@@ -53,6 +53,34 @@ return {
 			})
 			set_gitsigns_highlights()
 		end,
+		config = function(_, opts)
+			require("gitsigns").setup(opts)
+
+			-- Gitsigns may attach on BufReadPre before its configured base is
+			-- applied. Reapply the review merge-base so already-open buffers use
+			-- the PR diff rather than the Git index.
+			local base = review.gitsigns_base()
+			if base then
+				local function apply_review_base()
+					require("gitsigns").change_base(base, true)
+				end
+				local function apply_review_base_after_attach()
+					-- Gitsigns attaches asynchronously. Retry during startup so a
+					-- slow initial attach cannot leave review buffers on index base.
+					for _, delay in ipairs({ 100, 500, 1000 }) do
+						vim.defer_fn(apply_review_base, delay)
+					end
+				end
+
+				vim.api.nvim_create_autocmd({ "BufEnter", "VimEnter" }, {
+					group = vim.api.nvim_create_augroup("dotfiles-gitsigns-review-base", { clear = true }),
+					callback = function()
+						apply_review_base_after_attach()
+					end,
+				})
+				apply_review_base_after_attach()
+			end
+		end,
 	},
 	{
 		"sindrets/diffview.nvim",

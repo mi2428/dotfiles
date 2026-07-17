@@ -42,6 +42,9 @@ return {
 			grep = {
 				rg_opts = [[--column --line-number --no-heading --color=always --smart-case --hidden --glob '!.git/**' -e]],
 			},
+			buffers = {
+				headers = false,
+			},
 			winopts = {
 				height = 0.9,
 				width = 0.8,

@@ -4,6 +4,7 @@ local catppuccin = require("config.catppuccin")
 
 local entry_delimiter = "\t"
 local commands_registered = false
+local added_file_sign_ns = vim.api.nvim_create_namespace("dotfiles-review-added-file")
 local ansi_reset = "\27[0m"
 local palette = catppuccin.palette()
 
@@ -101,6 +102,40 @@ M.state = resolve_state()
 
 function M.gitsigns_base()
 	return M.state and M.state.merge_base or nil
+end
+
+local function mark_added_file(bufnr)
+	if not M.state or not vim.api.nvim_buf_is_valid(bufnr) or vim.bo[bufnr].buftype ~= "" then
+		return
+	end
+
+	vim.api.nvim_buf_clear_namespace(bufnr, added_file_sign_ns, 0, -1)
+	if vim.api.nvim_buf_line_count(bufnr) == 0 then
+		return
+	end
+
+	local file = vim.api.nvim_buf_get_name(bufnr)
+	local prefix = M.state.worktree .. "/"
+	if not vim.startswith(file, prefix) then
+		return
+	end
+
+	local path = file:sub(#prefix + 1)
+	local _, err = git({ "cat-file", "-e", M.state.merge_base .. ":" .. path }, M.state.worktree)
+	if not err then
+		return
+	end
+
+	-- Gitsigns cannot attach when the file has no blob in its custom base.
+	-- A newly added review file differs on every line, so mirror its add sign
+	-- across the complete buffer.
+	for line = 0, vim.api.nvim_buf_line_count(bufnr) - 1 do
+		vim.api.nvim_buf_set_extmark(bufnr, added_file_sign_ns, line, 0, {
+			sign_text = "▎",
+			sign_hl_group = "GitSignsAdd",
+			priority = 20,
+		})
+	end
 end
 
 local function parse_numstat(review)
@@ -290,6 +325,24 @@ function M.setup()
 		vim.keymap.set("n", "<leader>gr", function()
 			M.open(false)
 		end, { desc = "Review diff files" })
+		local group = vim.api.nvim_create_augroup("dotfiles-review-added-file-sign", { clear = true })
+		vim.api.nvim_create_autocmd("BufEnter", {
+			group = group,
+			callback = function(args)
+				mark_added_file(args.buf)
+			end,
+		})
+		vim.api.nvim_create_autocmd("VimEnter", {
+			group = group,
+			callback = function()
+				for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+					mark_added_file(bufnr)
+				end
+			end,
+		})
+		for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+			mark_added_file(bufnr)
+		end
 	end
 end
 

@@ -185,7 +185,9 @@ local function best_candidate(backward)
 end
 
 local function fallback_normal(key)
-	vim.cmd.normal({ args = { vim.v.count1 .. key }, bang = true })
+	-- Native `n`/`N` raises E486 when the search register has no match.  This
+	-- mapping is a no-op in that case, just as multi-search is when empty.
+	pcall(vim.cmd.normal, { args = { vim.v.count1 .. key }, bang = true })
 end
 
 function M.jump(backward)

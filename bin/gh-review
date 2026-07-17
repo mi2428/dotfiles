@@ -58,14 +58,23 @@ function run_diff_pane --argument-names diff_ref user_shell
     exec "$user_shell"
 end
 
-function run_edit_pane --argument-names user_shell target_file
-    if test -n "$target_file"; and test "$target_file" != -
-        nvim -- "$target_file"
+function run_edit_pane --argument-names user_shell
+    set -l target_files $argv[2..-1]
+
+    if test (count $target_files) -gt 0
+        nvim -- $target_files
     else
         nvim
     end
 
     exec "$user_shell"
+end
+
+function is_binary_diff_file --argument-names worktree_path diff_ref path
+    set -l numstat (git -C "$worktree_path" diff --numstat "$diff_ref" -- "$path")
+    set -l fields (string split \t -- "$numstat")
+
+    test (count $fields) -ge 2; and test "$fields[1]" = -; and test "$fields[2]" = -
 end
 
 function switch_or_attach_tmux --argument-names session
@@ -214,8 +223,8 @@ if test (count $argv) -ge 1
             run_diff_pane "$argv[2]" "$argv[3]"
             exit 0
         case --edit-pane
-            test (count $argv) -eq 3; or die '--edit-pane requires a user shell and target file'
-            run_edit_pane "$argv[2]" "$argv[3]"
+            test (count $argv) -ge 2; or die '--edit-pane requires a user shell'
+            run_edit_pane "$argv[2]" $argv[3..-1]
             exit 0
     end
 end
@@ -367,24 +376,16 @@ if tmux has-session -t "$session_name" 2>/dev/null
     tmux kill-session -t "$session_name"
 end
 
-set -l first_file (
-    git -C "$worktree_path" diff --name-only "$review_base...HEAD" \
-    | while read -l path
-        if test -f "$worktree_path/$path"
-            printf '%s\n' "$path"
-            break
-        end
+set -l edit_targets
+for path in (git -C "$worktree_path" diff --name-only --diff-filter=ACMR "$review_base...HEAD")
+    if test -f "$worktree_path/$path"; and not is_binary_diff_file "$worktree_path" "$review_base...HEAD" "$path"
+        set -a edit_targets "$path"
     end
-)
-
-set -l edit_target -
-if test -n "$first_file"
-    set edit_target "$first_file"
 end
 
 set -l diff_ref "$review_base...HEAD"
 set -l diff_cmd (string join ' ' -- (string escape -- "$__dotfiles_gh_review_self_path" --diff-pane "$diff_ref" "$user_shell"))
-set -l edit_cmd (string join ' ' -- (string escape -- "$__dotfiles_gh_review_self_path" --edit-pane "$user_shell" "$edit_target"))
+set -l edit_cmd (string join ' ' -- (string escape -- "$__dotfiles_gh_review_self_path" --edit-pane "$user_shell" $edit_targets))
 
 tmux new-session -d -x "$session_width" -y "$session_height" -s "$session_name" -n "$window_name" -c "$worktree_path" "$diff_cmd"
 set_tmux_env "$session_name" NVIM_REVIEW_MODE 1
