@@ -205,6 +205,8 @@ return {
 			keymap = {
 				preset = "default",
 				["<C-l>"] = { "show", "fallback" },
+				["<C-o>"] = { "select_and_accept", "fallback" },
+				["<C-y>"] = false,
 				["<Tab>"] = { "select_next", "fallback" },
 				["<S-Tab>"] = { "select_prev", "fallback" },
 			},
