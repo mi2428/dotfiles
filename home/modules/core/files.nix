@@ -30,8 +30,6 @@ let
     (name: _: lib.nameValuePair ".local/bin/${name}" (mkLink (binRoot + "/${name}")))
     (lib.filterAttrs (_: type: type == "regular") (builtins.readDir binRoot));
   macCompatibilityFiles = lib.optionalAttrs pkgs.stdenv.isDarwin {
-    "Library/Application Support/com.mitchellh.ghostty/config.ghostty" =
-      mkLink ../../files/config/ghostty/config.ghostty;
     "Library/Application Support/com.mitchellh.ghostty/themes" =
       mkLink ../../files/config/ghostty/themes;
     "Library/Application Support/lazygit/config.yml" =
@@ -54,8 +52,8 @@ in {
     "eza" = mkLink ../../files/config/eza;
     "fzf" = mkLink ../../files/config/fzf;
     "ghostty/config" = mkLink ../../files/config/ghostty/config.ghostty;
-    "ghostty/config.ghostty" = mkLink ../../files/config/ghostty/config.ghostty;
     "ghostty/themes" = mkLink ../../files/config/ghostty/themes;
+    "ghostty/shaders" = mkLink ../../files/config/ghostty/shaders;
     "glow" = mkLink ../../files/config/glow;
     "herdr/config.toml" = mkLink ../../files/config/herdr/config.toml;
     "hunk" = mkLink ../../files/config/hunk;
