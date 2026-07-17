@@ -57,7 +57,6 @@ tasks:
         printf "$task_fmt" "$green" 'hm.link' "$reset" 'Re-apply the current host activation to re-create managed symlinks'
         printf "$task_fmt" "$green" 'hm.update' "$reset" 'Update nixpkgs in flake.lock and apply the current host activation'
         printf "$task_fmt" "$green" 'hm.gc' "$reset" 'Delete old generations and collect Nix garbage (run without sudo)'
-        printf "$task_fmt" "$green" 'hm.gc.repair-macl' "$reset" 'Remove macOS metadata blocking GC for an unreferenced store path'
         printf "$task_fmt" "$green" 'brew.check' "$reset" 'Check the repo-managed Brewfile against the local Homebrew state'
         printf "$task_fmt" "$green" 'brew.sync' "$reset" 'Update and upgrade Homebrew, then apply the repo-managed Brewfile'
         printf "$task_fmt" "$green" 'secrets.encrypt' "$reset" 'Encrypt ssh and/or gnupg into chezmoi source state'
@@ -80,7 +79,6 @@ tasks:
         printf '  %btask hm.update HOST=macos%b\n' "$green" "$reset"
         printf '  %btask hm.switch HOST=docker%b\n' "$green" "$reset"
         printf '  %btask hm.gc%b\n' "$green" "$reset"
-        printf '  %btask hm.gc.repair-macl STORE_PATH=/nix/store/<path>%b\n' "$green" "$reset"
         printf '  %btask secrets.encrypt%b\n' "$green" "$reset"
         printf '  %btask secrets.encrypt BUNDLE=ssh%b\n' "$green" "$reset"
         printf "  %btask secrets.encrypt BUNDLE=gnupg GPG_KEY_IDS='E8D3009C6341BDEAF038009685AB6867E2147DDA'%b\n" "$green" "$reset"
