@@ -13,8 +13,9 @@ tasks:
         ghcr_owner='{{default "mi2428" .GHCR_OWNER}}'
         ghcr_image_name='{{default "dotfiles" .GHCR_IMAGE_NAME}}'
         tag='{{default "latest" .TAG}}'
+        platform='{{default "linux/arm64" .PLATFORM}}'
         ghcr_image="ghcr.io/$ghcr_owner/$ghcr_image_name"
-        "$docker_runtime" buildx build --load -t "$ghcr_image:$tag" .
+        "$docker_runtime" buildx build --platform "$platform" --load -t "$ghcr_image:$tag" .
 
   docker.login:
     desc: Login to ghcr.io with GHCR_TOKEN, GITHUB_TOKEN, or gh auth token
