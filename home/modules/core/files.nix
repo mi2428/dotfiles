@@ -49,6 +49,7 @@ in {
   xdg.configFile = {
     "atuin/config.toml" = mkLink ../../files/config/atuin/config.toml;
     "bat" = mkLink ../../files/config/bat;
+    "e1s/config.yml" = mkLink ../../files/config/e1s/config.yml;
     "eza" = mkLink ../../files/config/eza;
     "fzf" = mkLink ../../files/config/fzf;
     "ghostty/config" = mkLink ../../files/config/ghostty/config.ghostty;

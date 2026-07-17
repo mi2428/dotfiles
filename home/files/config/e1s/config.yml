@@ -1,0 +1,13 @@
+# Catppuccin Mocha — keep e1s aligned with the terminal/editor palette.
+colors:
+  BgColor: "#1e1e2e"
+  FgColor: "#cdd6f4"
+  BorderColor: "#89b4fa"
+  Black: "#181825"
+  Red: "#f38ba8"
+  Green: "#a6e3a1"
+  Yellow: "#f9e2af"
+  Blue: "#89b4fa"
+  Magenta: "#cba6f7"
+  Cyan: "#94e2d5"
+  Gray: "#585b70"
