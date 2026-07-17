@@ -98,7 +98,7 @@ autocmd("LspAttach", {
 		end
 
 		map("n", "gd", glance_open("definitions", vim.lsp.buf.definition), "Glance definitions")
-		map("n", "gD", vim.lsp.buf.declaration, "LSP declaration")
+		map("n", "gD", glance_open("definitions", vim.lsp.buf.definition), "Glance definitions")
 		map("n", "gr", glance_open("references", vim.lsp.buf.references), "Glance references")
 		map("n", "gI", glance_open("implementations", vim.lsp.buf.implementation), "Glance implementations")
 		map("n", "gY", glance_open("type_definitions", vim.lsp.buf.type_definition), "Glance type definitions")
