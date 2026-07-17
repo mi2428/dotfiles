@@ -215,9 +215,25 @@ return {
 				documentation = {
 					auto_show = true,
 					auto_show_delay_ms = 200,
+					window = {
+						border = "rounded",
+						winblend = 0,
+					},
 				},
 				menu = {
-					auto_show = false,
+					border = "rounded",
+					winblend = 0,
+					-- Only show a menu when an attached LSP can provide completions. This keeps
+					-- prose, extensionless, and other unstructured buffers free of buffer-word
+					-- suggestions (including Japanese text in Markdown).
+					auto_show = function()
+						for _, client in ipairs(vim.lsp.get_clients({ bufnr = 0 })) do
+							if client:supports_method("textDocument/completion", { bufnr = 0 }) then
+								return true
+							end
+						end
+						return false
+					end,
 				},
 				list = {
 					selection = {

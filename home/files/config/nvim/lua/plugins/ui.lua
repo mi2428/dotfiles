@@ -362,6 +362,18 @@ return {
 				},
 				bufferline = true,
 			},
+			custom_highlights = function(colors)
+				-- Use Catppuccin's muted surface colours so completion menus remain
+				-- distinct without breaking the transparent editor background.
+				return {
+					BlinkCmpMenu = { fg = colors.text, bg = colors.none },
+					BlinkCmpMenuBorder = { fg = colors.surface2, bg = colors.none },
+					BlinkCmpMenuSelection = { fg = colors.text, bg = colors.surface0, bold = true },
+					BlinkCmpDoc = { fg = colors.text, bg = colors.none },
+					BlinkCmpDocBorder = { fg = colors.surface2, bg = colors.none },
+					BlinkCmpDocSeparator = { fg = colors.surface2, bg = colors.none },
+				}
+			end,
 		},
 		config = function(_, opts)
 			require("catppuccin").setup(opts)
