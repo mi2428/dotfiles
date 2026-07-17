@@ -82,6 +82,24 @@ function yy
     return $yazi_status
 end
 
+function __dotfiles_zz_filter_candidates --argument-names include_all
+    # `fd --follow` reports paths reached through symlinks, so its basename
+    # excludes alone do not reliably prune Nix profile trees.  Filter absolute
+    # candidate paths as a final streaming step.
+    set -l home_regex (string escape --style=regex -- "$HOME")
+    set -l codex_cache_pattern (string join '' \
+        '^' "$home_regex" \
+        '/\\.codex/(\\.tmp|ambient-suggestions|archived_sessions|attachments|browser|cache|computer-use|log|node_repl|process_manager|sessions|shell_snapshots|sqlite|tmp|vendor_imports|plugins/(cache|\\.plugin-appserver|\\.remote-plugin-install-staging))(/|$)')
+    set -l nix_profile_pattern (string join '' '^' "$home_regex" '/\\.nix-[^/]+(/|$)')
+
+    if test "$include_all" = 1
+        command rg --invert-match -- "$codex_cache_pattern"
+    else
+        command rg --invert-match -- "$codex_cache_pattern" |
+            command rg --invert-match -- "$nix_profile_pattern"
+    end
+end
+
 function zz
     command -sq fzf
     or begin
@@ -99,11 +117,11 @@ function zz
     or return 1
 
     if set -q _flag_help
-        printf '%s\n' 'Usage: zz [-a] [DIR|/] [QUERY...]'
+        printf '%s\n' 'Usage: zz [-a] [DIR|~] [QUERY...]'
         return 0
     end
 
-    set -l root /
+    set -l root "$HOME"
     if test (count $argv) -gt 0
         set root "$argv[1]"
         set -e argv[1]
@@ -125,6 +143,8 @@ function zz
         --preview="$preview" \
         --preview-window='down,30%,sharp'
     set -l dst
+    # Keep candidate lists useful even with `-a`: VCS metadata, dependencies,
+    # caches, build products, and credential stores are never useful targets.
     set -l excludes \
         .git \
         .svn \
@@ -133,7 +153,6 @@ function zz
         .direnv \
         .devenv \
         .cache \
-        .config \
         .local \
         .mypy_cache \
         .npm \
@@ -143,11 +162,12 @@ function zz
         .venv \
         .bundle \
         .cargo \
-        .cursor \
         .gem \
         .rustup \
-        .vscode \
-        .Trash \
+        .ssh \
+        .gnupg \
+        .aws \
+        .kube \
         __pycache__ \
         node_modules \
         vendor \
@@ -156,7 +176,39 @@ function zz
         target
 
     if not set -q _flag_all
-        set -a excludes Library tmp
+        # `-a` adds environment and generated directories, but intentionally
+        # does not include the permanently noisy candidates above.
+        set -a excludes \
+            .config \
+            .Trash \
+            .nix-* \
+            .nix-profile \
+            .android \
+            .gradle \
+            .ollama \
+            .terraform.d \
+            .idea \
+            .vs \
+            .vscode \
+            .vscode-test \
+            .cursor \
+            .ipynb_checkpoints \
+            .next \
+            .nuxt \
+            .svelte-kit \
+            .turbo \
+            .vite \
+            .parcel-cache \
+            .pnpm-store \
+            .yarn \
+            coverage \
+            .nyc_output \
+            .tox \
+            .nox \
+            .pyre \
+            .pytype \
+            Library \
+            tmp
     end
 
     if command -sq fd
@@ -173,7 +225,11 @@ function zz
         set -a fd_args . "$root"
         set dst (begin
             printf '%s\n' "$root"
-            fd $fd_args
+            if set -q _flag_all
+                fd $fd_args | __dotfiles_zz_filter_candidates 1
+            else
+                fd $fd_args | __dotfiles_zz_filter_candidates 0
+            end
         end |
             command python3 "$fzf_rows" directory |
             command env NO_COLOR= SHELL="$fish_shell" fzf --ansi --with-nth=2.. --nth=2.. --accept-nth=1 $fzf_opts --query "$query" |
@@ -190,7 +246,11 @@ function zz
         set -a find_args ")" -prune -o -type d -print
         set dst (begin
             printf '%s\n' "$root"
-            command find $find_args 2>/dev/null
+            if set -q _flag_all
+                command find $find_args 2>/dev/null | __dotfiles_zz_filter_candidates 1
+            else
+                command find $find_args 2>/dev/null | __dotfiles_zz_filter_candidates 0
+            end
         end |
             command python3 "$fzf_rows" directory |
             command env NO_COLOR= SHELL="$fish_shell" fzf --ansi --with-nth=2.. --nth=2.. --accept-nth=1 $fzf_opts --query "$query" |
