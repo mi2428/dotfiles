@@ -105,11 +105,7 @@ function zz
 
     set -l root /
     if test (count $argv) -gt 0
-        if test "$argv[1]" = /
-            set root /
-        else
-            set root "./$argv[1]"
-        end
+        set root "$argv[1]"
         set -e argv[1]
     end
 
