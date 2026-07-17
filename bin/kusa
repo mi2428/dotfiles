@@ -49,6 +49,7 @@ GRAPHQL_LEVELS = {
     "THIRD_QUARTILE": 3,
     "FOURTH_QUARTILE": 4,
 }
+MAX_DAYS_PER_QUERY = 182
 RESET = "\033[0m"
 ORIGIN_RE = re.compile(r"github\.com[:/](?P<owner>[^/]+)/[^/]+?(?:\.git)?$")
 
@@ -95,15 +96,16 @@ def default_user() -> str:
     return match["owner"]
 
 
-def fetch_api(user: str, token: str, today: date) -> tuple[dict[date, tuple[int, int]], int]:
-    since = today - timedelta(days=364)
+def fetch_calendar(
+    user: str, token: str, since: date, until: date
+) -> dict[date, tuple[int, int]]:
     payload = json.dumps(
         {
             "query": QUERY,
             "variables": {
                 "login": user,
                 "from": f"{since.isoformat()}T00:00:00Z",
-                "to": f"{today.isoformat()}T23:59:59Z",
+                "to": f"{until.isoformat()}T23:59:59Z",
             },
         }
     ).encode()
@@ -123,12 +125,23 @@ def fetch_api(user: str, token: str, today: date) -> tuple[dict[date, tuple[int,
     except (KeyError, TypeError):
         errors = ", ".join(error.get("message", "unknown GraphQL error") for error in data.get("errors", []))
         raise ValueError(errors or f"no contribution data for {user}")
-    days = {
-        date.fromisoformat(day["date"]): (day["contributionCount"], GRAPHQL_LEVELS[day["contributionLevel"]])
+    return {
+        day_date: (day["contributionCount"], GRAPHQL_LEVELS[day["contributionLevel"]])
         for week in calendar_data["weeks"]
         for day in week["contributionDays"]
+        if since <= (day_date := date.fromisoformat(day["date"])) <= until
     }
-    return days, calendar_data["totalContributions"]
+
+
+def fetch_api(user: str, token: str, today: date) -> tuple[dict[date, tuple[int, int]], int]:
+    since = today - timedelta(days=364)
+    days: dict[date, tuple[int, int]] = {}
+    range_start = since
+    while range_start <= today:
+        range_end = min(range_start + timedelta(days=MAX_DAYS_PER_QUERY - 1), today)
+        days.update(fetch_calendar(user, token, range_start, range_end))
+        range_start = range_end + timedelta(days=1)
+    return days, sum(count for count, _ in days.values())
 
 def month_line(weeks: list[list[date]], since: date) -> str:
     line, last = [" "] * (len(weeks) * 2), -8
