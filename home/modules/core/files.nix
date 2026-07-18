@@ -58,6 +58,7 @@ in {
     "ghostty/shaders" = mkLink ../../files/config/ghostty/shaders;
     "glow" = mkLink ../../files/config/glow;
     "herdr/config.toml" = mkLink ../../files/config/herdr/config.toml;
+    "herdr/lazygit-unified.yml" = mkLink ../../files/config/herdr/lazygit-unified.yml;
     "hunk" = mkLink ../../files/config/hunk;
     "k9s" = mkLink ../../files/config/k9s;
     "lazydocker/config.yml" = mkLink ../../files/config/lazydocker/config.yml;
