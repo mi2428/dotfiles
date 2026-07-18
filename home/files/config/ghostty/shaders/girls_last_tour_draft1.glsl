@@ -1,4 +1,4 @@
-// A faint line-art kamisama overlay for Ghostty.
+// A faint line-art girls_last_tour_draft1 overlay for Ghostty.
 //
 // The 160x240 mask is extracted from dark-line intensity rather than alpha,
 // keeping the robe hollow. Each row uses six positive 28-bit words so the
@@ -9,7 +9,7 @@ const int MASK_HEIGHT = 240;
 const int MASK_WORD_BITS = 28;
 const int MASK_WORDS_PER_ROW = 6;
 
-const int kamisamaMask[1440] = int[1440](
+const int girls_last_tour_draft1Mask[1440] = int[1440](
     0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0,
@@ -260,7 +260,7 @@ float maskPixel(ivec2 pixel) {
 
     int wordIndex = pixel.y * MASK_WORDS_PER_ROW + pixel.x / MASK_WORD_BITS;
     int bitIndex = pixel.x - (pixel.x / MASK_WORD_BITS) * MASK_WORD_BITS;
-    return (kamisamaMask[wordIndex] & (1 << bitIndex)) != 0 ? 1.0 : 0.0;
+    return (girls_last_tour_draft1Mask[wordIndex] & (1 << bitIndex)) != 0 ? 1.0 : 0.0;
 }
 
 float sampleMask(vec2 position) {

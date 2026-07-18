@@ -1,4 +1,4 @@
-// A fine-line, anchored kamisama overlay for Ghostty.
+// A fine-line, anchored girls_last_tour_draft3 overlay for Ghostty.
 // The source mask is 448x672, Zhang-Suen thinned, and packed into positive
 // 28-bit words. Authentic status, hair, eyes, and mouth are packed separately
 // so their original strokes can move without clean procedural replacement.
@@ -30,7 +30,7 @@ const int MOUTH_MASK_WIDTH = 18;
 const int MOUTH_MASK_HEIGHT = 16;
 const int MOUTH_MASK_WORDS_PER_ROW = 1;
 
-const int kamisama3Mask[10752] = int[10752](
+const int girls_last_tour_draft3Mask[10752] = int[10752](
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1015,7 +1015,7 @@ float maskPixel(ivec2 pixel) {
 
     int wordIndex = pixel.y * MASK_WORDS_PER_ROW + pixel.x / MASK_WORD_BITS;
     int bitIndex = pixel.x - (pixel.x / MASK_WORD_BITS) * MASK_WORD_BITS;
-    return (kamisama3Mask[wordIndex] & (1 << bitIndex)) != 0 ? 1.0 : 0.0;
+    return (girls_last_tour_draft3Mask[wordIndex] & (1 << bitIndex)) != 0 ? 1.0 : 0.0;
 }
 
 float sampleMask(vec2 position) {

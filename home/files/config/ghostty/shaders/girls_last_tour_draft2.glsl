@@ -1,4 +1,4 @@
-// A higher-resolution animated kamisama overlay for Ghostty.
+// A higher-resolution animated girls_last_tour_draft2 overlay for Ghostty.
 //
 // The 256x384 mask is extracted from dark-line intensity rather than alpha,
 // keeping the white robe hollow while retaining fine hand-drawn hatching.
@@ -9,7 +9,7 @@ const int MASK_HEIGHT = 384;
 const int MASK_WORD_BITS = 28;
 const int MASK_WORDS_PER_ROW = 10;
 
-const int kamisama2Mask[3840] = int[3840](
+const int girls_last_tour_draft2Mask[3840] = int[3840](
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -404,7 +404,7 @@ float maskPixel(ivec2 pixel) {
 
     int wordIndex = pixel.y * MASK_WORDS_PER_ROW + pixel.x / MASK_WORD_BITS;
     int bitIndex = pixel.x - (pixel.x / MASK_WORD_BITS) * MASK_WORD_BITS;
-    return (kamisama2Mask[wordIndex] & (1 << bitIndex)) != 0 ? 1.0 : 0.0;
+    return (girls_last_tour_draft2Mask[wordIndex] & (1 << bitIndex)) != 0 ? 1.0 : 0.0;
 }
 
 float sampleMask(vec2 position) {
@@ -439,10 +439,10 @@ float ellipseRing(vec2 point, vec2 radius) {
     return 1.0 - smoothstep(0.035, 0.085, distanceFromRing);
 }
 
-const float KAMISAMA2_BODY_TOP = 116.0;
-const float KAMISAMA2_BODY_BOTTOM = 371.2;
-const float KAMISAMA2_BODY_CENTER_X = 128.0;
-const vec2 KAMISAMA2_HEAD_PIVOT = vec2(128.0, 116.0);
+const float GIRLS_LAST_TOUR_DRAFT2_BODY_TOP = 116.0;
+const float GIRLS_LAST_TOUR_DRAFT2_BODY_BOTTOM = 371.2;
+const float GIRLS_LAST_TOUR_DRAFT2_BODY_CENTER_X = 128.0;
+const vec2 GIRLS_LAST_TOUR_DRAFT2_HEAD_PIVOT = vec2(128.0, 116.0);
 
 void standingPose(
     float cycleTime,
@@ -508,7 +508,7 @@ float sampleStandingBody(
     float firstBend,
     float secondBend
 ) {
-    float sourceSpan = KAMISAMA2_BODY_BOTTOM - KAMISAMA2_BODY_TOP;
+    float sourceSpan = GIRLS_LAST_TOUR_DRAFT2_BODY_BOTTOM - GIRLS_LAST_TOUR_DRAFT2_BODY_TOP;
     float bodyHeight = sourceSpan * pixelScale * stretch;
     float longitudinal = (tail.y - fragCoord.y) / bodyHeight;
     if (longitudinal < 0.0 || longitudinal > 1.0) return 0.0;
@@ -522,17 +522,17 @@ float sampleStandingBody(
     );
     float delayedWidth = mix(1.05, widthScale, smootherstep(longitudinal));
     vec2 maskPosition = vec2(
-        KAMISAMA2_BODY_CENTER_X +
+        GIRLS_LAST_TOUR_DRAFT2_BODY_CENTER_X +
             (fragCoord.x - centerX) / (pixelScale * delayedWidth),
-        KAMISAMA2_BODY_BOTTOM - longitudinal * sourceSpan
+        GIRLS_LAST_TOUR_DRAFT2_BODY_BOTTOM - longitudinal * sourceSpan
     );
     if (maskPosition.x < 78.0 || maskPosition.x > 181.0 ||
-        maskPosition.y < KAMISAMA2_BODY_TOP - 3.0 ||
+        maskPosition.y < GIRLS_LAST_TOUR_DRAFT2_BODY_TOP - 3.0 ||
         maskPosition.y > 382.0) return 0.0;
 
     float neckBlend = smoothstep(
-        KAMISAMA2_BODY_TOP - 3.0,
-        KAMISAMA2_BODY_TOP + 12.0,
+        GIRLS_LAST_TOUR_DRAFT2_BODY_TOP - 3.0,
+        GIRLS_LAST_TOUR_DRAFT2_BODY_TOP + 12.0,
         maskPosition.y
     );
     return sampleMask(maskPosition) * neckBlend;
@@ -559,7 +559,7 @@ float sampleRigidHead(
     headMaskPosition = inverseRotate(
         (fragCoord - neck) / pixelScale,
         angle
-    ) + KAMISAMA2_HEAD_PIVOT;
+    ) + GIRLS_LAST_TOUR_DRAFT2_HEAD_PIVOT;
     if (headMaskPosition.x < 76.0 || headMaskPosition.x > 184.0 ||
         headMaskPosition.y < 4.0 || headMaskPosition.y > 132.0) return 0.0;
 
@@ -813,7 +813,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float shortSide = min(iResolution.x, iResolution.y);
     vec2 tail = vec2(0.82, 0.97) * iResolution.xy;
     float pixelScale = (0.69 * iResolution.y) / float(MASK_HEIGHT);
-    float sourceSpan = KAMISAMA2_BODY_BOTTOM - KAMISAMA2_BODY_TOP;
+    float sourceSpan = GIRLS_LAST_TOUR_DRAFT2_BODY_BOTTOM - GIRLS_LAST_TOUR_DRAFT2_BODY_TOP;
     float cornerAngle = perimeterCornerAngle(shortSide);
     vec2 perimeterStart = perimeterScreenPoint(-cornerAngle, shortSide);
     vec2 perimeterEnd = perimeterScreenPoint(cornerAngle, shortSide);
