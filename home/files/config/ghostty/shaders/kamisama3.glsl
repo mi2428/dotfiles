@@ -1301,11 +1301,16 @@ vec2 livingContourSource(
         smootherstep((headPosition.y - 187.0) / 13.0) *
         (1.0 - smootherstep((abs(headPosition.x - faceCenter.x) - 31.0) / 9.0));
 
-    float leftCheekPx = 1.8 * sin(cycleTime * (2.0 * PI / 7.0));
-    float rightCheekPx = 1.7 * sin(
+    float bandTotal = max(1.0, leftBand + rightBand + chinBand);
+    leftBand /= bandTotal;
+    rightBand /= bandTotal;
+    chinBand /= bandTotal;
+
+    float leftCheekPx = 4.2 * sin(cycleTime * (2.0 * PI / 7.0));
+    float rightCheekPx = 4.0 * sin(
         cycleTime * (2.0 * PI / 12.0) + .72
     );
-    float chinPx = sin(cycleTime * (2.0 * PI / 6.0) + 1.10);
+    float chinPx = 2.5 * sin(cycleTime * (2.0 * PI / 6.0) + 1.10);
     sourcePosition.x += leftBand * leftCheekPx / pixelScale;
     sourcePosition.x -= rightBand * rightCheekPx / pixelScale;
     sourcePosition.y -= chinBand * chinPx / pixelScale;
@@ -1327,19 +1332,28 @@ vec2 livingHairSource(
         (1.0 - smootherstep((headPosition.x - 181.0) / 14.0));
     float rightTip = sideY *
         smootherstep((headPosition.x - 285.0) / 16.0);
-    float tipWeight = max(crownTip, max(leftTip, rightTip));
+    float tipTotal = max(1.0, crownTip + leftTip + rightTip);
+    crownTip /= tipTotal;
+    leftTip /= tipTotal;
+    rightTip /= tipTotal;
 
-    vec2 displayShift = vec2(
-        2.6 * sin(cycleTime * (2.0 * PI / 6.0)),
-        .8 * sin(cycleTime * (2.0 * PI / 7.0) + .85)
-    );
-    return headPosition - tipWeight * displayShift / pixelScale;
+    vec2 crownDirection = normalize(vec2(1.0, .15));
+    vec2 leftDirection = normalize(vec2(-.92, .38));
+    vec2 rightDirection = normalize(vec2(.94, .34));
+    vec2 displayShift =
+        crownTip * crownDirection * 8.0 *
+            sin(cycleTime * (2.0 * PI / 6.0)) +
+        leftTip * leftDirection * 9.0 *
+            sin(cycleTime * (2.0 * PI / 7.0) + .90) +
+        rightTip * rightDirection * 8.0 *
+            sin(cycleTime * (2.0 * PI / 12.0) + 1.80);
+    return headPosition - displayShift / pixelScale;
 }
 
 float authenticBlink(float cycleTime) {
-    float blinkTime = mod(cycleTime, 8.4);
-    float closing = smootherstep(blinkTime / .08);
-    float opening = 1.0 - smootherstep((blinkTime - .08) / .08);
+    float blinkTime = mod(cycleTime, 7.0);
+    float closing = smootherstep(blinkTime / .10);
+    float opening = 1.0 - smootherstep((blinkTime - .18) / .10);
     return closing * opening;
 }
 
@@ -1365,33 +1379,39 @@ float sampleLivingHead(
 
     const vec2 leftEyeCenter = vec2(200.0, 179.0);
     float leftEyeHeight = max(
-        .42,
-        1.0 - authenticBlink(cycleTime) * (2.4 / pixelScale) / 8.0
+        .18,
+        1.0 - authenticBlink(cycleTime) * (6.0 / pixelScale) / 8.0
     );
+    vec2 leftEyePoint = headPosition;
+    leftEyePoint.y -= 1.5 *
+        sin(cycleTime * (2.0 * PI / 12.0) + .35) / pixelScale;
     vec2 leftEyeSource = leftEyeCenter +
-        (headPosition - leftEyeCenter) / vec2(1.0, leftEyeHeight);
+        (leftEyePoint - leftEyeCenter) / vec2(1.0, leftEyeHeight);
     float leftEyeInk = sampleLeftEyeMask(leftEyeSource);
 
     const vec2 rightEyeCenter = vec2(256.0, 177.0);
     float ringScale = clamp(
         1.0 + sin(cycleTime * (2.0 * PI / 7.0) + 1.35) *
-            (1.1 / pixelScale) / 4.0,
-        .58,
-        1.42
+            (3.0 / pixelScale) / 4.0,
+        .15,
+        1.95
     );
+    vec2 rightEyePoint = headPosition;
+    rightEyePoint.y -= 1.5 *
+        sin(cycleTime * (2.0 * PI / 6.0) + 1.20) / pixelScale;
     vec2 rightEyeSource = rightEyeCenter +
-        (headPosition - rightEyeCenter) / ringScale;
+        (rightEyePoint - rightEyeCenter) / ringScale;
     float rightEyeInk = sampleRightEyeMask(rightEyeSource);
 
     const vec2 mouthCenter = vec2(229.0, 194.0);
     float mouthPhase = sin(cycleTime * (2.0 * PI / 12.0) + .40);
     float mouthScaleX = clamp(
-        1.0 + mouthPhase * (1.1 / pixelScale) / 4.5,
-        .55,
-        1.45
+        1.0 + mouthPhase * (2.5 / pixelScale) / 6.0,
+        .35,
+        1.65
     );
     vec2 mouthSource = headPosition;
-    mouthSource.y -= 1.5 *
+    mouthSource.y -= 4.0 *
         sin(cycleTime * (2.0 * PI / 7.0) + 2.10) / pixelScale;
     mouthSource.x = mouthCenter.x +
         (mouthSource.x - mouthCenter.x) / mouthScaleX;
