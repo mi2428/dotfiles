@@ -1406,8 +1406,87 @@ float sampleLivingHead(
 }
 
 float statusBoxGate(vec2 position, vec2 low, vec2 high, float feather) {
-    vec2 inside = min(position - low, high - position);
-    return smootherstep(min(inside.x, inside.y) / feather);
+    vec2 outside = max(max(low - position, position - high), vec2(0.0));
+    return 1.0 - smootherstep(max(outside.x, outside.y) / feather);
+}
+
+vec2 statusNodeLow(int index) {
+    if (index == 0) return vec2(210.0, 30.0);
+    if (index == 1) return vec2(260.0, 39.0);
+    if (index == 2) return vec2(266.0, 64.0);
+    return vec2(252.0, 91.0);
+}
+
+vec2 statusNodeHigh(int index) {
+    if (index == 0) return vec2(224.0, 42.0);
+    if (index == 1) return vec2(273.0, 48.0);
+    if (index == 2) return vec2(279.0, 71.0);
+    return vec2(263.0, 106.0);
+}
+
+float statusSourceNodeGate(vec2 sourcePosition) {
+    float gate = 0.0;
+    for (int index = 0; index < 4; ++index) {
+        gate = max(gate, statusBoxGate(
+            sourcePosition,
+            statusNodeLow(index),
+            statusNodeHigh(index),
+            1.5
+        ));
+    }
+    return gate;
+}
+
+float statusInnerGate(vec2 sourcePosition) {
+    const vec2 orbitCenter = vec2(231.5, 63.0);
+    const vec2 innerRadius = vec2(20.5, 18.0);
+    float distanceToCenter = length(
+        (sourcePosition - orbitCenter) / innerRadius
+    );
+    return 1.0 - smootherstep((distanceToCenter - .86) / .34);
+}
+
+float statusNodePeriod(int index) {
+    if (index == 0) return 6.0;
+    if (index == 1) return 7.0;
+    if (index == 2) return 12.0;
+    return 14.0;
+}
+
+float statusNodePulsePeriod(int index) {
+    if (index == 0) return 7.0;
+    if (index == 1) return 12.0;
+    if (index == 2) return 14.0;
+    return 21.0;
+}
+
+float sampleMovingStatusNode(
+    vec2 headPosition,
+    float pixelScale,
+    float cycleTime,
+    float junctionRelease,
+    int index
+) {
+    float cycleOffset = .25 * float(index);
+    float motionPhase = 2.0 * PI *
+        (cycleTime / statusNodePeriod(index) + cycleOffset);
+    vec2 displayMotion = vec2(
+        6.0 * cos(motionPhase),
+        3.9 * sin(motionPhase)
+    );
+    vec2 sourcePosition = headPosition -
+        displayMotion * junctionRelease / pixelScale;
+    float movedGate = statusBoxGate(
+        sourcePosition,
+        statusNodeLow(index),
+        statusNodeHigh(index),
+        1.5
+    );
+
+    float pulsePhase = 2.0 * PI *
+        (cycleTime / statusNodePulsePeriod(index) + cycleOffset + .125);
+    float opacity = mix(.35, 1.0, .5 + .5 * sin(pulsePhase));
+    return sampleStatusMask(sourcePosition) * movedGate * opacity;
 }
 
 float sampleStatus(
@@ -1415,7 +1494,7 @@ float sampleStatus(
     float pixelScale,
     float cycleTime
 ) {
-    float motionMargin = 3.0 / max(pixelScale, .25);
+    float motionMargin = 14.0 + 7.2 / max(pixelScale, .25);
     if (headPosition.x < 180.0 - motionMargin ||
         headPosition.x > 292.0 + motionMargin ||
         headPosition.y < 20.0 - motionMargin ||
@@ -1427,49 +1506,46 @@ float sampleStatus(
     vec2 orbitDelta = headPosition - orbitCenter;
     float junctionRelease = smootherstep(length(headPosition - junction) / 18.0);
 
+    float innerAngle = (11.0 * PI / 180.0) *
+        sin(cycleTime * (2.0 * PI / 7.0)) * junctionRelease;
     float innerScale = clamp(
         1.0 + (1.25 / pixelScale) / innerRadius.x *
-            sin(cycleTime * (2.0 * PI / 7.0)) * junctionRelease,
+            sin(cycleTime * (2.0 * PI / 7.0) + .55) * junctionRelease,
         .65,
         1.35
     );
-    vec2 innerSource = orbitCenter + orbitDelta / innerScale;
+    vec2 innerSource = orbitCenter +
+        inverseRotate(orbitDelta, innerAngle) / innerScale;
 
-    vec2 outerSource = headPosition;
+    vec2 unshearedPosition = headPosition;
     float shearY = clamp(orbitDelta.y / 34.0, -1.0, 1.0);
-    outerSource.x -= (1.7 / pixelScale) * shearY *
-        sin(cycleTime * (2.0 * PI / 12.0) + .35) * junctionRelease;
-
-    vec2 nodeShift = vec2(
-        1.7 * sin(cycleTime * (2.0 * PI / 12.0) - .70),
-        1.0 * sin(cycleTime * (2.0 * PI / 7.0) - 1.05)
-    );
-    vec2 nodeSource = headPosition -
-        nodeShift * junctionRelease / pixelScale;
-
-    float innerDistance = length(orbitDelta / innerRadius);
-    float innerGate = 1.0 - smootherstep((innerDistance - .82) / .32);
-    float nodeGate = max(
-        max(
-            statusBoxGate(headPosition, vec2(210.0, 30.0),
-                vec2(224.0, 42.0), 2.0),
-            statusBoxGate(headPosition, vec2(260.0, 39.0),
-                vec2(273.0, 48.0), 2.0)
-        ),
-        max(
-            statusBoxGate(headPosition, vec2(266.0, 64.0),
-                vec2(279.0, 71.0), 2.0),
-            statusBoxGate(headPosition, vec2(252.0, 91.0),
-                vec2(263.0, 106.0), 2.0)
-        )
+    unshearedPosition.x -= (4.0 / pixelScale) * shearY *
+        sin(cycleTime * (2.0 * PI / 6.0) + .35) * junctionRelease;
+    float outerAngle = (-6.0 * PI / 180.0) *
+        sin(cycleTime * (2.0 * PI / 12.0) + .20) * junctionRelease;
+    vec2 outerSource = orbitCenter + inverseRotate(
+        unshearedPosition - orbitCenter,
+        outerAngle
     );
 
-    float orbitInk = mix(
-        sampleStatusMask(outerSource),
-        sampleStatusMask(innerSource),
-        innerGate
-    );
-    return mix(orbitInk, sampleStatusMask(nodeSource), nodeGate);
+    float innerInk = sampleStatusMask(innerSource) *
+        statusInnerGate(innerSource) *
+        (1.0 - statusSourceNodeGate(innerSource));
+    float outerInk = sampleStatusMask(outerSource) *
+        (1.0 - statusInnerGate(outerSource)) *
+        (1.0 - statusSourceNodeGate(outerSource));
+
+    float nodeInk = 0.0;
+    for (int index = 0; index < 4; ++index) {
+        nodeInk = max(nodeInk, sampleMovingStatusNode(
+            headPosition,
+            pixelScale,
+            cycleTime,
+            junctionRelease,
+            index
+        ));
+    }
+    return max(max(innerInk, outerInk), nodeInk);
 }
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
