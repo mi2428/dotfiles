@@ -1246,7 +1246,8 @@ float sampleAnchoredBody(
         (1.0 - smoothstep(.90, .94, robeU));
     float hatchClip = verticalClip * sideClip;
 
-    vec2 restChord = (vec2(.84, .61) - vec2(.86, .975)) * iResolution.xy;
+    vec2 restChord = vec2(.84, .61) * iResolution.xy -
+        (iResolution.xy + vec2(20.0));
     float extension = smootherstep(
         (chordLength / max(length(restChord), 1.0) - 1.0) / .75
     );
@@ -1573,7 +1574,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec4 terminal = texture(iChannel0, uv);
 
     float cycleTime = mod(iTime, 84.0);
-    vec2 root = vec2(.86, .975) * iResolution.xy;
+    vec2 root = iResolution.xy + vec2(20.0);
     vec2 neckNormalized;
     float bendRatio;
     bodyPose(cycleTime, neckNormalized, bendRatio);
