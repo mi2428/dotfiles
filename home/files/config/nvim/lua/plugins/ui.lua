@@ -612,6 +612,55 @@ return {
 		},
 	},
 	{
+		"folke/which-key.nvim",
+		event = "VeryLazy",
+		opts = {
+			preset = "modern",
+			delay = 200,
+			win = {
+				border = "rounded",
+			},
+		},
+	},
+	{
+		"stevearc/quicker.nvim",
+		ft = "qf",
+		keys = {
+			{
+				"<leader>q",
+				function()
+					require("quicker").toggle()
+				end,
+				desc = "Toggle quickfix",
+			},
+			{
+				"<leader>l",
+				function()
+					require("quicker").toggle({ loclist = true })
+				end,
+				desc = "Toggle location list",
+			},
+		},
+		opts = {
+			keys = {
+				{
+					">",
+					function()
+						require("quicker").expand({ before = 2, after = 2, add_to_existing = true })
+					end,
+					desc = "Show context",
+				},
+				{
+					"<",
+					function()
+						require("quicker").collapse()
+					end,
+					desc = "Hide context",
+				},
+			},
+		},
+	},
+	{
 		"akinsho/toggleterm.nvim",
 		version = "*",
 		cmd = { "ToggleTerm", "TermExec" },
