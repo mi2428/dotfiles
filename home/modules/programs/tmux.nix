@@ -11,6 +11,7 @@ let
     "scripts/battery-icon.sh"
     "scripts/battery.sh"
     "scripts/edit-scrollback.sh"
+    "scripts/lazygit-popup.sh"
     "scripts/storage.sh"
     "scripts/window-label.sh"
     "statusbar-catppuccin.conf"
