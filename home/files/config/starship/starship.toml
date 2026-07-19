@@ -61,14 +61,32 @@ ignore_submodules = true
 [git_metrics]
 disabled = true
 
-# IMPORTANT: This is intentionally not Starship's built-in git_metrics or
-# git_status modules.
-# The stock modules are convenient, but they are too slow on giant
-# repositories. Keep the same visual cues, but route them through the cached
-# helper below.
+# Git prompt performance notes (benchmarked on 2026-07-19):
+#
+# This configuration deliberately bypasses Starship only for the expensive
+# git-status/git-metrics collection path. Starship still owns prompt layout,
+# directory rendering, git_branch, colors, and every unrelated module. In
+# particular, git_branch remains live and uncached, so checkouts and detached
+# HEAD changes are reflected immediately.
+#
+# Before this split, a warm prompt took about 84 ms in both ~/dotfiles and
+# ~/io/hubble2. Starship reported roughly 77 ms for custom.git_state alone:
+# about 14.5 ms for its command-based `when` probe and 56-57 ms for the
+# Bash-to-Python cached helper. The underlying Git operations were much cheaper
+# (roughly 10-26 ms), so repository size was not the primary foreground
+# bottleneck; process startup was. The Bash hot path below reduced a warm full
+# prompt to about 15-18 ms in both repositories. With the one-second TTL, an
+# isolated stale-cache prompt that also launches a refresh takes about 35-40 ms.
+# The detached refresh itself takes about 78 ms in dirty ~/dotfiles and 81 ms in
+# clean ~/io/hubble2; that work continues after prompt rendering returns.
+#
+# `when = true` is intentional. A command-based `when` would synchronously
+# launch Git before every prompt. Instead, the sourced Bash helper performs a
+# built-in-only cache read and maintains a short-lived negative cache outside
+# Git repositories. Python and Git run only in the detached refresh path.
 [custom.git_state]
-command = "${XDG_CONFIG_HOME:-$HOME/.config}/starship/git-metrics.sh summary"
-when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
+command = 'source "${XDG_CONFIG_HOME:-$HOME/.config}/starship/git-metrics.sh" summary'
+when = true
 shell = ["bash", "--noprofile", "--norc"]
 format = "$output"
 unsafe_no_escape = true
