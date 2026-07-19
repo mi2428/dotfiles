@@ -1,5 +1,29 @@
 local fzf_theme = require("config.fzf")
 
+local function fzf_open_in_current_window(selected, opts)
+	local previous_buf = vim.api.nvim_get_current_buf()
+	local previous_name = vim.api.nvim_buf_get_name(previous_buf)
+	local was_modified = vim.bo[previous_buf].modified
+
+	require("fzf-lua.actions").file_edit(selected, opts)
+
+	if not vim.api.nvim_buf_is_valid(previous_buf) or previous_buf == vim.api.nvim_get_current_buf() then
+		return
+	end
+	if was_modified then
+		local display_name = previous_name ~= "" and vim.fn.fnamemodify(previous_name, ":~:.") or "[No Name]"
+		vim.notify("Unsaved buffer kept in buffer list: " .. display_name, vim.log.levels.WARN)
+		return
+	end
+
+	vim.api.nvim_buf_delete(previous_buf, {})
+end
+
+local function fzf_open_in_vsplit(selected, opts)
+	require("fzf-lua.actions").file_vsplit(selected, opts)
+	vim.cmd("wincmd =")
+end
+
 return {
 	{
 		"nvim-tree/nvim-web-devicons",
@@ -32,6 +56,13 @@ return {
 		dependencies = { "nvim-tree/nvim-web-devicons" },
 		opts = {
 			"default",
+			actions = {
+				files = {
+					true,
+					["ctrl-e"] = fzf_open_in_current_window,
+					["ctrl-v"] = fzf_open_in_vsplit,
+				},
+			},
 			fzf_colors = false,
 			fzf_opts = vim.tbl_extend("force", fzf_theme.ui_opts(), {
 				["--color"] = fzf_theme.color_spec({ transparent_background = true }),
