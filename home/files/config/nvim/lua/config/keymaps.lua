@@ -41,8 +41,8 @@ local function map_buffer_cycles(bufnr)
 		opts.buffer = bufnr
 	end
 
-	map("n", "[[", "<cmd>bnext<cr>", vim.tbl_extend("force", opts, { desc = "Previous buffer" }))
-	map("n", "]]", "<cmd>bprevious<cr>", vim.tbl_extend("force", opts, { desc = "Next buffer" }))
+	map("n", "[[", "<cmd>bprevious<cr>", vim.tbl_extend("force", opts, { desc = "Previous buffer" }))
+	map("n", "]]", "<cmd>bnext<cr>", vim.tbl_extend("force", opts, { desc = "Next buffer" }))
 end
 
 map_buffer_cycles()
