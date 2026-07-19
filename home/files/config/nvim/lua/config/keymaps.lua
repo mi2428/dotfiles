@@ -1,5 +1,13 @@
 local map = vim.keymap.set
 
+local function toggle_diffview()
+	if vim.t.diffview_view_initialized then
+		vim.cmd.DiffviewClose()
+	else
+		vim.cmd.DiffviewOpen()
+	end
+end
+
 local function toggle_gitsigns_diff_peek()
 	local tabpage = vim.api.nvim_get_current_tabpage()
 	local current_win = vim.api.nvim_get_current_win()
@@ -125,8 +133,7 @@ end, { desc = "Find git files" })
 map("n", "<leader>G", function()
 	require("fzf-lua").git_status()
 end, { desc = "Git status" })
-map("n", "<leader>gd", "<cmd>DiffviewOpen<cr>", { desc = "Git diff view" })
-map("n", "<leader>gD", "<cmd>DiffviewClose<cr>", { desc = "Close diff view" })
+map("n", "<leader>gd", toggle_diffview, { desc = "Toggle Git diff view" })
 map("n", "<leader>gp", toggle_gitsigns_diff_peek, { desc = "Toggle Git diff peek" })
 map("n", "<leader>gh", "<cmd>DiffviewFileHistory %<cr>", { desc = "File history" })
 map("n", "<leader>gH", "<cmd>DiffviewFileHistory<cr>", { desc = "Branch history" })
