@@ -284,8 +284,8 @@ dot() {
     return 0
   fi
 
-  ## execute in subshell so as not to move current directory
-  case $1 in
+  (
+    case $1 in
     cc|commit)
       local message="${@:2}"
       (builtin cd -- "$HOME/dotfiles" 2>/dev/null; git add . >/dev/null 2>&1; git commit -m "$message")
@@ -377,7 +377,8 @@ dot() {
       echo " h,  help              this help text"
       return 0
       ;;
-  esac
+    esac
+  )
 }
 
 addr() {
