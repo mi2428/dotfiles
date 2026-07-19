@@ -1,6 +1,14 @@
 local autocmd = vim.api.nvim_create_autocmd
 local augroup = vim.api.nvim_create_augroup
 
+local startup_directory
+if vim.fn.argc() == 1 then
+	local argument = vim.fn.fnamemodify(vim.fn.argv(0), ":p")
+	if vim.fn.isdirectory(argument) == 1 then
+		startup_directory = argument
+	end
+end
+
 local function is_ansible_yaml_path(path)
 	local patterns = {
 		"/group_vars/.*%.ya?ml$",
@@ -30,6 +38,28 @@ autocmd("TextYankPost", {
 	group = augroup("dotfiles-highlight-yank", { clear = true }),
 	callback = function()
 		vim.highlight.on_yank()
+	end,
+})
+
+autocmd("VimEnter", {
+	desc = "Open a file picker for a directory argument",
+	group = augroup("dotfiles-directory-argument-picker", { clear = true }),
+	callback = function()
+		if not startup_directory or #vim.api.nvim_list_uis() == 0 then
+			return
+		end
+
+		vim.schedule(function()
+			if vim.bo.filetype == "oil" then
+				local oil_buf = vim.api.nvim_get_current_buf()
+				vim.cmd.enew()
+				if vim.api.nvim_buf_is_valid(oil_buf) then
+					vim.api.nvim_buf_delete(oil_buf, { force = true })
+				end
+			end
+
+			require("fzf-lua").files({ cwd = startup_directory })
+		end)
 	end,
 })
 
