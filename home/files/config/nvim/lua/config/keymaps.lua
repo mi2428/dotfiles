@@ -13,29 +13,36 @@ local function toggle_gitsigns_diff_peek()
 	local current_win = vim.api.nvim_get_current_win()
 	local revision_wins = {}
 	local return_win
+	local current_is_revision = false
 
 	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
 		local buf = vim.api.nvim_win_get_buf(win)
 		if vim.api.nvim_buf_get_name(buf):match("^gitsigns://") then
 			revision_wins[#revision_wins + 1] = win
+			current_is_revision = current_is_revision or win == current_win
 		elseif win ~= current_win and vim.wo[win].diff then
 			return_win = win
 		end
 	end
 
 	if #revision_wins > 0 then
+		local current_is_diff = vim.wo.diff
 		for _, win in ipairs(revision_wins) do
 			if vim.api.nvim_win_is_valid(win) then
 				vim.api.nvim_win_close(win, true)
 			end
 		end
-		if return_win and vim.api.nvim_win_is_valid(return_win) then
+		if current_is_revision and return_win and vim.api.nvim_win_is_valid(return_win) then
 			vim.api.nvim_set_current_win(return_win)
 		end
-		if vim.wo.diff then
-			vim.cmd.diffoff()
+		for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+			if vim.wo[win].diff then
+				vim.wo[win].diff = false
+			end
 		end
-		return
+		if current_is_revision or current_is_diff then
+			return
+		end
 	end
 
 	if vim.wo.diff then
