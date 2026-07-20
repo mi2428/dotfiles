@@ -11,7 +11,7 @@ Catppuccin can shift expected color names a bit, so cyan or light blue may look 
 This mostly affects apps that use ANSI color slots, which the terminal maps through the active theme palette.
 
 >[!TIP]
-> **TL;DR** This one-liner clones or updates the repo in `~/dotfiles` and then runs [`bootstrap/bootstrap.sh`](/Users/teo/dotfiles/bootstrap/bootstrap.sh).
+> **TL;DR** This one-liner clones or updates the repo in `~/dotfiles` and then runs [`bootstrap/bootstrap.sh`](https://github.com/mi2428/dotfiles/blob/master/bootstrap/bootstrap.sh).
 > ```console
 > bash -c "$(curl -fsLS https://raw.githubusercontent.com/mi2428/dotfiles/refs/heads/master/scripts/setup.sh)"
 > ```
