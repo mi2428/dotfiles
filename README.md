@@ -91,7 +91,7 @@ path blocked by that attribute cannot be removed from a normally booted system;
 delete it only from macOS Recovery or a separately booted volume.
 
 For quick config checks, you do not need to run `hm.switch` for every small change.
-Use [`bin/dotfiles-dev`](/Users/teo/dotfiles/bin/dotfiles-dev), which builds a writable projected `XDG_CONFIG_HOME` per app from the repo tree:
+Use [`bin/dotfiles-dev`](https://github.com/mi2428/dotfiles/blob/master/bin/dotfiles-dev), which builds a writable projected `XDG_CONFIG_HOME` per app from the repo tree:
 
 ```console
 $ ./bin/dotfiles-dev xdg fish  # or ./bin/fish.dev
