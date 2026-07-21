@@ -11,14 +11,14 @@ Catppuccin can shift expected color names a bit, so cyan or light blue may look 
 This mostly affects apps that use ANSI color slots, which the terminal maps through the active theme palette.
 
 >[!TIP]
-> **TL;DR** This one-liner clones or updates the repo in `~/dotfiles` and then runs [`bootstrap/bootstrap.sh`](https://github.com/mi2428/dotfiles/blob/master/bootstrap/bootstrap.sh).
+> **TL;DR** This one-liner clones or updates the repo in `~/dotfiles` and then runs [`bootstrap/bootstrap.sh`](bootstrap/bootstrap.sh).
 > ```console
 > bash -c "$(curl -fsLS https://raw.githubusercontent.com/mi2428/dotfiles/refs/heads/master/scripts/setup.sh)"
 > ```
 
 ## Bootstrap Guide
 
-If you already have the repo checked out and want to run bootstrap directly, use [`bootstrap/bootstrap.sh`](https://github.com/mi2428/dotfiles/blob/master/bootstrap/bootstrap.sh).
+If you already have the repo checked out and want to run bootstrap directly, use [`bootstrap/bootstrap.sh`](bootstrap/bootstrap.sh).
 
 ```console
 $ brew install --cask ghostty
@@ -32,11 +32,11 @@ $ ./bootstrap/bootstrap.sh --host linux  # Linux
 
 What bootstrap does:
 
-- [`scripts/setup.sh`](https://github.com/mi2428/dotfiles/blob/master/scripts/setup.sh) clones or fast-forwards the repo in `~/dotfiles`, then runs [`bootstrap/bootstrap.sh`](https://github.com/mi2428/dotfiles/blob/master/bootstrap/bootstrap.sh).
-- [`bootstrap/bootstrap.sh`](https://github.com/mi2428/dotfiles/blob/master/bootstrap/bootstrap.sh) applies chezmoi state first, then runs the host-specific Nix activation.
+- [`scripts/setup.sh`](scripts/setup.sh) clones or fast-forwards the repo in `~/dotfiles`, then runs [`bootstrap/bootstrap.sh`](bootstrap/bootstrap.sh).
+- [`bootstrap/bootstrap.sh`](bootstrap/bootstrap.sh) applies chezmoi state first, then runs the host-specific Nix activation.
 - On macOS, host auto-detection resolves from the machine serial number.
 - On Linux, host auto-detection resolves from container markers first and then `/etc/machine-id`.
-- Secret template data lives in [`chezmoi/.chezmoidata/`](https://github.com/mi2428/dotfiles/tree/master/chezmoi/.chezmoidata).
+- Secret template data lives in [`chezmoi/.chezmoidata/`](chezmoi/.chezmoidata/).
 
 After bootstrap, `task` shows the common maintenance commands:
 
@@ -91,7 +91,7 @@ path blocked by that attribute cannot be removed from a normally booted system;
 delete it only from macOS Recovery or a separately booted volume.
 
 For quick config checks, you do not need to run `hm.switch` for every small change.
-Use [`bin/dotfiles-dev`](https://github.com/mi2428/dotfiles/blob/master/bin/dotfiles-dev), which builds a writable projected `XDG_CONFIG_HOME` per app from the repo tree:
+Use [`bin/dotfiles-dev`](bin/dotfiles-dev), which builds a writable projected `XDG_CONFIG_HOME` per app from the repo tree:
 
 ```console
 $ ./bin/dotfiles-dev xdg fish  # or ./bin/fish.dev
@@ -109,7 +109,7 @@ Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `t
 > $ task age.init
 > ```
 > 
-> If `~/.config/chezmoi/key.txt`, [`chezmoi/key.txt.age`](https://github.com/mi2428/dotfiles/blob/master/chezmoi/key.txt.age), or [`chezmoi/.chezmoidata/secrets.yaml`](https://github.com/mi2428/dotfiles/blob/master/chezmoi/.chezmoidata/secrets.yaml) already exists, `task age.init` refuses to run.
+> If `~/.config/chezmoi/key.txt`, [`chezmoi/key.txt.age`](chezmoi/key.txt.age), or [`chezmoi/.chezmoidata/secrets.yaml`](chezmoi/.chezmoidata/secrets.yaml) already exists, `task age.init` refuses to run.
 > Rekey only when you intentionally want to rotate the repo recipient and re-encrypt every bundle:
 > 
 > ```console
