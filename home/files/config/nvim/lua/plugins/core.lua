@@ -56,6 +56,11 @@ return {
 		dependencies = { "nvim-tree/nvim-web-devicons" },
 		opts = {
 			"default",
+			-- Keep picker titles, but do not spend vertical space on the
+			-- automatically generated keybinding/action header.
+			defaults = {
+				headers = false,
+			},
 				actions = {
 					files = {
 						true,

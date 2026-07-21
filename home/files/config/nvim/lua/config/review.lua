@@ -283,12 +283,12 @@ function M.open(split)
 
 	require("fzf-lua").fzf_exec(entries, {
 		cwd = M.state.worktree,
+		headers = false,
 		prompt = M.state.pr and ("PR " .. M.state.pr .. " review> ") or "review> ",
 		fzf_opts = {
 			["--ansi"] = true,
 			["--delimiter"] = entry_delimiter,
 			["--with-nth"] = "1",
-			["--header"] = "Enter: open  Ctrl-V: vertical split",
 		},
 		preview = preview_command(M.state),
 		actions = {
