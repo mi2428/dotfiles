@@ -2,6 +2,7 @@
 let
   sharedPackages = with pkgs; [
     atuin
+    broot
     eza
     fd
     fzf
