@@ -15,6 +15,7 @@ let
     "scripts/storage.sh"
     "scripts/window-label.sh"
     "scripts/yazi-popup.sh"
+    "scripts/yazi-tmux-open.sh"
     "statusbar-catppuccin.conf"
   ];
   sourceFor = relativePath:
