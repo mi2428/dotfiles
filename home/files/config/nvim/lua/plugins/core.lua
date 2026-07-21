@@ -56,13 +56,17 @@ return {
 		dependencies = { "nvim-tree/nvim-web-devicons" },
 		opts = {
 			"default",
-			actions = {
-				files = {
-					true,
-					["ctrl-e"] = fzf_open_in_current_window,
-					["ctrl-v"] = fzf_open_in_vsplit,
+				actions = {
+					files = {
+						true,
+						["ctrl-e"] = fzf_open_in_current_window,
+						["ctrl-v"] = fzf_open_in_vsplit,
+						["ctrl-q"] = function(selected, opts)
+							require("fzf-lua.actions").file_sel_to_qf(selected, opts)
+						end,
+						["alt-q"] = false,
+					},
 				},
-			},
 			fzf_colors = false,
 			fzf_opts = vim.tbl_extend("force", fzf_theme.ui_opts(), {
 				["--color"] = fzf_theme.color_spec({ transparent_background = true }),
