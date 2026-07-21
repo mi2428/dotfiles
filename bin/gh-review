@@ -3,6 +3,7 @@
 set -g __dotfiles_gh_review_self_path (path resolve (status filename))
 set -g __dotfiles_gh_review_script_dir (path dirname "$__dotfiles_gh_review_self_path")
 set -l helper_file (path resolve "$__dotfiles_gh_review_script_dir/../home/files/config/fish/lib/dotfiles_git_ui_helpers.fish")
+set -g __dotfiles_gh_review_broot_theme (path resolve "$__dotfiles_gh_review_script_dir/../home/files/config/broot/catppuccin-mocha-mauve.hjson")
 
 source "$helper_file"; or begin
     printf 'gh-review: failed to source helper: %s\n' "$helper_file" >&2
@@ -73,8 +74,19 @@ function run_edit_pane --argument-names user_shell nvim_server
 end
 
 function run_broot_pane --argument-names user_shell broot_config review_files_dir
+    set -l config_home "$HOME/.config"
+    if set -q XDG_CONFIG_HOME
+        set config_home "$XDG_CONFIG_HOME"
+    end
+
+    set -l global_config "$config_home/broot/conf.hjson"
+    set -l config_paths "$__dotfiles_gh_review_broot_theme;$broot_config"
+    if test -f "$global_config"
+        set config_paths "$global_config;$broot_config"
+    end
+
     broot \
-        --conf "$broot_config" \
+        --conf "$config_paths" \
         --hidden \
         --no-dates \
         --no-permissions \
