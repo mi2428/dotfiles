@@ -1,3 +1,16 @@
+local function abbrev_excmd(lhs, rhs, opts)
+	opts = vim.tbl_extend("force", opts or {}, { expr = true })
+	vim.keymap.set("ca", lhs, function()
+		if vim.fn.getcmdtype() == ":" and vim.fn.getcmdline() == lhs then
+			return rhs
+		end
+
+		return lhs
+	end, opts)
+end
+
+abbrev_excmd("qw", "wq", { desc = "Fix :qw typo" })
+
 vim.api.nvim_create_user_command("SudoWriteCurrentBuffer", function()
 	local file = vim.api.nvim_buf_get_name(0)
 	if file == "" then
