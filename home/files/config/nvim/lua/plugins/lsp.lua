@@ -479,7 +479,7 @@ return {
 		opts = {
 			notify_on_error = false,
 			format_on_save = function(bufnr)
-				if vim.bo[bufnr].buftype ~= "" then
+				if vim.bo[bufnr].buftype ~= "" or vim.bo[bufnr].filetype == "dockerfile" then
 					return
 				end
 
