@@ -1,0 +1,138 @@
+#!/usr/bin/env fish
+
+set -g __dotfiles_work_self_path (path resolve (status filename))
+set -g __dotfiles_work_script_dir (path dirname "$__dotfiles_work_self_path")
+set -l helper_file (path resolve "$__dotfiles_work_script_dir/../home/files/config/fish/lib/dotfiles_git_ui_helpers.fish")
+
+source "$helper_file"; or begin
+    printf 'work: failed to source helper: %s\n' "$helper_file" >&2
+    exit 1
+end
+
+function die
+    printf 'work: %s\n' (string join ' ' -- $argv) >&2
+    exit 1
+end
+
+function need_cmd --argument-names name
+    command -q -- "$name"; or die "missing required command: $name"
+end
+
+function usage
+    printf '%s\n' \
+        'Usage: work [directory]' \
+        '' \
+        'Create or reopen a tmux coding workspace containing:' \
+        '  - code window: Neovim with a right-side Snacks Explorer' \
+        '  - code window: terminal and live Git status panes' \
+        '  - prefix+y popup: Yazi with Neovim socket integration' \
+        '' \
+        'The directory defaults to the current directory and must be in a Git repository.'
+end
+
+function run_nvim_pane --argument-names user_shell server root
+    set -lx NVIM_WORKSPACE_MODE 1
+    nvim --listen "$server" -- "$root"
+    command rm -f -- "$server"
+    exec "$user_shell"
+end
+
+function run_git_pane --argument-names user_shell
+    viddy -n 1 -d -t -- git -c color.status=always status --short --branch
+    exec "$user_shell"
+end
+
+function switch_or_attach --argument-names session
+    if set -q WORK_NO_ATTACH; and test "$WORK_NO_ATTACH" = 1
+        return
+    end
+
+    if set -q TMUX
+        tmux switch-client -t "$session"
+    else
+        tmux attach-session -t "$session"
+    end
+end
+
+if test (count $argv) -ge 1
+    switch "$argv[1]"
+        case -h --help
+            usage
+            exit 0
+        case --nvim-pane
+            test (count $argv) -eq 4; or die '--nvim-pane requires a shell, server address, and root'
+            run_nvim_pane "$argv[2]" "$argv[3]" "$argv[4]"
+            exit 0
+        case --git-pane
+            test (count $argv) -eq 2; or die '--git-pane requires a shell'
+            need_cmd viddy
+            need_cmd git
+            run_git_pane "$argv[2]"
+            exit 0
+    end
+end
+
+test (count $argv) -le 1; or die 'expected at most one directory'
+
+need_cmd git
+need_cmd nvim
+need_cmd tmux
+need_cmd viddy
+need_cmd yazi
+
+set -l requested_dir .
+if test (count $argv) -eq 1
+    set requested_dir "$argv[1]"
+end
+
+set requested_dir (path resolve "$requested_dir" 2>/dev/null); or die "directory does not exist: $requested_dir"
+test -d "$requested_dir"; or die "not a directory: $requested_dir"
+
+set -l root (git -C "$requested_dir" rev-parse --show-toplevel 2>/dev/null); or die "not inside a Git repository: $requested_dir"
+set root (path resolve "$root")
+
+set -l project (path basename "$root")
+set -l slug (string lower -- (string replace -ar '[^[:alnum:]-]+' '-' -- "$project"))
+set slug (string trim -c - -- "$slug")
+test -n "$slug"; or set slug workspace
+set -l session "work-$slug"
+
+if tmux has-session -t "$session" 2>/dev/null
+    set -l existing_root (tmux show-option -qv -t "$session" @work_root)
+    if test -n "$existing_root"; and test "$existing_root" != "$root"
+        die "session $session already belongs to $existing_root"
+    end
+    switch_or_attach "$session"
+    exit 0
+end
+
+set -l user_shell /bin/bash
+if set -q SHELL; and test -x "$SHELL"
+    set user_shell "$SHELL"
+end
+
+set -l size (__dotfiles_git_ui_current_terminal_size)
+set -l session_width "$size[1]"
+set -l session_height "$size[2]"
+set -l server "/tmp/work-"(id -u)"-$slug-$fish_pid.sock"
+
+set -l nvim_cmd (string join ' ' -- (string escape -- "$__dotfiles_work_self_path" --nvim-pane "$user_shell" "$server" "$root"))
+set -l git_cmd (string join ' ' -- (string escape -- "$__dotfiles_work_self_path" --git-pane "$user_shell"))
+
+set -l main_pane (tmux new-session -d -P -F '#{pane_id}' -x "$session_width" -y "$session_height" -s "$session" -n code -c "$root" "$nvim_cmd"); or die 'failed to create tmux session'
+tmux set-option -q -t "$session" @work_root "$root"
+tmux set-environment -t "$session" NVIM_WORKSPACE_ROOT "$root"
+tmux set-environment -t "$session" NVIM_WORKSPACE_SERVER "$server"
+tmux set-environment -t "$session" NVIM_WORKSPACE_PANE "$main_pane"
+tmux resize-window -x "$session_width" -y "$session_height" -t "$session:code"
+
+set -l terminal_pane (tmux split-window -v -p 20 -P -F '#{pane_id}' -t "$main_pane" -c "$root" "$user_shell")
+set -l git_pane (tmux split-window -h -p 30 -P -F '#{pane_id}' -t "$terminal_pane" -c "$root" "$git_cmd")
+
+tmux select-pane -t "$main_pane" -T editor
+tmux select-pane -t "$terminal_pane" -T terminal
+tmux select-pane -t "$git_pane" -T git-status
+tmux select-window -t "$session:code"
+tmux select-pane -t "$main_pane"
+
+switch_or_attach "$session"

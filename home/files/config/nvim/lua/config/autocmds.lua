@@ -81,6 +81,22 @@ autocmd("VimEnter", {
 			end
 
 			require("fzf-lua").files({ cwd = startup_directory })
+
+			if vim.env.NVIM_WORKSPACE_MODE == "1" then
+				local fzf_window = vim.api.nvim_get_current_win()
+				Snacks.explorer({ focus = false, watch = true })
+				vim.schedule(function()
+					if not vim.api.nvim_win_is_valid(fzf_window) then
+						return
+					end
+					local buffer = vim.api.nvim_win_get_buf(fzf_window)
+					if vim.bo[buffer].filetype ~= "fzf" then
+						return
+					end
+					vim.api.nvim_set_current_win(fzf_window)
+					vim.cmd.startinsert()
+				end)
+			end
 		end)
 	end,
 })
