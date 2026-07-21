@@ -1,5 +1,5 @@
 [app]
-overall = { bg = "#1e1e2e" }
+overall = { bg = "reset" }
 
 [mgr]
 cwd = { fg = "#94e2d5" }
