@@ -1,5 +1,5 @@
 #!/bin/sh
-# Browse from the focused pane and send selected files to its workspace Neovim.
+# Browse from the focused pane and route selected files to the right opener.
 
 set -eu
 
@@ -36,11 +36,6 @@ nvim_pane=$(tmux_environment NVIM_WORKSPACE_PANE)
 YAZI_POPUP=1
 export YAZI_POPUP
 
-# Outside a work session, keep the popup useful as an ordinary Yazi instance.
-if [ -z "$server" ]; then
-  exec yazi "$current_dir"
-fi
-
 runtime_dir=$(mktemp -d "${TMPDIR:-/tmp}/tmux-yazi.XXXXXXXX")
 chooser=$runtime_dir/chooser
 
@@ -52,6 +47,16 @@ trap cleanup EXIT HUP INT TERM
 yazi "$current_dir" --chooser-file="$chooser"
 
 if [ ! -s "$chooser" ]; then
+  exit 0
+fi
+
+# Outside a work session, hand selections to the macOS default application.
+if [ -z "$server" ]; then
+  selected=
+  while IFS= read -r selected || [ -n "$selected" ]; do
+    [ -n "$selected" ] || continue
+    /usr/bin/open "$selected"
+  done <"$chooser"
   exit 0
 fi
 
