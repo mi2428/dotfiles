@@ -252,8 +252,15 @@ args=("$path")
 if [[ -n "$old_path" ]]; then
   args=("$old_path" "$path")
 fi
-if command -v delta >/dev/null 2>&1; then
-  git diff --color=always "$range" -- "${args[@]}" | delta --paging=never
+delta_bin=$(command -v delta 2>/dev/null || true)
+if [[ -z "$delta_bin" && -x /opt/homebrew/bin/delta ]]; then
+  delta_bin=/opt/homebrew/bin/delta
+fi
+if [[ -n "$delta_bin" ]]; then
+  preview_width=${FZF_PREVIEW_COLUMNS:-80}
+  git diff --color=always "$range" -- "${args[@]}" \
+    | "$delta_bin" --paging=never --width="$preview_width" \
+      --file-style=omit --hunk-header-style=omit
 else
   git diff --color=always "$range" -- "${args[@]}"
 fi
