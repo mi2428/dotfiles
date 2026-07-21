@@ -315,6 +315,77 @@ function M.open(split)
 	})
 end
 
+local function collect_explorer_statuses(cwd)
+	local raw, err = git({ "diff", "--name-status", "-z", "--find-renames", M.state.merge_base, "--" }, M.state.worktree)
+	if not raw then
+		vim.notify(("Unable to collect review file statuses: %s"):format(err or "unknown error"), vim.log.levels.ERROR)
+		return {}
+	end
+
+	local statuses = {}
+	local fields = vim.split(raw, "\0", { plain = true, trimempty = true })
+	local index = 1
+	while index <= #fields do
+		local status = fields[index]:sub(1, 1)
+		index = index + 1
+		local path
+		if status == "R" or status == "C" then
+			index = index + 1
+			path = fields[index]
+			index = index + 1
+		else
+			path = fields[index]
+			index = index + 1
+		end
+
+		if path and path ~= "" then
+			statuses[#statuses + 1] = {
+				file = vim.fs.joinpath(M.state.worktree, path),
+				status = " " .. status,
+			}
+		end
+	end
+
+	local untracked = git({ "ls-files", "--others", "--exclude-standard", "-z" }, M.state.worktree)
+	if untracked and untracked ~= "" then
+		for _, path in ipairs(vim.split(untracked, "\0", { plain = true, trimempty = true })) do
+			statuses[#statuses + 1] = {
+				file = vim.fs.joinpath(M.state.worktree, path),
+				status = " A",
+			}
+		end
+	end
+
+	local normalized_cwd = vim.fs.normalize(cwd)
+	local prefix = normalized_cwd .. "/"
+	return vim.tbl_filter(function(item)
+		local file = vim.fs.normalize(item.file)
+		return file == normalized_cwd or vim.startswith(file, prefix)
+	end, statuses)
+end
+
+local function open_review_explorer()
+	local explorer_git = require("snacks.explorer.git")
+	if not explorer_git.dotfiles_review_update then
+		local native_update = explorer_git.update
+		explorer_git.dotfiles_review_update = native_update
+		explorer_git.update = function(cwd, opts)
+			local normalized_cwd = vim.fs.normalize(cwd)
+			local worktree = vim.fs.normalize(M.state.worktree)
+			if normalized_cwd ~= worktree and not vim.startswith(normalized_cwd, worktree .. "/") then
+				return native_update(cwd, opts)
+			end
+
+			local changed = explorer_git._update(normalized_cwd, collect_explorer_statuses(normalized_cwd))
+			if changed and opts and opts.on_update then
+				vim.schedule(opts.on_update)
+			end
+		end
+	end
+
+	require("snacks").explorer({ cwd = M.state.worktree })
+end
+
 function M.setup()
 	if commands_registered then
 		return
@@ -345,6 +416,7 @@ function M.setup()
 				for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
 					mark_added_file(bufnr)
 				end
+				vim.schedule(open_review_explorer)
 			end,
 		})
 		for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do

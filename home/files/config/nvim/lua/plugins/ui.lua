@@ -440,6 +440,7 @@ return {
 			picker = {
 				sources = {
 					explorer = {
+						layout = { layout = { position = "right" } },
 						watch = false,
 					},
 				},
