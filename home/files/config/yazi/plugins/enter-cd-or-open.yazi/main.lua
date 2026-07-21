@@ -8,7 +8,9 @@ local function entry()
 
 	if hovered.cha.is_dir then
 		ya.emit("cd", { hovered.url })
-		ya.emit("quit", {})
+		if os.getenv("YAZI_POPUP") ~= "1" then
+			ya.emit("quit", {})
+		end
 	else
 		ya.emit("open", { hovered = true })
 	end

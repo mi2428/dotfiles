@@ -14,6 +14,7 @@ let
     "scripts/lazygit-popup.sh"
     "scripts/storage.sh"
     "scripts/window-label.sh"
+    "scripts/yazi-popup.sh"
     "statusbar-catppuccin.conf"
   ];
   sourceFor = relativePath:
