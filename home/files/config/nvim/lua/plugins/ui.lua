@@ -436,6 +436,7 @@ return {
 			git = { enabled = true },
 			notifier = { enabled = true, timeout = 3000 },
 			quickfile = { enabled = true },
+			explorer = { enabled = true },
 			picker = {
 				sources = {
 					explorer = {
@@ -550,6 +551,15 @@ return {
 					dashboard_spacers(4),
 					{ section = "startup" },
 				},
+			},
+		},
+		keys = {
+			{
+				"<leader>e",
+				function()
+					require("snacks").explorer()
+				end,
+				desc = "File explorer",
 			},
 		},
 		init = function()
