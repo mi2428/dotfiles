@@ -50,6 +50,7 @@ alias gp='g p'
 alias gs='g s'
 
 alias gdd='g dd'
+alias gpl='g pl'
 alias ldk='lazydocker'
 
 function __git_delta_lazygit
