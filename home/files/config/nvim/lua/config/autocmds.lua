@@ -33,6 +33,28 @@ local function is_ansible_yaml_path(path)
 	return false
 end
 
+autocmd("BufWritePre", {
+	desc = "Create missing parent directories before writing",
+	group = augroup("dotfiles-create-parent-directory", { clear = true }),
+	callback = function(args)
+		if vim.bo[args.buf].buftype ~= "" then
+			return
+		end
+
+		local filename = vim.api.nvim_buf_get_name(args.buf)
+		local directory = filename ~= "" and vim.fs.dirname(filename) or nil
+		if not directory or vim.fn.isdirectory(directory) == 1 then
+			return
+		end
+
+		local confirmed = vim.v.cmdbang == 1
+			or vim.fn.confirm(("Create missing directory?\n%s"):format(directory), "&Yes\n&No", 2) == 1
+		if confirmed then
+			vim.fn.mkdir(directory, "p")
+		end
+	end,
+})
+
 autocmd("TextYankPost", {
 	desc = "Highlight when yanking text",
 	group = augroup("dotfiles-highlight-yank", { clear = true }),
