@@ -30,8 +30,9 @@ function usage
         '  gh-review --local [base-ref]' \
         '' \
         'Open a tmux review session using:' \
-        '  - top pane: the complete review diff, rendered with delta when available' \
-        '  - bottom pane: Neovim for editing/navigation' \
+        '  - left pane: a Broot tree limited to files in the review diff' \
+        '  - top-right pane: the complete review diff, rendered with delta when available' \
+        '  - bottom-right pane: Neovim for editing/navigation' \
         '' \
         'PR reviews create or reuse a detached review worktree under:' \
         '  ~/.cache/gh-review/<owner>/<repo>/pr-<number>' \
@@ -58,16 +59,79 @@ function run_diff_pane --argument-names diff_ref user_shell
     exec "$user_shell"
 end
 
-function run_edit_pane --argument-names user_shell
-    set -l target_files $argv[2..-1]
+function run_edit_pane --argument-names user_shell nvim_server
+    set -l target_files $argv[3..-1]
 
     if test (count $target_files) -gt 0
-        nvim -- $target_files
+        nvim --listen "$nvim_server" -- $target_files
     else
-        nvim
+        nvim --listen "$nvim_server"
     end
 
+    command rm -f -- "$nvim_server"
     exec "$user_shell"
+end
+
+function run_broot_pane --argument-names user_shell broot_config review_files_dir
+    broot \
+        --conf "$broot_config" \
+        --hidden \
+        --no-dates \
+        --no-permissions \
+        --no-show-git-info \
+        --no-sizes \
+        --tree \
+        --trim-root \
+        "$review_files_dir"
+    exec "$user_shell"
+end
+
+function open_review_file --argument-names selected
+    for name in NVIM_REVIEW_FILES NVIM_REVIEW_WORKTREE NVIM_REVIEW_SERVER NVIM_REVIEW_PANE
+        set -q $name; or die "missing review environment: $name"
+    end
+
+    set -l relative (string replace -- "$NVIM_REVIEW_FILES/" '' "$selected")
+    if test "$relative" = "$selected"; or string match -q -- '../*' "$relative"
+        die "refusing file outside the review tree: $selected"
+    end
+
+    set -l target "$NVIM_REVIEW_WORKTREE/$relative"
+    test -f "$target"; or die "review file no longer exists: $relative"
+
+    for attempt in (seq 1 50)
+        test -S "$NVIM_REVIEW_SERVER"; and break
+        sleep 0.1
+    end
+
+    test -S "$NVIM_REVIEW_SERVER"; or die "Neovim server is not available: $NVIM_REVIEW_SERVER"
+    nvim --server "$NVIM_REVIEW_SERVER" --remote "$target"; or return 1
+    tmux select-pane -t "$NVIM_REVIEW_PANE"
+end
+
+function prepare_review_files --argument-names review_files_dir
+    set -l target_files $argv[2..-1]
+
+    mkdir -p "$review_files_dir"
+
+    for target in $target_files
+        set -l destination "$review_files_dir/$target"
+        mkdir -p (path dirname "$destination")
+        touch "$destination"
+    end
+end
+
+function prepare_broot_config --argument-names config_file self_path
+    string match -q "*'*" "$self_path"; and die "unsupported quote in gh-review path: $self_path"
+
+    printf '%s\n' \
+        '[[verbs]]' \
+        'name = "open in review Neovim"' \
+        'key = "enter"' \
+        'apply_to = "file"' \
+        "external = ['$self_path', '--open-file', '{file}']" \
+        'leave_broot = false' \
+        'switch_terminal = false' >"$config_file"
 end
 
 function is_binary_diff_file --argument-names worktree_path diff_ref path
@@ -223,8 +287,19 @@ if test (count $argv) -ge 1
             run_diff_pane "$argv[2]" "$argv[3]"
             exit 0
         case --edit-pane
-            test (count $argv) -ge 2; or die '--edit-pane requires a user shell'
-            run_edit_pane "$argv[2]" $argv[3..-1]
+            test (count $argv) -ge 3; or die '--edit-pane requires a user shell and Neovim server address'
+            run_edit_pane "$argv[2]" "$argv[3]" $argv[4..-1]
+            exit 0
+        case --broot-pane
+            test (count $argv) -eq 4; or die '--broot-pane requires a shell, config, and file tree'
+            need_cmd broot
+            run_broot_pane "$argv[2]" "$argv[3]" "$argv[4]"
+            exit 0
+        case --open-file
+            test (count $argv) -eq 2; or die '--open-file requires a selected review file'
+            need_cmd nvim
+            need_cmd tmux
+            open_review_file "$argv[2]"
             exit 0
     end
 end
@@ -232,6 +307,7 @@ end
 need_cmd git
 need_cmd tmux
 need_cmd nvim
+need_cmd broot
 
 set -l repo_root (git rev-parse --show-toplevel 2>/dev/null); or die 'run this inside a git repository'
 builtin cd "$repo_root"
@@ -266,12 +342,16 @@ set -l less_bin less
 set -l size (__dotfiles_git_ui_current_terminal_size)
 set -l session_width $size[1]
 set -l session_height $size[2]
+set -l cache_home "$HOME/.cache"
 
 if set -q SHELL
     set user_shell "$SHELL"
 end
 if command -q less
     set less_bin (command -s less)
+end
+if set -q XDG_CACHE_HOME
+    set cache_home "$XDG_CACHE_HOME"
 end
 
 if test "$mode" = local
@@ -337,10 +417,6 @@ else
 
     set -l remote (detect_remote "$repo_owner" "$repo_name")
     set review_base "$remote/$base_ref"
-    set -l cache_home "$HOME/.cache"
-    if set -q XDG_CACHE_HOME
-        set cache_home "$XDG_CACHE_HOME"
-    end
     set -l cache_root "$cache_home/gh-review/$repo_owner/$repo_name"
     set worktree_path "$cache_root/pr-$pr_number"
     set -l head_slug (__dotfiles_git_ui_slugify "$head_ref")
@@ -384,19 +460,35 @@ for path in (git -C "$worktree_path" diff --name-only --diff-filter=ACMR "$revie
 end
 
 set -l diff_ref "$review_base...HEAD"
-set -l diff_cmd (string join ' ' -- (string escape -- "$__dotfiles_gh_review_self_path" --diff-pane "$diff_ref" "$user_shell"))
-set -l edit_cmd (string join ' ' -- (string escape -- "$__dotfiles_gh_review_self_path" --edit-pane "$user_shell" $edit_targets))
+set -l runtime_root "$cache_home/gh-review/sessions/$session_name"
+set -l review_files_dir "$runtime_root/files"
+set -l broot_config "$runtime_root/broot.toml"
+set -l nvim_server "/tmp/gh-review-"(id -u)"-"$fish_pid".sock"
 
-tmux new-session -d -x "$session_width" -y "$session_height" -s "$session_name" -n "$window_name" -c "$worktree_path" "$diff_cmd"
+command rm -rf -- "$runtime_root"
+mkdir -p "$runtime_root"
+prepare_review_files "$review_files_dir" $edit_targets
+prepare_broot_config "$broot_config" "$__dotfiles_gh_review_self_path"
+
+set -l diff_cmd (string join ' ' -- (string escape -- "$__dotfiles_gh_review_self_path" --diff-pane "$diff_ref" "$user_shell"))
+set -l edit_cmd (string join ' ' -- (string escape -- "$__dotfiles_gh_review_self_path" --edit-pane "$user_shell" "$nvim_server" $edit_targets))
+
+set -l diff_pane (tmux new-session -d -P -F '#{pane_id}' -x "$session_width" -y "$session_height" -s "$session_name" -n "$window_name" -c "$worktree_path" "$diff_cmd")
 set_tmux_env "$session_name" NVIM_REVIEW_MODE 1
 set_tmux_env "$session_name" NVIM_REVIEW_BASE "$review_base"
 set_tmux_env "$session_name" NVIM_REVIEW_HEAD HEAD
 set_tmux_env "$session_name" NVIM_REVIEW_PR "$pr_number"
 set_tmux_env "$session_name" NVIM_REVIEW_REPO_ROOT "$repo_root"
 set_tmux_env "$session_name" NVIM_REVIEW_WORKTREE "$worktree_path"
+set_tmux_env "$session_name" NVIM_REVIEW_SERVER "$nvim_server"
+set_tmux_env "$session_name" NVIM_REVIEW_FILES "$review_files_dir"
 tmux resize-window -x "$session_width" -y "$session_height" -t "$session_name:$window_name"
-tmux split-window -v -p 55 -t "$session_name:$window_name.0" -c "$worktree_path" "$edit_cmd"
-tmux select-pane -t "$session_name:$window_name.1"
+set -l broot_pane (tmux split-window -h -b -p 25 -P -F '#{pane_id}' -t "$diff_pane" -c "$review_files_dir" "$user_shell")
+set -l edit_pane (tmux split-window -v -p 50 -P -F '#{pane_id}' -t "$diff_pane" -c "$worktree_path" "$edit_cmd")
+set_tmux_env "$session_name" NVIM_REVIEW_PANE "$edit_pane"
+set -l broot_cmd (string join ' ' -- (string escape -- "$__dotfiles_gh_review_self_path" --broot-pane "$user_shell" "$broot_config" "$review_files_dir"))
+tmux respawn-pane -k -t "$broot_pane" -c "$review_files_dir" "$broot_cmd"
+tmux select-pane -t "$edit_pane"
 
 if test -n "$pr_number"
     printf 'gh-review: session=%s pr=#%s base=%s worktree=%s\n' \
