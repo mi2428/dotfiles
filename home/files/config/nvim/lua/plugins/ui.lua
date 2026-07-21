@@ -429,7 +429,10 @@ return {
 		lazy = false,
 		dependencies = { "nvim-tree/nvim-web-devicons" },
 		opts = {
-			bigfile = { enabled = true },
+			-- Avoid treating every unloaded quickfix source buffer as a one-line
+			-- "bigfile". Keep the size-based guard, but do not use the average-line
+			-- heuristic until a buffer has been read.
+			bigfile = { enabled = true, line_length = math.huge },
 			git = { enabled = true },
 			notifier = { enabled = true, timeout = 3000 },
 			quickfile = { enabled = true },
@@ -624,7 +627,7 @@ return {
 	},
 	{
 		"stevearc/quicker.nvim",
-		ft = "qf",
+		lazy = false,
 		keys = {
 			{
 				"<leader>q",
@@ -642,6 +645,11 @@ return {
 			},
 		},
 		opts = {
+			highlight = {
+				treesitter = true,
+				lsp = false,
+				load_buffers = false,
+			},
 			keys = {
 				{
 					">",
