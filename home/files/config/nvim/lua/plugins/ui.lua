@@ -366,6 +366,9 @@ return {
 				-- Use Catppuccin's muted surface colours so completion menus remain
 				-- distinct without breaking the transparent editor background.
 				return {
+					Search = { fg = colors.base, bg = colors.yellow, bold = true },
+					CurSearch = { fg = colors.base, bg = colors.mauve, bold = true },
+					IncSearch = { fg = colors.base, bg = colors.peach, bold = true },
 					BlinkCmpMenu = { fg = colors.text, bg = colors.none },
 					BlinkCmpMenuBorder = { fg = colors.surface2, bg = colors.none },
 					BlinkCmpMenuSelection = { fg = colors.text, bg = colors.surface0, bold = true },
