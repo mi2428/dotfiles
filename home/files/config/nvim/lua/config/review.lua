@@ -316,7 +316,8 @@ function M.open(split)
 end
 
 local function collect_explorer_statuses(cwd)
-	local raw, err = git({ "diff", "--name-status", "-z", "--find-renames", M.state.merge_base, "--" }, M.state.worktree)
+	local raw, err =
+		git({ "diff", "--name-status", "-z", "--find-renames", M.state.merge_base, "--" }, M.state.worktree)
 	if not raw then
 		vim.notify(("Unable to collect review file statuses: %s"):format(err or "unknown error"), vim.log.levels.ERROR)
 		return {}
@@ -383,7 +384,16 @@ local function open_review_explorer()
 		end
 	end
 
-	require("snacks").explorer({ cwd = M.state.worktree })
+	local editor_win = vim.api.nvim_get_current_win()
+	require("snacks").explorer({
+		cwd = M.state.worktree,
+		focus = false,
+		on_show = function()
+			if vim.api.nvim_win_is_valid(editor_win) then
+				vim.api.nvim_set_current_win(editor_win)
+			end
+		end,
+	})
 end
 
 function M.setup()
