@@ -372,6 +372,11 @@ return {
 					BlinkCmpDoc = { fg = colors.text, bg = colors.none },
 					BlinkCmpDocBorder = { fg = colors.surface2, bg = colors.none },
 					BlinkCmpDocSeparator = { fg = colors.surface2, bg = colors.none },
+					-- Keep rendered Markdown code distinct from the transparent editor base.
+					-- Ghostty applies its configured cell opacity to these backgrounds.
+					RenderMarkdownCode = { bg = colors.surface1 },
+					RenderMarkdownCodeBorder = { bg = colors.surface1 },
+					RenderMarkdownCodeInline = { bg = colors.surface1 },
 				}
 			end,
 		},
