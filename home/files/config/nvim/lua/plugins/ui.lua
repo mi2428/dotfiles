@@ -1,5 +1,6 @@
 local catppuccin = require("config.catppuccin")
 local colors = catppuccin.palette()
+local tab_pill = require("config.tab_pill")
 
 local function dashboard_square_row(glyphs)
 	local groups = {
@@ -196,9 +197,10 @@ local function dropbar_enabled(buf, win)
 end
 
 local function bufferline_highlights()
-	local current = colors.lavender
-	local inactive = colors.surface0
-	local fill = "NONE"
+	local pill = tab_pill.palette()
+	local current = pill.active
+	local inactive = pill.inactive
+	local fill = pill.fill
 	local label = colors.crust
 
 	return require("catppuccin.special.bufferline").get_theme({
@@ -257,9 +259,9 @@ local function setup_bufferline_style()
 end
 
 local function set_bufferline_pill_highlights()
-	local fill = "NONE"
-	vim.api.nvim_set_hl(0, "BufferLinePillInactive", { fg = colors.surface0, bg = fill })
-	vim.api.nvim_set_hl(0, "BufferLinePillSelected", { fg = colors.lavender, bg = fill })
+	local pill = tab_pill.palette()
+	vim.api.nvim_set_hl(0, "BufferLinePillInactive", { fg = pill.inactive, bg = pill.fill })
+	vim.api.nvim_set_hl(0, "BufferLinePillSelected", { fg = pill.active, bg = pill.fill })
 end
 
 local function set_bufferline_group_highlights()
@@ -451,6 +453,20 @@ return {
 				win = {
 					position = "bottom",
 					height = 0.4,
+					stack = false,
+					wo = {
+						winbar = "%!v:lua.dotfiles_terminal_winbar()",
+						winfixheight = true,
+						winhighlight = table.concat({
+							"Normal:SnacksNormal",
+							"NormalNC:SnacksNormalNC",
+							"WinBar:TerminalTabFill",
+							"WinBarNC:TerminalTabFill",
+							"FloatTitle:SnacksTitle",
+							"FloatFooter:SnacksFooter",
+							"WinSeparator:SnacksWinSeparator",
+						}, ","),
+					},
 				},
 			},
 			picker = {
@@ -574,10 +590,42 @@ return {
 			{
 				"<C-\\>",
 				function()
-					require("snacks").terminal.toggle()
+					require("config.terminal").toggle()
 				end,
 				mode = { "n", "t" },
-				desc = "Toggle terminal",
+				desc = "Toggle terminal pane",
+			},
+			{
+				"<leader>Tn",
+				function()
+					require("config.terminal").new()
+				end,
+				mode = { "n", "t" },
+				desc = "New terminal tab",
+			},
+			{
+				"[T",
+				function()
+					require("config.terminal").previous()
+				end,
+				mode = { "n", "t" },
+				desc = "Previous terminal tab",
+			},
+			{
+				"]T",
+				function()
+					require("config.terminal").next()
+				end,
+				mode = { "n", "t" },
+				desc = "Next terminal tab",
+			},
+			{
+				"<leader>Tx",
+				function()
+					require("config.terminal").close()
+				end,
+				mode = { "n", "t" },
+				desc = "Close terminal tab",
 			},
 			{
 				"<leader>e",
@@ -598,6 +646,7 @@ return {
 			local snacks = require("snacks")
 
 			snacks.setup(opts)
+			require("config.terminal").setup()
 			patch_snacks_dashboard()
 			snacks.config.styles.dashboard.wo.foldcolumn = "0"
 		end,
