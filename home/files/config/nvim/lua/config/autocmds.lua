@@ -63,6 +63,48 @@ autocmd("TextYankPost", {
 	end,
 })
 
+local function only_explorer_windows(excluded_win)
+	if not _G.Snacks or not Snacks.picker then
+		return false
+	end
+
+	local explorer_windows = {}
+	for _, picker in ipairs(Snacks.picker.get({ source = "explorer", tab = false })) do
+		local root = picker.layout and picker.layout.root
+		if root and root.win then
+			explorer_windows[root.win] = true
+		end
+	end
+
+	local has_explorer = false
+	for _, win in ipairs(vim.api.nvim_list_wins()) do
+		if win ~= excluded_win and vim.api.nvim_win_get_config(win).relative == "" then
+			if not explorer_windows[win] then
+				return false
+			end
+			has_explorer = true
+		end
+	end
+
+	return has_explorer
+end
+
+autocmd("QuitPre", {
+	desc = "Exit Neovim when quitting the last editor window leaves only Snacks Explorer",
+	group = augroup("dotfiles-quit-with-only-explorer", { clear = true }),
+	callback = function()
+		if not only_explorer_windows(vim.api.nvim_get_current_win()) then
+			return
+		end
+
+		vim.schedule(function()
+			if only_explorer_windows() then
+				vim.cmd.quitall()
+			end
+		end)
+	end,
+})
+
 autocmd("VimEnter", {
 	desc = "Open a file picker for a directory argument",
 	group = augroup("dotfiles-directory-argument-picker", { clear = true }),
