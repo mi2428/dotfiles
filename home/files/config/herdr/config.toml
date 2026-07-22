@@ -10,6 +10,8 @@ prefix = "ctrl+t"
 # Carry over the tmux muscle memory from etc/tmux/tmux.conf.
 detach = "prefix+d"
 new_tab = "prefix+c"
+close_tab = "prefix+q"
+close_workspace = "prefix+shift+q"
 goto = ""
 toggle_sidebar = "prefix+b"
 focus_pane_left = "prefix+h"
