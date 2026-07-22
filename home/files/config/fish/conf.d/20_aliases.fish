@@ -131,6 +131,73 @@ function __dotfiles_git_subcommand_b
         return $status
     end
 
+    if test (count $argv) -ge 1; and contains -- "$argv[1]" -w --worktree
+        set -l args $argv[2..-1]
+        set -l create 0
+        set -l branch ''
+        set -l start_ref ''
+
+        while test (count $args) -gt 0
+            switch "$args[1]"
+                case -c --create
+                    set create 1
+                case --from
+                    set args $args[2..-1]
+                    test (count $args) -gt 0; or begin
+                        printf 'g b: --from requires a ref\n' >&2
+                        return 2
+                    end
+                    set start_ref "$args[1]"
+                case --
+                    set args $args[2..-1]
+                    if test (count $args) -gt 0
+                        test -z "$branch"; and test (count $args) -eq 1; or begin
+                            printf 'g b: expected one branch\n' >&2
+                            return 2
+                        end
+                        set branch "$args[1]"
+                    end
+                    break
+                case '-*'
+                    printf 'g b: unknown worktree option: %s\n' "$args[1]" >&2
+                    return 2
+                case '*'
+                    test -z "$branch"; or begin
+                        printf 'g b: expected one branch\n' >&2
+                        return 2
+                    end
+                    set branch "$args[1]"
+            end
+            set args $args[2..-1]
+        end
+
+        set -l result
+        if test $create -eq 1
+            test -n "$branch"; or begin
+                printf 'g b: -c requires a branch\n' >&2
+                return 2
+            end
+            set result (command git-b __create-worktree "$branch" "$start_ref")
+        else
+            test -z "$start_ref"; or begin
+                printf 'g b: --from requires -c\n' >&2
+                return 2
+            end
+            set result (command git-b __resolve-worktree "$branch")
+        end
+        set -l status_code $status
+        test $status_code -eq 0; or return $status_code
+
+        set -l parts (string split \t -- "$result")
+        test "$parts[1]" = cd; and test -n "$parts[2]"; or begin
+            printf 'g b: invalid worktree action\n' >&2
+            return 1
+        end
+        builtin cd -- "$parts[2]"
+        and __dotfiles_list_dir
+        return $status
+    end
+
     if test (count $argv) -gt 0
         command git branch $argv
         return $status

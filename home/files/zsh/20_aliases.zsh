@@ -915,6 +915,61 @@ __dotfiles_git_subcommand_b() {
     return $?
   fi
 
+  if (( $# >= 1 )) && [[ "$1" == "-w" || "$1" == "--worktree" ]]; then
+    shift
+    local create=0 branch='' start_ref=''
+
+    while (( $# > 0 )); do
+      case "$1" in
+        -c|--create)
+          create=1
+          ;;
+        --from)
+          shift
+          (( $# > 0 )) || { printf 'g b: --from requires a ref\n' >&2; return 2; }
+          start_ref="$1"
+          ;;
+        --)
+          shift
+          if (( $# > 0 )); then
+            [[ -z "$branch" && $# == 1 ]] || { printf 'g b: expected one branch\n' >&2; return 2; }
+            branch="$1"
+          fi
+          break
+          ;;
+        -*)
+          printf 'g b: unknown worktree option: %s\n' "$1" >&2
+          return 2
+          ;;
+        *)
+          [[ -z "$branch" ]] || { printf 'g b: expected one branch\n' >&2; return 2; }
+          branch="$1"
+          ;;
+      esac
+      shift
+    done
+
+    local worktree_result worktree_status
+    if (( create )); then
+      [[ -n "$branch" ]] || { printf 'g b: -c requires a branch\n' >&2; return 2; }
+      worktree_result="$(command git-b __create-worktree "$branch" "$start_ref")"
+    else
+      [[ -z "$start_ref" ]] || { printf 'g b: --from requires -c\n' >&2; return 2; }
+      worktree_result="$(command git-b __resolve-worktree "$branch")"
+    fi
+    worktree_status=$?
+    (( worktree_status == 0 )) || return $worktree_status
+
+    local worktree_action worktree_path worktree_branch
+    IFS=$'\t' read -r worktree_action worktree_path worktree_branch _ <<< "$worktree_result"
+    [[ "$worktree_action" == cd && -n "$worktree_path" ]] || {
+      printf 'g b: invalid worktree action\n' >&2
+      return 1
+    }
+    builtin cd -- "$worktree_path" && __dotfiles_list_dir
+    return $?
+  fi
+
   if (( $# > 0 )); then
     command git branch "$@"
     return $?

@@ -36,6 +36,124 @@ function branch_worktree_path --argument-names branch
     git for-each-ref --format='%(worktreepath)' "refs/heads/$branch" | head -n 1
 end
 
+function main_worktree_root
+    git worktree list --porcelain \
+        | string replace -rf '^worktree ' '' \
+        | head -n 1
+end
+
+function worktree_path_for_branch --argument-names branch
+    set -l main_root (main_worktree_root)
+    test -n "$main_root"; or die 'could not determine the main worktree'
+
+    set -l container "$main_root.worktrees"
+    if set -q WORK_WORKTREE_HOME; and test -n "$WORK_WORKTREE_HOME"
+        set -l repo_slug (__dotfiles_git_ui_slugify (path basename "$main_root"))
+        test -n "$repo_slug"; or set repo_slug repository
+        set container (path normalize "$WORK_WORKTREE_HOME/$repo_slug")
+    end
+
+    set -l branch_slug (string replace -ar '[^[:alnum:]._-]+' '-' -- "$branch")
+    set branch_slug (string trim -c - -- "$branch_slug")
+    test -n "$branch_slug"; or die "could not derive a worktree path for branch $branch"
+
+    printf '%s\n' "$container/$branch_slug"
+end
+
+function print_worktree_action --argument-names worktree_path branch
+    set -l resolved (canonical_path "$worktree_path"); or die "worktree path does not exist: $worktree_path"
+    printf 'cd\t%s\t%s\n' "$resolved" "$branch"
+end
+
+function add_worktree --argument-names branch start_ref track
+    set -l worktree_path (worktree_path_for_branch "$branch")
+    set -l container (path dirname "$worktree_path")
+
+    if test -e "$worktree_path"
+        die "worktree destination already exists: $worktree_path"
+    end
+
+    command mkdir -p -- "$container"; or die "could not create worktree directory: $container"
+
+    if test "$track" = 1
+        command git worktree add --track -b "$branch" "$worktree_path" "$start_ref" >&2; or return $status
+    else if git show-ref --verify --quiet "refs/heads/$branch"
+        command git worktree add "$worktree_path" "$branch" >&2; or return $status
+    else
+        command git worktree add -b "$branch" "$worktree_path" "$start_ref" >&2; or return $status
+    end
+
+    print_worktree_action "$worktree_path" "$branch"
+end
+
+function resolve_selected_worktree --argument-names ref kind switch_target selected_worktree
+    prune_worktrees
+
+    if test "$selected_worktree" != -; and test -n "$selected_worktree"
+        print_worktree_action "$selected_worktree" "$switch_target"
+        return
+    end
+
+    if test "$kind" = remote
+        if git show-ref --verify --quiet "refs/heads/$switch_target"
+            set -l local_worktree (branch_worktree_path "$switch_target")
+            if test -n "$local_worktree"
+                print_worktree_action "$local_worktree" "$switch_target"
+            else
+                add_worktree "$switch_target" "$switch_target" 0
+            end
+        else
+            add_worktree "$switch_target" "$ref" 1
+        end
+        return
+    end
+
+    add_worktree "$ref" "$ref" 0
+end
+
+function resolve_worktree --argument-names requested_branch
+    git rev-parse --is-inside-work-tree >/dev/null 2>/dev/null; or die 'not inside a git work tree'
+
+    if test -n "$requested_branch"
+        if git show-ref --verify --quiet "refs/heads/$requested_branch"
+            resolve_selected_worktree "$requested_branch" local "$requested_branch" (branch_worktree_path "$requested_branch")
+            return
+        end
+
+        if git show-ref --verify --quiet "refs/remotes/$requested_branch"
+            set -l switch_target (string replace -r '^[^/]+/' '' -- "$requested_branch")
+            resolve_selected_worktree "$requested_branch" remote "$switch_target" -
+            return
+        end
+
+        set -l remote_matches (git for-each-ref --format='%(refname:short)' "refs/remotes/*/$requested_branch")
+        if test (count $remote_matches) -eq 0
+            die "branch not found: $requested_branch (use -c to create it)"
+        else if test (count $remote_matches) -gt 1
+            die "branch is ambiguous across remotes: $requested_branch"
+        end
+
+        set -l remote_ref "$remote_matches[1]"
+        resolve_selected_worktree "$remote_ref" remote "$requested_branch" -
+        return
+    end
+
+    set -l selected (branch_picker); or return $status
+    set -l fields (string split \t -- "$selected")
+    resolve_selected_worktree "$fields[1]" "$fields[2]" "$fields[3]" "$fields[4]"
+end
+
+function create_worktree --argument-names branch start_ref
+    git rev-parse --is-inside-work-tree >/dev/null 2>/dev/null; or die 'not inside a git work tree'
+    test -n "$branch"; or die 'creating a worktree requires a branch name'
+    git check-ref-format --branch "$branch" >/dev/null; or die "invalid branch name: $branch"
+    git show-ref --verify --quiet "refs/heads/$branch"; and die "branch already exists: $branch"
+
+    test -n "$start_ref"; or set start_ref HEAD
+    git rev-parse --verify --quiet "$start_ref^{commit}" >/dev/null; or die "invalid start ref: $start_ref"
+    add_worktree "$branch" "$start_ref" 0
+end
+
 function print_preview --argument-names ref kind worktree_path
     set -l info_ref "refs/heads/$ref"
 
@@ -283,6 +401,15 @@ function main
                 set -l selected (branch_picker); or return $status
                 set -l fields (string split \t -- "$selected")
                 switch_to_selected "$fields[1]" "$fields[2]" "$fields[3]" "$fields[4]"
+                return $status
+            case __resolve-worktree
+                test (count $argv) -le 2; or die '__resolve-worktree accepts at most one branch'
+                resolve_worktree "$argv[2]"
+                return $status
+            case __create-worktree
+                test (count $argv) -ge 2; or die '__create-worktree requires a branch'
+                test (count $argv) -le 3; or die '__create-worktree accepts at most one start ref'
+                create_worktree "$argv[2]" "$argv[3]"
                 return $status
             case __delete-branches
                 git rev-parse --is-inside-work-tree >/dev/null 2>/dev/null || die 'not inside a git work tree'
