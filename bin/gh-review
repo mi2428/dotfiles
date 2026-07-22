@@ -30,9 +30,8 @@ function usage
         '  gh-review --local [base-ref]' \
         '' \
         'Open a tmux review session using:' \
-        '  - top pane: the complete review diff, rendered with delta when available' \
-        '  - middle pane: Neovim with a Snacks Explorer sidebar' \
-        '  - bottom pane: a full-width interactive shell' \
+        '  - top pane: Neovim with a Snacks Explorer sidebar' \
+        '  - bottom pane: the complete review diff, rendered with delta when available' \
         '' \
         'PR reviews create or reuse a detached review worktree under:' \
         '  ~/.cache/gh-review/<owner>/<repo>/pr-<number>' \
@@ -400,8 +399,7 @@ set_tmux_env "$session_name" NVIM_REVIEW_REPO_ROOT "$repo_root"
 set_tmux_env "$session_name" NVIM_REVIEW_WORKTREE "$worktree_path"
 set_tmux_env "$session_name" NVIM_REVIEW_SERVER "$nvim_server"
 tmux resize-window -x "$session_width" -y "$session_height" -t "$session_name:$window_name"
-set -l edit_pane (tmux split-window -v -p 66 -P -F '#{pane_id}' -t "$diff_pane" -c "$worktree_path" "$edit_cmd")
-tmux split-window -v -p 32 -t "$edit_pane" -c "$worktree_path" "$user_shell"
+set -l edit_pane (tmux split-window -v -b -p 66 -P -F '#{pane_id}' -t "$diff_pane" -c "$worktree_path" "$edit_cmd")
 tmux select-pane -t "$edit_pane"
 
 if test -n "$pr_number"
