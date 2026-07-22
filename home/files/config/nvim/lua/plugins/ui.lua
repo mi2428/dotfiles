@@ -444,6 +444,12 @@ return {
 			notifier = { enabled = true, timeout = 3000 },
 			quickfile = { enabled = true },
 			explorer = { enabled = true },
+			terminal = {
+				win = {
+					position = "bottom",
+					height = 0.4,
+				},
+			},
 			picker = {
 				sources = {
 					explorer = {
@@ -562,6 +568,14 @@ return {
 			},
 		},
 		keys = {
+			{
+				"<C-\\>",
+				function()
+					require("snacks").terminal.toggle()
+				end,
+				mode = { "n", "t" },
+				desc = "Toggle terminal",
+			},
 			{
 				"<leader>e",
 				function()
