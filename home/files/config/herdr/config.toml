@@ -12,6 +12,7 @@ detach = "prefix+d"
 new_tab = "prefix+c"
 close_tab = "prefix+q"
 close_workspace = "prefix+shift+q"
+new_worktree = ""
 goto = ""
 toggle_sidebar = "prefix+b"
 focus_pane_left = "prefix+h"
@@ -29,6 +30,15 @@ type = "popup"
 # the popup-only override so the regular lazygit command remains side-by-side.
 command = "if command -v fish >/dev/null 2>&1; then exec fish -lc 'set -lx LG_CONFIG_FILE \"$LG_CONFIG_FILE,$HOME/.config/herdr/lazygit-unified.yml\"; exec lazygit'; else exec env LG_CONFIG_FILE=\"${LG_CONFIG_FILE:+$LG_CONFIG_FILE,}$HOME/.config/herdr/lazygit-unified.yml\" lazygit; fi"
 description = "run lazygit"
+width = "90%"
+height = "90%"
+
+[[keys.command]]
+key = "prefix+shift+g"
+type = "popup"
+# Match tmux's prefix+G origin-to-HEAD diff popup in the focused pane's cwd.
+command = "exec fish -lc 'git-origin-diff; set -l rc $status; if test $rc -ne 0; echo; read -P \"Press Enter to close\"; end; exit $rc'"
+description = "show origin → HEAD diff"
 width = "90%"
 height = "90%"
 
