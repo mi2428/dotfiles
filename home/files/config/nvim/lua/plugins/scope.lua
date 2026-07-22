@@ -33,15 +33,15 @@ end
 
 local function set_scope_highlights()
 	vim.api.nvim_set_hl(0, "MiniIndentscopeSymbol", { fg = colors.lavender, nocombine = true })
-	vim.api.nvim_set_hl(0, "TreesitterContext", { fg = colors.text, bg = colors.mantle })
-	vim.api.nvim_set_hl(0, "TreesitterContextLineNumber", { fg = colors.overlay1, bg = colors.mantle })
+	vim.api.nvim_set_hl(0, "TreesitterContext", { fg = colors.text, bg = colors.surface0 })
+	vim.api.nvim_set_hl(0, "TreesitterContextLineNumber", { fg = colors.overlay1, bg = colors.surface0 })
 	vim.api.nvim_set_hl(0, "TreesitterContextBottom", { sp = colors.surface2, underline = true })
 	vim.api.nvim_set_hl(
 		0,
 		"TreesitterContextLineNumberBottom",
-		{ fg = colors.overlay1, bg = colors.mantle, sp = colors.surface2, underline = true }
+		{ fg = colors.overlay1, bg = colors.surface0, sp = colors.surface2, underline = true }
 	)
-	vim.api.nvim_set_hl(0, "TreesitterContextSeparator", { fg = colors.surface2, bg = colors.mantle })
+	vim.api.nvim_set_hl(0, "TreesitterContextSeparator", { fg = colors.surface2, bg = colors.surface0 })
 end
 
 return {
