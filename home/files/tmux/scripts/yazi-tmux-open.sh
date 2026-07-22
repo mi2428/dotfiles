@@ -43,8 +43,17 @@ tmux_environment() {
   esac
 }
 
-server=$(tmux_environment NVIM_WORKSPACE_SERVER)
-nvim_pane=$(tmux_environment NVIM_WORKSPACE_PANE)
+server=$("$tmux_bin" show-option -wqv -t "$source_pane" @work_nvim_server 2>/dev/null || true)
+nvim_pane=$("$tmux_bin" show-option -wqv -t "$source_pane" @work_nvim_pane 2>/dev/null || true)
+
+# Fall back for work sessions created before workspace metadata became
+# window-local. This can be removed once those sessions no longer exist.
+if [ -z "$server" ]; then
+  server=$(tmux_environment NVIM_WORKSPACE_SERVER)
+fi
+if [ -z "$nvim_pane" ]; then
+  nvim_pane=$(tmux_environment NVIM_WORKSPACE_PANE)
+fi
 
 tty_name=${pane_tty#/dev/}
 foreground_pgid=$(ps -o tpgid= -t "$tty_name" 2>/dev/null | awk 'NF { print $1; exit }')
