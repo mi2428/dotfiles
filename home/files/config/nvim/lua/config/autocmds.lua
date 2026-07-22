@@ -63,45 +63,71 @@ autocmd("TextYankPost", {
 	end,
 })
 
-local function only_explorer_windows(excluded_win)
-	if not _G.Snacks or not Snacks.picker then
-		return false
-	end
+local function is_empty_editor_window(win)
+	local buf = vim.api.nvim_win_get_buf(win)
+	return vim.bo[buf].buftype == ""
+		and vim.bo[buf].filetype == ""
+		and vim.api.nvim_buf_get_name(buf) == ""
+		and not vim.bo[buf].modified
+		and vim.api.nvim_buf_line_count(buf) == 1
+		and vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] == ""
+end
 
-	local explorer_windows = {}
-	for _, picker in ipairs(Snacks.picker.get({ source = "explorer", tab = false })) do
-		local root = picker.layout and picker.layout.root
-		if root and root.win then
-			explorer_windows[root.win] = true
-		end
-	end
-
-	local has_explorer = false
+local function only_snacks_or_empty_windows()
+	local has_snacks = false
 	for _, win in ipairs(vim.api.nvim_list_wins()) do
-		if win ~= excluded_win and vim.api.nvim_win_get_config(win).relative == "" then
-			if not explorer_windows[win] then
+		if vim.api.nvim_win_get_config(win).relative == "" then
+			local filetype = vim.bo[vim.api.nvim_win_get_buf(win)].filetype
+			local is_snacks = filetype == "snacks_layout_box" or filetype == "snacks_terminal"
+			if not is_snacks and not is_empty_editor_window(win) then
 				return false
 			end
-			has_explorer = true
+			has_snacks = has_snacks or is_snacks
 		end
 	end
 
-	return has_explorer
+	return has_snacks
+end
+
+local function has_modified_user_buffer()
+	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+		if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].modified and vim.bo[buf].filetype ~= "snacks_terminal" then
+			return true
+		end
+	end
+	return false
+end
+
+local snacks_exit_pending = false
+
+local function exit_if_only_snacks()
+	if snacks_exit_pending then
+		return
+	end
+
+	snacks_exit_pending = true
+	vim.schedule(function()
+		snacks_exit_pending = false
+		if only_snacks_or_empty_windows() and not has_modified_user_buffer() then
+			snacks_exit_pending = true
+			vim.cmd("silent! quitall!")
+		end
+	end)
 end
 
 autocmd("QuitPre", {
-	desc = "Exit Neovim when quitting the last editor window leaves only Snacks Explorer",
-	group = augroup("dotfiles-quit-with-only-explorer", { clear = true }),
+	desc = "Exit Neovim when quitting the last editor window leaves only Snacks windows",
+	group = augroup("dotfiles-quit-with-only-snacks", { clear = true }),
 	callback = function()
-		if not only_explorer_windows(vim.api.nvim_get_current_win()) then
-			return
-		end
+		exit_if_only_snacks()
+	end,
+})
 
-		vim.schedule(function()
-			if only_explorer_windows() then
-				vim.cmd.quitall()
-			end
-		end)
+autocmd({ "BufDelete", "WinClosed" }, {
+	desc = "Exit Neovim after the last editor buffer or window closes",
+	group = augroup("dotfiles-exit-after-editor-close", { clear = true }),
+	callback = function()
+		exit_if_only_snacks()
 	end,
 })
 

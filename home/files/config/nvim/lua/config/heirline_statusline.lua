@@ -584,13 +584,13 @@ local InactiveStatusline = {
 	condition = function()
 		return not conditions.is_active()
 	end,
+	hl = function()
+		local colors = get_palette()
+		return { fg = colors.subtext1, bg = colors.surface0 }
+	end,
 	{
 		provider = function()
 			return " " .. string.upper(vim.bo.filetype) .. " "
-		end,
-		hl = function()
-			local colors = get_palette()
-			return { fg = colors.overlay2, bg = colors.mantle }
 		end,
 	},
 }
