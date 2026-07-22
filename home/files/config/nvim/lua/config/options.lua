@@ -149,7 +149,6 @@ local function cursorline_enabled(buf)
 		qf = true,
 		snacks_dashboard = true,
 		terminal = true,
-		toggleterm = true,
 		Trouble = true,
 	}
 

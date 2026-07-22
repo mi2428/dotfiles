@@ -22,7 +22,6 @@ local disabled_filetypes = {
 	qf = true,
 	snacks_dashboard = true,
 	terminal = true,
-	toggleterm = true,
 	Trouble = true,
 }
 
