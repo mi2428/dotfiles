@@ -1,0 +1,83 @@
+#!/usr/bin/env fish
+
+set -l self_path (path resolve (status filename))
+set -l script_dir (path dirname "$self_path")
+set -l helper_file (path resolve "$script_dir/../home/files/config/fish/lib/dotfiles_git_ui_helpers.fish")
+if not test -f "$helper_file"
+    set -l config_home "$HOME/.config"
+    if set -q XDG_CONFIG_HOME; and test -n "$XDG_CONFIG_HOME"
+        set config_home "$XDG_CONFIG_HOME"
+    end
+    set helper_file "$config_home/fish/lib/dotfiles_git_ui_helpers.fish"
+end
+
+source "$helper_file"; or begin
+    printf 'git-origin-diff: failed to source helper: %s\n' "$helper_file" >&2
+    exit 1
+end
+
+function die
+    printf 'git-origin-diff: %s\n' (string join ' ' -- $argv) >&2
+    exit 1
+end
+
+function resolve_base
+    set -l requested_base "$argv[1]"
+    if test -n "$requested_base"
+        git rev-parse --verify --quiet "$requested_base^{commit}" >/dev/null; or die "invalid base ref: $requested_base"
+        printf '%s\n' "$requested_base"
+        return
+    end
+
+    set -l symbolic_ref (git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
+    if test -n "$symbolic_ref"
+        printf '%s\n' "$symbolic_ref"
+    else if git show-ref --verify --quiet refs/remotes/origin/main
+        printf '%s\n' origin/main
+    else if git show-ref --verify --quiet refs/remotes/origin/master
+        printf '%s\n' origin/master
+    else
+        die 'could not determine a base ref (tried origin/HEAD, origin/main, origin/master)'
+    end
+end
+
+function show_empty_diff --argument-names base
+    set -l less_bin less
+    if command -q less
+        set less_bin (command -s less)
+    end
+
+    if isatty stdout; and command -q "$less_bin"
+        printf 'No changes between %s and HEAD.\n' "$base" | "$less_bin" -R
+    else
+        printf 'No changes between %s and HEAD.\n' "$base"
+    end
+end
+
+if test (count $argv) -gt 1; or contains -- "$argv[1]" -h --help
+    printf '%s\n' \
+        'Usage: git-origin-diff [base-ref]' \
+        '' \
+        "Show every committed change from origin's default branch to HEAD." \
+        'The default base resolution order is origin/HEAD, origin/main, origin/master.'
+    test (count $argv) -le 1; and exit 0
+    exit 2
+end
+
+command -q git; or die 'missing required command: git'
+git rev-parse --is-inside-work-tree >/dev/null 2>/dev/null; or die 'not inside a Git work tree'
+
+set -l base (resolve_base "$argv[1]")
+set -l diff_ref "$base...HEAD"
+
+if git diff --quiet "$diff_ref"
+    show_empty_diff "$base"
+else if command -q delta
+    git diff --no-color "$diff_ref" | __dotfiles_git_ui_delta_lazygit
+else
+    set -l less_bin less
+    if command -q less
+        set less_bin (command -s less)
+    end
+    env GIT_PAGER="$less_bin -R -+F" git --paginate diff --color=always "$diff_ref"
+end
