@@ -92,8 +92,12 @@ local function refresh_mode_styles()
 	colors = catppuccin.palette()
 	mode_styles = {
 		default = {
-			fg = colors.peach,
-			bg = colors.surface0,
+			fg = colors.lavender,
+			bg = blend(colors.lavender, colors.base, 0.28),
+		},
+		command = {
+			fg = colors.yellow,
+			bg = blend(colors.yellow, colors.base, 0.28),
 		},
 		copy = {
 			fg = colors.yellow,
@@ -113,19 +117,19 @@ local function refresh_mode_styles()
 		},
 		insert = {
 			fg = colors.teal,
-			bg = blend(colors.teal, colors.base, 0.2),
+			bg = blend(colors.teal, colors.base, 0.26),
 		},
 		replace = {
 			fg = colors.blue,
-			bg = blend(colors.blue, colors.base, 0.2),
+			bg = blend(colors.blue, colors.base, 0.26),
 		},
 		select = {
 			fg = colors.mauve,
 			bg = blend(colors.mauve, colors.base, 0.2),
 		},
 		visual = {
-			fg = colors.lavender,
-			bg = blend(colors.lavender, colors.base, 0.2),
+			fg = colors.mauve,
+			bg = blend(colors.mauve, colors.base, 0.3),
 		},
 	}
 end
@@ -154,6 +158,10 @@ end
 
 local function current_mode_scene()
 	local mode = vim.api.nvim_get_mode().mode
+	if mode:match("^c") then
+		return "command"
+	end
+
 	if mode:match("^i") then
 		return "insert"
 	end
@@ -193,6 +201,8 @@ local function set_statuscolumn_highlights(scene)
 	scene = scene or "default"
 	local style = mode_styles[scene] or mode_styles.default
 
+	vim.api.nvim_set_hl(0, "LineNr", { fg = colors.overlay0 })
+	vim.api.nvim_set_hl(0, "Visual", { bg = blend(colors.mauve, colors.base, 0.4), bold = true })
 	vim.api.nvim_set_hl(0, "CursorLine", { bg = style.bg })
 	vim.api.nvim_set_hl(0, "CursorLineSign", { bg = style.bg })
 	vim.api.nvim_set_hl(0, "CursorLineFold", { bg = style.bg })
@@ -337,6 +347,22 @@ apply_mode_ui()
 
 vim.api.nvim_create_autocmd({ "BufEnter", "FileType", "ModeChanged", "WinEnter" }, {
 	group = vim.api.nvim_create_augroup("dotfiles-cursorline-mode", { clear = true }),
+	callback = function()
+		vim.schedule(apply_mode_ui)
+	end,
+})
+
+vim.api.nvim_create_autocmd("CmdlineEnter", {
+	group = vim.api.nvim_create_augroup("dotfiles-cursorline-command", { clear = true }),
+	callback = function()
+		set_statuscolumn_highlights("command")
+		-- The editing grid is otherwise left with its pre-command-line colors.
+		vim.cmd.redraw({ bang = true })
+	end,
+})
+
+vim.api.nvim_create_autocmd("CmdlineLeave", {
+	group = "dotfiles-cursorline-command",
 	callback = function()
 		vim.schedule(apply_mode_ui)
 	end,
