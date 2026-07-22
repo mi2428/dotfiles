@@ -2,6 +2,7 @@
 
 set -g __dotfiles_work_self_path (path resolve (status filename))
 set -g __dotfiles_work_script_dir (path dirname "$__dotfiles_work_self_path")
+set -g __dotfiles_work_git_b_path "$__dotfiles_work_script_dir/git-b"
 set -l helper_file (path resolve "$__dotfiles_work_script_dir/../home/files/config/fish/lib/dotfiles_git_ui_helpers.fish")
 
 source "$helper_file"; or begin
@@ -20,25 +21,46 @@ end
 
 function usage
     printf '%s\n' \
-        'Usage: work [directory]' \
+        'Usage:' \
+        '  work [directory] [--base ref] [--fetch]' \
+        '  work -w|--worktree [branch] [--base ref] [--fetch]' \
+        '  work -w|--worktree -c|--create branch [--from ref] [--base ref] [--fetch]' \
         '' \
-        'Create or reopen a tmux coding workspace containing:' \
-        '  - code window: Neovim with a right-side Snacks Explorer' \
-        '  - code window: terminal and live Git status panes' \
-        '  - prefix+y popup: Yazi with Neovim socket integration' \
+        'Open a tmux coding workspace where a repository is one session and each' \
+        'worktree is a window containing:' \
+        '  - Neovim with a right-side Snacks Explorer' \
+        '  - terminal and live Git overview panes' \
+        "  - prefix+y popup: Yazi routed to that window's Neovim" \
         '' \
-        'The directory defaults to the current directory and must be in a Git repository.'
+        'With -w and no branch, select one with fzf. Existing worktrees and tmux' \
+        'windows are reused. New branches require -c and default to HEAD.'
 end
 
 function run_nvim_pane --argument-names user_shell server root
     set -lx NVIM_WORKSPACE_MODE 1
+    set -lx NVIM_WORKSPACE_ROOT "$root"
+    set -lx NVIM_WORKSPACE_SERVER "$server"
     nvim --listen "$server" -- "$root"
     command rm -f -- "$server"
     exec "$user_shell"
 end
 
-function run_git_pane --argument-names user_shell
-    viddy -n 1 -d -t -- git -c color.status=always status --short --branch
+function git_dashboard --argument-names root base
+    printf '\033[1mSTATUS\033[0m\n'
+    git -C "$root" -c color.status=always status --short --branch
+
+    if test -n "$base"; and git -C "$root" rev-parse --verify --quiet "$base^{commit}" >/dev/null
+        printf '\n\033[1mCHANGES  %s...HEAD\033[0m\n' "$base"
+        if git -C "$root" diff --quiet "$base...HEAD"
+            printf '(no committed changes)\n'
+        else
+            git -C "$root" diff --stat --compact-summary --color=always "$base...HEAD"
+        end
+    end
+end
+
+function run_git_pane --argument-names user_shell root base
+    viddy -n 1 -d -t -- "$__dotfiles_work_self_path" --git-dashboard "$root" "$base"
     exec "$user_shell"
 end
 
@@ -54,25 +76,193 @@ function switch_or_attach --argument-names session
     end
 end
 
+function resolve_default_base --argument-names root requested_base
+    if test -n "$requested_base"
+        git -C "$root" rev-parse --verify --quiet "$requested_base^{commit}" >/dev/null; or die "invalid base ref: $requested_base"
+        printf '%s\n' "$requested_base"
+        return
+    end
+
+    set -l symbolic_ref (git -C "$root" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
+    if test -n "$symbolic_ref"
+        printf '%s\n' "$symbolic_ref"
+    else if git -C "$root" show-ref --verify --quiet refs/remotes/origin/main
+        printf '%s\n' origin/main
+    else if git -C "$root" show-ref --verify --quiet refs/remotes/origin/master
+        printf '%s\n' origin/master
+    end
+end
+
+function repository_main_root --argument-names root
+    git -C "$root" worktree list --porcelain \
+        | string replace -rf '^worktree ' '' \
+        | head -n 1
+end
+
+function repository_common_dir --argument-names root
+    set -l common_dir (git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); or return 1
+    path resolve "$common_dir"
+end
+
+function window_name_for_root --argument-names root
+    set -l label (git -C "$root" branch --show-current 2>/dev/null)
+    if test -z "$label"
+        set label "detached-"(git -C "$root" rev-parse --short HEAD)
+    end
+
+    set -l slug (__dotfiles_git_ui_slugify "$label")
+    test -n "$slug"; or set slug worktree
+    printf '%s\n' "$slug"
+end
+
+function session_common_dir --argument-names session
+    set -l common_dir (tmux show-option -qv -t "$session" @work_common_dir)
+    if test -n "$common_dir"
+        printf '%s\n' "$common_dir"
+        return
+    end
+
+    # Upgrade sessions created by the original single-worktree implementation.
+    set -l legacy_root (tmux show-option -qv -t "$session" @work_root)
+    if test -n "$legacy_root"; and test -d "$legacy_root"
+        repository_common_dir "$legacy_root"
+    end
+end
+
+function adopt_legacy_window --argument-names session common_dir
+    set -l legacy_root (tmux show-option -qv -t "$session" @work_root)
+    test -n "$legacy_root"; and test -d "$legacy_root"; or return
+
+    set -l first_window (tmux list-windows -t "$session" -F '#{window_id}' | head -n 1)
+    test -n "$first_window"; or return
+    set -l existing_root (tmux show-option -w -qv -t "$first_window" @work_root)
+    if test -z "$existing_root"
+        tmux set-option -w -q -t "$first_window" @work_root (path resolve "$legacy_root")
+    end
+    tmux set-option -q -t "$session" @work_common_dir "$common_dir"
+end
+
+function find_worktree_window --argument-names session root
+    for window_id in (tmux list-windows -t "$session" -F '#{window_id}')
+        set -l window_root (tmux show-option -w -qv -t "$window_id" @work_root)
+        if test "$window_root" = "$root"
+            printf '%s\n' "$window_id"
+            return 0
+        end
+    end
+    return 1
+end
+
+function configure_worktree_window --argument-names session main_pane root base server user_shell
+    set -l terminal_pane (tmux split-window -v -p 20 -P -F '#{pane_id}' -t "$main_pane" -c "$root" "$user_shell"); or return 1
+    set -l git_cmd (string join ' ' -- (string escape -- "$__dotfiles_work_self_path" --git-pane "$user_shell" "$root" "$base"))
+    set -l git_pane (tmux split-window -h -p 30 -P -F '#{pane_id}' -t "$terminal_pane" -c "$root" "$git_cmd"); or return 1
+
+    tmux set-option -w -q -t "$main_pane" @work_root "$root"
+    tmux set-option -w -q -t "$main_pane" @work_base "$base"
+    tmux set-option -w -q -t "$main_pane" @work_nvim_server "$server"
+    tmux set-option -w -q -t "$main_pane" @work_nvim_pane "$main_pane"
+    tmux set-option -q -t "$session" @work_common_dir (repository_common_dir "$root")
+
+    tmux select-pane -t "$main_pane" -T editor
+    tmux select-pane -t "$terminal_pane" -T terminal
+    tmux select-pane -t "$git_pane" -T git-status
+    tmux select-pane -t "$main_pane"
+end
+
+function create_worktree_window --argument-names session root base user_shell is_new_session session_width session_height
+    set -l window_name (window_name_for_root "$root")
+    set -l socket_slug (__dotfiles_git_ui_slugify (path basename "$root"))
+    test -n "$socket_slug"; or set socket_slug worktree
+    set -l server "/tmp/work-"(id -u)"-$socket_slug-$fish_pid.sock"
+    set -l nvim_cmd (string join ' ' -- (string escape -- "$__dotfiles_work_self_path" --nvim-pane "$user_shell" "$server" "$root"))
+    set -l main_pane
+
+    if test "$is_new_session" = 1
+        set main_pane (tmux new-session -d -P -F '#{pane_id}' -x "$session_width" -y "$session_height" -s "$session" -n "$window_name" -c "$root" "$nvim_cmd"); or return 1
+        tmux resize-window -x "$session_width" -y "$session_height" -t "$main_pane"
+    else
+        set main_pane (tmux new-window -d -P -F '#{pane_id}' -t "$session:" -n "$window_name" -c "$root" "$nvim_cmd"); or return 1
+    end
+
+    configure_worktree_window "$session" "$main_pane" "$root" "$base" "$server" "$user_shell"; or return 1
+    printf '%s\n' "$main_pane"
+end
+
 if test (count $argv) -ge 1
     switch "$argv[1]"
-        case -h --help
-            usage
-            exit 0
         case --nvim-pane
             test (count $argv) -eq 4; or die '--nvim-pane requires a shell, server address, and root'
             run_nvim_pane "$argv[2]" "$argv[3]" "$argv[4]"
             exit 0
         case --git-pane
-            test (count $argv) -eq 2; or die '--git-pane requires a shell'
+            test (count $argv) -eq 5; or die '--git-pane requires a shell, root, and base ref'
             need_cmd viddy
             need_cmd git
-            run_git_pane "$argv[2]"
+            run_git_pane "$argv[2]" "$argv[3]" "$argv[4]"
+            exit 0
+        case --git-dashboard
+            test (count $argv) -eq 3; or die '--git-dashboard requires a root and base ref'
+            git_dashboard "$argv[2]" "$argv[3]"
             exit 0
     end
 end
 
-test (count $argv) -le 1; or die 'expected at most one directory'
+set -l worktree_mode 0
+set -l create_branch 0
+set -l branch ''
+set -l start_ref ''
+set -l requested_base ''
+set -l requested_dir '.'
+set -l fetch_origin 0
+set -l operands
+set -l args $argv
+
+while test (count $args) -gt 0
+    switch "$args[1]"
+        case -h --help
+            usage
+            exit 0
+        case -w --worktree
+            set worktree_mode 1
+        case -c --create
+            set create_branch 1
+        case --from
+            set args $args[2..-1]
+            test (count $args) -gt 0; or die '--from requires a ref'
+            set start_ref "$args[1]"
+        case --base
+            set args $args[2..-1]
+            test (count $args) -gt 0; or die '--base requires a ref'
+            set requested_base "$args[1]"
+        case --fetch
+            set fetch_origin 1
+        case --
+            set args $args[2..-1]
+            set -a operands $args
+            break
+        case '-*'
+            die "unknown option: $args[1]"
+        case '*'
+            set -a operands "$args[1]"
+    end
+    set args $args[2..-1]
+end
+
+test (count $operands) -le 1; or die 'expected at most one directory or branch'
+if test (count $operands) -eq 1
+    if test $worktree_mode -eq 1
+        set branch "$operands[1]"
+    else
+        set requested_dir "$operands[1]"
+    end
+end
+
+test $create_branch -eq 0; or test $worktree_mode -eq 1; or die '-c requires -w'
+test -z "$start_ref"; or test $create_branch -eq 1; or die '--from requires -c'
+if test $create_branch -eq 1
+    test -n "$branch"; or die '-c requires a branch name'
+end
 
 need_cmd git
 need_cmd nvim
@@ -80,31 +270,37 @@ need_cmd tmux
 need_cmd viddy
 need_cmd yazi
 
-set -l requested_dir .
-if test (count $argv) -eq 1
-    set requested_dir "$argv[1]"
-end
-
 set requested_dir (path resolve "$requested_dir" 2>/dev/null); or die "directory does not exist: $requested_dir"
 test -d "$requested_dir"; or die "not a directory: $requested_dir"
-
 set -l root (git -C "$requested_dir" rev-parse --show-toplevel 2>/dev/null); or die "not inside a Git repository: $requested_dir"
 set root (path resolve "$root")
 
-set -l project (path basename "$root")
-set -l slug (string lower -- (string replace -ar '[^[:alnum:]-]+' '-' -- "$project"))
-set slug (string trim -c - -- "$slug")
+if test $worktree_mode -eq 1
+    set -l worktree_action
+    if test $create_branch -eq 1
+        set worktree_action (command "$__dotfiles_work_git_b_path" __create-worktree "$branch" "$start_ref"); or exit $status
+    else
+        set worktree_action (command "$__dotfiles_work_git_b_path" __resolve-worktree "$branch"); or exit $status
+    end
+
+    set -l fields (string split \t -- "$worktree_action")
+    test "$fields[1]" = cd; and test -n "$fields[2]"; or die 'git-b returned an invalid worktree action'
+    set root (path resolve "$fields[2]")
+end
+
+if test $fetch_origin -eq 1
+    git -C "$root" remote get-url origin >/dev/null 2>/dev/null; or die 'cannot fetch: origin remote is not configured'
+    git -C "$root" fetch --prune origin; or die 'git fetch failed'
+end
+
+set -l main_root (repository_main_root "$root"); or die 'could not determine the main worktree'
+set main_root (path resolve "$main_root")
+set -l common_dir (repository_common_dir "$root"); or die 'could not determine the common Git directory'
+set -l project (path basename "$main_root")
+set -l slug (__dotfiles_git_ui_slugify "$project")
 test -n "$slug"; or set slug workspace
 set -l session "work-$slug"
-
-if tmux has-session -t "$session" 2>/dev/null
-    set -l existing_root (tmux show-option -qv -t "$session" @work_root)
-    if test -n "$existing_root"; and test "$existing_root" != "$root"
-        die "session $session already belongs to $existing_root"
-    end
-    switch_or_attach "$session"
-    exit 0
-end
+set -l base (resolve_default_base "$root" "$requested_base")
 
 set -l user_shell /bin/bash
 if set -q SHELL; and test -x "$SHELL"
@@ -114,25 +310,25 @@ end
 set -l size (__dotfiles_git_ui_current_terminal_size)
 set -l session_width "$size[1]"
 set -l session_height "$size[2]"
-set -l server "/tmp/work-"(id -u)"-$slug-$fish_pid.sock"
+set -l target_pane ''
 
-set -l nvim_cmd (string join ' ' -- (string escape -- "$__dotfiles_work_self_path" --nvim-pane "$user_shell" "$server" "$root"))
-set -l git_cmd (string join ' ' -- (string escape -- "$__dotfiles_work_self_path" --git-pane "$user_shell"))
+if tmux has-session -t "$session" 2>/dev/null
+    set -l existing_common_dir (session_common_dir "$session")
+    if test -z "$existing_common_dir"
+        die "session $session exists but is not managed by work"
+    else if test "$existing_common_dir" != "$common_dir"
+        die "session $session already belongs to a different repository: $existing_common_dir"
+    end
 
-set -l main_pane (tmux new-session -d -P -F '#{pane_id}' -x "$session_width" -y "$session_height" -s "$session" -n code -c "$root" "$nvim_cmd"); or die 'failed to create tmux session'
-tmux set-option -q -t "$session" @work_root "$root"
-tmux set-environment -t "$session" NVIM_WORKSPACE_ROOT "$root"
-tmux set-environment -t "$session" NVIM_WORKSPACE_SERVER "$server"
-tmux set-environment -t "$session" NVIM_WORKSPACE_PANE "$main_pane"
-tmux resize-window -x "$session_width" -y "$session_height" -t "$session:code"
+    adopt_legacy_window "$session" "$common_dir"
+    set target_pane (find_worktree_window "$session" "$root")
+    if test -z "$target_pane"
+        set target_pane (create_worktree_window "$session" "$root" "$base" "$user_shell" 0 "$session_width" "$session_height"); or die 'failed to create tmux window'
+    end
+else
+    set target_pane (create_worktree_window "$session" "$root" "$base" "$user_shell" 1 "$session_width" "$session_height"); or die 'failed to create tmux session'
+end
 
-set -l terminal_pane (tmux split-window -v -p 20 -P -F '#{pane_id}' -t "$main_pane" -c "$root" "$user_shell")
-set -l git_pane (tmux split-window -h -p 30 -P -F '#{pane_id}' -t "$terminal_pane" -c "$root" "$git_cmd")
-
-tmux select-pane -t "$main_pane" -T editor
-tmux select-pane -t "$terminal_pane" -T terminal
-tmux select-pane -t "$git_pane" -T git-status
-tmux select-window -t "$session:code"
-tmux select-pane -t "$main_pane"
-
+tmux select-window -t "$target_pane"
+tmux select-pane -t "$target_pane"
 switch_or_attach "$session"
