@@ -134,9 +134,12 @@ def fetch_api(user: str | None, token: str, today: date) -> tuple[str, dict[date
     since = today - timedelta(days=364)
     days: dict[date, tuple[int, int]] = {}
     resolved_user = user
+    total_days = (today - since).days + 1
+    query_count = (total_days + MAX_DAYS_PER_QUERY - 1) // MAX_DAYS_PER_QUERY
+    days_per_query = (total_days + query_count - 1) // query_count
     range_start = since
     while range_start <= today:
-        range_end = min(range_start + timedelta(days=MAX_DAYS_PER_QUERY - 1), today)
+        range_end = min(range_start + timedelta(days=days_per_query - 1), today)
         resolved_user, calendar_days = fetch_calendar(resolved_user, token, range_start, range_end)
         days.update(calendar_days)
         range_start = range_end + timedelta(days=1)
