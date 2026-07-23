@@ -22,6 +22,7 @@ end
 return {
 	{
 		"milanglacier/minuet-ai.nvim",
+		cond = false, -- Comment out this line to re-enable Minuet temporarily.
 		version = "^0.9.0",
 		main = "minuet",
 		event = { "BufReadPre", "BufNewFile", "InsertEnter" },
