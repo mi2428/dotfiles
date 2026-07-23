@@ -138,6 +138,35 @@ autocmd({ "BufDelete", "WinClosed" }, {
 	end,
 })
 
+local startup_editor_window
+local startup_fzf_window
+
+local function focus_startup_fzf()
+	if not startup_fzf_window or not vim.api.nvim_win_is_valid(startup_fzf_window) then
+		return
+	end
+
+	local buffer = vim.api.nvim_win_get_buf(startup_fzf_window)
+	if vim.bo[buffer].filetype ~= "fzf" then
+		return
+	end
+
+	-- Make the editor the alternate window so closing the fzf terminal returns
+	-- there instead of to the terminal pane that was opened most recently.
+	if startup_editor_window and vim.api.nvim_win_is_valid(startup_editor_window) then
+		vim.api.nvim_set_current_win(startup_editor_window)
+	end
+	vim.api.nvim_set_current_win(startup_fzf_window)
+	vim.cmd.startinsert()
+end
+
+autocmd("User", {
+	pattern = "DotfilesAutoTerminalOpened",
+	desc = "Restore the startup directory picker after opening the terminal pane",
+	group = augroup("dotfiles-focus-directory-picker", { clear = true }),
+	callback = focus_startup_fzf,
+})
+
 autocmd("VimEnter", {
 	desc = "Open a file picker for a directory argument",
 	group = augroup("dotfiles-directory-argument-picker", { clear = true }),
@@ -155,22 +184,14 @@ autocmd("VimEnter", {
 				end
 			end
 
+			startup_editor_window = vim.api.nvim_get_current_win()
 			require("fzf-lua").files({ cwd = startup_directory })
 
 			if vim.env.NVIM_WORKSPACE_MODE == "1" then
 				local fzf_window = vim.api.nvim_get_current_win()
+				startup_fzf_window = fzf_window
 				Snacks.explorer({ focus = false, watch = true })
-				vim.schedule(function()
-					if not vim.api.nvim_win_is_valid(fzf_window) then
-						return
-					end
-					local buffer = vim.api.nvim_win_get_buf(fzf_window)
-					if vim.bo[buffer].filetype ~= "fzf" then
-						return
-					end
-					vim.api.nvim_set_current_win(fzf_window)
-					vim.cmd.startinsert()
-				end)
+				vim.schedule(focus_startup_fzf)
 			end
 		end)
 	end,

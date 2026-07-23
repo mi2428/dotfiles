@@ -186,7 +186,23 @@ function M.setup()
 			callback = function()
 				-- Directory workspaces build the picker and Explorer immediately after
 				-- VimEnter. Let those layouts settle before opening the bottom pane.
-				vim.defer_fn(M.toggle, 150)
+				vim.defer_fn(function()
+					local previous_win = vim.api.nvim_get_current_win()
+					local previous_mode = vim.api.nvim_get_mode().mode
+					M.toggle({ focus = false })
+
+					if vim.api.nvim_win_is_valid(previous_win) then
+						vim.api.nvim_set_current_win(previous_win)
+						if previous_mode == "t" or previous_mode:sub(1, 1) == "i" then
+							vim.cmd.startinsert()
+						end
+					end
+
+					vim.api.nvim_exec_autocmds("User", {
+						pattern = "DotfilesAutoTerminalOpened",
+						modeline = false,
+					})
+				end, 150)
 			end,
 		})
 	end
@@ -233,8 +249,11 @@ function M.new(opts)
 		cwd = tab.cwd,
 		auto_close = false,
 	}
-	if state.height then
-		terminal_opts.win = { height = state.height }
+	if state.height or opts.focus == false then
+		terminal_opts.win = {
+			height = state.height,
+			enter = opts.focus ~= false,
+		}
 	end
 
 	local ok, terminal = pcall(function()
