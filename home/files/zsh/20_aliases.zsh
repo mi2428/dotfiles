@@ -774,6 +774,7 @@ alias ..5='cd ../../../../..'
 
 alias b='bat'
 alias c='pbcopy'
+alias ef='exec fish'
 alias j='jmp'
 alias n='notes'
 alias o='open'
