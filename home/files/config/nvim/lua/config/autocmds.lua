@@ -106,13 +106,20 @@ local function exit_if_only_snacks()
 	end
 
 	snacks_exit_pending = true
-	vim.schedule(function()
-		snacks_exit_pending = false
+	-- QuitPre still runs inside the original :quit command. A short timer keeps
+	-- :quitall from being nested in that command while Snacks tears down layouts.
+	vim.defer_fn(function()
 		if only_snacks_or_empty_windows() and not has_modified_user_buffer() then
-			snacks_exit_pending = true
-			vim.cmd("silent! quitall!")
+			local ok, err = pcall(vim.cmd, "quitall!")
+			snacks_exit_pending = false
+			if not ok then
+				vim.notify(("Failed to exit Neovim: %s"):format(err), vim.log.levels.ERROR)
+			end
+			return
 		end
-	end)
+
+		snacks_exit_pending = false
+	end, 20)
 end
 
 autocmd("QuitPre", {
