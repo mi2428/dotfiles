@@ -407,78 +407,51 @@ function dot
 
     set -l sub $argv[1]
     set -e argv[1]
+    set -l repo "$HOME/dotfiles"
 
     switch $sub
         case cc commit
             set -l message (string join ' ' -- $argv)
-            begin
-                builtin cd -- "$HOME/dotfiles" 2>/dev/null
-                and git add . >/dev/null 2>&1
-                and git commit -m "$message"
-            end
+            command git -C "$repo" add . >/dev/null 2>&1
+            and command git -C "$repo" commit -m "$message"
         case k keep
-            begin
-                builtin cd -- "$HOME/dotfiles" 2>/dev/null
-                and git add . >/dev/null 2>&1
-                and git commit -m "keep: "(date)
-            end
+            command git -C "$repo" add . >/dev/null 2>&1
+            and command git -C "$repo" commit -m "keep: "(date)
         case d diff
-            begin
-                builtin cd -- "$HOME/dotfiles" 2>/dev/null
-                and git diff-index --quiet HEAD
-                or git diff
-            end
+            command git -C "$repo" diff-index --quiet HEAD
+            or command git -C "$repo" diff
         case lg log
-            begin
-                builtin cd -- "$HOME/dotfiles" 2>/dev/null
-                and tig
+            if command -sq lazygit
+                command lazygit --path "$repo"
+            else
+                command tig -C "$repo"
             end
         case pl pull
-            begin
-                builtin cd -- "$HOME/dotfiles" 2>/dev/null
-                and git pull
-            end
+            command git -C "$repo" pull
         case ps push
-            begin
-                builtin cd -- "$HOME/dotfiles" 2>/dev/null
-                and git push
-            end
+            command git -C "$repo" push
         case s sync
-            begin
-                builtin cd -- "$HOME/dotfiles" 2>/dev/null
-                and git pull
-                and git push
-            end
+            command git -C "$repo" pull
+            and command git -C "$repo" push
         case switch
-            begin
-                builtin cd -- "$HOME/dotfiles" 2>/dev/null
-                and task hm.switch
-            end
+            command task -d "$repo" hm.switch
         case gc
-            begin
-                builtin cd -- "$HOME/dotfiles" 2>/dev/null
-                and task hm.gc
-            end
+            command task -d "$repo" hm.gc
         case upgrade
-            begin
-                builtin cd -- "$HOME/dotfiles" 2>/dev/null
-                and if test (uname) = Darwin
-                    task brew.sync
-                end
-                and task hm.update
+            if test (uname) = Darwin
+                command task -d "$repo" brew.sync
+                or return
             end
+            command task -d "$repo" hm.update
         case rollback
-            begin
-                builtin cd -- "$HOME/dotfiles" 2>/dev/null
-                and if git diff --quiet -- .
-                    echo 'dot rollback: no unstaged changes to discard.'
+            if command git -C "$repo" diff --quiet -- .
+                echo 'dot rollback: no unstaged changes to discard.'
+            else
+                read -l -P 'dot rollback: discard unstaged changes in tracked files under ~/dotfiles? [y/N] ' confirm
+                if string match -rqi '^(y|yes)$' -- $confirm
+                    command git -C "$repo" restore --worktree -- .
                 else
-                    read -l -P 'dot rollback: discard unstaged changes in tracked files under ~/dotfiles? [y/N] ' confirm
-                    if string match -rqi '^(y|yes)$' -- $confirm
-                        git restore --worktree -- .
-                    else
-                        echo 'dot rollback: aborted.'
-                    end
+                    echo 'dot rollback: aborted.'
                 end
             end
         case '*'
@@ -501,6 +474,7 @@ end
 
 function addr
     set -l addrtxt "$HOME/io/addr/addr.txt"
+    set -l repo (dirname "$addrtxt")
     set -l keyword $argv[1]
 
     if not test -f "$addrtxt"
@@ -508,17 +482,15 @@ function addr
         return 1
     end
 
-    pushd (dirname "$addrtxt") >/dev/null; or return 1
-
     if test -z "$keyword"
         bat "$addrtxt"
     else if test "$keyword" = --edit
-        git pull 2>/dev/null; or true
+        command git -C "$repo" pull 2>/dev/null; or true
         set -l editor_cmd (__dotfiles_command_words "$EDITOR" vi)
         $editor_cmd "$addrtxt"
-        git add "$addrtxt" 2>/dev/null
-        and git commit -m "keep: "(date) 2>/dev/null
-        and git push 2>/dev/null
+        command git -C "$repo" add "$addrtxt" 2>/dev/null
+        and command git -C "$repo" commit -m "keep: "(date) 2>/dev/null
+        and command git -C "$repo" push 2>/dev/null
         or true
     else
         set -l data (grep -vE '^(#|$)' "$addrtxt" | grep -i -- "$keyword")

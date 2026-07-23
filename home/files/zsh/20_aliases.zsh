@@ -383,6 +383,7 @@ dot() {
 
 addr() {
   local addrtxt="$HOME/io/addr/addr.txt"
+  local repo="${addrtxt:h}"
   local keyword="$1"
 
   if [[ ! -f "$addrtxt" ]]; then
@@ -390,15 +391,12 @@ addr() {
     return 1
   fi
 
-  pushd "$(dirname "$addrtxt")" >/dev/null || return 1
-  #git pull 2>/dev/null 1>&2
-
   if [[ -z "$keyword" ]]; then
     bat "$addrtxt"
   elif [[ "$keyword" == "--edit" ]]; then
-    git pull 2>/dev/null || true
+    git -C "$repo" pull 2>/dev/null || true
     vim "$addrtxt"
-    git add "$addrtxt" 2>/dev/null && git commit -m "keep: $(date)" 2>/dev/null && git push 2>/dev/null || true
+    git -C "$repo" add "$addrtxt" 2>/dev/null && git -C "$repo" commit -m "keep: $(date)" 2>/dev/null && git -C "$repo" push 2>/dev/null || true
   else
     local data
     data="$(grep -vE '^(#|$)' "$addrtxt" | grep -i -- "$keyword" || true)"
