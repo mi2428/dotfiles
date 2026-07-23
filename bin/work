@@ -28,8 +28,7 @@ function usage
         '' \
         'Open a tmux coding workspace where a repository is one session and each' \
         'worktree is a window containing:' \
-        '  - Neovim with a right-side Snacks Explorer' \
-        '  - a full-width terminal pane' \
+        '  - Neovim with a right-side Snacks Explorer and terminal panel' \
         "  - prefix+y popup: Yazi routed to that window's Neovim" \
         '' \
         'With -w and no branch, select one with fzf. Existing worktrees and tmux' \
@@ -40,6 +39,7 @@ function run_nvim_pane --argument-names user_shell server root
     set -lx NVIM_WORKSPACE_MODE 1
     set -lx NVIM_WORKSPACE_ROOT "$root"
     set -lx NVIM_WORKSPACE_SERVER "$server"
+    set -lx NVIM_AUTO_TERMINAL 1
     nvim --listen "$server" -- "$root"
     command rm -f -- "$server"
     exec "$user_shell"
@@ -126,17 +126,22 @@ function remove_git_panes --argument-names window_target
     end
 end
 
-function configure_worktree_window --argument-names session main_pane root server user_shell
-    set -l terminal_pane (tmux split-window -v -p 20 -P -F '#{pane_id}' -t "$main_pane" -c "$root" "$user_shell"); or return 1
+function remove_legacy_terminal_pane --argument-names window_target
+    set -l terminal_pane (tmux show-option -w -qv -t "$window_target" @work_terminal_pane)
+    if test -n "$terminal_pane"; and tmux display-message -p -t "$terminal_pane" '#{pane_id}' >/dev/null 2>/dev/null
+        tmux kill-pane -t "$terminal_pane"
+    end
+    tmux set-option -w -qu -t "$window_target" @work_terminal_pane
+end
 
+function configure_worktree_window --argument-names session main_pane root server
     tmux set-option -w -q -t "$main_pane" @work_root "$root"
     tmux set-option -w -q -t "$main_pane" @work_nvim_server "$server"
     tmux set-option -w -q -t "$main_pane" @work_nvim_pane "$main_pane"
-    tmux set-option -w -q -t "$main_pane" @work_terminal_pane "$terminal_pane"
+    tmux set-option -w -qu -t "$main_pane" @work_terminal_pane
     tmux set-option -q -t "$session" @work_common_dir (repository_common_dir "$root")
 
     tmux select-pane -t "$main_pane" -T editor
-    tmux select-pane -t "$terminal_pane" -T terminal
     tmux select-pane -t "$main_pane"
 end
 
@@ -155,7 +160,7 @@ function create_worktree_window --argument-names session root user_shell is_new_
         set main_pane (tmux new-window -d -P -F '#{pane_id}' -t "$session:" -n "$window_name" -c "$root" "$nvim_cmd"); or return 1
     end
 
-    configure_worktree_window "$session" "$main_pane" "$root" "$server" "$user_shell"; or return 1
+    configure_worktree_window "$session" "$main_pane" "$root" "$server"; or return 1
     printf '%s\n' "$main_pane"
 end
 
@@ -279,6 +284,7 @@ if tmux has-session -t "$session" 2>/dev/null
         set target_pane (create_worktree_window "$session" "$root" "$user_shell" 0 "$session_width" "$session_height"); or die 'failed to create tmux window'
     else
         remove_git_panes "$target_pane"
+        remove_legacy_terminal_pane "$target_pane"
     end
 else
     set target_pane (create_worktree_window "$session" "$root" "$user_shell" 1 "$session_width" "$session_height"); or die 'failed to create tmux session'
