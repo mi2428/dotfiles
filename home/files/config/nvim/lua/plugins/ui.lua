@@ -471,6 +471,7 @@ return {
 			-- heuristic until a buffer has been read.
 			bigfile = { enabled = true, line_length = math.huge },
 			gitbrowse = { what = "permalink" },
+			input = {},
 			notifier = { enabled = true, timeout = 3000 },
 			quickfile = { enabled = true },
 			explorer = { enabled = true },
