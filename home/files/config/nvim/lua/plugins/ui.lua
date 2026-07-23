@@ -1,5 +1,6 @@
 local catppuccin = require("config.catppuccin")
 local colors = catppuccin.palette()
+local diff_watch = require("config.diff_watch")
 local tab_pill = require("config.tab_pill")
 
 local function dashboard_square_row(glyphs)
@@ -514,7 +515,7 @@ return {
 				},
 			},
 			dashboard = {
-				enabled = true,
+				enabled = not diff_watch.is_active(),
 				width = 60,
 				pane_gap = 8,
 				preset = {
