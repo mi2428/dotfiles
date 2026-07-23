@@ -163,3 +163,6 @@ map({ "n", "v" }, "<leader>a", "<cmd>CodeCompanionActions<cr>", { desc = "CodeCo
 map({ "n", "v" }, "<localleader>a", "<cmd>CodeCompanionChat Toggle<cr>", { desc = "Toggle CodeCompanion chat" })
 map("n", "<localleader>c", "<cmd>CodeCompanionCLI<cr>", { desc = "Open CodeCompanion CLI" })
 map("v", "ga", "<cmd>CodeCompanionChat Add<cr>", { desc = "Add selection to CodeCompanion chat" })
+map("x", "<leader>h", function()
+	require("config.herdr").prompt_selection()
+end, { desc = "Prompt Herdr Codex about selection" })
