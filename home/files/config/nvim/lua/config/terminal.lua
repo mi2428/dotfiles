@@ -10,6 +10,7 @@ local state = {
 	next_group_id = 1,
 	next_tab_id = 1,
 	height = nil,
+	layouts = {},
 	augroup = nil,
 	setup = false,
 	auto_layout = nil,
@@ -169,6 +170,56 @@ local function remember_height()
 			state.height = vim.api.nvim_win_get_height(tab.terminal.win)
 			return
 		end
+	end
+end
+
+local function window_order()
+	local windows = {}
+	for number = 1, vim.fn.winnr("$") do
+		windows[number] = vim.fn.win_getid(number)
+	end
+	return windows
+end
+
+local function remember_layout()
+	local tabpage = vim.api.nvim_get_current_tabpage()
+	if state.layouts[tabpage] then
+		return
+	end
+
+	state.layouts[tabpage] = {
+		command = vim.fn.winrestcmd(),
+		current_win = vim.api.nvim_get_current_win(),
+		layout = vim.fn.winlayout(),
+		windows = window_order(),
+	}
+end
+
+local function restore_layout(tabpage)
+	tabpage = tabpage or vim.api.nvim_get_current_tabpage()
+	local snapshot = state.layouts[tabpage]
+	state.layouts[tabpage] = nil
+	if not snapshot or not vim.api.nvim_tabpage_is_valid(tabpage) or tabpage ~= vim.api.nvim_get_current_tabpage() then
+		return
+	end
+
+	-- Window numbers in winrestcmd() are only safe while the original split
+	-- structure is intact. Preserve layout changes made while the terminal was
+	-- visible instead of applying a stale snapshot to different windows.
+	if
+		not vim.deep_equal(vim.fn.winlayout(), snapshot.layout) or not vim.deep_equal(window_order(), snapshot.windows)
+	then
+		return
+	end
+
+	if snapshot.command ~= "" then
+		pcall(vim.cmd, snapshot.command)
+	end
+	if
+		vim.api.nvim_win_is_valid(snapshot.current_win)
+		and vim.api.nvim_win_get_tabpage(snapshot.current_win) == tabpage
+	then
+		vim.api.nvim_set_current_win(snapshot.current_win)
 	end
 end
 
@@ -369,6 +420,7 @@ local function create_tab(group, opts, layout)
 end
 
 local function show_workspace(target_group)
+	remember_layout()
 	local parent
 	for _, group in ipairs(state.groups) do
 		local tab = active_tab(group)
@@ -397,6 +449,7 @@ local function show_workspace(target_group)
 end
 
 local function hide_workspace()
+	local tabpage = vim.api.nvim_get_current_tabpage()
 	remember_height()
 	for index = #state.groups, 1, -1 do
 		local tab = active_tab(state.groups[index])
@@ -404,6 +457,7 @@ local function hide_workspace()
 			tab.terminal:hide()
 		end
 	end
+	restore_layout(tabpage)
 	redraw_winbars()
 end
 
@@ -468,6 +522,9 @@ remove_tab = function(tab, close_terminal)
 	if replacement then
 		state.active_group = group.id
 		focus_tab(replacement)
+	end
+	if workspace_visible_count() == 0 then
+		restore_layout()
 	end
 	redraw_winbars()
 end
@@ -625,6 +682,9 @@ function M.new(opts)
 	local previous = active_tab(group)
 	local win = terminal_visible(previous) and detach_terminal(previous) or nil
 	local layout = win and { position = "current", current = win } or { position = "bottom" }
+	if not win then
+		remember_layout()
+	end
 	local tab, err = create_tab(group, opts, layout)
 	if not tab then
 		if previous and win then
@@ -632,6 +692,9 @@ function M.new(opts)
 			group.active = previous.id
 		elseif #group.tabs == 0 then
 			drop_group(group)
+		end
+		if workspace_visible_count() == 0 then
+			restore_layout()
 		end
 		error(err)
 	end
