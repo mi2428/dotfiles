@@ -2,13 +2,13 @@
 
 -- Open a Ghostty workspace with Herdr on the left and tmux on the right.
 --
--- The left pane starts in the caller's working directory (or an optional
--- directory argument); the tmux pane always starts in the home directory.
+-- The left pane starts in the caller's working directory; the tmux pane
+-- always starts in the home directory. Finder launches fall back to home.
 
 -- Herdr : tmux. Change these two numbers to adjust the split ratio.
 property paneRatio : {3, 7}
 
-on run argv
+on run
     set homeDirectory to POSIX path of (path to home folder)
 
     set herdrRatio to item 1 of paneRatio
@@ -17,15 +17,12 @@ on run argv
         error "paneRatio values must both be greater than zero"
     end if
 
-    if (count of argv) is greater than 0 then
-        set projectDirectory to item 1 of argv
-    else
-        try
-            set projectDirectory to system attribute "PWD"
-        on error
-            set projectDirectory to homeDirectory
-        end try
-    end if
+    try
+        set projectDirectory to system attribute "PWD"
+        if projectDirectory is "" or projectDirectory is "/" then set projectDirectory to homeDirectory
+    on error
+        set projectDirectory to homeDirectory
+    end try
 
     tell application "Ghostty"
         activate
