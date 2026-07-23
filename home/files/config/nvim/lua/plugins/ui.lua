@@ -445,7 +445,7 @@ return {
 			-- "bigfile". Keep the size-based guard, but do not use the average-line
 			-- heuristic until a buffer has been read.
 			bigfile = { enabled = true, line_length = math.huge },
-			git = { enabled = true },
+			gitbrowse = { what = "permalink" },
 			notifier = { enabled = true, timeout = 3000 },
 			quickfile = { enabled = true },
 			explorer = { enabled = true },
@@ -587,6 +587,14 @@ return {
 			},
 		},
 		keys = {
+			{
+				"<leader>gB",
+				function()
+					require("snacks").gitbrowse()
+				end,
+				mode = { "n", "v" },
+				desc = "Open Git permalink",
+			},
 			{
 				"<C-\\>",
 				function()
