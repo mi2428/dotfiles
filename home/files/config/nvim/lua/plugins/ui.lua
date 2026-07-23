@@ -1020,6 +1020,8 @@ return {
 		event = "VeryLazy",
 		dependencies = { "nvim-tree/nvim-web-devicons" },
 		opts = function()
+			local collapse_review_groups = vim.env.NVIM_REVIEW_MODE == "1"
+
 			return {
 				options = {
 					mode = "buffers",
@@ -1055,6 +1057,7 @@ return {
 							{
 								name = "docs",
 								auto_close = false,
+								hidden = collapse_review_groups,
 								highlight = {
 									sp = colors.sapphire,
 								},
@@ -1069,6 +1072,7 @@ return {
 							{
 								name = "tests",
 								auto_close = false,
+								hidden = collapse_review_groups,
 								highlight = {
 									sp = colors.green,
 								},
