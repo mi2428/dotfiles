@@ -470,6 +470,7 @@ return {
 			-- "bigfile". Keep the size-based guard, but do not use the average-line
 			-- heuristic until a buffer has been read.
 			bigfile = { enabled = true, line_length = math.huge },
+			gh = {},
 			gitbrowse = { what = "permalink" },
 			input = {},
 			notifier = { enabled = true, timeout = 3000 },
@@ -662,6 +663,34 @@ return {
 				"<leader>Z",
 				toggle_zen_zoom,
 				desc = "Toggle zoom",
+			},
+			{
+				"<leader>gi",
+				function()
+					require("snacks").picker.gh_issue()
+				end,
+				desc = "GitHub issues (open)",
+			},
+			{
+				"<leader>gI",
+				function()
+					require("snacks").picker.gh_issue({ state = "all" })
+				end,
+				desc = "GitHub issues (all)",
+			},
+			{
+				"<leader>gp",
+				function()
+					require("snacks").picker.gh_pr()
+				end,
+				desc = "GitHub pull requests (open)",
+			},
+			{
+				"<leader>gA",
+				function()
+					require("snacks").picker.gh_pr({ state = "all" })
+				end,
+				desc = "GitHub pull requests (all)",
 			},
 			{
 				"<leader>gB",
