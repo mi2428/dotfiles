@@ -1,5 +1,11 @@
 local M = {}
 
+local agent_names = {
+	claude = "Claude Code",
+	codex = "Codex",
+}
+local selected_agents = {}
+
 local function notify(message, level)
 	vim.notify(message, level or vim.log.levels.INFO, { title = "Herdr" })
 end
@@ -116,49 +122,56 @@ local function context_text(selection)
 	)
 end
 
-local function choose_agent(agents, root, callback)
-	local codex_agents = vim.tbl_filter(function(agent)
-		return agent.agent == "codex"
-	end, agents)
-	local matching = vim.tbl_filter(function(agent)
-		return path_is_within(agent.foreground_cwd or agent.cwd, root)
-	end, codex_agents)
-
-	if #matching == 1 then
-		callback(matching[1])
-		return
-	end
-
-	if #matching > 1 then
-		local focused = vim.tbl_filter(function(agent)
-			return agent.focused
-		end, matching)
-		if #focused == 1 then
-			callback(focused[1])
-			return
-		end
-	end
-
-	local candidates = #matching > 0 and matching or codex_agents
-	if #candidates == 0 then
-		notify("No Codex agent is running in Herdr", vim.log.levels.ERROR)
-		return
-	end
-
-	vim.ui.select(candidates, {
-		prompt = #matching == 0 and "No Codex agent matches this repository; choose one:" or "Choose a Codex agent:",
-		format_item = function(agent)
-			local cwd = agent.foreground_cwd or agent.cwd or "unknown cwd"
-			return string.format("%s  %s", agent.pane_id, cwd)
-		end,
-	}, function(agent)
-		if agent then
-			callback(agent)
-		end
-	end)
+local function agent_name(agent)
+	return agent_names[agent.agent] or agent.agent or "AI agent"
 end
 
-local function with_agent(root, callback)
+local function session_key(agent)
+	local session = agent.agent_session
+	if type(session) ~= "table" then
+		return nil
+	end
+
+	return table.concat({ session.agent or "", session.source or "", session.kind or "", session.value or "" }, "\0")
+end
+
+local function remember_agent(root, agent)
+	selected_agents[root] = {
+		pane_id = agent.pane_id,
+		session_key = session_key(agent),
+	}
+end
+
+local function cached_agent(agents, root)
+	local selected = selected_agents[root]
+	if not selected then
+		return nil
+	end
+
+	for _, agent in ipairs(agents) do
+		if agent.pane_id == selected.pane_id then
+			local current_session = session_key(agent)
+			if not selected.session_key or not current_session or selected.session_key == current_session then
+				return agent
+			end
+			break
+		end
+	end
+
+	selected_agents[root] = nil
+	return nil
+end
+
+local function agent_label(agent)
+	local focus = agent.focused and "●" or " "
+	local location = agent.foreground_cwd or agent.cwd or "unknown cwd"
+	local status = agent.agent_status or "unknown"
+	local tab = agent.tab_id or agent.pane_id or "unknown pane"
+	local pane = agent.pane_id and agent.pane_id ~= tab and " / " .. agent.pane_id or ""
+	return string.format("%s %s · %s%s · %s · %s", focus, agent_name(agent), tab, pane, status, location)
+end
+
+local function list_agents(callback)
 	vim.system({ "herdr", "agent", "list" }, { text = true }, function(result)
 		vim.schedule(function()
 			if result.code ~= 0 then
@@ -173,9 +186,104 @@ local function with_agent(root, callback)
 				return
 			end
 
-			choose_agent(agents, root, callback)
+			local supported = vim.tbl_filter(function(agent)
+				return type(agent) == "table" and agent_names[agent.agent] ~= nil and type(agent.pane_id) == "string"
+			end, agents)
+			callback(supported)
 		end)
 	end)
+end
+
+local function choose_agent(agents, root, force, callback)
+	if not force then
+		local selected = cached_agent(agents, root)
+		if selected then
+			callback(selected)
+			return
+		end
+	end
+
+	local matching = vim.tbl_filter(function(agent)
+		return path_is_within(agent.foreground_cwd or agent.cwd, root)
+	end, agents)
+	local candidates = #matching > 0 and matching or agents
+	if #candidates == 0 then
+		notify("No Codex or Claude Code agent is running in Herdr", vim.log.levels.ERROR)
+		return
+	end
+
+	table.sort(candidates, function(left, right)
+		local left_focused = left.focused == true
+		local right_focused = right.focused == true
+		if left_focused ~= right_focused then
+			return left_focused
+		end
+		if left.agent ~= right.agent then
+			return left.agent < right.agent
+		end
+		return left.pane_id < right.pane_id
+	end)
+
+	if #matching == 1 and not force then
+		remember_agent(root, matching[1])
+		callback(matching[1])
+		return
+	end
+
+	local prompt = #matching == 0 and "No agent matches this repository; choose a Herdr agent:"
+		or "Choose a Herdr agent:"
+	vim.ui.select(candidates, {
+		prompt = prompt,
+		format_item = agent_label,
+	}, function(agent)
+		if agent then
+			remember_agent(root, agent)
+			callback(agent)
+		end
+	end)
+end
+
+local function with_agent(root, force, callback)
+	list_agents(function(agents)
+		choose_agent(agents, root, force, callback)
+	end)
+end
+
+local function insert_newline(win)
+	local row, column = unpack(vim.api.nvim_win_get_cursor(win.win))
+	vim.api.nvim_buf_set_text(win.buf, row - 1, column, row - 1, column, { "", "" })
+	vim.api.nvim_win_set_cursor(win.win, { row + 1, 0 })
+end
+
+local function ask_question(agent, callback)
+	local opts = {
+		prompt = string.format(
+			"Ask %s · %s  (Enter send · S-Enter/C-J newline)",
+			agent_name(agent),
+			agent.tab_id or agent.pane_id
+		),
+		expand = false,
+		win = {
+			height = 7,
+			width = 80,
+			actions = {
+				insert_newline = insert_newline,
+			},
+			keys = {
+				i_ctrl_j = { "<c-j>", "insert_newline", mode = "i" },
+				i_down = false,
+				i_s_cr = { "<s-cr>", "insert_newline", mode = "i" },
+				i_up = false,
+			},
+		},
+	}
+	local ok, snacks = pcall(require, "snacks")
+	if ok then
+		snacks.input(opts, callback)
+		return
+	end
+
+	vim.ui.input({ prompt = opts.prompt }, callback)
 end
 
 local function send_prompt(agent, text)
@@ -186,8 +294,20 @@ local function send_prompt(agent, text)
 				return
 			end
 
-			notify("Selection sent to Codex")
+			notify(string.format("Selection sent to %s (%s)", agent_name(agent), agent.tab_id or agent.pane_id))
 		end)
+	end)
+end
+
+function M.select_agent()
+	if vim.fn.executable("herdr") ~= 1 then
+		notify("The herdr command is not available", vim.log.levels.ERROR)
+		return
+	end
+
+	local root = project_root(vim.api.nvim_get_current_buf())
+	with_agent(root, true, function(agent)
+		notify(string.format("Using %s (%s) for this Neovim session", agent_name(agent), agent.tab_id or agent.pane_id))
 	end)
 end
 
@@ -203,13 +323,13 @@ function M.prompt_selection()
 		return
 	end
 
-	vim.ui.input({ prompt = "Ask Herdr Codex about the selection: " }, function(question)
-		if not question or vim.trim(question) == "" then
-			return
-		end
+	with_agent(selection.root, false, function(agent)
+		ask_question(agent, function(question)
+			if not question or vim.trim(question) == "" then
+				return
+			end
 
-		local prompt = string.format("%s\n\nQuestion:\n%s", context_text(selection), question)
-		with_agent(selection.root, function(agent)
+			local prompt = string.format("%s\n\nQuestion:\n%s", context_text(selection), question)
 			send_prompt(agent, prompt)
 		end)
 	end)
