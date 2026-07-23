@@ -396,6 +396,39 @@ local function open_review_explorer()
 	})
 end
 
+local arglist_loading = false
+
+function M.load_arglist_async()
+	if arglist_loading then
+		return
+	end
+	arglist_loading = true
+
+	local paths = vim.fn.argv()
+	local index = 1
+	local function load_next()
+		while index <= #paths do
+			local path = paths[index]
+			index = index + 1
+			local buf = vim.fn.bufadd(path)
+			if not vim.api.nvim_buf_is_loaded(buf) then
+				vim.fn.bufload(buf)
+				break
+			end
+		end
+
+		if index <= #paths then
+			vim.defer_fn(load_next, 10)
+		else
+			arglist_loading = false
+		end
+	end
+
+	-- Let the initial editor, Trouble, and review Explorer render before loading
+	-- the remaining files and starting their language servers one at a time.
+	vim.defer_fn(load_next, 50)
+end
+
 function M.setup()
 	if commands_registered then
 		return

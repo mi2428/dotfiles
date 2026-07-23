@@ -42,12 +42,12 @@ end
 
 function run_edit_pane --argument-names user_shell nvim_server
     set -l target_files $argv[3..-1]
-    set -l load_review_buffers 'lua for _, path in ipairs(vim.fn.argv()) do vim.fn.bufload(vim.fn.bufadd(path)) end'
     set -l open_diagnostics 'Trouble diagnostics open open_no_results=true'
+    set -l load_review_buffers 'lua require("config.review").load_arglist_async()'
 
     if test (count $target_files) -gt 0
         # env NVIM_AUTO_TERMINAL=1 nvim --listen "$nvim_server" -- $target_files
-        nvim --listen "$nvim_server" -c "$load_review_buffers" -c "$open_diagnostics" -- $target_files
+        nvim --listen "$nvim_server" -c "$open_diagnostics" -c "$load_review_buffers" -- $target_files
     else
         # env NVIM_AUTO_TERMINAL=1 nvim --listen "$nvim_server"
         nvim --listen "$nvim_server" -c "$open_diagnostics"
