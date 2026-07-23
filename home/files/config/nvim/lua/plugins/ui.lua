@@ -474,6 +474,7 @@ return {
 			input = {},
 			notifier = { enabled = true, timeout = 3000 },
 			quickfile = { enabled = true },
+			scratch = {},
 			explorer = { enabled = true },
 			zen = {},
 			terminal = {
@@ -614,6 +615,20 @@ return {
 			},
 		},
 		keys = {
+			{
+				"<leader>.",
+				function()
+					require("snacks").scratch()
+				end,
+				desc = "Toggle scratch buffer",
+			},
+			{
+				"<leader>S",
+				function()
+					require("snacks").scratch.select()
+				end,
+				desc = "Select scratch buffer",
+			},
 			{
 				"<leader>z",
 				function()
