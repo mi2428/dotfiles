@@ -137,6 +137,15 @@ local function forget(id, reopen)
 	redraw_winbars()
 end
 
+local function prune_invalid_tabs()
+	for index = #state.tabs, 1, -1 do
+		local tab = state.tabs[index]
+		if not valid_tab(tab) then
+			forget(tab.id, false)
+		end
+	end
+end
+
 local function register_lifecycle(tab)
 	tab.terminal:on("TermClose", function()
 		vim.schedule(function()
@@ -175,7 +184,9 @@ function M.setup()
 			group = group,
 			once = true,
 			callback = function()
-				vim.schedule(M.toggle)
+				-- Directory workspaces build the picker and Explorer immediately after
+				-- VimEnter. Let those layouts settle before opening the bottom pane.
+				vim.defer_fn(M.toggle, 150)
 			end,
 		})
 	end
@@ -204,6 +215,7 @@ end
 
 function M.new(opts)
 	opts = type(opts) == "table" and opts or {}
+	prune_invalid_tabs()
 	local id = state.next_id
 	state.next_id = state.next_id + 1
 
@@ -245,6 +257,7 @@ function M.new(opts)
 end
 
 function M.toggle()
+	prune_invalid_tabs()
 	local tab = current_tab()
 	if not valid_tab(tab) then
 		return M.new()
@@ -259,6 +272,7 @@ function M.toggle()
 end
 
 function M.select(id)
+	prune_invalid_tabs()
 	local index = tab_index(id)
 	if index then
 		show(state.tabs[index])
@@ -266,6 +280,7 @@ function M.select(id)
 end
 
 local function cycle(delta)
+	prune_invalid_tabs()
 	if #state.tabs == 0 then
 		return M.new()
 	end
@@ -284,6 +299,7 @@ function M.previous()
 end
 
 function M.close(id)
+	prune_invalid_tabs()
 	id = id or state.active
 	local index = tab_index(id)
 	if not index then
