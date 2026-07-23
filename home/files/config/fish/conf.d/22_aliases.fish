@@ -6,6 +6,21 @@ function f
     open -a Finder -- "$target"
 end
 
+function gty --description 'Open or resize the Ghostty Herdr workspace'
+    if test (count $argv) -eq 0
+        command ghostty.scpt
+        return $status
+    end
+
+    if test (count $argv) -eq 1 -a "$argv[1]" = r
+        command ghostty-resize-herdr-pane.scpt
+        return $status
+    end
+
+    echo 'Usage: gty [r]' >&2
+    return 2
+end
+
 if command -sq arch
     function x64
         exec arch -arch x86_64 fish --login
