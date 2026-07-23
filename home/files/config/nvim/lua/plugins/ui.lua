@@ -486,7 +486,7 @@ return {
 				win = {
 					position = "bottom",
 					height = 0.33,
-					stack = false,
+					stack = true,
 					wo = {
 						winbar = "%!v:lua.dotfiles_terminal_winbar()",
 						winfixheight = true,
@@ -771,12 +771,28 @@ return {
 				desc = "New terminal tab",
 			},
 			{
+				"<leader>Tv",
+				function()
+					require("config.terminal").split()
+				end,
+				mode = "n",
+				desc = "Split terminal pane right",
+			},
+			{
 				"<C-\\>n",
 				function()
 					require("config.terminal").new()
 				end,
 				mode = "t",
 				desc = "New terminal tab",
+			},
+			{
+				"<C-\\>v",
+				function()
+					require("config.terminal").split()
+				end,
+				mode = "t",
+				desc = "Split terminal pane right",
 			},
 			{
 				"[T",

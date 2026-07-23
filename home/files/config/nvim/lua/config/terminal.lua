@@ -1,14 +1,20 @@
 local M = {}
 
--- Each tab owns a terminal buffer/job, while only the selected Snacks window
--- is shown. Hiding and showing that window keeps the bottom panel to one pane.
+-- Each pane is a terminal tab group. Only the active tab in a group owns its
+-- window; inactive tabs keep their terminal buffers and jobs in the background.
 local state = {
-	tabs = {},
-	active = nil,
-	next_id = 1,
+	groups = {},
+	active_group = nil,
+	tabs_by_id = {},
+	tabs_by_buf = {},
+	next_group_id = 1,
+	next_tab_id = 1,
 	height = nil,
+	augroup = nil,
 	setup = false,
 }
+
+local remove_tab
 
 local function use_compact_auto_open_height()
 	local configured_height = vim.tbl_get(Snacks.config, "terminal", "win", "height")
@@ -17,8 +23,22 @@ local function use_compact_auto_open_height()
 	end
 end
 
-local function tab_index(id)
-	for index, tab in ipairs(state.tabs) do
+local function group_index(group)
+	if not group then
+		return nil
+	end
+	for index, candidate in ipairs(state.groups) do
+		if candidate == group then
+			return index
+		end
+	end
+end
+
+local function tab_index(group, id)
+	if not group then
+		return nil
+	end
+	for index, tab in ipairs(group.tabs) do
 		if tab.id == id then
 			return index
 		end
@@ -26,21 +46,98 @@ local function tab_index(id)
 end
 
 local function valid_tab(tab)
-	return tab and tab.terminal and tab.terminal.buf and vim.api.nvim_buf_is_valid(tab.terminal.buf)
+	return tab and not tab.removed and tab.terminal and tab.terminal.buf and vim.api.nvim_buf_is_valid(tab.terminal.buf)
 end
 
-local function current_tab()
-	local index = tab_index(state.active)
-	return index and state.tabs[index] or nil
+local function active_tab(group)
+	local index = group and tab_index(group, group.active)
+	return index and group.tabs[index] or nil
 end
 
 local function terminal_visible(tab)
-	return valid_tab(tab) and tab.terminal.win and vim.api.nvim_win_is_valid(tab.terminal.win)
+	return valid_tab(tab)
+		and tab.terminal:valid()
+		and vim.api.nvim_win_get_tabpage(tab.terminal.win) == vim.api.nvim_get_current_tabpage()
 end
 
-local function terminal_visible_here(tab)
-	return terminal_visible(tab)
-		and vim.api.nvim_win_get_tabpage(tab.terminal.win) == vim.api.nvim_get_current_tabpage()
+local function group_for_buf(buf)
+	local tab = state.tabs_by_buf[buf]
+	return valid_tab(tab) and tab.group or nil
+end
+
+local function group_for_win(win)
+	if not win or not vim.api.nvim_win_is_valid(win) then
+		return nil
+	end
+
+	local id = vim.w[win].dotfiles_terminal_group
+	if id then
+		for _, group in ipairs(state.groups) do
+			if group.id == id then
+				return group
+			end
+		end
+	end
+
+	return group_for_buf(vim.api.nvim_win_get_buf(win))
+end
+
+local function current_group()
+	local group = group_for_buf(vim.api.nvim_get_current_buf())
+	if group then
+		state.active_group = group.id
+		return group
+	end
+
+	for _, candidate in ipairs(state.groups) do
+		if candidate.id == state.active_group then
+			return candidate
+		end
+	end
+
+	return state.groups[1]
+end
+
+local function create_group(after)
+	local group = {
+		id = state.next_group_id,
+		tabs = {},
+		active = nil,
+	}
+	state.next_group_id = state.next_group_id + 1
+
+	local index = group_index(after)
+	if index then
+		table.insert(state.groups, index + 1, group)
+	else
+		table.insert(state.groups, group)
+	end
+	state.active_group = group.id
+	return group
+end
+
+local function drop_group(group)
+	local index = group_index(group)
+	if not index then
+		return
+	end
+
+	table.remove(state.groups, index)
+	group.removed = true
+	if state.active_group == group.id then
+		local replacement = state.groups[math.min(index, #state.groups)] or state.groups[index - 1]
+		state.active_group = replacement and replacement.id or nil
+	end
+end
+
+local function workspace_visible_count()
+	local count = 0
+	for _, group in ipairs(state.groups) do
+		if terminal_visible(active_tab(group)) then
+			count = count + 1
+		end
+	end
+	return count
 end
 
 local function winbar_focused()
@@ -54,16 +151,21 @@ local function redraw_winbars()
 		return
 	end
 
-	for _, tab in ipairs(state.tabs) do
+	for _, group in ipairs(state.groups) do
+		local tab = active_tab(group)
 		if terminal_visible(tab) then
 			vim.api.nvim__redraw({ win = tab.terminal.win, valid = false, flush = false, cursor = false })
 		end
 	end
 end
 
-local function remember_height(tab)
-	if terminal_visible(tab) then
-		state.height = vim.api.nvim_win_get_height(tab.terminal.win)
+local function remember_height()
+	for _, group in ipairs(state.groups) do
+		local tab = active_tab(group)
+		if terminal_visible(tab) then
+			state.height = vim.api.nvim_win_get_height(tab.terminal.win)
+			return
+		end
 	end
 end
 
@@ -88,8 +190,7 @@ local function tab_title(tab)
 			if title:match("^term://") then
 				return tab.label
 			end
-			title = title:gsub("[%c\r\n]", " ")
-			title = vim.trim(title)
+			title = vim.trim(title:gsub("[%c\r\n]", " "))
 			if title ~= "" then
 				return vim.fn.strcharpart(title, 0, 24)
 			end
@@ -98,79 +199,301 @@ local function tab_title(tab)
 	return tab.label
 end
 
-local function hide_other_terminals(selected)
-	for _, tab in ipairs(state.tabs) do
-		if tab ~= selected and terminal_visible(tab) then
-			remember_height(tab)
-			tab.terminal:hide()
-		end
-	end
-end
-
-local function show(tab)
-	if not valid_tab(tab) then
-		return
-	end
-
-	hide_other_terminals(tab)
-	if terminal_visible(tab) and not terminal_visible_here(tab) then
-		remember_height(tab)
-		tab.terminal:hide()
-	end
-
-	state.active = tab.id
+local function normalize_terminal_window(tab)
+	local terminal = tab.terminal
+	terminal.opts.position = "bottom"
+	terminal.opts.relative = "editor"
+	terminal.opts.stack = true
+	terminal.opts.win = nil
 	if state.height then
-		tab.terminal.opts.height = state.height
+		terminal.opts.height = state.height
 	end
-	tab.terminal:show()
-	tab.terminal:focus()
-	redraw_winbars()
+
+	local win = terminal.win
+	if win and vim.api.nvim_win_is_valid(win) then
+		vim.w[win].snacks_win = {
+			id = terminal.id,
+			position = "bottom",
+			relative = "editor",
+			stack = true,
+		}
+		vim.w[win].dotfiles_terminal_group = tab.group.id
+	end
 end
 
-local function forget(id, reopen)
-	local index = tab_index(id)
-	if not index then
-		return
+local function detach_terminal(tab)
+	if not tab or not tab.terminal then
+		return nil
 	end
 
-	local was_active = state.active == id
-	table.remove(state.tabs, index)
-
-	if was_active then
-		local replacement = state.tabs[math.min(index, #state.tabs)] or state.tabs[index - 1]
-		state.active = replacement and replacement.id or nil
-		if reopen and replacement then
-			vim.schedule(function()
-				show(replacement)
-			end)
-		end
+	local terminal = tab.terminal
+	local win = terminal.win
+	if terminal.augroup then
+		pcall(vim.api.nvim_del_augroup_by_id, terminal.augroup)
+		terminal.augroup = nil
 	end
-
-	redraw_winbars()
+	terminal.win = nil
+	return win and vim.api.nvim_win_is_valid(win) and win or nil
 end
 
-local function prune_invalid_tabs()
-	for index = #state.tabs, 1, -1 do
-		local tab = state.tabs[index]
-		if not valid_tab(tab) then
-			forget(tab.id, false)
-		end
+local function show_existing_terminal(tab, layout)
+	if not valid_tab(tab) then
+		return false, "terminal buffer is no longer valid"
+	end
+
+	local terminal = tab.terminal
+	if layout.current and vim.api.nvim_win_is_valid(layout.current) then
+		vim.api.nvim_set_current_win(layout.current)
+	end
+	terminal.opts.position = layout.position
+	terminal.opts.relative = layout.relative or "editor"
+	terminal.opts.win = layout.parent
+	terminal.opts.stack = false
+	terminal.opts.enter = true
+	if state.height then
+		terminal.opts.height = state.height
+	end
+	if layout.width then
+		terminal.opts.width = layout.width
+	end
+
+	local ok, err = pcall(function()
+		terminal:show()
+	end)
+	normalize_terminal_window(tab)
+	return ok, err
+end
+
+local function focus_tab(tab)
+	if terminal_visible(tab) then
+		state.active_group = tab.group.id
+		tab.terminal:focus()
 	end
 end
 
 local function register_lifecycle(tab)
-	tab.terminal:on("TermClose", function()
-		vim.schedule(function()
-			M.close(tab.id)
-		end)
-	end, { buf = true })
+	local buf = tab.terminal.buf
+	vim.api.nvim_create_autocmd("TermClose", {
+		group = state.augroup,
+		buffer = buf,
+		once = true,
+		callback = function()
+			vim.schedule(function()
+				if not tab.removed then
+					remove_tab(tab, true)
+				end
+			end)
+		end,
+	})
+	vim.api.nvim_create_autocmd("BufWipeout", {
+		group = state.augroup,
+		buffer = buf,
+		once = true,
+		callback = function()
+			vim.schedule(function()
+				if not tab.removed then
+					remove_tab(tab, false)
+				end
+			end)
+		end,
+	})
+end
 
-	tab.terminal:on("BufWipeout", function()
-		local reopen = terminal_visible(tab)
-		vim.schedule(function()
-			forget(tab.id, reopen)
+local function create_tab(group, opts, layout)
+	local id = state.next_tab_id
+	state.next_tab_id = state.next_tab_id + 1
+	local tab = {
+		id = id,
+		group = group,
+		cwd = opts.cwd or vim.fn.getcwd(0),
+		label = opts.label or shell_name(opts.cmd),
+	}
+
+	local win = {
+		position = layout.position,
+		relative = layout.relative or "editor",
+		win = layout.parent,
+		stack = false,
+		enter = true,
+	}
+	if state.height then
+		win.height = state.height
+	end
+	if layout.width then
+		win.width = layout.width
+	end
+	if layout.current and vim.api.nvim_win_is_valid(layout.current) then
+		vim.api.nvim_set_current_win(layout.current)
+	end
+
+	local ok, terminal = pcall(function()
+		return Snacks.terminal.open(opts.cmd, {
+			count = id,
+			cwd = tab.cwd,
+			auto_close = false,
+			win = win,
+		})
+	end)
+	if not ok then
+		return nil, terminal
+	end
+
+	tab.terminal = terminal
+	table.insert(group.tabs, tab)
+	group.active = id
+	state.tabs_by_id[id] = tab
+	state.tabs_by_buf[terminal.buf] = tab
+	normalize_terminal_window(tab)
+	register_lifecycle(tab)
+	return tab
+end
+
+local function show_workspace(target_group)
+	local parent
+	for _, group in ipairs(state.groups) do
+		local tab = active_tab(group)
+		if valid_tab(tab) then
+			local layout
+			if parent then
+				layout = { position = "right", relative = "win", parent = parent, width = 0.5 }
+			else
+				layout = { position = "bottom" }
+			end
+			local ok, err = show_existing_terminal(tab, layout)
+			if ok then
+				parent = tab.terminal.win
+			else
+				vim.notify(("Failed to show terminal pane: %s"):format(err), vim.log.levels.ERROR)
+			end
+		end
+	end
+
+	local group = target_group or current_group()
+	local tab = active_tab(group)
+	if terminal_visible(tab) then
+		focus_tab(tab)
+	end
+	redraw_winbars()
+end
+
+local function hide_workspace()
+	remember_height()
+	for index = #state.groups, 1, -1 do
+		local tab = active_tab(state.groups[index])
+		if terminal_visible(tab) then
+			tab.terminal:hide()
+		end
+	end
+	redraw_winbars()
+end
+
+local function ensure_workspace_visible(target_group)
+	local visible = workspace_visible_count()
+	if visible == #state.groups and visible > 0 then
+		return
+	end
+	if visible > 0 then
+		hide_workspace()
+	end
+	show_workspace(target_group)
+end
+
+remove_tab = function(tab, close_terminal)
+	if not tab or tab.removed then
+		return
+	end
+
+	local group = tab.group
+	local index = tab_index(group, tab.id)
+	if not index then
+		return
+	end
+
+	local was_active = group.active == tab.id
+	local terminal = tab.terminal
+	local win = terminal and terminal.win
+	win = win and vim.api.nvim_win_is_valid(win) and win or nil
+
+	tab.removed = true
+	table.remove(group.tabs, index)
+	state.tabs_by_id[tab.id] = nil
+	if terminal and terminal.buf then
+		state.tabs_by_buf[terminal.buf] = nil
+	end
+
+	local replacement
+	if was_active then
+		replacement = group.tabs[math.min(index, #group.tabs)] or group.tabs[index - 1]
+		group.active = replacement and replacement.id or nil
+	end
+
+	if replacement and win then
+		detach_terminal(tab)
+		local ok, err = show_existing_terminal(replacement, { position = "current", current = win })
+		if not ok then
+			vim.notify(("Failed to select replacement terminal: %s"):format(err), vim.log.levels.ERROR)
+		end
+	elseif not replacement and #group.tabs == 0 then
+		drop_group(group)
+	end
+
+	if terminal and close_terminal then
+		pcall(function()
+			terminal:close()
 		end)
-	end, { buf = true })
+	elseif not replacement and win and vim.w[win].dotfiles_terminal_group == group.id then
+		pcall(vim.api.nvim_win_close, win, true)
+	end
+
+	if replacement then
+		state.active_group = group.id
+		focus_tab(replacement)
+	end
+	redraw_winbars()
+end
+
+local function prune_invalid_tabs()
+	local invalid = {}
+	for _, group in ipairs(state.groups) do
+		for _, tab in ipairs(group.tabs) do
+			if not valid_tab(tab) then
+				invalid[#invalid + 1] = tab
+			end
+		end
+	end
+	for _, tab in ipairs(invalid) do
+		remove_tab(tab, false)
+	end
+end
+
+local function select_tab(tab)
+	if not valid_tab(tab) then
+		return
+	end
+
+	local group = tab.group
+	local current = active_tab(group)
+	state.active_group = group.id
+	if current == tab then
+		ensure_workspace_visible(group)
+		focus_tab(tab)
+		return
+	end
+
+	ensure_workspace_visible(group)
+	current = active_tab(group)
+	local win = terminal_visible(current) and detach_terminal(current) or nil
+	group.active = tab.id
+	if win then
+		local ok, err = show_existing_terminal(tab, { position = "current", current = win })
+		if not ok then
+			vim.notify(("Failed to select terminal tab: %s"):format(err), vim.log.levels.ERROR)
+		end
+	else
+		show_workspace(group)
+	end
+	focus_tab(tab)
+	redraw_winbars()
 end
 
 function M.setup()
@@ -188,17 +511,32 @@ function M.setup()
 
 	require("config.tab_pill").set_terminal_highlights()
 
-	local group = vim.api.nvim_create_augroup("dotfiles-terminal-tabs", { clear = true })
+	state.augroup = vim.api.nvim_create_augroup("dotfiles-terminal-tabs", { clear = true })
 	vim.api.nvim_create_autocmd("ColorScheme", {
-		group = group,
+		group = state.augroup,
 		callback = function()
 			require("config.tab_pill").set_terminal_highlights()
 			redraw_winbars()
 		end,
 	})
+	vim.api.nvim_create_autocmd("BufEnter", {
+		group = state.augroup,
+		callback = function(args)
+			local group = group_for_buf(args.buf)
+			if group then
+				state.active_group = group.id
+				redraw_winbars()
+			end
+		end,
+	})
+	vim.api.nvim_create_autocmd("WinEnter", {
+		group = state.augroup,
+		callback = redraw_winbars,
+	})
+
 	if auto_open and not workspace_mode then
 		vim.api.nvim_create_autocmd("VimEnter", {
-			group = group,
+			group = state.augroup,
 			once = true,
 			callback = function()
 				-- Let any startup layouts settle before opening the bottom pane.
@@ -220,10 +558,15 @@ function M.setup()
 
 	vim.api.nvim_create_user_command("TerminalToggle", M.toggle, { force = true })
 	vim.api.nvim_create_user_command("TerminalNew", M.new, { force = true })
+	vim.api.nvim_create_user_command("TerminalSplit", M.split, { force = true })
 	vim.api.nvim_create_user_command("TerminalNext", M.next, { force = true })
 	vim.api.nvim_create_user_command("TerminalPrevious", M.previous, { force = true })
 	vim.api.nvim_create_user_command("TerminalClose", function(opts)
-		M.close(tonumber(opts.args))
+		if opts.args == "" then
+			M.close()
+		else
+			M.close_index(tonumber(opts.args))
+		end
 	end, { force = true, nargs = "?" })
 	vim.api.nvim_create_user_command("TerminalSelect", function(opts)
 		M.select(tonumber(opts.args))
@@ -232,92 +575,113 @@ function M.setup()
 	_G.dotfiles_terminal_winbar = M.winbar
 	_G.dotfiles_terminal_tab_click = M.click
 
-	for id = 1, 9 do
-		local tab_id = id
-		vim.keymap.set("n", "<leader>T" .. id, function()
-			M.select(tab_id)
-		end, { desc = "Select terminal tab " .. id })
-		vim.keymap.set("t", "<C-\\>" .. id, function()
-			M.select(tab_id)
-		end, { desc = "Select terminal tab " .. id })
+	for index = 1, 9 do
+		local tab_index_to_select = index
+		vim.keymap.set("n", "<leader>T" .. index, function()
+			M.select(tab_index_to_select)
+		end, { desc = "Select terminal tab " .. index })
+		vim.keymap.set("t", "<C-\\>" .. index, function()
+			M.select(tab_index_to_select)
+		end, { desc = "Select terminal tab " .. index })
 	end
 end
 
 function M.new(opts)
 	opts = type(opts) == "table" and opts or {}
 	prune_invalid_tabs()
-	local id = state.next_id
-	state.next_id = state.next_id + 1
 
-	local tab = {
-		id = id,
-		cwd = opts.cwd or vim.fn.getcwd(0),
-		label = opts.label or shell_name(opts.cmd),
-	}
-	table.insert(state.tabs, tab)
-	state.active = id
-	hide_other_terminals(tab)
-
-	local terminal_opts = {
-		count = id,
-		cwd = tab.cwd,
-		auto_close = false,
-	}
-	if state.height then
-		terminal_opts.win = { height = state.height }
+	local group = current_group()
+	if not group then
+		group = create_group()
+	elseif #group.tabs > 0 then
+		ensure_workspace_visible(group)
 	end
 
-	local ok, terminal = pcall(function()
-		return Snacks.terminal.open(opts.cmd, terminal_opts)
-	end)
-
-	if not ok then
-		forget(id, false)
-		local replacement = current_tab()
-		if replacement then
-			show(replacement)
+	local previous = active_tab(group)
+	local win = terminal_visible(previous) and detach_terminal(previous) or nil
+	local layout = win and { position = "current", current = win } or { position = "bottom" }
+	local tab, err = create_tab(group, opts, layout)
+	if not tab then
+		if previous and win then
+			show_existing_terminal(previous, { position = "current", current = win })
+			group.active = previous.id
+		elseif #group.tabs == 0 then
+			drop_group(group)
 		end
-		error(terminal)
+		error(err)
 	end
 
-	tab.terminal = terminal
-	register_lifecycle(tab)
+	state.active_group = group.id
+	focus_tab(tab)
+	redraw_winbars()
+	return tab
+end
+
+function M.split(opts)
+	opts = type(opts) == "table" and opts or {}
+	prune_invalid_tabs()
+	local source = current_group()
+	if not source then
+		return M.new(opts)
+	end
+
+	ensure_workspace_visible(source)
+	local source_tab = active_tab(source)
+	local parent = terminal_visible(source_tab) and source_tab.terminal.win or nil
+	if not parent then
+		return M.new(opts)
+	end
+
+	local group = create_group(source)
+	local tab, err = create_tab(group, opts, {
+		position = "right",
+		relative = "win",
+		parent = parent,
+		width = 0.5,
+	})
+	if not tab then
+		drop_group(group)
+		focus_tab(source_tab)
+		error(err)
+	end
+
+	state.active_group = group.id
+	focus_tab(tab)
 	redraw_winbars()
 	return tab
 end
 
 function M.toggle()
 	prune_invalid_tabs()
-	local tab = current_tab()
-	if not valid_tab(tab) then
+	if workspace_visible_count() > 0 then
+		hide_workspace()
+		return
+	end
+	if #state.groups == 0 then
 		return M.new()
 	end
-
-	if terminal_visible_here(tab) then
-		remember_height(tab)
-		tab.terminal:hide()
-	else
-		show(tab)
-	end
+	show_workspace(current_group())
 end
 
-function M.select(id)
+function M.select(index)
 	prune_invalid_tabs()
-	local index = tab_index(id)
-	if index then
-		show(state.tabs[index])
+	local group = current_group()
+	local tab = group and group.tabs[index] or nil
+	if tab then
+		select_tab(tab)
 	end
 end
 
 local function cycle(delta)
 	prune_invalid_tabs()
-	if #state.tabs == 0 then
+	local group = current_group()
+	if not group or #group.tabs == 0 then
 		return M.new()
 	end
 
-	local index = tab_index(state.active) or 1
-	index = ((index - 1 + delta) % #state.tabs) + 1
-	show(state.tabs[index])
+	local index = tab_index(group, group.active) or 1
+	index = ((index - 1 + delta) % #group.tabs) + 1
+	select_tab(group.tabs[index])
 end
 
 function M.next()
@@ -330,38 +694,43 @@ end
 
 function M.close(id)
 	prune_invalid_tabs()
-	id = id or state.active
-	local index = tab_index(id)
-	if not index then
-		return
+	local tab
+	if id then
+		tab = state.tabs_by_id[id]
+	else
+		tab = active_tab(current_group())
 	end
-
-	local tab = state.tabs[index]
-	local reopen = terminal_visible(tab)
-	remember_height(tab)
-	forget(id, false)
-
-	if tab.terminal then
-		tab.terminal:close()
+	if tab then
+		remove_tab(tab, true)
 	end
+end
 
-	local replacement = current_tab()
-	if reopen and replacement then
-		vim.schedule(function()
-			show(replacement)
-		end)
+function M.close_index(index)
+	prune_invalid_tabs()
+	local group = current_group()
+	local tab = group and group.tabs[index] or nil
+	if tab then
+		remove_tab(tab, true)
 	end
 end
 
 function M.winbar()
+	local win = tonumber(vim.g.statusline_winid)
+	if not win or win == 0 then
+		win = vim.api.nvim_get_current_win()
+	end
+	local group = group_for_win(win)
 	local segments = { "%#TerminalTabFill# " }
-	local suffix = winbar_focused() and "" or "Dim"
+	if not group then
+		return table.concat(segments)
+	end
 
-	for _, tab in ipairs(state.tabs) do
-		local active = tab.id == state.active
+	local suffix = winbar_focused() and "" or "Dim"
+	for index, tab in ipairs(group.tabs) do
+		local active = tab.id == group.active
 		local body = (active and "TerminalTabActive" or "TerminalTabInactive") .. suffix
 		local edge = (active and "TerminalTabActiveEdge" or "TerminalTabInactiveEdge") .. suffix
-		local label = escape_statusline((" %d 󰆍 %s "):format(tab.id, tab_title(tab)))
+		local label = escape_statusline((" %d 󰆍 %s "):format(index, tab_title(tab)))
 
 		segments[#segments + 1] = ("%%%d@v:lua.dotfiles_terminal_tab_click@"):format(tab.id)
 		segments[#segments + 1] = ("%%#%s#"):format(edge)
@@ -375,10 +744,14 @@ end
 
 function M.click(id, _, button)
 	vim.schedule(function()
+		local tab = state.tabs_by_id[id]
+		if not tab then
+			return
+		end
 		if button == "m" then
-			M.close(id)
+			remove_tab(tab, true)
 		else
-			M.select(id)
+			select_tab(tab)
 		end
 	end)
 end
