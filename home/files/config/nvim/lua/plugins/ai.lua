@@ -85,6 +85,9 @@ return {
 	},
 	{
 		"olimorris/codecompanion.nvim",
+		-- Herdr now owns the persistent Codex session, and config.herdr sends
+		-- editor selections to it directly without requiring codex-acp.
+		cond = false,
 		version = "^19.0.0",
 		cmd = {
 			"CodeCompanion",

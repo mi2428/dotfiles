@@ -159,10 +159,13 @@ map("n", "<leader>r", function()
 	require("fzf-lua").live_grep({ headers = false })
 end, { desc = "Live grep" })
 
-map({ "n", "v" }, "<leader>a", "<cmd>CodeCompanionActions<cr>", { desc = "CodeCompanion actions" })
-map({ "n", "v" }, "<localleader>a", "<cmd>CodeCompanionChat Toggle<cr>", { desc = "Toggle CodeCompanion chat" })
-map("n", "<localleader>c", "<cmd>CodeCompanionCLI<cr>", { desc = "Open CodeCompanion CLI" })
-map("v", "ga", "<cmd>CodeCompanionChat Add<cr>", { desc = "Add selection to CodeCompanion chat" })
+-- CodeCompanion used to own the editor chat and CLI mappings here. Herdr now
+-- keeps the Codex session, while config.herdr sends visual selections directly;
+-- keeping these mappings disabled also avoids requiring the codex-acp adapter.
+-- map({ "n", "v" }, "<leader>a", "<cmd>CodeCompanionActions<cr>", { desc = "CodeCompanion actions" })
+-- map({ "n", "v" }, "<localleader>a", "<cmd>CodeCompanionChat Toggle<cr>", { desc = "Toggle CodeCompanion chat" })
+-- map("n", "<localleader>c", "<cmd>CodeCompanionCLI<cr>", { desc = "Open CodeCompanion CLI" })
+-- map("v", "ga", "<cmd>CodeCompanionChat Add<cr>", { desc = "Add selection to CodeCompanion chat" })
 map("x", "<leader>h", function()
 	require("config.herdr").prompt_selection()
 end, { desc = "Prompt Herdr Codex about selection" })
