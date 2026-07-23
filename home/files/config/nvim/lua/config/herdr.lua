@@ -255,6 +255,25 @@ local function insert_newline(win)
 	vim.api.nvim_win_set_cursor(win.win, { row + 1, 0 })
 end
 
+local function delete_before_cursor(win)
+	local row, column = unpack(vim.api.nvim_win_get_cursor(win.win))
+	local line = vim.api.nvim_buf_get_lines(win.buf, row - 1, row, false)[1]
+	if column > 0 then
+		local positions = vim.str_utf_pos(line:sub(1, column))
+		local previous_column = positions[#positions] - 1
+		vim.api.nvim_buf_set_text(win.buf, row - 1, previous_column, row - 1, column, {})
+		vim.api.nvim_win_set_cursor(win.win, { row, previous_column })
+		return
+	end
+	if row == 1 then
+		return
+	end
+
+	local previous = vim.api.nvim_buf_get_lines(win.buf, row - 2, row - 1, false)[1]
+	vim.api.nvim_buf_set_text(win.buf, row - 2, #previous, row - 1, 0, {})
+	vim.api.nvim_win_set_cursor(win.win, { row - 1, #previous })
+end
+
 local function ask_question(agent, callback)
 	local opts = {
 		prompt = string.format(
@@ -267,9 +286,11 @@ local function ask_question(agent, callback)
 			height = 7,
 			width = 80,
 			actions = {
+				delete_before_cursor = delete_before_cursor,
 				insert_newline = insert_newline,
 			},
 			keys = {
+				i_bs = { "<bs>", "delete_before_cursor", mode = "i" },
 				i_ctrl_j = { "<c-j>", "insert_newline", mode = "i" },
 				i_down = false,
 				i_s_cr = { "<s-cr>", "insert_newline", mode = "i" },
