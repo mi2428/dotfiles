@@ -33,7 +33,6 @@ alias n='notes'
 alias o='open'
 alias r='rm -i'
 alias s='sudo'
-alias v='vim -R'
 alias x='chmod +x'
 alias y='yes'
 

@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+program_name="$(basename "$0")"
+
+usage() {
+  cat <<EOF
+Run Neovim, with shortcuts for opening Git changes.
+
+Usage:
+  $program_name [NVIM_ARG ...]
+  $program_name diff [DIR]
+  $program_name diff head [DIR]
+
+Commands:
+  diff [DIR]       Open unstaged and untracked files under DIR.
+  diff head [DIR]  Open all files changed from HEAD, plus untracked files.
+
+Options:
+  -h, --help       Show this help.
+
+DIR defaults to the current Git repository root. Deleted files are ignored.
+Other arguments are passed directly to Neovim. Use -R to open read-only.
+EOF
+}
+
+die() {
+  printf '%s: %s\n' "$program_name" "$1" >&2
+  exit "${2:-1}"
+}
+
+append_files() {
+  local file=""
+
+  while IFS= read -r -d '' file; do
+    files+=("$file")
+  done
+}
+
+open_diff() {
+  local diff_base="worktree"
+  local target_dir=""
+  local repo_root=""
+  local -a files=()
+
+  shift
+  if [[ ${1:-} == "head" ]]; then
+    diff_base="head"
+    shift
+  fi
+
+  case "${1:-}" in
+    -h|--help)
+      usage
+      return 0
+      ;;
+  esac
+
+  (($# <= 1)) || die "usage: $program_name diff [DIR] | $program_name diff head [DIR]" 2
+
+  if (($# == 1)); then
+    target_dir="$1"
+  else
+    target_dir="$(git rev-parse --show-toplevel 2>/dev/null)" ||
+      die "not inside a Git repository"
+  fi
+
+  [[ -d "$target_dir" ]] || die "not a directory: $target_dir"
+  repo_root="$(git -C "$target_dir" rev-parse --show-toplevel 2>/dev/null)" ||
+    die "not inside a Git repository: $target_dir"
+
+  if [[ "$diff_base" == "head" ]]; then
+    if git -C "$target_dir" rev-parse --verify HEAD >/dev/null 2>&1; then
+      append_files < <(git -C "$target_dir" diff --name-only --diff-filter=d -z HEAD -- .)
+    else
+      append_files < <(git -C "$target_dir" diff --cached --name-only --diff-filter=d -z -- .)
+    fi
+  else
+    append_files < <(git -C "$target_dir" diff --name-only --diff-filter=d -z -- .)
+  fi
+
+  append_files < <(git -C "$target_dir" ls-files --others --exclude-standard --full-name -z -- .)
+
+  if ((${#files[@]} == 0)); then
+    printf '%s: no changed files\n' "$program_name"
+    return 0
+  fi
+
+  cd -- "$repo_root" || return 1
+  exec nvim -- "${files[@]}"
+}
+
+case "${1:-}" in
+  -h|--help)
+    usage
+    ;;
+  diff)
+    open_diff "$@"
+    ;;
+  *)
+    exec nvim "$@"
+    ;;
+esac
