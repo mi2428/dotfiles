@@ -224,7 +224,10 @@ function M.setup()
 
 	for id = 1, 9 do
 		local tab_id = id
-		vim.keymap.set({ "n", "t" }, "<leader>T" .. id, function()
+		vim.keymap.set("n", "<leader>T" .. id, function()
+			M.select(tab_id)
+		end, { desc = "Select terminal tab " .. id })
+		vim.keymap.set("t", "<C-\\>" .. id, function()
 			M.select(tab_id)
 		end, { desc = "Select terminal tab " .. id })
 	end

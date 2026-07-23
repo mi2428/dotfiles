@@ -752,11 +752,27 @@ return {
 				desc = "Toggle terminal pane",
 			},
 			{
+				"<C-]>",
+				function()
+					vim.cmd.stopinsert()
+				end,
+				mode = "t",
+				desc = "Enter terminal normal mode",
+			},
+			{
 				"<leader>Tn",
 				function()
 					require("config.terminal").new()
 				end,
-				mode = { "n", "t" },
+				mode = "n",
+				desc = "New terminal tab",
+			},
+			{
+				"<C-\\>n",
+				function()
+					require("config.terminal").new()
+				end,
+				mode = "t",
 				desc = "New terminal tab",
 			},
 			{
@@ -764,7 +780,15 @@ return {
 				function()
 					require("config.terminal").previous()
 				end,
-				mode = { "n", "t" },
+				mode = "n",
+				desc = "Previous terminal tab",
+			},
+			{
+				"<C-\\>h",
+				function()
+					require("config.terminal").previous()
+				end,
+				mode = "t",
 				desc = "Previous terminal tab",
 			},
 			{
@@ -772,7 +796,15 @@ return {
 				function()
 					require("config.terminal").next()
 				end,
-				mode = { "n", "t" },
+				mode = "n",
+				desc = "Next terminal tab",
+			},
+			{
+				"<C-\\>l",
+				function()
+					require("config.terminal").next()
+				end,
+				mode = "t",
 				desc = "Next terminal tab",
 			},
 			{
@@ -780,7 +812,15 @@ return {
 				function()
 					require("config.terminal").close()
 				end,
-				mode = { "n", "t" },
+				mode = "n",
+				desc = "Close terminal tab",
+			},
+			{
+				"<C-\\>x",
+				function()
+					require("config.terminal").close()
+				end,
+				mode = "t",
 				desc = "Close terminal tab",
 			},
 			{
