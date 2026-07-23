@@ -29,9 +29,8 @@ function usage
         '  gh-review [pr-number|pr-url]' \
         '  gh-review --local [base-ref]' \
         '' \
-        'Open a tmux review session using:' \
-        '  - top pane: Neovim with a Snacks Explorer sidebar' \
-        '  - bottom pane: the complete review diff, rendered with delta when available' \
+        'Open a tmux review session with Neovim, a Snacks Explorer sidebar,' \
+        'and an automatically opened Snacks terminal panel.' \
         '' \
         'PR reviews create or reuse a detached review worktree under:' \
         '  ~/.cache/gh-review/<owner>/<repo>/pr-<number>' \
@@ -41,25 +40,9 @@ function usage
         'Run this from inside the target git repository.'
 end
 
-function run_diff_pane --argument-names diff_ref user_shell
-    set -l less_bin less
-    set -l git_delta_input_bin "$__dotfiles_gh_review_script_dir/git-delta-input"
-
-    if command -q less
-        set less_bin (command -s less)
-    end
-
-    if command -q delta
-        "$git_delta_input_bin" --range "$diff_ref" -- | __dotfiles_git_ui_delta_lazygit
-    else
-        env GIT_PAGER="$less_bin -R -+F" git --paginate diff --color=always "$diff_ref"
-    end
-
-    exec "$user_shell"
-end
-
 function run_edit_pane --argument-names user_shell nvim_server
     set -l target_files $argv[3..-1]
+    set -lx NVIM_AUTO_TERMINAL 1
 
     if test (count $target_files) -gt 0
         nvim --listen "$nvim_server" -- $target_files
@@ -218,11 +201,6 @@ if test (count $argv) -ge 1
             test (count $argv) -eq 2; or die '--preview-pr requires a PR number or URL'
             __dotfiles_git_ui_render_pr_preview "$argv[2]" "$glow_style_path"
             exit 0
-        case --diff-pane
-            test (count $argv) -eq 3; or die '--diff-pane requires a diff range and user shell'
-            need_cmd git
-            run_diff_pane "$argv[2]" "$argv[3]"
-            exit 0
         case --edit-pane
             test (count $argv) -ge 3; or die '--edit-pane requires a user shell and Neovim server address'
             run_edit_pane "$argv[2]" "$argv[3]" $argv[4..-1]
@@ -263,7 +241,6 @@ set -l window_name ''
 set -l pr_number ''
 set -l head_ref HEAD
 set -l user_shell /bin/bash
-set -l less_bin less
 set -l size (__dotfiles_git_ui_current_terminal_size)
 set -l session_width $size[1]
 set -l session_height $size[2]
@@ -271,9 +248,6 @@ set -l cache_home "$HOME/.cache"
 
 if set -q SHELL
     set user_shell "$SHELL"
-end
-if command -q less
-    set less_bin (command -s less)
 end
 if set -q XDG_CACHE_HOME
     set cache_home "$XDG_CACHE_HOME"
@@ -384,13 +358,11 @@ for path in (git -C "$worktree_path" diff --name-only --diff-filter=ACMR "$revie
     end
 end
 
-set -l diff_ref "$review_base...HEAD"
 set -l nvim_server "/tmp/gh-review-"(id -u)"-"$fish_pid".sock"
 
-set -l diff_cmd (string join ' ' -- (string escape -- "$__dotfiles_gh_review_self_path" --diff-pane "$diff_ref" "$user_shell"))
 set -l edit_cmd (string join ' ' -- (string escape -- "$__dotfiles_gh_review_self_path" --edit-pane "$user_shell" "$nvim_server" $edit_targets))
 
-set -l diff_pane (tmux new-session -d -P -F '#{pane_id}' -x "$session_width" -y "$session_height" -s "$session_name" -n "$window_name" -c "$worktree_path" "$diff_cmd")
+set -l edit_pane (tmux new-session -d -P -F '#{pane_id}' -x "$session_width" -y "$session_height" -s "$session_name" -n "$window_name" -c "$worktree_path" "$user_shell")
 set_tmux_env "$session_name" NVIM_REVIEW_MODE 1
 set_tmux_env "$session_name" NVIM_REVIEW_BASE "$review_base"
 set_tmux_env "$session_name" NVIM_REVIEW_HEAD HEAD
@@ -399,7 +371,7 @@ set_tmux_env "$session_name" NVIM_REVIEW_REPO_ROOT "$repo_root"
 set_tmux_env "$session_name" NVIM_REVIEW_WORKTREE "$worktree_path"
 set_tmux_env "$session_name" NVIM_REVIEW_SERVER "$nvim_server"
 tmux resize-window -x "$session_width" -y "$session_height" -t "$session_name:$window_name"
-set -l edit_pane (tmux split-window -v -b -p 66 -P -F '#{pane_id}' -t "$diff_pane" -c "$worktree_path" "$edit_cmd")
+tmux respawn-pane -k -t "$edit_pane" -c "$worktree_path" "$edit_cmd"; or die 'failed to start Neovim review pane'
 tmux select-pane -t "$edit_pane"
 
 if test -n "$pr_number"
