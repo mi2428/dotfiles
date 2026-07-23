@@ -30,7 +30,7 @@ function usage
         '  gh-review --local [base-ref]' \
         '' \
         'Open a tmux review session with Neovim, a Snacks Explorer sidebar,' \
-        'and an automatically opened Snacks terminal panel.' \
+        'and a tabbed Snacks terminal panel with a review diff and shell.' \
         '' \
         'PR reviews create or reuse a detached review worktree under:' \
         '  ~/.cache/gh-review/<owner>/<repo>/pr-<number>' \
@@ -208,6 +208,7 @@ if test (count $argv) -ge 1
 end
 
 need_cmd git
+need_cmd lazygit
 need_cmd tmux
 need_cmd nvim
 

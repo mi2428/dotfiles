@@ -12,6 +12,7 @@ local state = {
 	height = nil,
 	augroup = nil,
 	setup = false,
+	auto_layout = nil,
 }
 
 local remove_tab
@@ -19,7 +20,9 @@ local remove_tab
 local function use_compact_auto_open_height()
 	local configured_height = vim.tbl_get(Snacks.config, "terminal", "win", "height")
 	if type(configured_height) == "number" then
-		state.height = configured_height / 2
+		local compact_height = math.floor(vim.o.lines * configured_height / 2)
+		-- Lazygit needs ten text rows; reserve one more for the terminal winbar.
+		state.height = math.max(compact_height, 11)
 	end
 end
 
@@ -183,6 +186,22 @@ local function shell_name(cmd)
 	return vim.fs.basename(vim.o.shell)
 end
 
+local function unified_lazygit_env()
+	local config_home = vim.env.XDG_CONFIG_HOME or vim.fs.joinpath(vim.env.HOME, ".config")
+	local unified_config = vim.fs.joinpath(config_home, "herdr", "lazygit-unified.yml")
+	local config_files = vim.env.LG_CONFIG_FILE or ""
+
+	for config_file in config_files:gmatch("[^,]+") do
+		if config_file == unified_config then
+			return { LG_CONFIG_FILE = config_files }
+		end
+	end
+
+	return {
+		LG_CONFIG_FILE = config_files == "" and unified_config or (config_files .. "," .. unified_config),
+	}
+end
+
 local function tab_title(tab)
 	if valid_tab(tab) then
 		local title = vim.b[tab.terminal.buf].term_title
@@ -330,6 +349,7 @@ local function create_tab(group, opts, layout)
 		return Snacks.terminal.open(opts.cmd, {
 			count = id,
 			cwd = tab.cwd,
+			env = opts.env,
 			auto_close = false,
 			win = win,
 		})
@@ -503,6 +523,11 @@ function M.setup()
 	state.setup = true
 	local auto_open = vim.env.NVIM_AUTO_TERMINAL == "1"
 	local workspace_mode = vim.env.NVIM_WORKSPACE_MODE == "1"
+	if auto_open then
+		state.auto_layout = {
+			review_base = vim.env.NVIM_REVIEW_MODE == "1" and vim.env.NVIM_REVIEW_BASE or nil,
+		}
+	end
 	vim.env.NVIM_AUTO_TERMINAL = nil
 	vim.env.NVIM_WORKSPACE_MODE = nil
 	if auto_open then
@@ -651,6 +676,51 @@ function M.split(opts)
 	return tab
 end
 
+local function enter_lazygit_diff_mode(tab, ref, attempts_left)
+	if not valid_tab(tab) then
+		return
+	end
+
+	local buf = tab.terminal.buf
+	local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+	local rendered = vim.iter(lines):any(function(line)
+		return line:find("%S") ~= nil
+	end)
+	if not rendered then
+		if attempts_left > 1 then
+			vim.defer_fn(function()
+				enter_lazygit_diff_mode(tab, ref, attempts_left - 1)
+			end, 20)
+		end
+		return
+	end
+
+	local channel = vim.bo[buf].channel
+	if channel and channel > 0 then
+		-- `lazygit log` starts on HEAD. Its diff menu first offers HEAD and
+		-- then the explicit-ref prompt, so select the latter and enter the
+		-- review base without modifying the index or working tree.
+		vim.api.nvim_chan_send(channel, "W\027[B\r" .. ref .. "\r")
+	end
+end
+
+local function open_auto_layout(layout)
+	local review_base = layout.review_base
+	local lazygit_tab = M.new({
+		cmd = review_base and { "lazygit", "log" } or { "lazygit" },
+		env = unified_lazygit_env(),
+		label = "lazygit",
+	})
+	M.new()
+
+	if review_base and review_base ~= "" then
+		enter_lazygit_diff_mode(lazygit_tab, review_base, 100)
+	end
+
+	select_tab(lazygit_tab)
+	return lazygit_tab
+end
+
 function M.toggle()
 	prune_invalid_tabs()
 	if workspace_visible_count() > 0 then
@@ -658,6 +728,11 @@ function M.toggle()
 		return
 	end
 	if #state.groups == 0 then
+		if state.auto_layout then
+			local layout = state.auto_layout
+			state.auto_layout = nil
+			return open_auto_layout(layout)
+		end
 		return M.new()
 	end
 	show_workspace(current_group())

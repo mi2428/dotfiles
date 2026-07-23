@@ -28,7 +28,8 @@ function usage
         '' \
         'Open a tmux coding workspace where a repository is one session and each' \
         'worktree is a window containing:' \
-        '  - Neovim with a right-side Snacks Explorer and terminal panel' \
+        '  - Neovim with a right-side Snacks Explorer' \
+        '  - A tabbed Snacks terminal panel with lazygit and a shell' \
         "  - prefix+y popup: Yazi routed to that window's Neovim" \
         '' \
         'With -w and no branch, select one with fzf. Existing worktrees and tmux' \
@@ -221,6 +222,7 @@ if test $create_branch -eq 1
 end
 
 need_cmd git
+need_cmd lazygit
 need_cmd nvim
 need_cmd tmux
 need_cmd yazi
