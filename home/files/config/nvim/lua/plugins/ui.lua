@@ -632,6 +632,49 @@ return {
 				desc = "Next reference",
 			},
 			{
+				"<leader>p",
+				function()
+					require("snacks").picker()
+				end,
+				desc = "Pickers",
+			},
+			{
+				"<leader>ss",
+				function()
+					require("snacks").picker.lsp_symbols()
+				end,
+				desc = "LSP symbols",
+			},
+			{
+				"<leader>sS",
+				function()
+					require("snacks").picker.lsp_workspace_symbols()
+				end,
+				desc = "LSP workspace symbols",
+			},
+			{
+				"<leader>su",
+				function()
+					require("snacks").picker.undo()
+				end,
+				desc = "Undo history",
+			},
+			{
+				"<leader>sw",
+				function()
+					require("snacks").picker.grep_word()
+				end,
+				mode = { "n", "x" },
+				desc = "Grep word or selection",
+			},
+			{
+				"<leader>sk",
+				function()
+					require("snacks").picker.keymaps()
+				end,
+				desc = "Keymaps",
+			},
+			{
 				"<leader>n",
 				function()
 					require("snacks").notifier.show_history()
