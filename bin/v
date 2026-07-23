@@ -9,14 +9,15 @@ Run Neovim, with shortcuts for opening Git changes.
 
 Usage:
   $program_name [NVIM_ARG ...]
-  $program_name diff [DIR]
-  $program_name diff head [DIR]
+  $program_name diff [--watch] [DIR]
+  $program_name diff head [--watch] [DIR]
 
 Commands:
   diff [DIR]       Open unstaged and untracked files under DIR.
   diff head [DIR]  Open all files changed from HEAD, plus untracked files.
 
 Options:
+  -w, --watch      Keep buffers synchronized with the Git changes.
   -h, --help       Show this help.
 
 DIR defaults to the current Git repository root. Deleted files are ignored.
@@ -39,24 +40,43 @@ append_files() {
 
 open_diff() {
   local diff_base="worktree"
+  local watch=0
   local target_dir=""
   local repo_root=""
   local -a files=()
 
   shift
-  if [[ ${1:-} == "head" ]]; then
-    diff_base="head"
-    shift
-  fi
 
-  case "${1:-}" in
-    -h|--help)
-      usage
-      return 0
-      ;;
-  esac
+  while (($# > 0)); do
+    case "$1" in
+      head)
+        [[ "$diff_base" == "worktree" ]] || die "duplicate diff base: head" 2
+        diff_base="head"
+        shift
+        ;;
+      -w|--watch)
+        ((watch == 0)) || die "duplicate option: $1" 2
+        watch=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        return 0
+        ;;
+      --)
+        shift
+        break
+        ;;
+      -*)
+        die "unknown diff option: $1" 2
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
 
-  (($# <= 1)) || die "usage: $program_name diff [DIR] | $program_name diff head [DIR]" 2
+  (($# <= 1)) || die "usage: $program_name diff [--watch] [DIR] | $program_name diff head [--watch] [DIR]" 2
 
   if (($# == 1)); then
     target_dir="$1"
@@ -66,8 +86,18 @@ open_diff() {
   fi
 
   [[ -d "$target_dir" ]] || die "not a directory: $target_dir"
+  target_dir="$(cd -- "$target_dir" && pwd -P)" || die "cannot resolve directory: $target_dir"
   repo_root="$(git -C "$target_dir" rev-parse --show-toplevel 2>/dev/null)" ||
     die "not inside a Git repository: $target_dir"
+
+  if ((watch)); then
+    export NVIM_DIFF_WATCH_MODE=1
+    export NVIM_DIFF_WATCH_BASE="$diff_base"
+    export NVIM_DIFF_WATCH_DIR="$target_dir"
+    export NVIM_DIFF_WATCH_ROOT="$repo_root"
+    cd -- "$repo_root" || exit 1
+    exec nvim
+  fi
 
   if [[ "$diff_base" == "head" ]]; then
     if git -C "$target_dir" rev-parse --verify HEAD >/dev/null 2>&1; then

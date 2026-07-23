@@ -1,4 +1,5 @@
 local catppuccin = require("config.catppuccin")
+local diff_watch = require("config.diff_watch")
 local review = require("config.review")
 local colors = catppuccin.palette()
 
@@ -28,7 +29,8 @@ return {
 		"lewis6991/gitsigns.nvim",
 		event = { "BufReadPre", "BufNewFile" },
 		opts = {
-			base = review.gitsigns_base(),
+			base = review.gitsigns_base() or diff_watch.gitsigns_base(),
+			attach_to_untracked = diff_watch.is_active(),
 			signs = {
 				add = { text = "▎" },
 				change = { text = "▎" },
@@ -57,28 +59,28 @@ return {
 			require("gitsigns").setup(opts)
 
 			-- Gitsigns may attach on BufReadPre before its configured base is
-			-- applied. Reapply the review merge-base so already-open buffers use
-			-- the PR diff rather than the Git index.
-			local base = review.gitsigns_base()
+			-- applied. Reapply it so review and HEAD-watch buffers do not fall
+			-- back to the Git index.
+			local base = review.gitsigns_base() or diff_watch.gitsigns_base()
 			if base then
-				local function apply_review_base()
+				local function apply_configured_base()
 					require("gitsigns").change_base(base, true)
 				end
-				local function apply_review_base_after_attach()
+				local function apply_configured_base_after_attach()
 					-- Gitsigns attaches asynchronously. Retry during startup so a
-					-- slow initial attach cannot leave review buffers on index base.
+					-- slow initial attach cannot leave configured buffers on index base.
 					for _, delay in ipairs({ 100, 500, 1000 }) do
-						vim.defer_fn(apply_review_base, delay)
+						vim.defer_fn(apply_configured_base, delay)
 					end
 				end
 
 				vim.api.nvim_create_autocmd({ "BufEnter", "VimEnter" }, {
-					group = vim.api.nvim_create_augroup("dotfiles-gitsigns-review-base", { clear = true }),
+					group = vim.api.nvim_create_augroup("dotfiles-gitsigns-configured-base", { clear = true }),
 					callback = function()
-						apply_review_base_after_attach()
+						apply_configured_base_after_attach()
 					end,
 				})
-				apply_review_base_after_attach()
+				apply_configured_base_after_attach()
 			end
 		end,
 	},
