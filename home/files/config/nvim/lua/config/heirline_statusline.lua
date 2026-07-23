@@ -14,6 +14,7 @@ end
 
 local function get_settings()
 	local colors = get_palette()
+	local active = conditions.is_active()
 	local settings = {
 		text = colors.mantle,
 		bkg = colors.crust,
@@ -23,8 +24,17 @@ local function get_settings()
 		curr_file = colors.maroon,
 		curr_dir = colors.flamingo,
 	}
+	if not active then
+		settings.text = colors.subtext0
+		settings.bkg = colors.base
+		settings.git_branch = colors.surface1
+		settings.git_diff = colors.surface0
+		settings.extras = colors.overlay0
+		settings.curr_file = colors.surface1
+		settings.curr_dir = colors.surface0
+	end
 
-	if require("catppuccin").flavour == "latte" then
+	if active and require("catppuccin").flavour == "latte" then
 		local latte = require("catppuccin.palettes").get_palette("latte")
 		settings.text = latte.base
 		settings.bkg = latte.crust
@@ -39,28 +49,37 @@ end
 
 local function mode_colors()
 	local colors = get_palette()
+	local dim = not conditions.is_active()
+	local function accent(color)
+		return dim and colors.surface1 or color
+	end
 	return {
-		["n"] = { "NORMAL", colors.lavender },
-		["no"] = { "N-PENDING", colors.lavender },
-		["i"] = { "INSERT", colors.green },
-		["ic"] = { "INSERT", colors.green },
-		["t"] = { "TERMINAL", colors.green },
-		["v"] = { "VISUAL", colors.flamingo },
-		["V"] = { "V-LINE", colors.flamingo },
-		["\22"] = { "V-BLOCK", colors.flamingo },
-		["R"] = { "REPLACE", colors.maroon },
-		["Rv"] = { "V-REPLACE", colors.maroon },
-		["s"] = { "SELECT", colors.maroon },
-		["S"] = { "S-LINE", colors.maroon },
-		["\19"] = { "S-BLOCK", colors.maroon },
-		["c"] = { "COMMAND", colors.peach },
-		["cv"] = { "COMMAND", colors.peach },
-		["ce"] = { "COMMAND", colors.peach },
-		["r"] = { "PROMPT", colors.teal },
-		["rm"] = { "MORE", colors.teal },
-		["r?"] = { "CONFIRM", colors.mauve },
-		["!"] = { "SHELL", colors.green },
+		["n"] = { "NORMAL", accent(colors.lavender) },
+		["no"] = { "N-PENDING", accent(colors.lavender) },
+		["i"] = { "INSERT", accent(colors.green) },
+		["ic"] = { "INSERT", accent(colors.green) },
+		["t"] = { "TERMINAL", accent(colors.green) },
+		["v"] = { "VISUAL", accent(colors.flamingo) },
+		["V"] = { "V-LINE", accent(colors.flamingo) },
+		["\22"] = { "V-BLOCK", accent(colors.flamingo) },
+		["R"] = { "REPLACE", accent(colors.maroon) },
+		["Rv"] = { "V-REPLACE", accent(colors.maroon) },
+		["s"] = { "SELECT", accent(colors.maroon) },
+		["S"] = { "S-LINE", accent(colors.maroon) },
+		["\19"] = { "S-BLOCK", accent(colors.maroon) },
+		["c"] = { "COMMAND", accent(colors.peach) },
+		["cv"] = { "COMMAND", accent(colors.peach) },
+		["ce"] = { "COMMAND", accent(colors.peach) },
+		["r"] = { "PROMPT", accent(colors.teal) },
+		["rm"] = { "MORE", accent(colors.teal) },
+		["r?"] = { "CONFIRM", accent(colors.mauve) },
+		["!"] = { "SHELL", accent(colors.green) },
 	}
+end
+
+local function status_accent(name)
+	local colors = get_palette()
+	return conditions.is_active() and colors[name] or colors.overlay1
 end
 
 local function current_mode()
@@ -422,7 +441,7 @@ local GitDiff = {
 			return git_count("added") ~= nil
 		end,
 		hl = function()
-			return { fg = get_palette().green, bold = true }
+			return { fg = status_accent("green"), bold = true }
 		end,
 	}),
 	GitStatusComponent(function()
@@ -432,7 +451,7 @@ local GitDiff = {
 			return git_count("changed") ~= nil
 		end,
 		hl = function()
-			return { fg = get_palette().yellow, bold = true }
+			return { fg = status_accent("yellow"), bold = true }
 		end,
 	}),
 	GitStatusComponent(function()
@@ -442,7 +461,7 @@ local GitDiff = {
 			return git_count("removed") ~= nil
 		end,
 		hl = function()
-			return { fg = get_palette().red, bold = true }
+			return { fg = status_accent("red"), bold = true }
 		end,
 	}),
 	{
@@ -482,7 +501,7 @@ local LspChip = {
 		end,
 		provider = lsp_progress,
 		hl = function()
-			return { fg = get_palette().rosewater, bg = get_settings().bkg }
+			return { fg = status_accent("rosewater"), bg = get_settings().bkg }
 		end,
 	},
 	{
@@ -580,33 +599,9 @@ local ActiveStatusline = {
 	RightSection,
 }
 
-local InactiveStatusline = {
-	condition = function()
-		return not conditions.is_active()
-	end,
-	hl = function()
-		local colors = get_palette()
-		return { fg = colors.subtext1, bg = colors.surface0 }
-	end,
-	{
-		provider = function()
-			return " " .. string.upper(vim.bo.filetype) .. " "
-		end,
-	},
-}
-
-local Statusline = {
-	fallthrough = false,
-	{
-		condition = conditions.is_active,
-		ActiveStatusline,
-	},
-	InactiveStatusline,
-}
-
 function M.setup()
 	require("heirline").setup({
-		statusline = Statusline,
+		statusline = ActiveStatusline,
 	})
 end
 

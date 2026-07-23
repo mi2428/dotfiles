@@ -36,6 +36,11 @@ local function terminal_visible_here(tab)
 		and vim.api.nvim_win_get_tabpage(tab.terminal.win) == vim.api.nvim_get_current_tabpage()
 end
 
+local function winbar_focused()
+	local win = tonumber(vim.g.statusline_winid)
+	return not win or win == 0 or win == vim.api.nvim_get_current_win()
+end
+
 local function redraw_winbars()
 	if not vim.api.nvim__redraw then
 		vim.cmd.redrawstatus()
@@ -337,11 +342,12 @@ end
 
 function M.winbar()
 	local segments = { "%#TerminalTabFill# " }
+	local suffix = winbar_focused() and "" or "Dim"
 
 	for _, tab in ipairs(state.tabs) do
 		local active = tab.id == state.active
-		local body = active and "TerminalTabActive" or "TerminalTabInactive"
-		local edge = active and "TerminalTabActiveEdge" or "TerminalTabInactiveEdge"
+		local body = (active and "TerminalTabActive" or "TerminalTabInactive") .. suffix
+		local edge = (active and "TerminalTabActiveEdge" or "TerminalTabInactiveEdge") .. suffix
 		local label = escape_statusline((" %d 󰆍 %s "):format(tab.id, tab_title(tab)))
 
 		segments[#segments + 1] = ("%%%d@v:lua.dotfiles_terminal_tab_click@"):format(tab.id)
