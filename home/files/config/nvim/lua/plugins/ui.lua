@@ -476,6 +476,7 @@ return {
 			quickfile = { enabled = true },
 			scratch = {},
 			explorer = { enabled = true },
+			words = {},
 			zen = {},
 			terminal = {
 				win = {
@@ -615,6 +616,20 @@ return {
 			},
 		},
 		keys = {
+			{
+				"[r",
+				function()
+					require("snacks").words.jump(-vim.v.count1)
+				end,
+				desc = "Previous reference",
+			},
+			{
+				"]r",
+				function()
+					require("snacks").words.jump(vim.v.count1)
+				end,
+				desc = "Next reference",
+			},
 			{
 				"<leader>n",
 				function()
