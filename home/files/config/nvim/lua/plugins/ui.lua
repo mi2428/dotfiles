@@ -485,7 +485,7 @@ return {
 			terminal = {
 				win = {
 					position = "bottom",
-					height = 0.4,
+					height = 0.33,
 					stack = false,
 					wo = {
 						winbar = "%!v:lua.dotfiles_terminal_winbar()",

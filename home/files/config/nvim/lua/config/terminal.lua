@@ -10,6 +10,13 @@ local state = {
 	setup = false,
 }
 
+local function use_compact_auto_open_height()
+	local configured_height = vim.tbl_get(Snacks.config, "terminal", "win", "height")
+	if type(configured_height) == "number" then
+		state.height = configured_height / 2
+	end
+end
+
 local function tab_index(id)
 	for index, tab in ipairs(state.tabs) do
 		if tab.id == id then
@@ -175,6 +182,9 @@ function M.setup()
 	local workspace_mode = vim.env.NVIM_WORKSPACE_MODE == "1"
 	vim.env.NVIM_AUTO_TERMINAL = nil
 	vim.env.NVIM_WORKSPACE_MODE = nil
+	if auto_open then
+		use_compact_auto_open_height()
+	end
 
 	require("config.tab_pill").set_terminal_highlights()
 
