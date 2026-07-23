@@ -98,6 +98,15 @@ local function has_modified_user_buffer()
 	return false
 end
 
+local function is_user_editor_window(win)
+	if vim.api.nvim_win_get_config(win).relative ~= "" then
+		return false
+	end
+
+	local filetype = vim.bo[vim.api.nvim_win_get_buf(win)].filetype
+	return filetype ~= "snacks_layout_box" and filetype ~= "snacks_terminal"
+end
+
 local snacks_exit_pending = false
 local snacks_exit_attempts = 0
 
@@ -139,15 +148,9 @@ autocmd("QuitPre", {
 	desc = "Exit Neovim when quitting the last editor window leaves only Snacks windows",
 	group = augroup("dotfiles-quit-with-only-snacks", { clear = true }),
 	callback = function()
-		exit_if_only_snacks()
-	end,
-})
-
-autocmd({ "BufDelete", "WinClosed" }, {
-	desc = "Exit Neovim after the last editor buffer or window closes",
-	group = augroup("dotfiles-exit-after-editor-close", { clear = true }),
-	callback = function()
-		exit_if_only_snacks()
+		if is_user_editor_window(vim.api.nvim_get_current_win()) then
+			exit_if_only_snacks()
+		end
 	end,
 })
 
