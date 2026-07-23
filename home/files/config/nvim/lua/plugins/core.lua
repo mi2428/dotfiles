@@ -41,6 +41,9 @@ return {
 		opts = {
 			default_file_explorer = true,
 			columns = { "icon", "permissions", "size", "mtime" },
+			lsp_file_methods = {
+				enabled = true,
+			},
 			view_options = {
 				show_hidden = true,
 			},
