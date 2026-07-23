@@ -24,7 +24,7 @@ return {
 		"milanglacier/minuet-ai.nvim",
 		version = "^0.9.0",
 		main = "minuet",
-		event = "InsertEnter",
+		event = { "BufReadPre", "BufNewFile", "InsertEnter" },
 		opts = {
 			provider = "openai",
 			n_completions = 1,
@@ -65,6 +65,22 @@ return {
 				},
 			},
 		},
+		config = function(_, opts)
+			require("minuet").setup(opts)
+
+			-- If Minuet was loaded by InsertEnter, FileType has already fired. Mark
+			-- existing eligible buffers so automatic virtual text can still trigger.
+			for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+				local filetype = vim.bo[buf].filetype
+				local enabled = vim.tbl_contains(opts.virtualtext.auto_trigger_ft, "*")
+					or vim.tbl_contains(opts.virtualtext.auto_trigger_ft, filetype)
+				local ignored = vim.tbl_contains(opts.virtualtext.auto_trigger_ignore_ft, filetype)
+
+				if filetype ~= "" and enabled and not ignored then
+					vim.b[buf].minuet_virtual_text_auto_trigger = true
+				end
+			end
+		end,
 	},
 	{
 		"olimorris/codecompanion.nvim",

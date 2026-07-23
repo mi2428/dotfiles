@@ -24,18 +24,6 @@ local parsers = {
 	"yang",
 }
 
-local indent_filetypes = {
-	bash = true,
-	go = true,
-	json = true,
-	lua = true,
-	python = true,
-	toml = true,
-	vim = true,
-	yaml = true,
-	yang = true,
-}
-
 local function start_treesitter(args)
 	local buf = args.buf
 	local filetype = vim.bo[buf].filetype
@@ -48,9 +36,16 @@ local function start_treesitter(args)
 		return
 	end
 
-	pcall(vim.treesitter.start, buf, lang)
+	local started = pcall(vim.treesitter.start, buf, lang)
+	if not started or vim.bo[buf].indentexpr ~= "" then
+		return
+	end
 
-	if indent_filetypes[filetype] then
+	-- Prefer Neovim's language-specific indent scripts. When a filetype has no
+	-- indentexpr, use Treesitter if it provides an indent query; otherwise the
+	-- global autoindent/smartindent settings remain the fallback.
+	local has_indent_query, indent_query = pcall(vim.treesitter.query.get, lang, "indents")
+	if has_indent_query and indent_query then
 		vim.bo[buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
 	end
 end
