@@ -480,7 +480,9 @@ return {
 			notifier = { enabled = true, timeout = 3000 },
 			quickfile = { enabled = true },
 			scratch = {},
+			scope = {},
 			explorer = { enabled = true },
+			toggle = {},
 			words = {},
 			zen = {},
 			terminal = {
@@ -621,6 +623,27 @@ return {
 			},
 		},
 		keys = {
+			{
+				"<leader>uc",
+				function()
+					require("snacks").bufdelete()
+				end,
+				desc = "Close current buffer",
+			},
+			{
+				"<leader>uo",
+				function()
+					require("snacks").bufdelete.other()
+				end,
+				desc = "Close other buffers",
+			},
+			{
+				"<leader>ui",
+				function()
+					require("snacks").bufdelete.invisible()
+				end,
+				desc = "Close invisible buffers",
+			},
 			{
 				"[r",
 				function()
@@ -862,6 +885,10 @@ return {
 			local snacks = require("snacks")
 
 			snacks.setup(opts)
+			snacks.toggle.diagnostics():map("<leader>ud")
+			snacks.toggle.inlay_hints():map("<leader>uh")
+			snacks.toggle.words():map("<leader>uw")
+			snacks.toggle.treesitter():map("<leader>ut")
 			require("config.terminal").setup()
 			patch_snacks_dashboard()
 			snacks.config.styles.dashboard.wo.foldcolumn = "0"
