@@ -1,5 +1,6 @@
 local autocmd = vim.api.nvim_create_autocmd
 local augroup = vim.api.nvim_create_augroup
+local workspace_mode = vim.env.NVIM_WORKSPACE_MODE == "1"
 
 local startup_directory
 if vim.fn.argc() == 1 then
@@ -73,13 +74,17 @@ local function is_empty_editor_window(win)
 		and vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] == ""
 end
 
-local function only_snacks_or_empty_windows()
+local function is_snacks_window(win)
+	local filetype = vim.bo[vim.api.nvim_win_get_buf(win)].filetype
+	return filetype == "snacks_layout_box" or filetype == "snacks_terminal"
+end
+
+local function should_exit_after_quit(quitting_win)
 	local has_snacks = false
 	for _, win in ipairs(vim.api.nvim_list_wins()) do
 		if vim.api.nvim_win_get_config(win).relative == "" then
-			local filetype = vim.bo[vim.api.nvim_win_get_buf(win)].filetype
-			local is_snacks = filetype == "snacks_layout_box" or filetype == "snacks_terminal"
-			if not is_snacks and not is_empty_editor_window(win) then
+			local is_snacks = is_snacks_window(win)
+			if win ~= quitting_win and not is_snacks and not is_empty_editor_window(win) then
 				return false
 			end
 			has_snacks = has_snacks or is_snacks
@@ -99,57 +104,52 @@ local function has_modified_user_buffer()
 end
 
 local function is_user_editor_window(win)
-	if vim.api.nvim_win_get_config(win).relative ~= "" then
-		return false
-	end
-
-	local filetype = vim.bo[vim.api.nvim_win_get_buf(win)].filetype
-	return filetype ~= "snacks_layout_box" and filetype ~= "snacks_terminal"
+	return vim.api.nvim_win_get_config(win).relative == "" and not is_snacks_window(win)
 end
 
 local snacks_exit_pending = false
-local snacks_exit_attempts = 0
 
-local function exit_if_only_snacks()
+local function exit_after_quit()
 	if snacks_exit_pending then
 		return
 	end
 
 	snacks_exit_pending = true
-	-- QuitPre still runs inside the original :quit command. A short timer keeps
-	-- :quitall from being nested in that command while Snacks tears down layouts.
-	vim.defer_fn(function()
-		if only_snacks_or_empty_windows() and not has_modified_user_buffer() then
-			snacks_exit_attempts = snacks_exit_attempts + 1
-			local ok, err = pcall(vim.cmd, "quitall!")
-			snacks_exit_pending = false
-			if not ok then
-				snacks_exit_attempts = 0
-				vim.notify(("Failed to exit Neovim: %s"):format(err), vim.log.levels.ERROR)
-			elseif only_snacks_or_empty_windows() and not has_modified_user_buffer() then
-				if snacks_exit_attempts < 3 then
-					exit_if_only_snacks()
-				else
-					snacks_exit_attempts = 0
-					vim.notify("Failed to exit Neovim after closing the last editor", vim.log.levels.ERROR)
-				end
-			else
-				snacks_exit_attempts = 0
+	local function try_exit(attempts_left)
+		-- QuitPre still runs inside the original :quit command. A short timer keeps
+		-- :quitall from being nested in that command while Snacks tears down layouts.
+		vim.defer_fn(function()
+			if has_modified_user_buffer() then
+				snacks_exit_pending = false
+				return
 			end
-			return
-		end
 
-		snacks_exit_pending = false
-		snacks_exit_attempts = 0
-	end, 20)
+			local ok, err = pcall(vim.cmd, "quitall!")
+			if not ok then
+				snacks_exit_pending = false
+				vim.notify(("Failed to exit Neovim: %s"):format(err), vim.log.levels.ERROR)
+				return
+			end
+
+			if attempts_left > 1 then
+				try_exit(attempts_left - 1)
+			else
+				snacks_exit_pending = false
+				vim.notify("Failed to exit Neovim after closing the last editor", vim.log.levels.ERROR)
+			end
+		end, 20)
+	end
+
+	try_exit(3)
 end
 
 autocmd("QuitPre", {
 	desc = "Exit Neovim when quitting the last editor window leaves only Snacks windows",
 	group = augroup("dotfiles-quit-with-only-snacks", { clear = true }),
 	callback = function()
-		if is_user_editor_window(vim.api.nvim_get_current_win()) then
-			exit_if_only_snacks()
+		local win = vim.api.nvim_get_current_win()
+		if is_user_editor_window(win) and should_exit_after_quit(win) then
+			exit_after_quit()
 		end
 	end,
 })
@@ -174,11 +174,11 @@ autocmd("VimEnter", {
 			local editor_window = vim.api.nvim_get_current_win()
 			require("fzf-lua").files({ cwd = startup_directory })
 
-			if vim.env.NVIM_WORKSPACE_MODE == "1" then
+			if workspace_mode then
 				local fzf_window = vim.api.nvim_get_current_win()
 				Snacks.explorer({ focus = false, watch = true })
 				vim.schedule(function()
-					require("config.terminal").toggle({ focus = false })
+					require("config.terminal").toggle()
 					if vim.api.nvim_win_is_valid(editor_window) then
 						vim.api.nvim_set_current_win(editor_window)
 					end

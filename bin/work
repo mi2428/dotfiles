@@ -36,11 +36,7 @@ function usage
 end
 
 function run_nvim_pane --argument-names user_shell server root
-    set -lx NVIM_WORKSPACE_MODE 1
-    set -lx NVIM_WORKSPACE_ROOT "$root"
-    set -lx NVIM_WORKSPACE_SERVER "$server"
-    set -lx NVIM_AUTO_TERMINAL 1
-    nvim --listen "$server" -- "$root"
+    env NVIM_AUTO_TERMINAL=1 NVIM_WORKSPACE_MODE=1 nvim --listen "$server" -- "$root"
     command rm -f -- "$server"
     exec "$user_shell"
 end

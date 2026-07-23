@@ -42,12 +42,11 @@ end
 
 function run_edit_pane --argument-names user_shell nvim_server
     set -l target_files $argv[3..-1]
-    set -lx NVIM_AUTO_TERMINAL 1
 
     if test (count $target_files) -gt 0
-        nvim --listen "$nvim_server" -- $target_files
+        env NVIM_AUTO_TERMINAL=1 nvim --listen "$nvim_server" -- $target_files
     else
-        nvim --listen "$nvim_server"
+        env NVIM_AUTO_TERMINAL=1 nvim --listen "$nvim_server"
     end
 
     command rm -f -- "$nvim_server"

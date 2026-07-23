@@ -167,7 +167,9 @@ function M.setup()
 	end
 	state.setup = true
 	local auto_open = vim.env.NVIM_AUTO_TERMINAL == "1"
+	local workspace_mode = vim.env.NVIM_WORKSPACE_MODE == "1"
 	vim.env.NVIM_AUTO_TERMINAL = nil
+	vim.env.NVIM_WORKSPACE_MODE = nil
 
 	require("config.tab_pill").set_terminal_highlights()
 
@@ -179,7 +181,7 @@ function M.setup()
 			redraw_winbars()
 		end,
 	})
-	if auto_open and vim.env.NVIM_WORKSPACE_MODE ~= "1" then
+	if auto_open and not workspace_mode then
 		vim.api.nvim_create_autocmd("VimEnter", {
 			group = group,
 			once = true,
@@ -188,7 +190,7 @@ function M.setup()
 				vim.defer_fn(function()
 					local previous_win = vim.api.nvim_get_current_win()
 					local previous_mode = vim.api.nvim_get_mode().mode
-					M.toggle({ focus = false })
+					M.toggle()
 
 					if vim.api.nvim_win_is_valid(previous_win) then
 						vim.api.nvim_set_current_win(previous_win)
@@ -243,11 +245,8 @@ function M.new(opts)
 		cwd = tab.cwd,
 		auto_close = false,
 	}
-	if state.height or opts.focus == false then
-		terminal_opts.win = {
-			height = state.height,
-			enter = opts.focus ~= false,
-		}
+	if state.height then
+		terminal_opts.win = { height = state.height }
 	end
 
 	local ok, terminal = pcall(function()
@@ -363,10 +362,6 @@ function M.click(id, _, button)
 			M.select(id)
 		end
 	end)
-end
-
-function M._state()
-	return state
 end
 
 return M
