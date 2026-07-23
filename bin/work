@@ -32,8 +32,10 @@ function usage
         '  - A tabbed Snacks terminal panel with lazygit and a shell' \
         "  - prefix+y popup: Yazi routed to that window's Neovim" \
         '' \
-        'With -w and no branch, select one with fzf. Existing worktrees and tmux' \
-        'windows are reused. New branches require -c and default to HEAD.'
+        'With -w and no branch, select one with fzf. Existing worktrees are reused.' \
+        'Inside tmux, each invocation opens a window in the current session; outside' \
+        'tmux, a repository session and its worktree windows are created or reused.' \
+        'New branches require -c and default to HEAD.'
 end
 
 function run_nvim_pane --argument-names user_shell server root
@@ -131,18 +133,20 @@ function remove_legacy_terminal_pane --argument-names window_target
     tmux set-option -w -qu -t "$window_target" @work_terminal_pane
 end
 
-function configure_worktree_window --argument-names session main_pane root server
+function configure_worktree_window --argument-names session main_pane root server manage_session
     tmux set-option -w -q -t "$main_pane" @work_root "$root"
     tmux set-option -w -q -t "$main_pane" @work_nvim_server "$server"
     tmux set-option -w -q -t "$main_pane" @work_nvim_pane "$main_pane"
     tmux set-option -w -qu -t "$main_pane" @work_terminal_pane
-    tmux set-option -q -t "$session" @work_common_dir (repository_common_dir "$root")
+    if test "$manage_session" = 1
+        tmux set-option -q -t "$session" @work_common_dir (repository_common_dir "$root")
+    end
 
     tmux select-pane -t "$main_pane" -T editor
     tmux select-pane -t "$main_pane"
 end
 
-function create_worktree_window --argument-names session root user_shell is_new_session session_width session_height
+function create_worktree_window --argument-names session root user_shell is_new_session session_width session_height manage_session
     set -l window_name (window_name_for_root "$root")
     set -l socket_slug (__dotfiles_git_ui_slugify (path basename "$root"))
     test -n "$socket_slug"; or set socket_slug worktree
@@ -157,7 +161,7 @@ function create_worktree_window --argument-names session root user_shell is_new_
         set main_pane (tmux new-window -d -P -F '#{pane_id}' -t "$session:" -n "$window_name" -c "$root" "$nvim_cmd"); or return 1
     end
 
-    configure_worktree_window "$session" "$main_pane" "$root" "$server"; or return 1
+    configure_worktree_window "$session" "$main_pane" "$root" "$server" "$manage_session"; or return 1
     printf '%s\n' "$main_pane"
 end
 
@@ -257,6 +261,12 @@ set -l project (path basename "$main_root")
 set -l slug (__dotfiles_git_ui_slugify "$project")
 test -n "$slug"; or set slug workspace
 set -l session "work-$slug"
+set -l use_current_session 0
+if set -q TMUX; and set -q TMUX_PANE
+    set session (tmux display-message -p -t "$TMUX_PANE" '#{session_name}'); or die 'could not determine the current tmux session'
+    test -n "$session"; or die 'could not determine the current tmux session'
+    set use_current_session 1
+end
 
 set -l user_shell /bin/bash
 if set -q SHELL; and test -x "$SHELL"
@@ -268,7 +278,9 @@ set -l session_width "$size[1]"
 set -l session_height "$size[2]"
 set -l target_pane ''
 
-if tmux has-session -t "$session" 2>/dev/null
+if test $use_current_session -eq 1
+    set target_pane (create_worktree_window "$session" "$root" "$user_shell" 0 "$session_width" "$session_height" 0); or die 'failed to create tmux window'
+else if tmux has-session -t "$session" 2>/dev/null
     set -l existing_common_dir (session_common_dir "$session")
     if test -z "$existing_common_dir"
         die "session $session exists but is not managed by work"
@@ -279,13 +291,13 @@ if tmux has-session -t "$session" 2>/dev/null
     adopt_legacy_window "$session" "$common_dir"
     set target_pane (find_worktree_window "$session" "$root")
     if test -z "$target_pane"
-        set target_pane (create_worktree_window "$session" "$root" "$user_shell" 0 "$session_width" "$session_height"); or die 'failed to create tmux window'
+        set target_pane (create_worktree_window "$session" "$root" "$user_shell" 0 "$session_width" "$session_height" 1); or die 'failed to create tmux window'
     else
         remove_git_panes "$target_pane"
         remove_legacy_terminal_pane "$target_pane"
     end
 else
-    set target_pane (create_worktree_window "$session" "$root" "$user_shell" 1 "$session_width" "$session_height"); or die 'failed to create tmux session'
+    set target_pane (create_worktree_window "$session" "$root" "$user_shell" 1 "$session_width" "$session_height" 1); or die 'failed to create tmux session'
 end
 
 tmux select-window -t "$target_pane"
