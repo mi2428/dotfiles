@@ -157,16 +157,28 @@ function M.setup()
 		return
 	end
 	state.setup = true
+	local auto_open = vim.env.NVIM_AUTO_TERMINAL == "1"
+	vim.env.NVIM_AUTO_TERMINAL = nil
 
 	require("config.tab_pill").set_terminal_highlights()
 
+	local group = vim.api.nvim_create_augroup("dotfiles-terminal-tabs", { clear = true })
 	vim.api.nvim_create_autocmd("ColorScheme", {
-		group = vim.api.nvim_create_augroup("dotfiles-terminal-tabs", { clear = true }),
+		group = group,
 		callback = function()
 			require("config.tab_pill").set_terminal_highlights()
 			redraw_winbars()
 		end,
 	})
+	if auto_open then
+		vim.api.nvim_create_autocmd("VimEnter", {
+			group = group,
+			once = true,
+			callback = function()
+				vim.schedule(M.toggle)
+			end,
+		})
+	end
 
 	vim.api.nvim_create_user_command("TerminalToggle", M.toggle, { force = true })
 	vim.api.nvim_create_user_command("TerminalNew", M.new, { force = true })
