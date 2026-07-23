@@ -23,6 +23,7 @@ let
     golangci-lint
     gopls
     hadolint
+    imagemagick
     lua-language-server
     pyright
     ruff

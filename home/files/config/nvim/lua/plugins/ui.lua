@@ -472,6 +472,9 @@ return {
 			bigfile = { enabled = true, line_length = math.huge },
 			gh = {},
 			gitbrowse = { what = "permalink" },
+			image = {
+				doc = { enabled = false },
+			},
 			input = {},
 			notifier = { enabled = true, timeout = 3000 },
 			quickfile = { enabled = true },
