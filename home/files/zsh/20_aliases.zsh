@@ -1055,7 +1055,7 @@ alias py='python3'
 alias rc='bundle exec rails c'
 alias tf='terraform'
 
-alias :::='tmuxinator'
+alias :::='herdr'
 #alias io='cd $HOME/io'
 alias dck='docker compose kill && docker compose rm -f'
 alias dcl='docker compose logs -f'

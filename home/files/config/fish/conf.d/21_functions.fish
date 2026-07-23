@@ -630,10 +630,6 @@ function io
 end
 
 function ::
-    herdr $argv
-end
-
-function :::
     set -l session $argv[1]
 
     if test -z "$session"
@@ -643,6 +639,10 @@ function :::
     else
         tmux $argv
     end
+end
+
+function :::
+    herdr $argv
 end
 
 function __dotfiles_herdr_pane_label_for_pane --argument-names pane_id
