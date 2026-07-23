@@ -99,6 +99,7 @@ local function has_modified_user_buffer()
 end
 
 local snacks_exit_pending = false
+local snacks_exit_attempts = 0
 
 local function exit_if_only_snacks()
 	if snacks_exit_pending then
@@ -110,15 +111,27 @@ local function exit_if_only_snacks()
 	-- :quitall from being nested in that command while Snacks tears down layouts.
 	vim.defer_fn(function()
 		if only_snacks_or_empty_windows() and not has_modified_user_buffer() then
+			snacks_exit_attempts = snacks_exit_attempts + 1
 			local ok, err = pcall(vim.cmd, "quitall!")
 			snacks_exit_pending = false
 			if not ok then
+				snacks_exit_attempts = 0
 				vim.notify(("Failed to exit Neovim: %s"):format(err), vim.log.levels.ERROR)
+			elseif only_snacks_or_empty_windows() and not has_modified_user_buffer() then
+				if snacks_exit_attempts < 3 then
+					exit_if_only_snacks()
+				else
+					snacks_exit_attempts = 0
+					vim.notify("Failed to exit Neovim after closing the last editor", vim.log.levels.ERROR)
+				end
+			else
+				snacks_exit_attempts = 0
 			end
 			return
 		end
 
 		snacks_exit_pending = false
+		snacks_exit_attempts = 0
 	end, 20)
 end
 
@@ -138,35 +151,6 @@ autocmd({ "BufDelete", "WinClosed" }, {
 	end,
 })
 
-local startup_editor_window
-local startup_fzf_window
-
-local function focus_startup_fzf()
-	if not startup_fzf_window or not vim.api.nvim_win_is_valid(startup_fzf_window) then
-		return
-	end
-
-	local buffer = vim.api.nvim_win_get_buf(startup_fzf_window)
-	if vim.bo[buffer].filetype ~= "fzf" then
-		return
-	end
-
-	-- Make the editor the alternate window so closing the fzf terminal returns
-	-- there instead of to the terminal pane that was opened most recently.
-	if startup_editor_window and vim.api.nvim_win_is_valid(startup_editor_window) then
-		vim.api.nvim_set_current_win(startup_editor_window)
-	end
-	vim.api.nvim_set_current_win(startup_fzf_window)
-	vim.cmd.startinsert()
-end
-
-autocmd("User", {
-	pattern = "DotfilesAutoTerminalOpened",
-	desc = "Restore the startup directory picker after opening the terminal pane",
-	group = augroup("dotfiles-focus-directory-picker", { clear = true }),
-	callback = focus_startup_fzf,
-})
-
 autocmd("VimEnter", {
 	desc = "Open a file picker for a directory argument",
 	group = augroup("dotfiles-directory-argument-picker", { clear = true }),
@@ -184,14 +168,27 @@ autocmd("VimEnter", {
 				end
 			end
 
-			startup_editor_window = vim.api.nvim_get_current_win()
+			local editor_window = vim.api.nvim_get_current_win()
 			require("fzf-lua").files({ cwd = startup_directory })
 
 			if vim.env.NVIM_WORKSPACE_MODE == "1" then
 				local fzf_window = vim.api.nvim_get_current_win()
-				startup_fzf_window = fzf_window
 				Snacks.explorer({ focus = false, watch = true })
-				vim.schedule(focus_startup_fzf)
+				vim.schedule(function()
+					require("config.terminal").toggle({ focus = false })
+					if vim.api.nvim_win_is_valid(editor_window) then
+						vim.api.nvim_set_current_win(editor_window)
+					end
+					if not vim.api.nvim_win_is_valid(fzf_window) then
+						return
+					end
+					local buffer = vim.api.nvim_win_get_buf(fzf_window)
+					if vim.bo[buffer].filetype ~= "fzf" then
+						return
+					end
+					vim.api.nvim_set_current_win(fzf_window)
+					vim.cmd.startinsert()
+				end)
 			end
 		end)
 	end,

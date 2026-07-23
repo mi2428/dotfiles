@@ -179,13 +179,12 @@ function M.setup()
 			redraw_winbars()
 		end,
 	})
-	if auto_open then
+	if auto_open and vim.env.NVIM_WORKSPACE_MODE ~= "1" then
 		vim.api.nvim_create_autocmd("VimEnter", {
 			group = group,
 			once = true,
 			callback = function()
-				-- Directory workspaces build the picker and Explorer immediately after
-				-- VimEnter. Let those layouts settle before opening the bottom pane.
+				-- Let any startup layouts settle before opening the bottom pane.
 				vim.defer_fn(function()
 					local previous_win = vim.api.nvim_get_current_win()
 					local previous_mode = vim.api.nvim_get_mode().mode
@@ -197,11 +196,6 @@ function M.setup()
 							vim.cmd.startinsert()
 						end
 					end
-
-					vim.api.nvim_exec_autocmds("User", {
-						pattern = "DotfilesAutoTerminalOpened",
-						modeline = false,
-					})
 				end, 150)
 			end,
 		})
