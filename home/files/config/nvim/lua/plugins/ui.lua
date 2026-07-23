@@ -115,6 +115,31 @@ local function patch_snacks_dashboard()
 	dashboard._dotfiles_fullscreen_render_patched = true
 end
 
+local function toggle_zen_zoom()
+	local zen = require("snacks").zen
+	if zen.win and zen.win:valid() then
+		zen.zoom()
+		return
+	end
+
+	-- Snacks can preserve only a global statusline under its fullscreen
+	-- floating window. Switch temporarily so zoom does not cover Heirline,
+	-- then restore the normal window-local statusline when zoom closes.
+	local laststatus = vim.o.laststatus
+	vim.o.laststatus = 3
+	local ok, err = pcall(zen.zoom, {
+		zoom = {
+			on_close = function()
+				vim.o.laststatus = laststatus
+			end,
+		},
+	})
+	if not ok then
+		vim.o.laststatus = laststatus
+		error(err)
+	end
+end
+
 local function set_dashboard_highlights()
 	vim.api.nvim_set_hl(0, "SnacksDashboardHeader", { fg = colors.blue, bold = true })
 	vim.api.nvim_set_hl(0, "SnacksDashboardKey", { fg = colors.yellow, bold = true })
@@ -449,6 +474,7 @@ return {
 			notifier = { enabled = true, timeout = 3000 },
 			quickfile = { enabled = true },
 			explorer = { enabled = true },
+			zen = {},
 			terminal = {
 				win = {
 					position = "bottom",
@@ -587,6 +613,18 @@ return {
 			},
 		},
 		keys = {
+			{
+				"<leader>z",
+				function()
+					require("snacks").zen()
+				end,
+				desc = "Toggle Zen mode",
+			},
+			{
+				"<leader>Z",
+				toggle_zen_zoom,
+				desc = "Toggle zoom",
+			},
 			{
 				"<leader>gB",
 				function()
