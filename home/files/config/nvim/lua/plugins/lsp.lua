@@ -207,7 +207,18 @@ return {
 				["<C-l>"] = { "show", "fallback" },
 				["<C-o>"] = { "select_and_accept", "fallback" },
 				["<C-y>"] = false,
-				["<Tab>"] = { "select_next", "fallback" },
+				["<CR>"] = { "accept", "fallback" },
+				["<Tab>"] = {
+					function()
+						local ok, minuet = pcall(require, "minuet.virtualtext")
+						if ok and minuet.action.is_visible() then
+							minuet.action.accept()
+							return true
+						end
+					end,
+					"select_next",
+					"fallback",
+				},
 				["<S-Tab>"] = { "select_prev", "fallback" },
 			},
 			appearance = {
@@ -262,6 +273,10 @@ return {
 			},
 			signature = {
 				enabled = true,
+				window = {
+					border = "rounded",
+					winblend = 0,
+				},
 			},
 		},
 		opts_extend = { "sources.default" },
@@ -511,6 +526,10 @@ return {
 				WARNING = vim.diagnostic.severity.WARN,
 				INFO = vim.diagnostic.severity.INFO,
 			}
+
+			-- Incomplete Go code commonly makes package loading fail while editing.
+			-- Keep any parsed diagnostics, but do not notify about the process exit code.
+			lint.linters.golangcilint.ignore_exitcode = true
 
 			lint.linters.helm_lint = {
 				cmd = "helm",

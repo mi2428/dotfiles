@@ -389,8 +389,7 @@ return {
 				bufferline = true,
 			},
 			custom_highlights = function(colors)
-				-- Use Catppuccin's muted surface colours so completion menus remain
-				-- distinct without breaking the transparent editor background.
+				-- Match completion popups to the existing LSP hover style.
 				return {
 					Search = { fg = colors.base, bg = colors.yellow, bold = true },
 					CurSearch = { fg = colors.base, bg = colors.mauve, bold = true },
@@ -398,12 +397,14 @@ return {
 					StatusLineNC = { fg = colors.subtext1, bg = colors.surface0 },
 					SnacksWinBar = { fg = colors.blue, bg = colors.surface1, bold = true },
 					SnacksWinBarNC = { fg = colors.subtext1, bg = colors.surface1, bold = true },
-					BlinkCmpMenu = { fg = colors.text, bg = colors.none },
-					BlinkCmpMenuBorder = { fg = colors.surface2, bg = colors.none },
+					BlinkCmpMenu = { link = "NormalFloat" },
+					BlinkCmpMenuBorder = { link = "FloatBorder" },
 					BlinkCmpMenuSelection = { fg = colors.text, bg = colors.surface0, bold = true },
-					BlinkCmpDoc = { fg = colors.text, bg = colors.none },
-					BlinkCmpDocBorder = { fg = colors.surface2, bg = colors.none },
+					BlinkCmpDoc = { link = "NormalFloat" },
+					BlinkCmpDocBorder = { link = "FloatBorder" },
 					BlinkCmpDocSeparator = { fg = colors.surface2, bg = colors.none },
+					BlinkCmpSignatureHelp = { link = "NormalFloat" },
+					BlinkCmpSignatureHelpBorder = { link = "FloatBorder" },
 					-- Keep rendered Markdown code distinct from the transparent editor base.
 					-- Ghostty applies its configured cell opacity to these backgrounds.
 					RenderMarkdownCode = { bg = colors.surface1 },

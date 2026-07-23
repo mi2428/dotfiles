@@ -21,6 +21,52 @@ end
 
 return {
 	{
+		"milanglacier/minuet-ai.nvim",
+		version = "^0.9.0",
+		main = "minuet",
+		event = "InsertEnter",
+		opts = {
+			provider = "openai",
+			n_completions = 1,
+			context_window = 8000,
+			throttle = 1000,
+			debounce = 450,
+			request_timeout = 3,
+			provider_options = {
+				openai = {
+					model = "gpt-5.4-nano",
+					-- Minuet reads the value from this environment variable.
+					api_key = "OPENAI_API_KEY",
+					optional = {
+						max_completion_tokens = 64,
+						reasoning_effort = "none",
+					},
+				},
+			},
+			virtualtext = {
+				auto_trigger_ft = { "*" },
+				auto_trigger_ignore_ft = {
+					"codecompanion",
+					"gitcommit",
+					"gitrebase",
+					"help",
+					"lazy",
+					"markdown",
+					"text",
+				},
+				keymap = {
+					-- Whole suggestions are accepted through blink.cmp's <Tab> mapping.
+					accept = nil,
+					accept_line = "<A-a>",
+					accept_n_lines = "<A-z>",
+					next = "<A-]>",
+					prev = "<A-[>",
+					dismiss = "<A-e>",
+				},
+			},
+		},
+	},
+	{
 		"olimorris/codecompanion.nvim",
 		version = "^19.0.0",
 		cmd = {
