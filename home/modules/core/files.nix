@@ -1,4 +1,4 @@
-{ lib, pkgs, ... }:
+{ config, lib, pkgs, ... }:
 let
   mkLink = source: {
     force = true;
@@ -29,6 +29,7 @@ let
   binFiles = lib.mapAttrs'
     (name: _: lib.nameValuePair ".local/bin/${name}" (mkLink (binRoot + "/${name}")))
     (lib.filterAttrs (_: type: type == "regular") (builtins.readDir binRoot));
+  codexNvimEditEvent = ../../files/libexec/dotfiles/codex-nvim-edit-event;
   macCompatibilityFiles = lib.optionalAttrs pkgs.stdenv.isDarwin {
     "Library/Application Support/com.mitchellh.ghostty/themes" =
       mkLink ../../files/config/ghostty/themes;
@@ -68,9 +69,21 @@ in {
   };
 
   home.file = binFiles // macCompatibilityFiles // {
+    ".local/libexec/dotfiles/codex-nvim-edit-event" = mkLink codexNvimEditEvent;
     ".curlrc" = mkLink ../../files/curl/curlrc;
     ".lesskey" = mkLink ../../files/less/lesskey;
     ".screenrc" = mkLink ../../files/screen/screenrc;
     ".wgetrc" = mkLink ../../files/wget/wgetrc;
   };
+
+  # Herdr owns its SessionStart hook but preserves other entries in
+  # ~/.codex/hooks.json. Merge the private Neovim edit bridge from its
+  # immutable source; linkGeneration then projects the matching libexec path.
+  home.activation.installCodexNvimEditHooks = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    if [ -d "${config.home.homeDirectory}/.codex" ]; then
+      ${pkgs.python3}/bin/python3 \
+        "${codexNvimEditEvent}" \
+        install --quiet
+    fi
+  '';
 }
