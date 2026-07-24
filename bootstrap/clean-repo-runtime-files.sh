@@ -2,7 +2,7 @@
 set -eu
 
 repo_root=$(
-    CDPATH= cd -- "$(dirname -- "$0")/.." && pwd
+    CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd
 )
 config_root=$repo_root/home/files/config
 
