@@ -67,7 +67,6 @@ return {
 		lazy = false,
 		build = ":TSUpdate",
 		opts = {
-			ensure_installed = parsers,
 			install_dir = vim.fn.stdpath("data") .. "/site",
 		},
 		config = function(plugin, opts)
@@ -79,7 +78,12 @@ return {
 				vim.opt.rtp:append(runtime_dir)
 			end
 
-			require("nvim-treesitter").setup(opts)
+			local treesitter = require("nvim-treesitter")
+			treesitter.setup(opts)
+
+			-- The main branch no longer supports ensure_installed. install() is
+			-- asynchronous and a no-op for parsers already present at install_dir.
+			treesitter.install(parsers)
 
 			vim.api.nvim_create_autocmd("FileType", {
 				group = vim.api.nvim_create_augroup("dotfiles-treesitter", { clear = true }),
