@@ -1,6 +1,7 @@
 local M = {}
 
 local uv = vim.uv or vim.loop
+local codex_edits = require("config.codex_edit_watch")
 local flash_namespace = vim.api.nvim_create_namespace("dotfiles-git-diff-watch-follow")
 local state
 
@@ -244,7 +245,8 @@ local function flush_pending_follow()
 
 	local candidate = state.pending_follow
 	if
-		not state.paths[candidate.path]
+		(not candidate.codex and not state.paths[candidate.path])
+		or not uv.fs_stat(candidate.path)
 		or not vim.api.nvim_buf_is_valid(candidate.bufnr)
 		or vim.bo[candidate.bufnr].modified
 	then
@@ -269,6 +271,9 @@ local function flush_pending_follow()
 		vim.cmd("normal! zz")
 	end)
 	flash_follow_line(candidate.bufnr, line)
+	if candidate.on_follow then
+		candidate.on_follow()
+	end
 	vim.api.nvim_echo({ { ("AI → %s:%d"):format(display_path(candidate.path), line), "DiagnosticInfo" } }, false, {})
 end
 
@@ -423,6 +428,7 @@ function M.stop(opts)
 	end
 
 	state.active = false
+	codex_edits.stop()
 	clear_follow_flash()
 	if state.timer and not state.timer:is_closing() then
 		state.timer:stop()
@@ -486,6 +492,10 @@ function M.gitsigns_base()
 	end
 end
 
+function M.codex_status()
+	return codex_edits.status()
+end
+
 function M.setup()
 	if vim.env.NVIM_DIFF_WATCH_MODE ~= "1" then
 		return
@@ -533,6 +543,13 @@ function M.setup()
 		timer = nil,
 	}
 
+	codex_edits.setup({
+		follow = queue_follow,
+		refresh = M.refresh,
+		repo_root = repo_root,
+		scope_dir = scope_dir,
+	})
+
 	vim.api.nvim_create_user_command(
 		"VDiffWatchFollowToggle",
 		M.toggle_follow,
@@ -559,6 +576,12 @@ function M.setup()
 		group = group,
 		callback = function(args)
 			remember_written_buffer(args.buf)
+		end,
+	})
+	vim.api.nvim_create_autocmd({ "BufEnter", "ModeChanged" }, {
+		group = group,
+		callback = function()
+			vim.schedule(flush_pending_follow)
 		end,
 	})
 end
