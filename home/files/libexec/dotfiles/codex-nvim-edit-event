@@ -1,0 +1,458 @@
+#!/usr/bin/env python3
+"""Bridge private Codex lifecycle hooks to Neovim's Git diff watcher."""
+
+from __future__ import annotations
+
+import argparse
+import difflib
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+import tempfile
+import time
+import uuid
+
+
+EVENT_VERSION = 1
+MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024
+EVENT_MAX_AGE_SECONDS = 24 * 60 * 60
+SNAPSHOT_MAX_AGE_SECONDS = 60 * 60
+FILE_HEADER = re.compile(r"^\*\*\* (Add|Update|Delete) File: (.+)$")
+MOVE_HEADER = re.compile(r"^\*\*\* Move to: (.+)$")
+MANAGED_COMMAND = "codex-nvim-edit-event"
+
+
+def event_directory() -> Path:
+    configured = os.environ.get("CODEX_NVIM_EDIT_EVENT_DIR")
+    if configured:
+        return Path(configured).expanduser()
+
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or os.environ.get("TMPDIR") or "/tmp"
+    return Path(runtime) / f"codex-nvim-edit-events-{os.getuid()}"
+
+
+def ensure_private_directory(path: Path) -> None:
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        path.chmod(0o700)
+    except OSError:
+        pass
+
+
+def read_hook_input() -> dict[str, object]:
+    try:
+        payload = json.load(sys.stdin)
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def hook_string(payload: dict[str, object], key: str) -> str:
+    value = payload.get(key)
+    return value if isinstance(value, str) else ""
+
+
+def patch_command(payload: dict[str, object]) -> str:
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return ""
+    command = tool_input.get("command")
+    return command if isinstance(command, str) else ""
+
+
+def parse_patch_files(command: str) -> list[dict[str, str]]:
+    files: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+
+    for line in command.splitlines():
+        header = FILE_HEADER.match(line)
+        if header:
+            current = {
+                "kind": header.group(1).lower(),
+                "path": header.group(2),
+            }
+            files.append(current)
+            continue
+
+        moved = MOVE_HEADER.match(line)
+        if moved and current is not None:
+            current["move_path"] = moved.group(1)
+
+    return files
+
+
+def resolve_patch_path(cwd: Path, value: str) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = cwd / path
+    return path.resolve(strict=False)
+
+
+def read_text(path: Path) -> str | None:
+    try:
+        file_stat = path.stat()
+        if (
+            not stat.S_ISREG(file_stat.st_mode)
+            or file_stat.st_size > MAX_SNAPSHOT_BYTES
+        ):
+            return None
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def snapshot_key(payload: dict[str, object], command: str) -> str:
+    tool_use_id = hook_string(payload, "tool_use_id")
+    identity = "\0".join(
+        (
+            hook_string(payload, "session_id"),
+            hook_string(payload, "turn_id"),
+            hook_string(payload, "tool_name"),
+            tool_use_id or command,
+        )
+    )
+    return hashlib.sha256(identity.encode()).hexdigest()
+
+
+def atomic_json_write(path: Path, payload: object, mode: int = 0o600) -> None:
+    ensure_private_directory(path.parent)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", dir=path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, separators=(",", ":"))
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.chmod(mode)
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def snapshot_path(payload: dict[str, object], command: str) -> Path:
+    return event_directory() / ".snapshots" / f"{snapshot_key(payload, command)}.json"
+
+
+def capture_snapshot(payload: dict[str, object]) -> None:
+    command = patch_command(payload)
+    cwd_value = hook_string(payload, "cwd")
+    if not command or not cwd_value:
+        return
+
+    cwd = Path(cwd_value).resolve(strict=False)
+    files = parse_patch_files(command)
+    captured: list[dict[str, object]] = []
+    for change in files:
+        source = resolve_patch_path(cwd, change["path"])
+        before = read_text(source)
+        if change["kind"] == "add" and before is None and not source.exists():
+            before = ""
+        captured.append(
+            {
+                **change,
+                "source": str(source),
+                "before": before,
+            }
+        )
+
+    atomic_json_write(
+        snapshot_path(payload, command),
+        {
+            "version": EVENT_VERSION,
+            "cwd": str(cwd),
+            "files": captured,
+        },
+    )
+    cleanup_old_files()
+
+
+def load_snapshot(
+    payload: dict[str, object], command: str
+) -> tuple[Path, list[dict[str, object]]]:
+    cwd = Path(hook_string(payload, "cwd") or os.getcwd()).resolve(strict=False)
+    path = snapshot_path(payload, command)
+    try:
+        snapshot = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        files = []
+        for change in parse_patch_files(command):
+            source = resolve_patch_path(cwd, change["path"])
+            files.append(
+                {
+                    **change,
+                    "source": str(source),
+                    "before": "" if change["kind"] == "add" else None,
+                }
+            )
+        return cwd, files
+    finally:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+    snapshot_cwd = snapshot.get("cwd") if isinstance(snapshot, dict) else None
+    files = snapshot.get("files") if isinstance(snapshot, dict) else None
+    if isinstance(snapshot_cwd, str):
+        cwd = Path(snapshot_cwd).resolve(strict=False)
+    return cwd, files if isinstance(files, list) else []
+
+
+def changed_hunks(before: str, after: str) -> list[dict[str, object]]:
+    before_lines = before.splitlines(keepends=True)
+    after_lines = after.splitlines(keepends=True)
+    matcher = difflib.SequenceMatcher(None, before_lines, after_lines, autojunk=False)
+    hunks: list[dict[str, object]] = []
+
+    for change_type, old_start, old_end, new_start, new_end in matcher.get_opcodes():
+        if change_type == "equal":
+            continue
+
+        old_count = old_end - old_start
+        new_count = new_end - new_start
+        display_start = max(1, min(new_start + 1, max(len(after_lines), 1)))
+        display_end = display_start + max(new_count, 1) - 1
+        display_end = max(display_start, min(display_end, max(len(after_lines), 1)))
+        hunks.append(
+            {
+                "change_type": change_type,
+                "start_line": display_start,
+                "end_line": display_end,
+                "old_start": old_start + 1,
+                "old_count": old_count,
+                "new_start": new_start + 1,
+                "new_count": new_count,
+            }
+        )
+
+    return hunks
+
+
+def create_patch_event(payload: dict[str, object]) -> dict[str, object]:
+    command = patch_command(payload)
+    cwd, files = load_snapshot(payload, command)
+    changes: list[dict[str, object]] = []
+
+    for change in files:
+        if not isinstance(change, dict):
+            continue
+        source_value = change.get("source")
+        source = (
+            Path(source_value)
+            if isinstance(source_value, str)
+            else resolve_patch_path(cwd, str(change.get("path") or ""))
+        )
+        move_value = change.get("move_path")
+        target = (
+            resolve_patch_path(cwd, move_value)
+            if isinstance(move_value, str)
+            else source
+        )
+        before = change.get("before")
+        after = read_text(target)
+        kind = str(change.get("kind") or "update")
+
+        if kind == "delete" and not target.exists():
+            changes.append(
+                {
+                    "path": str(source),
+                    "kind": "delete",
+                    "hunks": [],
+                }
+            )
+            continue
+
+        if not isinstance(after, str):
+            continue
+        if not isinstance(before, str):
+            changes.append(
+                {
+                    "path": str(target),
+                    "kind": kind,
+                    "move_from": str(source) if target != source else None,
+                    "hunks": [],
+                }
+            )
+            continue
+
+        hunks = changed_hunks(before, after)
+        if hunks or target != source:
+            changes.append(
+                {
+                    "path": str(target),
+                    "kind": "move" if target != source else kind,
+                    "move_from": str(source) if target != source else None,
+                    "hunks": hunks,
+                }
+            )
+
+    return base_event(payload, "patch", changes=changes)
+
+
+def base_event(
+    payload: dict[str, object], event_type: str, **extra: object
+) -> dict[str, object]:
+    return {
+        "version": EVENT_VERSION,
+        "type": event_type,
+        "emitted_at_ns": time.time_ns(),
+        "cwd": hook_string(payload, "cwd"),
+        "session_id": hook_string(payload, "session_id"),
+        "turn_id": hook_string(payload, "turn_id"),
+        "tool_use_id": hook_string(payload, "tool_use_id"),
+        "tool_name": hook_string(payload, "tool_name"),
+        **extra,
+    }
+
+
+def emit_event(payload: dict[str, object], event_type: str) -> None:
+    directory = event_directory()
+    ensure_private_directory(directory)
+    if event_type == "patch":
+        event = create_patch_event(payload)
+    else:
+        event = base_event(payload, event_type)
+    name = f"{event['emitted_at_ns']}-{uuid.uuid4().hex}.event.json"
+    atomic_json_write(directory / name, event)
+    cleanup_old_files()
+
+
+def cleanup_directory(directory: Path, maximum_age: int) -> None:
+    cutoff = time.time() - maximum_age
+    try:
+        entries = list(directory.iterdir())
+    except OSError:
+        return
+    for entry in entries:
+        try:
+            if entry.is_file() and entry.stat().st_mtime < cutoff:
+                entry.unlink()
+        except OSError:
+            pass
+
+
+def cleanup_old_files() -> None:
+    directory = event_directory()
+    cleanup_directory(directory, EVENT_MAX_AGE_SECONDS)
+    cleanup_directory(directory / ".snapshots", SNAPSHOT_MAX_AGE_SECONDS)
+
+
+def hook_definition(action: str, matcher: str | None = None) -> dict[str, object]:
+    command = f'"$HOME/.local/libexec/dotfiles/{MANAGED_COMMAND}" {action}'
+    definition: dict[str, object] = {
+        "hooks": [
+            {
+                "command": command,
+                "timeout": 3,
+                "type": "command",
+            }
+        ]
+    }
+    if matcher:
+        definition["matcher"] = matcher
+    return definition
+
+
+def is_managed_definition(definition: object) -> bool:
+    if not isinstance(definition, dict):
+        return False
+    handlers = definition.get("hooks")
+    if not isinstance(handlers, list):
+        return False
+    return bool(handlers) and all(
+        isinstance(handler, dict)
+        and MANAGED_COMMAND in str(handler.get("command") or "")
+        for handler in handlers
+    )
+
+
+def install_hooks(quiet: bool) -> None:
+    codex_home = Path(
+        os.environ.get("CODEX_HOME") or Path.home() / ".codex"
+    ).expanduser()
+    hooks_path = codex_home / "hooks.json"
+    try:
+        document = json.loads(hooks_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        document = {}
+    except json.JSONDecodeError as error:
+        raise SystemExit(
+            f"refusing to modify invalid JSON in {hooks_path}: {error}"
+        ) from error
+
+    if not isinstance(document, dict):
+        raise SystemExit(
+            f"refusing to modify non-object hook configuration in {hooks_path}"
+        )
+    hooks = document.setdefault("hooks", {})
+    if not isinstance(hooks, dict):
+        raise SystemExit(f"refusing to modify invalid hooks table in {hooks_path}")
+
+    desired = {
+        "PreToolUse": [hook_definition("pre", r"^apply_patch$")],
+        "PostToolUse": [
+            hook_definition("post", r"^apply_patch$"),
+            hook_definition("refresh", r"^(Bash|Edit|Write|mcp__.*)$"),
+        ],
+        "Stop": [hook_definition("stop")],
+    }
+    changed = False
+    for event_name, definitions in desired.items():
+        existing = hooks.setdefault(event_name, [])
+        if not isinstance(existing, list):
+            raise SystemExit(
+                f"refusing to modify invalid {event_name} hooks in {hooks_path}"
+            )
+        filtered = [
+            definition
+            for definition in existing
+            if not is_managed_definition(definition)
+        ]
+        replacement = filtered + definitions
+        if replacement != existing:
+            hooks[event_name] = replacement
+            changed = True
+
+    if changed:
+        ensure_private_directory(codex_home)
+        atomic_json_write(hooks_path, document, mode=0o644)
+    if not quiet:
+        state = "updated" if changed else "already current"
+        print(f"Codex Neovim edit hooks {state}: {hooks_path}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("action", choices=("pre", "post", "refresh", "stop", "install"))
+    parser.add_argument("--quiet", action="store_true")
+    args = parser.parse_args()
+
+    if args.action == "install":
+        install_hooks(args.quiet)
+        return
+
+    payload = read_hook_input()
+    if not payload:
+        return
+    if args.action == "pre":
+        capture_snapshot(payload)
+    elif args.action == "post":
+        emit_event(payload, "patch")
+    elif args.action == "refresh":
+        emit_event(payload, "refresh")
+    elif args.action == "stop":
+        emit_event(payload, "stop")
+
+
+if __name__ == "__main__":
+    main()
