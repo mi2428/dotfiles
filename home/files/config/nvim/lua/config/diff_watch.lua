@@ -91,6 +91,47 @@ local function find_buffer(path)
 	end
 end
 
+local function ensure_two_file_layout(buffers)
+	if state.auto_split_done or #buffers < 2 then
+		return
+	end
+
+	local primary
+	local primary_win
+	for _, bufnr in ipairs(buffers) do
+		local winid = vim.fn.bufwinid(bufnr)
+		if winid ~= -1 and vim.api.nvim_win_is_valid(winid) then
+			if primary then
+				state.auto_split_done = true
+				return
+			end
+			primary = bufnr
+			primary_win = winid
+		end
+	end
+	if not primary or not primary_win then
+		return
+	end
+
+	local secondary
+	for _, bufnr in ipairs(buffers) do
+		if bufnr ~= primary then
+			secondary = bufnr
+			break
+		end
+	end
+	if not secondary then
+		return
+	end
+
+	vim.api.nvim_set_current_win(primary_win)
+	vim.cmd("rightbelow vsplit")
+	local secondary_win = vim.api.nvim_get_current_win()
+	vim.api.nvim_win_set_buf(secondary_win, secondary)
+	vim.api.nvim_set_current_win(primary_win)
+	state.auto_split_done = true
+end
+
 local function parse_paths(output, paths)
 	for relative in (output or ""):gmatch("([^%z]+)") do
 		local absolute = normalize(vim.fs.joinpath(state.repo_root, relative))
@@ -154,7 +195,8 @@ end
 local function open_new_buffers(paths)
 	local current = vim.api.nvim_get_current_buf()
 	local replace_empty = is_empty_buffer(current)
-	local first_new
+	local first_buffer
+	local buffers = {}
 	local ordered = vim.tbl_keys(paths)
 	table.sort(ordered)
 
@@ -178,16 +220,21 @@ local function open_new_buffers(paths)
 
 		if created and bufnr then
 			state.owned[bufnr] = path
-			first_new = first_new or bufnr
+		end
+		if bufnr then
+			first_buffer = first_buffer or bufnr
+			buffers[#buffers + 1] = bufnr
 		end
 	end
 
-	if replace_empty and first_new and vim.api.nvim_buf_is_valid(first_new) then
-		vim.api.nvim_set_current_buf(first_new)
-		if current ~= first_new and vim.api.nvim_buf_is_valid(current) then
+	if replace_empty and first_buffer and vim.api.nvim_buf_is_valid(first_buffer) then
+		vim.api.nvim_set_current_buf(first_buffer)
+		if current ~= first_buffer and vim.api.nvim_buf_is_valid(current) then
 			pcall(vim.api.nvim_buf_delete, current, {})
 		end
 	end
+
+	ensure_two_file_layout(buffers)
 end
 
 local function candidate_is_newer(candidate, other)
@@ -525,6 +572,7 @@ function M.setup()
 
 	state = {
 		active = false,
+		auto_split_done = false,
 		diff_base = diff_base,
 		flash_buffer = nil,
 		flash_generation = 0,
