@@ -301,7 +301,8 @@ opt.foldlevelstart = 99
 opt.foldenable = true
 opt.showtabline = 2
 opt.showmode = false
-opt.signcolumn = "yes:1"
+-- Keep diagnostics and the latest Codex edit pointer visible together.
+opt.signcolumn = "yes:2"
 opt.scrolloff = 8
 opt.sidescrolloff = 4
 

@@ -278,6 +278,23 @@ local function lsp_chip_text()
 	return "%#DotfilesLspChip# " .. table.concat(parts, "  ") .. " "
 end
 
+local function codex_edit_status()
+	local ok, watcher = pcall(require, "config.diff_watch")
+	if not ok then
+		return nil
+	end
+	return watcher.codex_status()
+end
+
+local function codex_edit_text()
+	local status = codex_edit_status()
+	if not status then
+		return ""
+	end
+	local label = status.active and "Codex editing" or "Codex edit"
+	return ("%%< %s: %s:%d"):format(label, status.path, status.line)
+end
+
 local function file_name()
 	local filename = vim.fn.expand("%:t")
 	local extension = vim.fn.expand("%:e")
@@ -536,7 +553,12 @@ local LspChip = {
 	end,
 }
 
+local CodexEdit = ExtraComponent(codex_edit_text, function()
+	return width_above(90) and codex_edit_status() ~= nil
+end)
+
 local RightSection = {
+	CodexEdit,
 	LspChip,
 	{
 		condition = function()
