@@ -196,41 +196,99 @@ local function current_mode_scene()
 	return "default"
 end
 
-local function set_statuscolumn_highlights(scene)
-	scene = scene or "default"
-	local style = mode_styles[scene] or mode_styles.default
-
-	vim.api.nvim_set_hl(0, "LineNr", { fg = colors.overlay0 })
-	vim.api.nvim_set_hl(0, "Visual", { bg = blend(colors.mauve, colors.base, 0.4), bold = true })
-	vim.api.nvim_set_hl(0, "CursorLine", { bg = style.bg })
-	vim.api.nvim_set_hl(0, "CursorLineSign", { bg = style.bg })
-	vim.api.nvim_set_hl(0, "CursorLineFold", { bg = style.bg })
-	vim.api.nvim_set_hl(0, "CursorLineNr", { fg = style.fg, bg = style.bg, bold = true })
-
-	local cursorline = vim.api.nvim_get_hl(0, { name = "CursorLineNr", link = false })
-	if not cursorline or vim.tbl_isempty(cursorline) then
-		vim.api.nvim_set_hl(0, "DotfilesStatuscolumnMarker", { link = "CursorLineNr", default = false })
-		return
-	end
-
-	cursorline.bold = true
-	vim.api.nvim_set_hl(0, "DotfilesStatuscolumnMarker", cursorline)
+local function mode_highlight_group(base, scene)
+	local suffix = (scene or "default"):gsub("^%l", string.upper)
+	return "Dotfiles" .. base .. suffix
 end
 
-local function apply_mode_ui()
-	local win = vim.api.nvim_get_current_win()
-	local buf = vim.api.nvim_get_current_buf()
+local function refresh_statuscolumn_highlights()
+	vim.api.nvim_set_hl(0, "LineNr", { fg = colors.overlay0 })
+	vim.api.nvim_set_hl(0, "Visual", { bg = blend(colors.mauve, colors.base, 0.4), bold = true })
+
+	for scene, style in pairs(mode_styles) do
+		vim.api.nvim_set_hl(0, mode_highlight_group("CursorLine", scene), { bg = style.bg })
+		vim.api.nvim_set_hl(0, mode_highlight_group("CursorLineSign", scene), { bg = style.bg })
+		vim.api.nvim_set_hl(0, mode_highlight_group("CursorLineFold", scene), { bg = style.bg })
+		vim.api.nvim_set_hl(
+			0,
+			mode_highlight_group("CursorLineNr", scene),
+			{ fg = style.fg, bg = style.bg, bold = true }
+		)
+		vim.api.nvim_set_hl(
+			0,
+			mode_highlight_group("StatuscolumnMarker", scene),
+			{ fg = style.fg, bg = style.bg, bold = true }
+		)
+	end
+
+	local default = mode_styles.default
+	vim.api.nvim_set_hl(0, "CursorLine", { bg = default.bg })
+	vim.api.nvim_set_hl(0, "CursorLineSign", { bg = default.bg })
+	vim.api.nvim_set_hl(0, "CursorLineFold", { bg = default.bg })
+	vim.api.nvim_set_hl(0, "CursorLineNr", { fg = default.fg, bg = default.bg, bold = true })
+	vim.api.nvim_set_hl(0, "DotfilesStatuscolumnMarker", { fg = default.fg, bg = default.bg, bold = true })
+end
+
+local function set_window_highlights(win, scene)
+	-- CursorLine groups are global, so point them at scene-specific groups via
+	-- the window-local override instead of recoloring every split at once.
+	local replacements = {
+		CursorLine = mode_highlight_group("CursorLine", scene),
+		CursorLineSign = mode_highlight_group("CursorLineSign", scene),
+		CursorLineFold = mode_highlight_group("CursorLineFold", scene),
+		CursorLineNr = mode_highlight_group("CursorLineNr", scene),
+		DotfilesStatuscolumnMarker = mode_highlight_group("StatuscolumnMarker", scene),
+	}
+	local entries = {}
+	local indexes = {}
+
+	for entry in vim.wo[win].winhighlight:gmatch("[^,]+") do
+		local source = entry:match("^([^:]+):")
+		if source then
+			indexes[source] = #entries + 1
+		end
+		entries[#entries + 1] = entry
+	end
+
+	for source, target in pairs(replacements) do
+		local entry = source .. ":" .. target
+		if indexes[source] then
+			entries[indexes[source]] = entry
+		else
+			entries[#entries + 1] = entry
+		end
+	end
+
+	vim.wo[win].winhighlight = table.concat(entries, ",")
+end
+
+local window_scenes = {}
+
+local function apply_mode_ui(win, scene)
+	win = win or vim.api.nvim_get_current_win()
+	local buf = vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) or -1
 	if not vim.api.nvim_win_is_valid(win) or not vim.api.nvim_buf_is_valid(buf) then
 		return
 	end
 
+	scene = scene or window_scenes[win] or "default"
 	if cursorline_enabled(buf) then
 		vim.wo[win].cursorline = true
-		set_statuscolumn_highlights(current_mode_scene())
 	else
 		vim.wo[win].cursorline = false
-		set_statuscolumn_highlights("default")
+		scene = "default"
 	end
+
+	window_scenes[win] = scene
+	set_window_highlights(win, scene)
+end
+
+local function schedule_current_mode_ui()
+	local win = vim.api.nvim_get_current_win()
+	local scene = current_mode_scene()
+	vim.schedule(function()
+		apply_mode_ui(win, scene)
+	end)
 end
 
 local function statuscolumn_number_width()
@@ -339,23 +397,26 @@ vim.api.nvim_create_autocmd("ColorScheme", {
 	pattern = "*",
 	callback = function()
 		refresh_mode_styles()
-		apply_mode_ui()
+		refresh_statuscolumn_highlights()
+		for _, win in ipairs(vim.api.nvim_list_wins()) do
+			apply_mode_ui(win)
+		end
 	end,
 })
 refresh_mode_styles()
-apply_mode_ui()
+refresh_statuscolumn_highlights()
+apply_mode_ui(vim.api.nvim_get_current_win(), current_mode_scene())
 
 vim.api.nvim_create_autocmd({ "BufEnter", "FileType", "ModeChanged", "WinEnter" }, {
 	group = vim.api.nvim_create_augroup("dotfiles-cursorline-mode", { clear = true }),
-	callback = function()
-		vim.schedule(apply_mode_ui)
-	end,
+	callback = schedule_current_mode_ui,
 })
 
 vim.api.nvim_create_autocmd("CmdlineEnter", {
 	group = vim.api.nvim_create_augroup("dotfiles-cursorline-command", { clear = true }),
 	callback = function()
-		set_statuscolumn_highlights("command")
+		local win = vim.api.nvim_get_current_win()
+		apply_mode_ui(win, "command")
 		-- The editing grid is otherwise left with its pre-command-line colors.
 		vim.cmd.redraw({ bang = true })
 	end,
@@ -364,7 +425,18 @@ vim.api.nvim_create_autocmd("CmdlineEnter", {
 vim.api.nvim_create_autocmd("CmdlineLeave", {
 	group = "dotfiles-cursorline-command",
 	callback = function()
-		vim.schedule(apply_mode_ui)
+		local win = vim.api.nvim_get_current_win()
+		vim.schedule(function()
+			local scene = win == vim.api.nvim_get_current_win() and current_mode_scene() or "default"
+			apply_mode_ui(win, scene)
+		end)
+	end,
+})
+
+vim.api.nvim_create_autocmd("WinClosed", {
+	group = "dotfiles-cursorline-mode",
+	callback = function(args)
+		window_scenes[tonumber(args.match)] = nil
 	end,
 })
 
