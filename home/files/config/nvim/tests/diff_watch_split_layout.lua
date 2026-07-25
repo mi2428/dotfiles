@@ -30,6 +30,19 @@ local function visible_paths()
 	return paths
 end
 
+local function all_windows_at_least(minimum)
+	for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+		if vim.api.nvim_win_get_config(winid).relative == "" and vim.api.nvim_win_get_width(winid) < minimum then
+			return false
+		end
+	end
+	return true
+end
+
+local function window_widths()
+	return vim.tbl_map(vim.api.nvim_win_get_width, vim.api.nvim_tabpage_list_wins(0))
+end
+
 local root = vim.fn.tempname()
 local first = vim.fs.joinpath(root, "01-first.txt")
 local second = vim.fs.joinpath(root, "02-second.txt")
@@ -73,6 +86,8 @@ assert(
 )
 assert_equal(#vim.api.nvim_tabpage_list_wins(0), 1, "one watched file must use one window")
 
+vim.g.dotfiles_diff_watch_min_width = 39
+vim.api.nvim_exec_autocmds("VimResized", { modeline = false })
 vim.fn.writefile({ "SECOND" }, second)
 assert(
 	vim.wait(3000, function()
@@ -88,6 +103,10 @@ local first_position = vim.api.nvim_win_get_position(windows[1])
 local second_position = vim.api.nvim_win_get_position(windows[2])
 assert_equal(first_position[1], second_position[1], "watched files must share the same screen row")
 assert(first_position[2] ~= second_position[2], "watched files must be arranged in vertical splits")
+assert(
+	all_windows_at_least(39),
+	("each watched window must retain the configured minimum width: %s"):format(vim.inspect(window_widths()))
+)
 assert_equal(
 	vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()),
 	vim.uv.fs_realpath(second),
@@ -112,6 +131,31 @@ assert_equal(
 	vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()),
 	vim.uv.fs_realpath(third),
 	"follow must focus the latest edited file"
+)
+
+vim.g.dotfiles_diff_watch_min_width = 26
+vim.api.nvim_exec_autocmds("VimResized", { modeline = false })
+assert(
+	vim.wait(3000, function()
+		local current_visible = visible_paths()
+		return #vim.api.nvim_tabpage_list_wins(0) == 3
+			and current_visible[vim.uv.fs_realpath(first)]
+			and current_visible[vim.uv.fs_realpath(second)]
+			and current_visible[vim.uv.fs_realpath(third)]
+			and all_windows_at_least(26)
+	end, 20),
+	"increasing width capacity must expose every watched file that fits"
+)
+
+vim.g.dotfiles_diff_watch_min_width = 39
+vim.api.nvim_exec_autocmds("VimResized", { modeline = false })
+assert(
+	vim.wait(3000, function()
+		return #vim.api.nvim_tabpage_list_wins(0) == 2
+			and visible_paths()[vim.uv.fs_realpath(third)]
+			and all_windows_at_least(39)
+	end, 20),
+	"reducing width capacity must close excess watched windows while preserving the active edit"
 )
 
 vim.fn.writefile({ "first" }, first)
@@ -140,6 +184,7 @@ assert_equal(first_position[1], second_position[1], "recreated watched windows m
 assert(first_position[2] ~= second_position[2], "the recreated layout must still use vertical splits")
 
 watcher.stop({ notify = false })
+vim.g.dotfiles_diff_watch_min_width = nil
 vim.fn.delete(root, "rf")
 vim.fn.delete(root .. "-events", "rf")
 print("diff_watch split layout: ok")

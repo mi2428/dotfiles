@@ -4,6 +4,7 @@ local uv = vim.uv or vim.loop
 local codex_edits = require("config.codex_edit_watch")
 local safe_checktime = require("config.safe_checktime")
 local flash_namespace = vim.api.nvim_create_namespace("dotfiles-git-diff-watch-follow")
+local default_layout_min_width = 150
 local state
 
 local function normalize(path)
@@ -92,43 +93,93 @@ local function find_buffer(path)
 	end
 end
 
-local function ensure_two_file_layout(buffers)
-	if #buffers < 2 then
-		return
-	end
-
-	local primary
-	local primary_win
-	for _, bufnr in ipairs(buffers) do
-		local winid = vim.fn.bufwinid(bufnr)
-		if winid ~= -1 and vim.api.nvim_win_is_valid(winid) then
-			if primary then
-				return
-			end
-			primary = bufnr
-			primary_win = winid
+local function normal_tab_windows()
+	local windows = {}
+	for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+		if vim.api.nvim_win_is_valid(winid) and vim.api.nvim_win_get_config(winid).relative == "" then
+			windows[#windows + 1] = winid
 		end
 	end
-	if not primary or not primary_win then
+	return windows
+end
+
+local function layout_capacity()
+	-- Vertical separators consume one column between adjacent windows.
+	local configured = tonumber(vim.g.dotfiles_diff_watch_min_width)
+	local minimum = configured and math.max(1, math.floor(configured)) or default_layout_min_width
+	return math.max(1, math.floor((vim.o.columns + 1) / (minimum + 1)))
+end
+
+local function ensure_file_layout(buffers)
+	if #buffers == 0 then
 		return
 	end
 
-	local secondary
+	local watched = {}
 	for _, bufnr in ipairs(buffers) do
-		if bufnr ~= primary then
-			secondary = bufnr
+		watched[bufnr] = true
+	end
+
+	local current_win = vim.api.nvim_get_current_win()
+	local visible = {}
+	local other_windows = 0
+	for _, winid in ipairs(normal_tab_windows()) do
+		if watched[vim.api.nvim_win_get_buf(winid)] then
+			visible[#visible + 1] = winid
+		else
+			other_windows = other_windows + 1
+		end
+	end
+
+	local desired = math.min(#buffers, math.max(1, layout_capacity() - other_windows))
+	table.sort(visible, function(left, right)
+		if left == current_win or right == current_win then
+			return left == current_win
+		end
+		local left_position = vim.api.nvim_win_get_position(left)
+		local right_position = vim.api.nvim_win_get_position(right)
+		if left_position[1] ~= right_position[1] then
+			return left_position[1] < right_position[1]
+		end
+		return left_position[2] < right_position[2]
+	end)
+
+	for index = #visible, desired + 1, -1 do
+		local closed = pcall(vim.api.nvim_win_close, visible[index], false)
+		if closed then
+			table.remove(visible, index)
+		end
+	end
+
+	local visible_buffers = {}
+	for _, winid in ipairs(visible) do
+		if vim.api.nvim_win_is_valid(winid) then
+			visible_buffers[vim.api.nvim_win_get_buf(winid)] = true
+		end
+	end
+
+	local primary_win = visible[1]
+	if not primary_win or not vim.api.nvim_win_is_valid(primary_win) then
+		return
+	end
+
+	for _, bufnr in ipairs(buffers) do
+		if #visible >= desired then
 			break
 		end
-	end
-	if not secondary then
-		return
+		if not visible_buffers[bufnr] then
+			vim.api.nvim_set_current_win(primary_win)
+			vim.cmd("rightbelow vsplit")
+			local winid = vim.api.nvim_get_current_win()
+			vim.api.nvim_win_set_buf(winid, bufnr)
+			visible[#visible + 1] = winid
+			visible_buffers[bufnr] = true
+		end
 	end
 
-	vim.api.nvim_set_current_win(primary_win)
-	vim.cmd("rightbelow vsplit")
-	local secondary_win = vim.api.nvim_get_current_win()
-	vim.api.nvim_win_set_buf(secondary_win, secondary)
-	vim.api.nvim_set_current_win(primary_win)
+	if vim.api.nvim_win_is_valid(primary_win) then
+		vim.api.nvim_set_current_win(primary_win)
+	end
 end
 
 local function parse_paths(output, paths)
@@ -233,7 +284,7 @@ local function open_new_buffers(paths)
 		end
 	end
 
-	ensure_two_file_layout(buffers)
+	return buffers
 end
 
 local function candidate_is_newer(candidate, other)
@@ -404,9 +455,10 @@ local function close_clean_buffers(paths)
 end
 
 local function reconcile(paths)
-	open_new_buffers(paths)
+	local buffers = open_new_buffers(paths)
 	local latest = refresh_open_buffers(paths)
 	close_clean_buffers(paths)
+	ensure_file_layout(buffers)
 	for path in pairs(state.snapshots) do
 		if not paths[path] then
 			state.snapshots[path] = nil
@@ -626,6 +678,16 @@ function M.setup()
 		group = group,
 		callback = function()
 			vim.schedule(flush_pending_follow)
+		end,
+	})
+	vim.api.nvim_create_autocmd("VimResized", {
+		group = group,
+		callback = function()
+			vim.schedule(function()
+				if state and state.active then
+					ensure_file_layout(open_new_buffers(state.paths))
+				end
+			end)
 		end,
 	})
 end
