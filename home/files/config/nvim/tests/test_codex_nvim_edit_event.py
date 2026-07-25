@@ -254,16 +254,24 @@ class CodexNvimEditEventTest(unittest.TestCase):
             )
             self.assertTrue(
                 any(
-                    item.get("matcher") == "^(apply_patch|Bash)$"
+                    item.get("matcher") == "^apply_patch$"
                     for item in hooks["PreToolUse"]
                 )
             )
             self.assertTrue(
+                any(item.get("matcher") == "^Bash$" for item in hooks["PreToolUse"])
+            )
+            self.assertTrue(
                 any(
-                    item.get("matcher") == "^(apply_patch|Bash)$"
+                    item.get("matcher") == "^apply_patch$"
                     for item in hooks["PostToolUse"]
                 )
             )
+            self.assertTrue(
+                any(item.get("matcher") == "^Bash$" for item in hooks["PostToolUse"])
+            )
+            self.assertEqual(hooks["PreToolUse"][0]["hooks"][0]["timeout"], 3)
+            self.assertEqual(hooks["PostToolUse"][0]["hooks"][0]["timeout"], 3)
             managed_commands = [
                 handler["command"]
                 for event in ("PreToolUse", "PostToolUse", "Stop")

@@ -707,10 +707,14 @@ def install_hooks(quiet: bool) -> None:
         raise SystemExit(f"refusing to modify invalid hooks table in {hooks_path}")
 
     desired = {
-        "PreToolUse": [hook_definition("pre", r"^(apply_patch|Bash)$", timeout=5)],
+        "PreToolUse": [
+            hook_definition("pre", r"^apply_patch$"),
+            hook_definition("pre", r"^Bash$", timeout=5),
+        ],
         "PostToolUse": [
-            hook_definition("post", r"^(apply_patch|Bash)$", timeout=5),
-            hook_definition("refresh", r"^(Edit|Write|mcp__.*)$"),
+            hook_definition("post", r"^apply_patch$"),
+            hook_definition("refresh", r"^(Bash|Edit|Write|mcp__.*)$"),
+            hook_definition("post", r"^Bash$", timeout=5),
         ],
         "Stop": [hook_definition("stop")],
     }
