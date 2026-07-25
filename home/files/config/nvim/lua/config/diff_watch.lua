@@ -4,7 +4,7 @@ local uv = vim.uv or vim.loop
 local codex_edits = require("config.codex_edit_watch")
 local safe_checktime = require("config.safe_checktime")
 local flash_namespace = vim.api.nvim_create_namespace("dotfiles-git-diff-watch-follow")
-local default_layout_min_width = 150
+local default_layout_min_width = 130
 local state
 
 local function normalize(path)
