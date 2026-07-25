@@ -177,8 +177,9 @@ local function ensure_file_layout(buffers)
 		end
 	end
 
-	if vim.api.nvim_win_is_valid(primary_win) then
-		vim.api.nvim_set_current_win(primary_win)
+	local restore_win = vim.api.nvim_win_is_valid(current_win) and current_win or primary_win
+	if vim.api.nvim_win_is_valid(restore_win) then
+		vim.api.nvim_set_current_win(restore_win)
 	end
 end
 

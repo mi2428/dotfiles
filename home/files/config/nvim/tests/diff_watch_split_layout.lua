@@ -30,6 +30,12 @@ local function visible_paths()
 	return paths
 end
 
+local function normal_windows()
+	return vim.tbl_filter(function(winid)
+		return vim.api.nvim_win_get_config(winid).relative == ""
+	end, vim.api.nvim_tabpage_list_wins(0))
+end
+
 local function all_windows_at_least(minimum)
 	for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
 		if vim.api.nvim_win_get_config(winid).relative == "" and vim.api.nvim_win_get_width(winid) < minimum then
@@ -157,6 +163,11 @@ assert(
 	end, 20),
 	"reducing width capacity must close excess watched windows while preserving the active edit"
 )
+assert_equal(
+	vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()),
+	vim.uv.fs_realpath(third),
+	"reducing width capacity must keep focus on the active edit"
+)
 
 vim.fn.writefile({ "first" }, first)
 vim.fn.writefile({ "second" }, second)
@@ -182,6 +193,47 @@ first_position = vim.api.nvim_win_get_position(windows[1])
 second_position = vim.api.nvim_win_get_position(windows[2])
 assert_equal(first_position[1], second_position[1], "recreated watched windows must share the same screen row")
 assert(first_position[2] ~= second_position[2], "the recreated layout must still use vertical splits")
+
+local scratch_buffer = vim.api.nvim_create_buf(false, true)
+vim.cmd("rightbelow vsplit")
+local scratch_win = vim.api.nvim_get_current_win()
+vim.api.nvim_win_set_buf(scratch_win, scratch_buffer)
+vim.api.nvim_exec_autocmds("VimResized", { modeline = false })
+assert(
+	vim.wait(3000, function()
+		return #normal_windows() == 2 and vim.api.nvim_get_current_win() == scratch_win
+	end, 20),
+	"a non-watched split must consume capacity without losing focus"
+)
+
+vim.api.nvim_win_close(scratch_win, true)
+vim.api.nvim_exec_autocmds("VimResized", { modeline = false })
+assert(
+	vim.wait(3000, function()
+		return #normal_windows() == 2
+			and visible_paths()[vim.uv.fs_realpath(second)]
+			and visible_paths()[vim.uv.fs_realpath(third)]
+	end, 20),
+	"closing a non-watched split must refill the watched layout"
+)
+
+local float_buffer = vim.api.nvim_create_buf(false, true)
+local float_win = vim.api.nvim_open_win(float_buffer, true, {
+	relative = "editor",
+	row = 1,
+	col = 1,
+	width = 20,
+	height = 3,
+	style = "minimal",
+})
+watcher.refresh()
+vim.wait(500, function()
+	return false
+end, 20)
+assert(vim.api.nvim_win_is_valid(float_win), "watch refresh must not close a floating window")
+assert_equal(vim.api.nvim_get_current_win(), float_win, "watch refresh must preserve floating-window focus")
+assert_equal(#normal_windows(), 2, "a floating window must not consume watched layout capacity")
+vim.api.nvim_win_close(float_win, true)
 
 watcher.stop({ notify = false })
 vim.g.dotfiles_diff_watch_min_width = nil
