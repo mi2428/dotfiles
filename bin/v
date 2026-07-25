@@ -9,17 +9,19 @@ Run Neovim, with shortcuts for opening Git changes.
 
 Usage:
   $program_name [NVIM_ARG ...]
-  $program_name diff [--watch [--follow]] [DIR]
-  $program_name diff head [--watch [--follow]] [DIR]
+  $program_name diff [DIR]
+  $program_name diff head [DIR]
+  $program_name diff follow [DIR]
+  $program_name diff head follow [DIR]
 
 Commands:
-  diff [DIR]       Open unstaged and untracked files under DIR.
-  diff head [DIR]  Open all files changed from HEAD, plus untracked files.
+  diff [DIR]              Open unstaged and untracked files under DIR.
+  diff head [DIR]         Open all files changed from HEAD, plus untracked files.
+  diff follow [DIR]       Watch Git changes and follow the latest external edit.
+  diff head follow [DIR]  Do the same for all changes from HEAD.
 
 Options:
-  -w, --watch      Keep buffers synchronized with the Git changes.
-  -f, --follow     Follow the latest externally changed line (requires --watch).
-  -h, --help       Show this help.
+  -h, --help  Show this help.
 
 DIR defaults to the current Git repository root. Deleted files are ignored.
 Other arguments are passed directly to Neovim. Use -R to open read-only.
@@ -41,7 +43,6 @@ append_files() {
 
 open_diff() {
   local diff_base="worktree"
-  local watch=0
   local follow=0
   local target_dir=""
   local repo_root=""
@@ -56,12 +57,7 @@ open_diff() {
         diff_base="head"
         shift
         ;;
-      -w|--watch)
-        ((watch == 0)) || die "duplicate option: $1" 2
-        watch=1
-        shift
-        ;;
-      -f|--follow)
+      follow)
         ((follow == 0)) || die "duplicate option: $1" 2
         follow=1
         shift
@@ -83,8 +79,7 @@ open_diff() {
     esac
   done
 
-  (($# <= 1)) || die "usage: $program_name diff [--watch [--follow]] [DIR] | $program_name diff head [--watch [--follow]] [DIR]" 2
-  ((follow == 0 || watch == 1)) || die "--follow requires --watch" 2
+  (($# <= 1)) || die "usage: $program_name diff [head] [follow] [DIR]" 2
 
   if (($# == 1)); then
     target_dir="$1"
@@ -98,7 +93,7 @@ open_diff() {
   repo_root="$(git -C "$target_dir" rev-parse --show-toplevel 2>/dev/null)" ||
     die "not inside a Git repository: $target_dir"
 
-  if ((watch)); then
+  if ((follow)); then
     export NVIM_DIFF_WATCH_MODE=1
     export NVIM_DIFF_WATCH_BASE="$diff_base"
     export NVIM_DIFF_WATCH_DIR="$target_dir"
