@@ -114,6 +114,31 @@ assert_equal(
 	"follow must focus the latest edited file"
 )
 
+vim.fn.writefile({ "first" }, first)
+vim.fn.writefile({ "second" }, second)
+assert(
+	vim.wait(3000, function()
+		return #vim.api.nvim_tabpage_list_wins(0) == 1 and visible_paths()[vim.uv.fs_realpath(third)]
+	end, 20),
+	"clean watched files must collapse the layout back to one window"
+)
+
+vim.fn.writefile({ "SECOND AGAIN" }, second)
+assert(
+	vim.wait(3000, function()
+		local current_visible = visible_paths()
+		return #vim.api.nvim_tabpage_list_wins(0) == 2
+			and current_visible[vim.uv.fs_realpath(second)]
+			and current_visible[vim.uv.fs_realpath(third)]
+	end, 20),
+	"a later second watched file must recreate the vertical split"
+)
+windows = vim.api.nvim_tabpage_list_wins(0)
+first_position = vim.api.nvim_win_get_position(windows[1])
+second_position = vim.api.nvim_win_get_position(windows[2])
+assert_equal(first_position[1], second_position[1], "recreated watched windows must share the same screen row")
+assert(first_position[2] ~= second_position[2], "the recreated layout must still use vertical splits")
+
 watcher.stop({ notify = false })
 vim.fn.delete(root, "rf")
 vim.fn.delete(root .. "-events", "rf")

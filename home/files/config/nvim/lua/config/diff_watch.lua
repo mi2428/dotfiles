@@ -93,7 +93,7 @@ local function find_buffer(path)
 end
 
 local function ensure_two_file_layout(buffers)
-	if state.auto_split_done or #buffers < 2 then
+	if #buffers < 2 then
 		return
 	end
 
@@ -103,7 +103,6 @@ local function ensure_two_file_layout(buffers)
 		local winid = vim.fn.bufwinid(bufnr)
 		if winid ~= -1 and vim.api.nvim_win_is_valid(winid) then
 			if primary then
-				state.auto_split_done = true
 				return
 			end
 			primary = bufnr
@@ -130,7 +129,6 @@ local function ensure_two_file_layout(buffers)
 	local secondary_win = vim.api.nvim_get_current_win()
 	vim.api.nvim_win_set_buf(secondary_win, secondary)
 	vim.api.nvim_set_current_win(primary_win)
-	state.auto_split_done = true
 end
 
 local function parse_paths(output, paths)
@@ -571,7 +569,6 @@ function M.setup()
 
 	state = {
 		active = false,
-		auto_split_done = false,
 		diff_base = diff_base,
 		flash_buffer = nil,
 		flash_generation = 0,
