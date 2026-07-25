@@ -2,6 +2,7 @@ local M = {}
 
 local uv = vim.uv or vim.loop
 local codex_edits = require("config.codex_edit_watch")
+local safe_checktime = require("config.safe_checktime")
 local flash_namespace = vim.api.nvim_create_namespace("dotfiles-git-diff-watch-follow")
 local state
 
@@ -342,9 +343,7 @@ local function refresh_open_buffers(paths)
 			vim.bo[bufnr].autoread = true
 			local snapshot = state.snapshots[path]
 			if not snapshot or snapshot.signature ~= metadata.signature then
-				pcall(vim.api.nvim_buf_call, bufnr, function()
-					vim.cmd("silent checktime")
-				end)
+				safe_checktime.checktime(bufnr)
 
 				if not vim.bo[bufnr].modified then
 					local lines = buffer_lines(bufnr)

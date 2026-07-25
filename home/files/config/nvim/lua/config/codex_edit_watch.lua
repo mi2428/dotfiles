@@ -1,6 +1,7 @@
 local M = {}
 
 local uv = vim.uv or vim.loop
+local safe_checktime = require("config.safe_checktime")
 local sign_namespace = vim.api.nvim_create_namespace("dotfiles-codex-edit-signs")
 local highlight_namespace = vim.api.nvim_create_namespace("dotfiles-codex-edit-highlights")
 local state
@@ -49,9 +50,7 @@ local function load_buffer(path)
 		return nil
 	end
 	if not vim.bo[bufnr].modified then
-		pcall(vim.api.nvim_buf_call, bufnr, function()
-			vim.cmd("silent checktime")
-		end)
+		safe_checktime.checktime(bufnr)
 	end
 	return bufnr
 end
