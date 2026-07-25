@@ -41,7 +41,8 @@ run({
 })
 
 vim.env.CODEX_NVIM_EDIT_EVENT_DIR = event_dir
-local hook = vim.fs.joinpath(dotfiles_root, "home/files/libexec/dotfiles/codex-nvim-edit-event")
+local hook = vim.env.CODEX_NVIM_EDIT_HOOK
+	or vim.fs.joinpath(dotfiles_root, "home/files/libexec/dotfiles/codex-nvim-edit-event")
 local watcher = require("config.codex_edit_watch")
 local followed = {}
 local refresh_count = 0
@@ -207,6 +208,39 @@ quickfix = vim.fn.getqflist({ items = 1, title = 1 })
 assert_equal(#quickfix.items, 4, "history trimming must also prune turn quickfix entries")
 vim.cmd("cclose")
 
+local bash_common = vim.tbl_extend("force", common, {
+	tool_input = { command = "formatter alpha.txt" },
+	tool_name = "Bash",
+	tool_use_id = "tool-bash",
+})
+run({ hook, "pre" }, {
+	stdin = vim.json.encode(vim.tbl_extend("force", bash_common, { hook_event_name = "PreToolUse" })),
+	text = true,
+})
+vim.fn.writefile({ "one", "TWO", "THREE", "four", "FIVE", "SIX B" }, source)
+run({ hook, "post" }, {
+	stdin = vim.json.encode(vim.tbl_extend("force", bash_common, {
+		hook_event_name = "PostToolUse",
+		tool_response = "Command completed.",
+	})),
+	text = true,
+})
+assert(
+	vim.wait(2000, function()
+		local current = watcher.status()
+		return current ~= nil and current.line == 3 and refresh_count >= 5
+	end, 20),
+	"Bash PostToolUse must identify and follow the exact changed hunk"
+)
+local bash_sign = false
+test_marks = vim.api.nvim_buf_get_extmarks(bufnr, -1, { 2, 0 }, { 2, -1 }, { details = true })
+for _, mark in ipairs(test_marks) do
+	if mark[4].sign_text and vim.trim(mark[4].sign_text) == "" then
+		bash_sign = true
+	end
+end
+assert(bash_sign, "Bash edits must receive a Codex sign at the changed line")
+
 local refresh = vim.tbl_extend("force", common, {
 	hook_event_name = "PostToolUse",
 	tool_name = "Bash",
@@ -214,7 +248,7 @@ local refresh = vim.tbl_extend("force", common, {
 run({ hook, "refresh" }, { stdin = vim.json.encode(refresh), text = true })
 assert(
 	vim.wait(2000, function()
-		return refresh_count >= 5
+		return refresh_count >= 6
 	end, 20),
 	"Bash PostToolUse must trigger immediate reconciliation"
 )
@@ -224,7 +258,7 @@ run({ hook, "stop" }, { stdin = vim.json.encode(stop), text = true })
 assert(
 	vim.wait(2000, function()
 		local current = watcher.status()
-		return current and current.active == false and refresh_count >= 6
+		return current and current.active == false and refresh_count >= 7
 	end, 20),
 	"Stop must close the active turn and reconcile once more"
 )

@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -21,6 +22,10 @@ EVENT_VERSION = 1
 MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024
 EVENT_MAX_AGE_SECONDS = 24 * 60 * 60
 SNAPSHOT_MAX_AGE_SECONDS = 60 * 60
+GIT_COMMAND_TIMEOUT_SECONDS = 1
+MAX_GIT_OUTPUT_BYTES = 32 * 1024 * 1024
+MAX_WORKSPACE_SNAPSHOT_BYTES = 32 * 1024 * 1024
+MAX_WORKSPACE_PATHS = 2000
 FILE_HEADER = re.compile(r"^\*\*\* (Add|Update|Delete) File: (.+)$")
 MOVE_HEADER = re.compile(r"^\*\*\* Move to: (.+)$")
 MANAGED_COMMAND = "codex-nvim-edit-event"
@@ -56,12 +61,19 @@ def hook_string(payload: dict[str, object], key: str) -> str:
     return value if isinstance(value, str) else ""
 
 
-def patch_command(payload: dict[str, object]) -> str:
+def tool_command(payload: dict[str, object]) -> str:
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         return ""
-    command = tool_input.get("command")
-    return command if isinstance(command, str) else ""
+    for key in ("command", "cmd", "input"):
+        command = tool_input.get(key)
+        if isinstance(command, str):
+            return command
+    return ""
+
+
+def is_bash_tool(payload: dict[str, object]) -> bool:
+    return hook_string(payload, "tool_name") in {"Bash", "exec", "exec_command"}
 
 
 def parse_patch_files(command: str) -> list[dict[str, str]]:
@@ -143,8 +155,141 @@ def snapshot_path(payload: dict[str, object], command: str) -> Path:
     return event_directory() / ".snapshots" / f"{snapshot_key(payload, command)}.json"
 
 
-def capture_snapshot(payload: dict[str, object]) -> None:
-    command = patch_command(payload)
+def git_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    environment.update({"GIT_OPTIONAL_LOCKS": "0", "GIT_PAGER": "cat", "LC_ALL": "C"})
+    return environment
+
+
+def git_output(cwd: Path, *arguments: str) -> bytes | None:
+    try:
+        completed = subprocess.run(
+            ("git", "--no-pager", *arguments),
+            cwd=cwd,
+            check=False,
+            env=git_environment(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=GIT_COMMAND_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0 or len(completed.stdout) > MAX_GIT_OUTPUT_BYTES:
+        return None
+    return completed.stdout
+
+
+def git_root(cwd: Path) -> Path | None:
+    output = git_output(cwd, "rev-parse", "--show-toplevel")
+    if not output:
+        return None
+    return Path(os.fsdecode(output.rstrip(b"\n"))).resolve(strict=False)
+
+
+def index_entries(root: Path) -> dict[str, str] | None:
+    output = git_output(root, "ls-files", "-s", "-z")
+    if output is None:
+        return None
+    entries: dict[str, str] = {}
+    for record in output.split(b"\0"):
+        if not record:
+            continue
+        metadata, separator, raw_path = record.partition(b"\t")
+        fields = metadata.split()
+        if not separator or len(fields) != 3 or fields[2] != b"0":
+            continue
+        entries[os.fsdecode(raw_path)] = fields[1].decode("ascii")
+    return entries
+
+
+def dirty_paths(root: Path) -> set[str] | None:
+    output = git_output(
+        root,
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+        "--ignore-submodules=all",
+    )
+    if output is None:
+        return None
+
+    paths: set[str] = set()
+    records = output.split(b"\0")
+    index = 0
+    while index < len(records):
+        record = records[index]
+        index += 1
+        if not record:
+            continue
+        if len(record) < 4 or record[2:3] != b" ":
+            return None
+        status_code = record[:2]
+        paths.add(os.fsdecode(record[3:]))
+        if b"R" in status_code or b"C" in status_code:
+            if index >= len(records) or not records[index]:
+                return None
+            paths.add(os.fsdecode(records[index]))
+            index += 1
+        if len(paths) > MAX_WORKSPACE_PATHS:
+            return None
+    return paths
+
+
+def repository_path(root: Path, relative: str) -> Path | None:
+    candidate = (root / relative).resolve(strict=False)
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    return candidate
+
+
+def capture_workspace_snapshot(payload: dict[str, object], command: str) -> None:
+    cwd = Path(hook_string(payload, "cwd") or os.getcwd()).resolve(strict=False)
+    root = git_root(cwd)
+    index = index_entries(root) if root else None
+    dirty = dirty_paths(root) if root else None
+    before: dict[str, dict[str, object]] = {}
+    captured_bytes = 0
+
+    if root and index is not None and dirty is not None:
+        for relative in sorted(dirty):
+            path = repository_path(root, relative)
+            if path is None:
+                continue
+            exists = path.is_file()
+            text = read_text(path) if exists else None
+            captured_bytes += len(text.encode("utf-8")) if text is not None else 0
+            if captured_bytes > MAX_WORKSPACE_SNAPSHOT_BYTES:
+                root = None
+                index = None
+                dirty = None
+                before = {}
+                break
+            before[relative] = {
+                "exists": exists,
+                "text": text,
+            }
+
+    atomic_json_write(
+        snapshot_path(payload, command),
+        {
+            "version": EVENT_VERSION,
+            "kind": "workspace",
+            "cwd": str(cwd),
+            "root": str(root)
+            if root and index is not None and dirty is not None
+            else None,
+            "index": index or {},
+            "dirty": sorted(dirty or ()),
+            "before": before,
+        },
+    )
+    cleanup_old_files()
+
+
+def capture_patch_snapshot(payload: dict[str, object], command: str) -> None:
     cwd_value = hook_string(payload, "cwd")
     if not command or not cwd_value:
         return
@@ -169,6 +314,7 @@ def capture_snapshot(payload: dict[str, object]) -> None:
         snapshot_path(payload, command),
         {
             "version": EVENT_VERSION,
+            "kind": "patch",
             "cwd": str(cwd),
             "files": captured,
         },
@@ -176,14 +322,37 @@ def capture_snapshot(payload: dict[str, object]) -> None:
     cleanup_old_files()
 
 
-def load_snapshot(
+def capture_snapshot(payload: dict[str, object]) -> None:
+    command = tool_command(payload)
+    if is_bash_tool(payload):
+        capture_workspace_snapshot(payload, command)
+    else:
+        capture_patch_snapshot(payload, command)
+
+
+def consume_snapshot(
     payload: dict[str, object], command: str
-) -> tuple[Path, list[dict[str, object]]]:
-    cwd = Path(hook_string(payload, "cwd") or os.getcwd()).resolve(strict=False)
+) -> dict[str, object] | None:
     path = snapshot_path(payload, command)
     try:
         snapshot = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
+        return None
+    finally:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    return snapshot if isinstance(snapshot, dict) else None
+
+
+def load_patch_snapshot(
+    payload: dict[str, object],
+    command: str,
+    snapshot: dict[str, object] | None,
+) -> tuple[Path, list[dict[str, object]]]:
+    cwd = Path(hook_string(payload, "cwd") or os.getcwd()).resolve(strict=False)
+    if snapshot is None:
         files = []
         for change in parse_patch_files(command):
             source = resolve_patch_path(cwd, change["path"])
@@ -195,17 +364,148 @@ def load_snapshot(
                 }
             )
         return cwd, files
-    finally:
-        try:
-            path.unlink()
-        except OSError:
-            pass
 
     snapshot_cwd = snapshot.get("cwd") if isinstance(snapshot, dict) else None
     files = snapshot.get("files") if isinstance(snapshot, dict) else None
     if isinstance(snapshot_cwd, str):
         cwd = Path(snapshot_cwd).resolve(strict=False)
     return cwd, files if isinstance(files, list) else []
+
+
+def blob_texts(root: Path, object_ids: set[str]) -> dict[str, str]:
+    ordered = sorted(object_ids)
+    if not ordered:
+        return {}
+    try:
+        completed = subprocess.run(
+            ("git", "--no-pager", "cat-file", "--batch"),
+            cwd=root,
+            check=False,
+            env=git_environment(),
+            input="".join(f"{object_id}\n" for object_id in ordered).encode("ascii"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=GIT_COMMAND_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+    output = completed.stdout
+    if completed.returncode != 0 or len(output) > MAX_GIT_OUTPUT_BYTES:
+        return {}
+
+    texts: dict[str, str] = {}
+    offset = 0
+    for object_id in ordered:
+        header_end = output.find(b"\n", offset)
+        if header_end == -1:
+            return {}
+        header = output[offset:header_end]
+        offset = header_end + 1
+        fields = header.split()
+        if len(fields) == 2 and fields[1] == b"missing":
+            continue
+        if len(fields) != 3:
+            return {}
+        try:
+            size = int(fields[2])
+        except ValueError:
+            return {}
+        end = offset + size
+        if end > len(output):
+            return {}
+        if fields[1] == b"blob" and size <= MAX_SNAPSHOT_BYTES:
+            texts[object_id] = output[offset:end].decode("utf-8", errors="replace")
+        offset = end + 1
+    return texts
+
+
+def workspace_before_text(
+    relative: str,
+    before: dict[str, object],
+    previous_index: dict[str, str],
+    previous_blobs: dict[str, str],
+) -> tuple[bool, str | None]:
+    captured = before.get(relative)
+    if isinstance(captured, dict):
+        existed = captured.get("exists") is True
+        text = captured.get("text")
+        return existed, text if isinstance(text, str) else (None if existed else "")
+
+    object_id = previous_index.get(relative)
+    if object_id:
+        return True, previous_blobs.get(object_id)
+    return False, ""
+
+
+def create_workspace_patch_event(
+    payload: dict[str, object], snapshot: dict[str, object]
+) -> dict[str, object]:
+    root_value = snapshot.get("root")
+    if not isinstance(root_value, str):
+        return base_event(payload, "patch", changes=[])
+    root = Path(root_value).resolve(strict=False)
+    previous_index_value = snapshot.get("index")
+    previous_dirty_value = snapshot.get("dirty")
+    before_value = snapshot.get("before")
+    if not isinstance(previous_index_value, dict) or not isinstance(before_value, dict):
+        return base_event(payload, "patch", changes=[])
+
+    previous_index = {
+        path: object_id
+        for path, object_id in previous_index_value.items()
+        if isinstance(path, str) and isinstance(object_id, str)
+    }
+    previous_dirty_items = (
+        previous_dirty_value if isinstance(previous_dirty_value, list) else []
+    )
+    previous_dirty = {path for path in previous_dirty_items if isinstance(path, str)}
+    current_index = index_entries(root)
+    current_dirty = dirty_paths(root)
+    if current_index is None or current_dirty is None:
+        return base_event(payload, "patch", changes=[])
+
+    changed_index = {
+        path
+        for path in previous_index.keys() | current_index.keys()
+        if previous_index.get(path) != current_index.get(path)
+    }
+    candidates = previous_dirty | current_dirty | changed_index
+    if len(candidates) > MAX_WORKSPACE_PATHS:
+        return base_event(payload, "patch", changes=[])
+    needed_blobs = {
+        object_id
+        for relative in candidates
+        if relative not in before_value
+        if (object_id := previous_index.get(relative)) is not None
+    }
+    previous_blobs = blob_texts(root, needed_blobs)
+
+    changes: list[dict[str, object]] = []
+    for relative in sorted(candidates):
+        path = repository_path(root, relative)
+        if path is None:
+            continue
+        existed, before_text = workspace_before_text(
+            relative, before_value, previous_index, previous_blobs
+        )
+        exists = path.is_file()
+        after_text = read_text(path) if exists else ""
+        if before_text is None or after_text is None or before_text == after_text:
+            continue
+        kind = "update"
+        if not existed:
+            kind = "add"
+        elif not exists:
+            kind = "delete"
+        changes.append(
+            {
+                "path": str(path),
+                "kind": kind,
+                "hunks": changed_hunks(before_text, after_text),
+            }
+        )
+
+    return base_event(payload, "patch", changes=changes)
 
 
 def changed_hunks(before: str, after: str) -> list[dict[str, object]]:
@@ -239,8 +539,14 @@ def changed_hunks(before: str, after: str) -> list[dict[str, object]]:
 
 
 def create_patch_event(payload: dict[str, object]) -> dict[str, object]:
-    command = patch_command(payload)
-    cwd, files = load_snapshot(payload, command)
+    command = tool_command(payload)
+    snapshot = consume_snapshot(payload, command)
+    if is_bash_tool(payload):
+        if snapshot and snapshot.get("kind") == "workspace":
+            return create_workspace_patch_event(payload, snapshot)
+        return base_event(payload, "patch", changes=[])
+
+    cwd, files = load_patch_snapshot(payload, command, snapshot)
     changes: list[dict[str, object]] = []
 
     for change in files:
@@ -347,13 +653,15 @@ def cleanup_old_files() -> None:
     cleanup_directory(directory / ".snapshots", SNAPSHOT_MAX_AGE_SECONDS)
 
 
-def hook_definition(action: str, matcher: str | None = None) -> dict[str, object]:
+def hook_definition(
+    action: str, matcher: str | None = None, timeout: int = 3
+) -> dict[str, object]:
     command = f'"$HOME/.local/libexec/dotfiles/{MANAGED_COMMAND}" {action}'
     definition: dict[str, object] = {
         "hooks": [
             {
                 "command": command,
-                "timeout": 3,
+                "timeout": timeout,
                 "type": "command",
             }
         ]
@@ -399,10 +707,10 @@ def install_hooks(quiet: bool) -> None:
         raise SystemExit(f"refusing to modify invalid hooks table in {hooks_path}")
 
     desired = {
-        "PreToolUse": [hook_definition("pre", r"^apply_patch$")],
+        "PreToolUse": [hook_definition("pre", r"^(apply_patch|Bash)$", timeout=5)],
         "PostToolUse": [
-            hook_definition("post", r"^apply_patch$"),
-            hook_definition("refresh", r"^(Bash|Edit|Write|mcp__.*)$"),
+            hook_definition("post", r"^(apply_patch|Bash)$", timeout=5),
+            hook_definition("refresh", r"^(Edit|Write|mcp__.*)$"),
         ],
         "Stop": [hook_definition("stop")],
     }
