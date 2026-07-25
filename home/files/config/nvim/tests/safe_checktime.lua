@@ -26,18 +26,18 @@ local original_enable = vim.lsp.inlay_hint.enable
 local enabled = true
 local transitions = {}
 
-vim.lsp.inlay_hint.is_enabled = function(filter)
+rawset(vim.lsp.inlay_hint, "is_enabled", function(filter)
 	assert_equal(filter, { bufnr = bufnr }, "inlay hint state must be queried for the reloaded buffer")
 	return enabled
-end
-vim.lsp.inlay_hint.enable = function(value, filter)
+end)
+rawset(vim.lsp.inlay_hint, "enable", function(value, filter)
 	assert_equal(filter, { bufnr = bufnr }, "inlay hint transition must target only the reloaded buffer")
 	transitions[#transitions + 1] = {
 		enabled = value,
 		line = vim.api.nvim_buf_get_lines(bufnr, 0, 1, false)[1],
 	}
-	enabled = value
-end
+	enabled = value == true
+end)
 
 vim.fn.writefile({ "return true" }, source)
 local ok, err = require("config.safe_checktime").checktime(bufnr)
@@ -56,8 +56,8 @@ assert(ok, err)
 assert_equal(transitions, {}, "disabled inlay hints must remain untouched")
 assert_equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), { "return false" }, "reload must not require hints")
 
-vim.lsp.inlay_hint.is_enabled = original_is_enabled
-vim.lsp.inlay_hint.enable = original_enable
+rawset(vim.lsp.inlay_hint, "is_enabled", original_is_enabled)
+rawset(vim.lsp.inlay_hint, "enable", original_enable)
 
 local original_get_client_by_id = vim.lsp.get_client_by_id
 local original_get_clients = vim.lsp.get_clients
@@ -70,15 +70,15 @@ local fake_client = {
 		return true, 1
 	end,
 }
-vim.lsp.get_client_by_id = function(client_id)
+rawset(vim.lsp, "get_client_by_id", function(client_id)
 	return client_id == fake_client.id and fake_client or original_get_client_by_id(client_id)
-end
-vim.lsp.get_clients = function(filter)
+end)
+rawset(vim.lsp, "get_clients", function(filter)
 	if filter and filter.bufnr == bufnr and filter.method == "textDocument/inlayHint" then
 		return { fake_client }
 	end
 	return original_get_clients(filter)
-end
+end)
 
 vim.fn.writefile({ "local value = function(argument)" }, source)
 vim.api.nvim_buf_call(bufnr, function()
@@ -94,6 +94,7 @@ vim.lsp.inlay_hint.on_inlayhint(nil, {
 }, {
 	bufnr = bufnr,
 	client_id = fake_client.id,
+	method = "textDocument/inlayHint",
 	version = 1,
 })
 assert_equal(#vim.lsp.inlay_hint.get({ bufnr = bufnr }), 1, "the regression setup must cache a real inlay hint")
@@ -106,8 +107,8 @@ assert_equal(#vim.lsp.inlay_hint.get({ bufnr = bufnr }), 0, "stale inlay hints m
 assert(original_is_enabled({ bufnr = bufnr }), "inlay hints must remain enabled after the protected reload")
 
 original_enable(false, { bufnr = bufnr })
-vim.lsp.get_client_by_id = original_get_client_by_id
-vim.lsp.get_clients = original_get_clients
+rawset(vim.lsp, "get_client_by_id", original_get_client_by_id)
+rawset(vim.lsp, "get_clients", original_get_clients)
 lsp_util.buf_versions[bufnr] = original_version
 vim.fn.delete(root, "rf")
 print("safe checktime: ok")
