@@ -413,8 +413,8 @@ opt.foldlevelstart = 99
 opt.foldenable = true
 opt.showtabline = 2
 opt.showmode = false
--- Keep diagnostics and the latest Codex edit pointer visible together.
-opt.signcolumn = "yes:2"
+-- Collapse unused sign slots, but expand to keep two concurrent signs visible.
+opt.signcolumn = "auto:2"
 opt.scrolloff = 8
 opt.sidescrolloff = 4
 
