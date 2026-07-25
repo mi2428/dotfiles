@@ -307,6 +307,53 @@ local function set_relative_number(enabled)
 	vim.opt_local.relativenumber = enabled
 end
 
+local fold_symbols = {
+	close = "",
+	open = "",
+	sep = "│",
+}
+
+function _G.dotfiles_foldcolumn()
+	if vim.v.virtnum ~= 0 then
+		return " "
+	end
+
+	local line = vim.v.lnum
+	local level = vim.fn.foldlevel(line)
+	if level == 0 then
+		return " "
+	end
+
+	local symbol = fold_symbols.sep
+	if vim.fn.foldclosed(line) == line then
+		symbol = fold_symbols.close
+	elseif line == 1 or level > vim.fn.foldlevel(line - 1) then
+		symbol = fold_symbols.open
+	end
+
+	local highlight = vim.v.relnum == 0 and "%#CursorLineFold#" or "%#FoldColumn#"
+	return highlight .. symbol
+end
+
+function _G.dotfiles_foldcolumn_click(_, _, button)
+	if button ~= "l" then
+		return
+	end
+
+	local mouse = vim.fn.getmousepos()
+	if mouse.winid == 0 or mouse.line == 0 then
+		return
+	end
+
+	vim.api.nvim_win_call(mouse.winid, function()
+		if vim.fn.foldlevel(mouse.line) == 0 then
+			return
+		end
+		vim.api.nvim_win_set_cursor(mouse.winid, { mouse.line, 0 })
+		vim.cmd.normal({ args = { "za" }, bang = true })
+	end)
+end
+
 function _G.dotfiles_statuscolumn()
 	if vim.v.virtnum ~= 0 then
 		return statuscolumn_padding()
@@ -351,7 +398,14 @@ opt.ttimeoutlen = 0
 opt.number = true
 opt.numberwidth = 3
 opt.relativenumber = true
-opt.statuscolumn = "%s%=%{%v:lua.dotfiles_statuscolumn()%}"
+opt.fillchars:append({
+	fold = " ",
+	foldopen = fold_symbols.open,
+	foldclose = fold_symbols.close,
+	foldsep = fold_symbols.sep,
+})
+opt.statuscolumn =
+	"%@v:lua.dotfiles_foldcolumn_click@%{%v:lua.dotfiles_foldcolumn()%}%T%s%=%{%v:lua.dotfiles_statuscolumn()%}"
 opt.cursorline = true
 opt.foldcolumn = "auto:1"
 opt.foldlevel = 99
