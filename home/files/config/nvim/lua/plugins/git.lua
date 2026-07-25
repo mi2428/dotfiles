@@ -31,6 +31,7 @@ return {
 		opts = {
 			base = review.gitsigns_base() or diff_watch.gitsigns_base(),
 			attach_to_untracked = diff_watch.is_active(),
+			sign_priority = 100,
 			signs = {
 				add = { text = "▎" },
 				change = { text = "▎" },
