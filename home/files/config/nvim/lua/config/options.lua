@@ -310,7 +310,7 @@ end
 local fold_symbols = {
 	close = "",
 	open = "",
-	sep = "│",
+	sep = " ",
 }
 
 function _G.dotfiles_foldcolumn()
