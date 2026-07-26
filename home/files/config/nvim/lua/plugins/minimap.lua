@@ -1,4 +1,5 @@
 local colors = require("config.catppuccin").palette("mocha")
+local cursorline_mask_namespace = vim.api.nvim_create_namespace("dotfiles-mini-map-cursorline-mask")
 
 local function blend(fg, bg, alpha)
 	local function channel(hex, offset)
@@ -25,6 +26,7 @@ local function set_minimap_highlights()
 	end
 
 	vim.api.nvim_set_hl(0, "MiniMapNormal", { fg = colors.text, bg = "NONE", blend = 100 })
+	vim.api.nvim_set_hl(0, "MiniMapCursorLineMask", { bg = "NONE" })
 	vim.api.nvim_set_hl(0, "MiniMapSearch", { fg = colors.base, bg = colors.yellow, blend = 25, bold = true })
 	set("MiniMapDiagnosticError", colors.red)
 	set("MiniMapDiagnosticWarn", colors.yellow)
@@ -33,6 +35,51 @@ local function set_minimap_highlights()
 	set("MiniMapGitAdd", colors.green)
 	set("MiniMapGitChange", colors.peach)
 	set("MiniMapGitDelete", colors.red)
+end
+
+local function setup_cursorline_mask(map)
+	vim.api.nvim_set_decoration_provider(cursorline_mask_namespace, {
+		on_win = function(_, win, buf, top_line, bottom_line)
+			local map_win = map.current.win_data[vim.api.nvim_win_get_tabpage(win)]
+			if
+				not vim.wo[win].cursorline
+				or buf ~= map.current.buf_data.source
+				or not map_win
+				or not vim.api.nvim_win_is_valid(map_win)
+				or win == map_win
+			then
+				return
+			end
+
+			local map_config = vim.api.nvim_win_get_config(map_win)
+			if map_config.anchor ~= "NE" then
+				return
+			end
+
+			local window_number = vim.fn.win_id2win(win)
+			local source_position = vim.fn.win_screenpos(window_number)
+			local source_right = source_position[2] + vim.api.nvim_win_get_width(win) - 1
+			local map_width = vim.api.nvim_win_get_width(map_win)
+			local map_left = vim.o.columns - map_width + 1
+			local overlap = math.min(map_width, source_right - map_left + 1)
+			if overlap <= 0 then
+				return
+			end
+
+			local cursor_line = vim.api.nvim_win_get_cursor(win)[1] - 1
+			if cursor_line < top_line or cursor_line >= bottom_line then
+				return
+			end
+
+			vim.api.nvim_buf_set_extmark(buf, cursorline_mask_namespace, cursor_line, 0, {
+				ephemeral = true,
+				hl_mode = "replace",
+				priority = 10000,
+				virt_text = { { string.rep(" ", overlap), "MiniMapCursorLineMask" } },
+				virt_text_pos = "right_align",
+			})
+		end,
+	})
 end
 
 return {
@@ -45,6 +92,7 @@ return {
 				"<leader>um",
 				function()
 					require("mini.map").toggle()
+					vim.cmd.redraw({ bang = true })
 				end,
 				desc = "Toggle minimap",
 			},
@@ -95,6 +143,7 @@ return {
 			set_minimap_highlights()
 
 			map.setup(opts)
+			setup_cursorline_mask(map)
 			map.open()
 		end,
 	},
