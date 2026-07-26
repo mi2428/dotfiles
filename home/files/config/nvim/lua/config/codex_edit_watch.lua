@@ -2,8 +2,10 @@ local M = {}
 
 local uv = vim.uv or vim.loop
 local safe_checktime = require("config.safe_checktime")
+local marker_namespace = vim.api.nvim_create_namespace("dotfiles-codex-edit-markers")
 local sign_namespace = vim.api.nvim_create_namespace("dotfiles-codex-edit-signs")
 local highlight_namespace = vim.api.nvim_create_namespace("dotfiles-codex-edit-highlights")
+local ai_indicator_text = ""
 local state
 
 local function normalize(path)
@@ -83,30 +85,41 @@ local function current_extmark_line(entry)
 	if not vim.api.nvim_buf_is_valid(entry.bufnr) then
 		return entry.start_line
 	end
-	local position = vim.api.nvim_buf_get_extmark_by_id(entry.bufnr, sign_namespace, entry.marker_id, {})
+	local position = vim.api.nvim_buf_get_extmark_by_id(entry.bufnr, marker_namespace, entry.marker_id, {})
 	if position and #position >= 1 then
 		return position[1] + 1
 	end
 	return entry.start_line
 end
 
-local function refresh_history_signs()
-	local signed_lines = {}
+local function clear_ai_indicator()
+	if state.indicator_buffer and vim.api.nvim_buf_is_valid(state.indicator_buffer) then
+		vim.api.nvim_buf_clear_namespace(state.indicator_buffer, sign_namespace, 0, -1)
+	end
+	state.indicator_buffer = nil
+end
+
+local function refresh_ai_indicator()
+	clear_ai_indicator()
+
+	-- IMPORTANT: History markers and the statuscolumn AI indicator must stay separate.
+	-- A turn can retain many movable edit targets for [a, ]a, and quickfix, but
+	-- exposing those markers as signs produces repeated icons. Keep exactly one
+	-- sign extmark in a dedicated namespace and move it to the newest valid edit.
+	-- statuscolumn intentionally consumes its fixed glyph as metadata and colors
+	-- the corresponding line number instead of rendering another gutter cell.
 	for index = #state.history, 1, -1 do
 		local entry = state.history[index]
 		if vim.api.nvim_buf_is_valid(entry.bufnr) then
-			local position = vim.api.nvim_buf_get_extmark_by_id(entry.bufnr, sign_namespace, entry.marker_id, {})
+			local position = vim.api.nvim_buf_get_extmark_by_id(entry.bufnr, marker_namespace, entry.marker_id, {})
 			if position and #position >= 2 then
-				local lines = signed_lines[entry.bufnr] or {}
-				signed_lines[entry.bufnr] = lines
-				local options = { id = entry.marker_id }
-				if not lines[position[1]] then
-					lines[position[1]] = true
-					options.sign_text = ""
-					options.sign_hl_group = "DiagnosticInfo"
-					options.priority = 30
-				end
-				vim.api.nvim_buf_set_extmark(entry.bufnr, sign_namespace, position[1], position[2], options)
+				vim.api.nvim_buf_set_extmark(entry.bufnr, sign_namespace, position[1], position[2], {
+					sign_text = ai_indicator_text,
+					sign_hl_group = "DiagnosticInfo",
+					priority = 30,
+				})
+				state.indicator_buffer = entry.bufnr
+				return
 			end
 		end
 	end
@@ -238,7 +251,7 @@ local function trim_history()
 			end
 		end
 		if entry and vim.api.nvim_buf_is_valid(entry.bufnr) then
-			pcall(vim.api.nvim_buf_del_extmark, entry.bufnr, sign_namespace, entry.marker_id)
+			pcall(vim.api.nvim_buf_del_extmark, entry.bufnr, marker_namespace, entry.marker_id)
 		end
 		if state.history_index then
 			state.history_index = math.max(1, state.history_index - 1)
@@ -259,7 +272,7 @@ local function add_hunk(event, change, hunk)
 	local line_count = vim.api.nvim_buf_line_count(bufnr)
 	local start_line = math.max(1, math.min(tonumber(hunk.start_line) or 1, line_count))
 	local end_line = math.max(start_line, math.min(tonumber(hunk.end_line) or start_line, line_count))
-	local marker_id = vim.api.nvim_buf_set_extmark(bufnr, sign_namespace, start_line - 1, 0, {})
+	local marker_id = vim.api.nvim_buf_set_extmark(bufnr, marker_namespace, start_line - 1, 0, {})
 	local entry = {
 		bufnr = bufnr,
 		change_type = hunk.change_type or change.kind or "update",
@@ -351,7 +364,7 @@ local function process_patch_event(event)
 
 	state.latest = last_entry or state.latest
 	trim_history()
-	refresh_history_signs()
+	refresh_ai_indicator()
 	if #added > 0 then
 		state.active_turn = turn_key(event)
 		highlight_entries(added)
@@ -494,9 +507,10 @@ function M.stop()
 		return
 	end
 	clear_transient_highlights()
+	clear_ai_indicator()
 	for _, entry in ipairs(state.history) do
 		if vim.api.nvim_buf_is_valid(entry.bufnr) then
-			pcall(vim.api.nvim_buf_del_extmark, entry.bufnr, sign_namespace, entry.marker_id)
+			pcall(vim.api.nvim_buf_del_extmark, entry.bufnr, marker_namespace, entry.marker_id)
 		end
 	end
 	if state.fs_event and not state.fs_event:is_closing() then
@@ -543,6 +557,7 @@ function M.setup(opts)
 		history = {},
 		history_index = nil,
 		history_limit = math.max(1, tonumber(opts.history_limit) or 500),
+		indicator_buffer = nil,
 		latest = nil,
 		pending_follow = nil,
 		refresh = opts.refresh,

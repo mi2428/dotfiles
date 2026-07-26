@@ -134,14 +134,25 @@ assert_equal(status.line, 6, "statusline must point at the latest hunk")
 
 local bufnr = vim.fn.bufnr(source)
 assert(bufnr > 0, "the edited file must be loaded")
-local signs = 0
-local test_marks = vim.api.nvim_buf_get_extmarks(bufnr, -1, 0, -1, { details = true })
-for _, mark in ipairs(test_marks) do
-	if mark[4].sign_text and vim.trim(mark[4].sign_text) == "" then
-		signs = signs + 1
+local namespaces = vim.api.nvim_get_namespaces()
+local marker_namespace = assert(namespaces["dotfiles-codex-edit-markers"], "Codex marker namespace must exist")
+local sign_namespace = assert(namespaces["dotfiles-codex-edit-signs"], "Codex sign namespace must exist")
+
+local function codex_indicator_lines(buffer)
+	local lines = {}
+	for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buffer, sign_namespace, 0, -1, { details = true })) do
+		assert_equal(vim.trim(mark[4].sign_text or ""), "", "the Codex indicator must use stable metadata")
+		lines[#lines + 1] = mark[2] + 1
 	end
+	return lines
 end
-assert_equal(signs, 3, "each changed hunk must receive a Codex sign")
+
+assert_equal(codex_indicator_lines(bufnr), { 6 }, "only the latest Codex hunk may expose an AI indicator")
+local history_marks = vim.api.nvim_buf_get_extmarks(bufnr, marker_namespace, 0, -1, { details = true })
+assert_equal(#history_marks, 3, "every changed hunk must retain a history marker")
+for _, mark in ipairs(history_marks) do
+	assert(mark[4].sign_text == nil, "history markers must never render signs")
+end
 
 watcher.previous_edit()
 assert_equal(vim.api.nvim_win_get_cursor(0)[1], 5, "[a must move to the previous Codex hunk")
@@ -194,22 +205,8 @@ assert(
 	"identical patch commands must retain independent snapshots"
 )
 
-signs = 0
-test_marks = vim.api.nvim_buf_get_extmarks(bufnr, -1, 0, -1, { details = true })
 assert_equal(watcher._test.history_size(), 4, "Codex history must respect its configured limit")
-for _, mark in ipairs(test_marks) do
-	if mark[4].sign_text and vim.trim(mark[4].sign_text) == "" then
-		signs = signs + 1
-	end
-end
-assert_equal(signs, 2, "Codex history must render only one sign per screen line")
-local latest_line_signs = 0
-for _, mark in ipairs(test_marks) do
-	if mark[2] == 5 and mark[4].sign_text and vim.trim(mark[4].sign_text) == "" then
-		latest_line_signs = latest_line_signs + 1
-	end
-end
-assert_equal(latest_line_signs, 1, "repeated edits on one line must not concatenate AI signs")
+assert_equal(codex_indicator_lines(bufnr), { 6 }, "repeated edits must move one AI indicator")
 watcher.open_quickfix()
 quickfix = vim.fn.getqflist({ items = 1, title = 1 })
 assert_equal(#quickfix.items, 4, "history trimming must also prune turn quickfix entries")
@@ -239,14 +236,7 @@ assert(
 	end, 20),
 	"Bash PostToolUse must identify and follow the exact changed hunk"
 )
-local bash_sign = false
-test_marks = vim.api.nvim_buf_get_extmarks(bufnr, -1, { 2, 0 }, { 2, -1 }, { details = true })
-for _, mark in ipairs(test_marks) do
-	if mark[4].sign_text and vim.trim(mark[4].sign_text) == "" then
-		bash_sign = true
-	end
-end
-assert(bash_sign, "Bash edits must receive a Codex sign at the changed line")
+assert_equal(codex_indicator_lines(bufnr), { 3 }, "Bash edits must move the sole Codex indicator")
 
 local refresh = vim.tbl_extend("force", common, {
 	hook_event_name = "PostToolUse",
@@ -260,12 +250,51 @@ assert(
 	"Bash PostToolUse must trigger immediate reconciliation"
 )
 
-local stop = vim.tbl_extend("force", common, { hook_event_name = "Stop" })
+local second_source = vim.fs.joinpath(root, "beta.txt")
+vim.fn.writefile({ "before" }, second_source)
+local second_file_patch = table.concat({
+	"*** Begin Patch",
+	"*** Update File: beta.txt",
+	"@@",
+	"-before",
+	"+after",
+	"*** End Patch",
+}, "\n")
+local second_file_common = vim.tbl_extend("force", common, {
+	tool_input = { command = second_file_patch },
+	tool_use_id = "tool-second-file",
+	turn_id = "turn-second-file",
+})
+run({ hook, "pre" }, {
+	stdin = vim.json.encode(vim.tbl_extend("force", second_file_common, { hook_event_name = "PreToolUse" })),
+	text = true,
+})
+vim.fn.writefile({ "after" }, second_source)
+run({ hook, "post" }, {
+	stdin = vim.json.encode(vim.tbl_extend("force", second_file_common, {
+		hook_event_name = "PostToolUse",
+		tool_response = "Success. Updated files.",
+	})),
+	text = true,
+})
+assert(
+	vim.wait(2000, function()
+		local current = watcher.status()
+		return current ~= nil and current.path:find("beta.txt", 1, true) ~= nil and refresh_count >= 7
+	end, 20),
+	"a later edit in another buffer must become the visible Codex target"
+)
+local second_bufnr = vim.fn.bufnr(second_source)
+assert(second_bufnr > 0, "the second edited file must be loaded")
+assert_equal(codex_indicator_lines(bufnr), {}, "moving the AI indicator must clear the previous buffer")
+assert_equal(codex_indicator_lines(second_bufnr), { 1 }, "only the newest buffer may expose the AI indicator")
+
+local stop = vim.tbl_extend("force", second_file_common, { hook_event_name = "Stop" })
 run({ hook, "stop" }, { stdin = vim.json.encode(stop), text = true })
 assert(
 	vim.wait(2000, function()
 		local current = watcher.status()
-		return current and current.active == false and refresh_count >= 7
+		return current and current.active == false and refresh_count >= 8
 	end, 20),
 	"Stop must close the active turn and reconcile once more"
 )
