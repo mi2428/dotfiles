@@ -16,6 +16,8 @@ vim.wo.foldcolumn = "1"
 vim.opt.fillchars:append({ fold = " ", foldopen = "󰅀", foldclose = "󰅃", foldsep = " " })
 vim.api.nvim_set_hl(0, "DotfilesFoldOpen", { fg = "#0000ff" })
 vim.api.nvim_set_hl(0, "DotfilesFoldClosed", { fg = "#ff00ff" })
+vim.api.nvim_set_hl(0, "DotfilesFoldDepth", { fg = "#777777" })
+vim.api.nvim_set_hl(0, "DotfilesCursorLineFoldDepth", { fg = "#999999" })
 vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.fn["repeat"]({ "line" }, 1000))
 vim.api.nvim_win_set_cursor(0, { 500, 0 })
 statuscolumn.setup()
@@ -165,6 +167,64 @@ local closed_fold_above = rendered_statuscolumn(win, 2, gutter_width)
 assert(
 	closed_fold_above:find("󰄿", 1, true) ~= nil,
 	"a closed fold immediately above the cursor must retain the upper marker: " .. vim.inspect(closed_fold_above)
+)
+
+vim.cmd.normal({ args = { "zE" }, bang = true })
+vim.api.nvim_win_set_cursor(win, { 10, 0 })
+vim.cmd("10,16fold")
+vim.cmd.normal({ args = { "zO" }, bang = true })
+vim.cmd("13,15fold")
+vim.cmd.normal({ args = { "zR" }, bang = true })
+vim.api.nvim_win_set_cursor(win, { 20, 0 })
+
+local outer_depth = rendered_statuscolumn_result(win, 11, gutter_width)
+assert(outer_depth.str:sub(1, 1) == "1", "the outer fold must show depth 1 below its open sign")
+assert(
+	vim.iter(outer_depth.highlights):any(function(highlight)
+		return highlight.group == "DotfilesFoldDepth"
+	end),
+	"fold depth labels must use their muted rail highlight: " .. vim.inspect(outer_depth.highlights)
+)
+assert(
+	rendered_statuscolumn(win, 12, gutter_width):sub(1, 1) == " ",
+	"a depth label must occupy only the first continuation row"
+)
+assert(rendered_statuscolumn(win, 13, gutter_width):sub(1, #"󰅀") == "󰅀", "the nested fold must keep its sign")
+assert(rendered_statuscolumn(win, 14, gutter_width):sub(1, 1) == "2", "the nested fold must show depth 2")
+
+vim.cmd("30,31fold")
+vim.api.nvim_win_set_cursor(win, { 30, 0 })
+vim.cmd.normal({ args = { "zO" }, bang = true })
+vim.api.nvim_win_set_cursor(win, { 40, 0 })
+assert(
+	rendered_statuscolumn(win, 31, gutter_width):sub(1, 1) == " ",
+	"a short fold with only one continuation row must not show a depth label"
+)
+
+vim.wo.cursorline = true
+vim.wo.cursorlineopt = "both"
+vim.api.nvim_win_set_cursor(win, { 11, 0 })
+local cursor_depth = rendered_statuscolumn_result(win, 11, gutter_width)
+assert(
+	vim.iter(cursor_depth.highlights):any(function(highlight)
+		return highlight.group == "DotfilesCursorLineFoldDepth"
+	end),
+	"a depth label on the cursor row must retain the cursorline background"
+)
+
+vim.cmd.normal({ args = { "zE" }, bang = true })
+for depth = 1, 10 do
+	local first = 49 + depth
+	local last = 81 - depth
+	vim.cmd(("%d,%dfold"):format(first, last))
+	vim.api.nvim_win_set_cursor(win, { first, 0 })
+	vim.cmd.normal({ args = { "zO" }, bang = true })
+end
+vim.cmd.normal({ args = { "zR" }, bang = true })
+vim.api.nvim_win_set_cursor(win, { 100, 0 })
+assert(
+	rendered_statuscolumn(win, 60, gutter_width):sub(1, #"•") == "•",
+	"fold depths above nine must use the single-cell overflow marker"
 )
 
 print("statuscolumn number regression: ok")

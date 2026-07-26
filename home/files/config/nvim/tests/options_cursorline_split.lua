@@ -38,10 +38,13 @@ assert(
 )
 local fold_open = vim.api.nvim_get_hl(0, { name = "DotfilesFoldOpen", link = false })
 local fold_closed = vim.api.nvim_get_hl(0, { name = "DotfilesFoldClosed", link = false })
+local fold_depth = vim.api.nvim_get_hl(0, { name = "DotfilesFoldDepth", link = false })
 assert(fold_open.fg == tonumber(palette.sapphire:sub(2), 16), "open folds must use Mocha sapphire")
 assert(fold_closed.fg == tonumber(palette.mauve:sub(2), 16), "closed folds must use Mocha mauve")
+assert(fold_depth.fg == tonumber(palette.surface2:sub(2), 16), "fold depths must use muted Mocha surface2")
 assert(fold_open.bg == fold_column.bg, "open fold signs must retain the rail background")
 assert(fold_closed.bg == fold_column.bg, "closed fold signs must retain the rail background")
+assert(fold_depth.bg == fold_column.bg, "fold depth labels must retain the rail background")
 local folded = vim.api.nvim_get_hl(0, { name = "Folded", link = false })
 local folded_background = tonumber(blend(palette.blue, palette.base, 0.18):sub(2), 16)
 assert(folded.bg == folded_background, "closed folds must use the emphasized full-width blue wash")
@@ -74,6 +77,11 @@ assert_match(
 	"DotfilesCursorLineFoldClosed:DotfilesCursorLineFoldClosedDefault",
 	"closed fold signs on the cursor line must use scene-specific backgrounds"
 )
+assert_match(
+	left_default,
+	"DotfilesCursorLineFoldDepth:DotfilesCursorLineFoldDepthDefault",
+	"fold depth labels on the cursor line must use scene-specific backgrounds"
+)
 assert(
 	vim.api.nvim_get_hl(0, { name = "DotfilesCursorLineFoldDefault", link = false }).fg == fold_column.fg,
 	"the current-line fold chevron must keep the fold rail foreground"
@@ -86,10 +94,15 @@ assert(
 	vim.api.nvim_get_hl(0, { name = "DotfilesCursorLineFoldClosedDefault", link = false }).fg == fold_closed.fg,
 	"the current-line closed sign must remain mauve"
 )
+assert(
+	vim.api.nvim_get_hl(0, { name = "DotfilesCursorLineFoldDepthDefault", link = false }).fg == fold_depth.fg,
+	"the current-line fold depth must remain muted"
+)
 
 vim.api.nvim_set_hl(0, "FoldColumn", { fg = "#ff0000" })
 vim.api.nvim_set_hl(0, "DotfilesFoldOpen", { fg = "#ff0000" })
 vim.api.nvim_set_hl(0, "DotfilesFoldClosed", { fg = "#ff0000" })
+vim.api.nvim_set_hl(0, "DotfilesFoldDepth", { fg = "#ff0000" })
 vim.api.nvim_set_hl(0, "Folded", { bg = "#ff0000" })
 vim.api.nvim_exec_autocmds("ColorScheme", { modeline = false })
 local refreshed_fold_column = vim.api.nvim_get_hl(0, { name = "FoldColumn", link = false })
@@ -102,6 +115,10 @@ assert(
 assert(
 	vim.api.nvim_get_hl(0, { name = "DotfilesFoldClosed", link = false }).fg == fold_closed.fg,
 	"colorscheme changes must restore the closed fold color"
+)
+assert(
+	vim.api.nvim_get_hl(0, { name = "DotfilesFoldDepth", link = false }).fg == fold_depth.fg,
+	"colorscheme changes must restore the fold depth color"
 )
 assert(
 	vim.api.nvim_get_hl(0, { name = "Folded", link = false }).bg == folded_background,

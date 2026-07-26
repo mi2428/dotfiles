@@ -20,6 +20,30 @@ local function replace_initial_highlight(rendered, group)
 	end, 1)
 end
 
+local function open_fold_depth(args, current_info)
+	if args.virtnum ~= 0 or args.lnum <= 1 or args.lnum >= vim.api.nvim_buf_line_count(args.buf) then
+		return nil
+	end
+
+	-- A label occupies the first continuation row below an open sign. Require a
+	-- second unobstructed continuation row so dense fold starts stay uncluttered.
+	local start_lnum = args.lnum - 1
+	local start_info = statuscol_C.fold_info(args.wp, start_lnum)
+	if start_info.level == 0 or start_info.lines > 0 or start_info.start ~= start_lnum then
+		return nil
+	end
+	if current_info.level < start_info.level or current_info.lines > 0 or current_info.start == args.lnum then
+		return nil
+	end
+
+	local next_lnum = args.lnum + 1
+	local next_info = statuscol_C.fold_info(args.wp, next_lnum)
+	if next_info.level < start_info.level or next_info.lines > 0 or next_info.start == next_lnum then
+		return nil
+	end
+	return start_info.level
+end
+
 local function visible_neighbors(args, current)
 	local cached = visible_neighbor_cache[args.win]
 	if args.tick ~= nil and cached and cached.tick == args.tick and cached.current == current then
@@ -84,7 +108,8 @@ function M.fold(args)
 		return rendered
 	end
 
-	if statuscol_C.fold_info(args.wp, args.lnum).level > 0 then
+	local fold_info = statuscol_C.fold_info(args.wp, args.lnum)
+	if fold_info.level > 0 then
 		if args.virtnum == 0 and rendered:find(args.fold.open, 1, true) then
 			local group = (args.cul and args.relnum == 0) and "DotfilesCursorLineFoldOpen" or "DotfilesFoldOpen"
 			return replace_initial_highlight(rendered, group)
@@ -92,6 +117,12 @@ function M.fold(args)
 		if args.virtnum == 0 and rendered:find(args.fold.close, 1, true) then
 			local group = (args.cul and args.relnum == 0) and "DotfilesCursorLineFoldClosed" or "DotfilesFoldClosed"
 			return replace_initial_highlight(rendered, group)
+		end
+		local depth = open_fold_depth(args, fold_info)
+		if depth then
+			local glyph = depth < 10 and tostring(depth) or "•"
+			local group = (args.cul and args.relnum == 0) and "DotfilesCursorLineFoldDepth" or "DotfilesFoldDepth"
+			return "%#" .. group .. "#" .. glyph .. "%*"
 		end
 		return rendered
 	end

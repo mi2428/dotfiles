@@ -211,6 +211,7 @@ local function refresh_statuscolumn_highlights()
 	vim.api.nvim_set_hl(0, "FoldColumn", { fg = colors.blue, bg = fold_background })
 	vim.api.nvim_set_hl(0, "DotfilesFoldOpen", { fg = colors.sapphire, bg = fold_background })
 	vim.api.nvim_set_hl(0, "DotfilesFoldClosed", { fg = colors.mauve, bg = fold_background })
+	vim.api.nvim_set_hl(0, "DotfilesFoldDepth", { fg = colors.surface2, bg = fold_background })
 	vim.api.nvim_set_hl(0, "Folded", { bg = folded_line_background })
 	vim.api.nvim_set_hl(0, "DotfilesCodexLineNr", { fg = colors.sky, bold = true })
 	vim.api.nvim_set_hl(0, "Visual", { bg = blend(colors.mauve, colors.base, 0.4), bold = true })
@@ -228,6 +229,11 @@ local function refresh_statuscolumn_highlights()
 			0,
 			mode_highlight_group("CursorLineFoldClosed", scene),
 			{ fg = colors.mauve, bg = style.bg }
+		)
+		vim.api.nvim_set_hl(
+			0,
+			mode_highlight_group("CursorLineFoldDepth", scene),
+			{ fg = colors.surface2, bg = style.bg }
 		)
 		vim.api.nvim_set_hl(
 			0,
@@ -252,6 +258,7 @@ local function refresh_statuscolumn_highlights()
 	vim.api.nvim_set_hl(0, "CursorLineFold", { fg = colors.blue, bg = default.bg })
 	vim.api.nvim_set_hl(0, "DotfilesCursorLineFoldOpen", { fg = colors.sapphire, bg = default.bg })
 	vim.api.nvim_set_hl(0, "DotfilesCursorLineFoldClosed", { fg = colors.mauve, bg = default.bg })
+	vim.api.nvim_set_hl(0, "DotfilesCursorLineFoldDepth", { fg = colors.surface2, bg = default.bg })
 	vim.api.nvim_set_hl(0, "CursorLineNr", { fg = default.fg, bg = default.bg, bold = true })
 	vim.api.nvim_set_hl(0, "DotfilesStatuscolumnMarker", { fg = default.fg, bg = default.bg, bold = true })
 	vim.api.nvim_set_hl(0, "DotfilesCursorLineCodexNr", { fg = colors.sky, bg = default.bg, bold = true })
@@ -266,6 +273,7 @@ local function set_window_highlights(win, scene)
 		CursorLineFold = mode_highlight_group("CursorLineFold", scene),
 		DotfilesCursorLineFoldOpen = mode_highlight_group("CursorLineFoldOpen", scene),
 		DotfilesCursorLineFoldClosed = mode_highlight_group("CursorLineFoldClosed", scene),
+		DotfilesCursorLineFoldDepth = mode_highlight_group("CursorLineFoldDepth", scene),
 		CursorLineNr = mode_highlight_group("CursorLineNr", scene),
 		DotfilesStatuscolumnMarker = mode_highlight_group("StatuscolumnMarker", scene),
 		DotfilesCursorLineCodexNr = mode_highlight_group("CursorLineCodexNr", scene),
