@@ -202,7 +202,14 @@ for _, mark in ipairs(test_marks) do
 		signs = signs + 1
 	end
 end
-assert_equal(signs, 4, "history trimming must remove stale Codex signs")
+assert_equal(signs, 2, "Codex history must render only one sign per screen line")
+local latest_line_signs = 0
+for _, mark in ipairs(test_marks) do
+	if mark[2] == 5 and mark[4].sign_text and vim.trim(mark[4].sign_text) == "" then
+		latest_line_signs = latest_line_signs + 1
+	end
+end
+assert_equal(latest_line_signs, 1, "repeated edits on one line must not concatenate AI signs")
 watcher.open_quickfix()
 quickfix = vim.fn.getqflist({ items = 1, title = 1 })
 assert_equal(#quickfix.items, 4, "history trimming must also prune turn quickfix entries")

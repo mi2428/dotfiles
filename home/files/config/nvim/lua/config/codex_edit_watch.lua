@@ -90,6 +90,28 @@ local function current_extmark_line(entry)
 	return entry.start_line
 end
 
+local function refresh_history_signs()
+	local signed_lines = {}
+	for index = #state.history, 1, -1 do
+		local entry = state.history[index]
+		if vim.api.nvim_buf_is_valid(entry.bufnr) then
+			local position = vim.api.nvim_buf_get_extmark_by_id(entry.bufnr, sign_namespace, entry.marker_id, {})
+			if position and #position >= 2 then
+				local lines = signed_lines[entry.bufnr] or {}
+				signed_lines[entry.bufnr] = lines
+				local options = { id = entry.marker_id }
+				if not lines[position[1]] then
+					lines[position[1]] = true
+					options.sign_text = ""
+					options.sign_hl_group = "DiagnosticInfo"
+					options.priority = 30
+				end
+				vim.api.nvim_buf_set_extmark(entry.bufnr, sign_namespace, position[1], position[2], options)
+			end
+		end
+	end
+end
+
 local function jump_to_entry(entry, index)
 	if not entry or not uv.fs_stat(entry.path) then
 		return false
@@ -237,11 +259,7 @@ local function add_hunk(event, change, hunk)
 	local line_count = vim.api.nvim_buf_line_count(bufnr)
 	local start_line = math.max(1, math.min(tonumber(hunk.start_line) or 1, line_count))
 	local end_line = math.max(start_line, math.min(tonumber(hunk.end_line) or start_line, line_count))
-	local marker_id = vim.api.nvim_buf_set_extmark(bufnr, sign_namespace, start_line - 1, 0, {
-		sign_text = "",
-		sign_hl_group = "DiagnosticInfo",
-		priority = 30,
-	})
+	local marker_id = vim.api.nvim_buf_set_extmark(bufnr, sign_namespace, start_line - 1, 0, {})
 	local entry = {
 		bufnr = bufnr,
 		change_type = hunk.change_type or change.kind or "update",
@@ -333,6 +351,7 @@ local function process_patch_event(event)
 
 	state.latest = last_entry or state.latest
 	trim_history()
+	refresh_history_signs()
 	if #added > 0 then
 		state.active_turn = turn_key(event)
 		highlight_entries(added)
