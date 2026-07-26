@@ -365,11 +365,10 @@ return {
 				float = { border = "rounded" },
 				underline = true,
 				signs = {
+					severity = { min = vim.diagnostic.severity.WARN },
 					text = {
 						[vim.diagnostic.severity.ERROR] = "●",
 						[vim.diagnostic.severity.WARN] = "●",
-						[vim.diagnostic.severity.INFO] = "●",
-						[vim.diagnostic.severity.HINT] = "●",
 					},
 				},
 				virtual_text = false,
