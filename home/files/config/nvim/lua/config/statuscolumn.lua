@@ -8,6 +8,7 @@ local fold_symbols = {
 	open = "",
 	sep = " ",
 }
+local fold_width = 2
 
 local function number_width(args)
 	return math.max(vim.wo[args.win].numberwidth, #tostring(vim.api.nvim_buf_line_count(args.buf)))
@@ -44,12 +45,12 @@ end
 
 function M.fold(args)
 	if args.virtnum ~= 0 then
-		return " "
+		return string.rep(" ", fold_width)
 	end
 
 	local level = vim.fn.foldlevel(args.lnum)
 	if level == 0 then
-		return " "
+		return string.rep(" ", fold_width)
 	end
 
 	local symbol = fold_symbols.sep
@@ -59,7 +60,7 @@ function M.fold(args)
 		symbol = fold_symbols.open
 	end
 
-	return (args.relnum == 0 and "%#CursorLineFold#" or "%#FoldColumn#") .. symbol
+	return (args.relnum == 0 and "%#CursorLineFold#" or "%#FoldColumn#") .. symbol .. string.rep(" ", fold_width - 1)
 end
 
 function M.fold_click(args)

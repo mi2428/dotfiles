@@ -27,8 +27,8 @@ end
 
 local left = vim.api.nvim_get_current_win()
 assert(rendered_statuscolumn(left, 500):match("500$") ~= nil, "current line must render its absolute number")
-assert(rendered_statuscolumn(left, 499, 4) == "   󰄿", "upper marker must stay right-aligned in the number field")
-assert(rendered_statuscolumn(left, 501, 4) == "   󰄼", "lower marker must stay right-aligned in the number field")
+assert(rendered_statuscolumn(left, 499, 5) == "    󰄿", "upper marker must stay right-aligned in the number field")
+assert(rendered_statuscolumn(left, 501, 5) == "    󰄼", "lower marker must stay right-aligned in the number field")
 
 for _, case in ipairs({
 	{ count = 9, cursor = 5 },
@@ -39,17 +39,18 @@ for _, case in ipairs({
 	vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.fn["repeat"]({ "line" }, case.count))
 	vim.api.nvim_win_set_cursor(left, { case.cursor, 0 })
 	local width = math.max(vim.wo[left].numberwidth, #tostring(case.count))
-	local gutter_width = width + 1
+	local gutter_width = width + 2
 	assert(
-		rendered_statuscolumn(left, case.cursor, gutter_width) == " " .. string.format("%" .. width .. "d", case.cursor),
+		rendered_statuscolumn(left, case.cursor, gutter_width)
+			== string.rep(" ", 2) .. string.format("%" .. width .. "d", case.cursor),
 		("current number width must track a %d-line buffer"):format(case.count)
 	)
 	assert(
-		rendered_statuscolumn(left, case.cursor - 1, gutter_width) == string.rep(" ", width) .. "󰄿",
+		rendered_statuscolumn(left, case.cursor - 1, gutter_width) == string.rep(" ", width + 1) .. "󰄿",
 		("upper marker width must track a %d-line buffer"):format(case.count)
 	)
 	assert(
-		rendered_statuscolumn(left, case.cursor + 1, gutter_width) == string.rep(" ", width) .. "󰄼",
+		rendered_statuscolumn(left, case.cursor + 1, gutter_width) == string.rep(" ", width + 1) .. "󰄼",
 		("lower marker width must track a %d-line buffer"):format(case.count)
 	)
 end
@@ -96,22 +97,22 @@ local win = vim.api.nvim_get_current_win()
 vim.api.nvim_win_set_cursor(win, { 2, 0 })
 vim.cmd.normal({ args = { "zO" }, bang = true })
 assert(
-	statuscolumn.fold({ lnum = 2, relnum = 0, virtnum = 0 }) == "%#CursorLineFold#",
-	"an open fold must preserve the old one-cell marker"
+	statuscolumn.fold({ lnum = 2, relnum = 0, virtnum = 0 }) == "%#CursorLineFold# ",
+	"an open fold must reserve a separator cell"
 )
 assert(
-	statuscolumn.fold({ lnum = 3, relnum = 1, virtnum = 0 }) == "%#FoldColumn# ",
-	"a fold continuation must preserve the old one-cell separator"
+	statuscolumn.fold({ lnum = 3, relnum = 1, virtnum = 0 }) == "%#FoldColumn#  ",
+	"a fold continuation must preserve the two-cell fold field"
 )
-assert(statuscolumn.fold({ lnum = 2, relnum = 0, virtnum = 1 }) == " ", "wrapped rows must leave fold space blank")
+assert(statuscolumn.fold({ lnum = 2, relnum = 0, virtnum = 1 }) == "  ", "wrapped rows must leave fold space blank")
 assert(_G.dotfiles_foldcolumn_click == statuscolumn.fold_click_handler, "fold clicks must bypass statuscol dispatch")
 statuscolumn.fold_click({ button = "l", clicks = 2, mousepos = { winid = win, line = 2 } })
 assert(vim.fn.foldclosed(2) == -1, "double click must not toggle a fold")
 statuscolumn.fold_click({ button = "l", clicks = 1, mousepos = { winid = win, line = 2 } })
 assert(vim.fn.foldclosed(2) == 2, "single click must toggle a fold")
 assert(
-	statuscolumn.fold({ lnum = 2, relnum = 0, virtnum = 0 }) == "%#CursorLineFold#",
-	"a closed fold must preserve the old one-cell marker"
+	statuscolumn.fold({ lnum = 2, relnum = 0, virtnum = 0 }) == "%#CursorLineFold# ",
+	"a closed fold must reserve a separator cell"
 )
 
 print("statuscolumn number regression: ok")
