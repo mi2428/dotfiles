@@ -24,6 +24,7 @@ local function set_minimap_highlights()
 	end
 
 	vim.api.nvim_set_hl(0, "MiniMapSearch", { fg = colors.base, bg = colors.yellow, bold = true })
+	vim.api.nvim_set_hl(0, "MiniMapStatusLine", { bg = "NONE" })
 	set("MiniMapDiagnosticError", colors.red)
 	set("MiniMapDiagnosticWarn", colors.yellow)
 	set("MiniMapDiagnosticInfo", colors.sky)
@@ -31,6 +32,20 @@ local function set_minimap_highlights()
 	set("MiniMapGitAdd", colors.green)
 	set("MiniMapGitChange", colors.peach)
 	set("MiniMapGitDelete", colors.red)
+end
+
+local function style_minimap_windows()
+	for _, win in ipairs(vim.api.nvim_list_wins()) do
+		local buf = vim.api.nvim_win_get_buf(win)
+		if vim.bo[buf].filetype == "minimap" then
+			vim.wo[win].statusline = " "
+			vim.wo[win].winhighlight = table.concat({
+				"NormalFloat:MiniMapNormal",
+				"StatusLine:MiniMapStatusLine",
+				"StatusLineNC:MiniMapStatusLine",
+			}, ",")
+		end
+	end
 end
 
 return {
@@ -90,10 +105,17 @@ return {
 				pattern = "*",
 				callback = set_minimap_highlights,
 			})
+			vim.api.nvim_create_autocmd("WinNew", {
+				group = vim.api.nvim_create_augroup("dotfiles-mini-map-window", { clear = true }),
+				callback = function()
+					vim.schedule(style_minimap_windows)
+				end,
+			})
 			set_minimap_highlights()
 
 			map.setup(opts)
 			map.open()
+			style_minimap_windows()
 		end,
 	},
 }
