@@ -12,29 +12,37 @@ local specs = dofile(vim.fs.joinpath(nvim_root, "lua/plugins/git.lua"))
 local priority = assert(specs[1].opts.sign_priority, "Gitsigns priority must be configured")
 assert(priority > 30, "Gitsigns must outrank Codex and diagnostic signs")
 
-vim.api.nvim_buf_set_lines(0, 0, -1, false, { "sign priority regression" })
+vim.api.nvim_buf_set_lines(0, 0, -1, false, { "sign priority regression", "fold body" })
 vim.bo.modified = false
 vim.wo.cursorline = true
 vim.wo.cursorlineopt = "both"
+vim.wo.foldcolumn = "1"
+vim.wo.foldmethod = "manual"
+vim.opt.fillchars:append({ fold = " ", foldopen = "", foldclose = "", foldsep = " " })
 vim.api.nvim_set_hl(0, "GitSignsAdd", { fg = "#00ff00" })
 vim.api.nvim_set_hl(0, "GitSignsChange", { fg = "#ffff00" })
 vim.api.nvim_set_hl(0, "DiagnosticSignError", { fg = "#ff0000" })
+vim.api.nvim_set_hl(0, "DiagnosticSignWarn", { fg = "#ffff00" })
 vim.api.nvim_set_hl(0, "DiagnosticInfo", { fg = "#00ffff" })
+vim.api.nvim_set_hl(0, "DotfilesCodexLineNr", { fg = "#00ffff", bold = true })
+vim.api.nvim_set_hl(0, "DotfilesCursorLineCodexNr", { fg = "#00ffff", bold = true })
 require("config.statuscolumn").setup()
+vim.cmd("1,2fold")
+vim.cmd.normal({ args = { "zO" }, bang = true })
 
 local git_namespace = vim.api.nvim_create_namespace("gitsigns_signs_test")
 local staged_git_namespace = vim.api.nvim_create_namespace("gitsigns_signs_test_staged")
 local review_namespace = vim.api.nvim_create_namespace("dotfiles-review-added-file")
-local diagnostic_namespace = vim.api.nvim_create_namespace("dotfiles-test-diagnostics")
+local diagnostic_namespace = vim.api.nvim_create_namespace("nvim.dotfiles-test.diagnostic.signs")
 local codex_namespace = vim.api.nvim_create_namespace("dotfiles-codex-edit-signs")
 local legacy_group = "dotfiles-statuscolumn-legacy-test"
 local legacy_name = "DotfilesLegacyStatuscolumnTest"
 local bufnr = vim.api.nvim_get_current_buf()
 
-local function rendered_statuscolumn_result(lnum)
+local function rendered_statuscolumn_result(lnum, maxwidth)
 	vim.cmd.redrawstatus()
 	return vim.api.nvim_eval_statusline(vim.wo.statuscolumn, {
-		maxwidth = 20,
+		maxwidth = maxwidth or 20,
 		use_statuscol_lnum = lnum or 1,
 		winid = vim.api.nvim_get_current_win(),
 		highlights = true,
@@ -109,50 +117,97 @@ vim.api.nvim_buf_set_extmark(0, staged_git_namespace, 0, 0, {
 	sign_text = "S",
 	sign_hl_group = "GitSignsChange",
 })
-assert(
-	rendered_statuscolumn():match("1GS$") ~= nil,
-	"Git segment must keep two staged and unstaged signs: " .. rendered_statuscolumn()
-)
-assert_isolated_signs(rendered_statuscolumn_result(), 2, "CursorLineSign")
+local two_git = rendered_statuscolumn()
+assert(two_git:match("1[GS]$") ~= nil, "the Git colorbar must render exactly one sign: " .. two_git)
+assert(two_git:match("GS$") == nil, "staged and unstaged Git signs must share one colorbar cell: " .. two_git)
+assert_isolated_signs(rendered_statuscolumn_result(), 1, "CursorLineSign")
 
 vim.fn.sign_define(legacy_name, { text = "L", texthl = "DiagnosticInfo" })
 vim.fn.sign_place(1, legacy_group, legacy_name, bufnr, { lnum = 1, priority = 40 })
 local with_legacy = rendered_statuscolumn()
-assert(with_legacy:match("1GSL$") ~= nil, "legacy signs must render in the auxiliary segment")
+assert(with_legacy == two_git, "unrouted legacy signs must not appear beside the Git-only colorbar")
 vim.fn.sign_unplace(legacy_group, { buffer = bufnr, id = 1 })
 
 vim.api.nvim_buf_set_extmark(0, diagnostic_namespace, 0, 0, {
 	priority = 10,
-	sign_text = "D",
+	sign_text = "●",
 	sign_hl_group = "DiagnosticSignError",
 })
 local with_diagnostic = rendered_statuscolumn()
-assert(with_diagnostic:match("1GSD$") ~= nil, "diagnostic must use the auxiliary segment")
-assert_isolated_signs(rendered_statuscolumn_result(), 3, "CursorLineSign")
+assert(
+	with_diagnostic:match("1[GS]● $") ~= nil,
+	"diagnostic must render after the line number and Git colorbar: " .. with_diagnostic
+)
+local right_columns = assert(with_diagnostic:match("1([GS]● )$"), "the three right-hand cells must be present")
+assert(vim.fn.strdisplaywidth(right_columns) == 3, "Git and diagnostic signs must use at most three cells")
+local compact_diagnostic = rendered_statuscolumn_result(1, 7)
+local diagnostic_start
+local diagnostic_end
+for index, highlight in ipairs(compact_diagnostic.highlights) do
+	if
+		highlight.group:match("^DotfilesStatuscolumnSign%d+$")
+		and vim.api.nvim_get_hl(0, { name = highlight.group, link = false }).fg == 0xff0000
+	then
+		diagnostic_start = highlight.start
+		for next_index = index + 1, #compact_diagnostic.highlights do
+			if compact_diagnostic.highlights[next_index].start > diagnostic_start then
+				diagnostic_end = compact_diagnostic.highlights[next_index].start
+				break
+			end
+		end
+		break
+	end
+end
+assert(diagnostic_start ~= nil and diagnostic_end ~= nil, "diagnostic highlight boundaries must be present")
+local diagnostic_cell = compact_diagnostic.str:sub(diagnostic_start + 1, diagnostic_end)
+assert(vim.fn.strdisplaywidth(diagnostic_cell) == 2, "diagnostics must retain their padding cell: " .. vim.inspect({
+	cell = diagnostic_cell,
+	result = compact_diagnostic,
+}))
+assert_isolated_signs(rendered_statuscolumn_result(), 2, "CursorLineSign")
 
 vim.api.nvim_buf_set_extmark(0, codex_namespace, 0, 0, {
 	priority = 30,
-	sign_text = "C",
+	sign_text = "",
 	sign_hl_group = "DiagnosticInfo",
 })
+local with_codex = rendered_statuscolumn_result()
+assert(with_codex.str == with_diagnostic, "Codex must color the number without adding a sign cell")
 assert(
-	rendered_statuscolumn():match("1GSCD$") ~= nil,
-	"Codex must precede diagnostics in the two-cell auxiliary segment"
+	with_codex.str:match("^%s+1[GS]● $") ~= nil,
+	"the combined row must render fold, number, Git, and diagnostic in the requested order: " .. with_codex.str
 )
+assert(
+	vim.iter(with_codex.highlights):any(function(highlight)
+		return highlight.group == "DotfilesCursorLineCodexNr"
+	end),
+	"the latest Codex edit must use the dedicated current-line number highlight: " .. vim.inspect(with_codex.highlights)
+)
+vim.api.nvim_win_set_cursor(0, { 2, 0 })
+local noncurrent_codex = rendered_statuscolumn_result(1)
+assert(
+	vim.iter(noncurrent_codex.highlights):any(function(highlight)
+		return highlight.group == "DotfilesCodexLineNr"
+	end),
+	"moving the cursor away must preserve the Codex color on the edited line number"
+)
+vim.api.nvim_win_set_cursor(0, { 1, 0 })
 
 vim.api.nvim_buf_clear_namespace(0, diagnostic_namespace, 0, -1)
 vim.api.nvim_buf_clear_namespace(0, codex_namespace, 0, -1)
 vim.api.nvim_buf_clear_namespace(0, staged_git_namespace, 0, -1)
+vim.api.nvim_buf_clear_namespace(0, git_namespace, 0, -1)
 vim.api.nvim_buf_set_extmark(0, review_namespace, 0, 0, {
 	priority = 20,
-	sign_text = "R",
+	sign_text = "▎",
 })
-assert(rendered_statuscolumn():match("1GR$") ~= nil, "review-added signs must share the Git segment with Gitsigns")
+assert(rendered_statuscolumn():match("1▎$") ~= nil, "review-added signs must share the Git colorbar cell")
 
 vim.api.nvim_buf_clear_namespace(0, review_namespace, 0, -1)
-vim.api.nvim_buf_clear_namespace(0, git_namespace, 0, -1)
 assert(rendered_statuscolumn():match("1$") ~= nil, "empty sign segments must collapse automatically")
 
+vim.cmd.normal({ args = { "zE" }, bang = true })
+vim.wo.foldcolumn = "0"
 vim.api.nvim_buf_set_lines(0, 0, -1, false, { "above", "cursor", "below" })
 vim.api.nvim_win_set_cursor(0, { 2, 0 })
 vim.api.nvim_buf_set_extmark(0, git_namespace, 0, 0, {

@@ -1,21 +1,11 @@
 local M = {}
 
+local builtin = require("statuscol.builtin")
 local sign_highlight_cache = {}
 local sign_highlight_index = 0
 
-local fold_symbols = {
-	close = "",
-	open = "",
-	sep = " ",
-}
-local fold_width = 2
-
 local function number_width(args)
 	return math.max(vim.wo[args.win].numberwidth, #tostring(vim.api.nvim_buf_line_count(args.buf)))
-end
-
-local function marker(width, glyph)
-	return "%#DotfilesStatuscolumnMarker#" .. string.format("%" .. width .. "s", glyph)
 end
 
 local function reset_sign_highlights()
@@ -44,23 +34,16 @@ local function isolated_sign_highlight(group)
 end
 
 function M.fold(args)
-	if args.virtnum ~= 0 then
-		return string.rep(" ", fold_width)
+	local rendered = builtin.foldfunc(args)
+	if rendered == "" then
+		return rendered
 	end
 
-	local level = vim.fn.foldlevel(args.lnum)
-	if level == 0 then
-		return string.rep(" ", fold_width)
-	end
-
-	local symbol = fold_symbols.sep
-	if vim.fn.foldclosed(args.lnum) == args.lnum then
-		symbol = fold_symbols.close
-	elseif args.lnum == 1 or level > vim.fn.foldlevel(args.lnum - 1) then
-		symbol = fold_symbols.open
-	end
-
-	return (args.relnum == 0 and "%#CursorLineFold#" or "%#FoldColumn#") .. symbol .. string.rep(" ", fold_width - 1)
+	-- IMPORTANT: Keep 'foldcolumn' at auto:1 so nested folds still render one
+	-- structural glyph. This extra highlighted cell widens only the visual rail;
+	-- setting 'foldcolumn' to 2 would expose a second fold-depth marker instead.
+	local group = (args.cul and args.relnum == 0) and "CursorLineFold" or "FoldColumn"
+	return rendered .. "%#" .. group .. "# %*"
 end
 
 function M.fold_click(args)
@@ -93,27 +76,32 @@ end
 
 _G.dotfiles_foldcolumn_click = M.fold_click_handler
 
-function M.number(args)
+local function has_ai_indicator(args, segment)
+	-- IMPORTANT: Number rendering is a per-screen-row hot path. Read the sign
+	-- table that statuscol.nvim builds once per redraw; querying extmarks here
+	-- would multiply API work by every visible row during cursor movement.
+	local signs = segment
+		and segment.sign
+		and segment.sign.wins[args.win]
+		and segment.sign.wins[args.win].signs[args.lnum]
+	return signs ~= nil and #signs > 0
+end
+
+function M.number(args, segment)
 	local width = number_width(args)
 	if args.virtnum ~= 0 then
 		return string.rep(" ", width)
 	end
 
 	local current = vim.api.nvim_win_get_cursor(args.win)[1]
-	if not args.rnu then
-		return (args.lnum == current and "%#CursorLineNr#" or "%#LineNr#")
-			.. string.format("%" .. width .. "d", args.lnum)
+	local ai = has_ai_indicator(args, segment)
+	local number_group = ai and (args.lnum == current and "DotfilesCursorLineCodexNr" or "DotfilesCodexLineNr")
+	local group = number_group or (args.lnum == current and "CursorLineNr" or "LineNr")
+	local number = args.lnum
+	if args.rnu then
+		number = args.relnum > 0 and args.relnum or (args.nu == false and 0 or args.lnum)
 	end
-	if args.lnum == current - 1 then
-		return marker(width, "󰄿")
-	end
-	if args.lnum == current then
-		return "%#CursorLineNr#" .. string.format("%" .. width .. "d", args.lnum)
-	end
-	if args.lnum == current + 1 then
-		return marker(width, "󰄼")
-	end
-	return "%#LineNr#" .. string.format("%" .. width .. "d", args.relnum)
+	return "%#" .. group .. "#" .. string.format("%" .. width .. "d", number)
 end
 
 function M.sign_base(args)
@@ -121,7 +109,7 @@ function M.sign_base(args)
 end
 
 function M.sign(args, segment)
-	local rendered = require("statuscol.builtin").signfunc(args, segment)
+	local rendered = builtin.signfunc(args, segment)
 	return rendered:gsub("%%#([^#]+)#", function(group)
 		local isolated = isolated_sign_highlight(group)
 		if isolated == group then
@@ -142,13 +130,24 @@ function M.setup()
 		segments = {
 			{ text = { M.fold }, click = "v:lua.dotfiles_foldcolumn_click" },
 			{ text = { "%=" } },
-			{ text = { M.number } },
+			{
+				-- Consume the sole Codex sign as number metadata; M.number deliberately
+				-- emits no sign glyph and therefore adds no statuscolumn cell.
+				text = { M.number },
+				sign = {
+					namespace = { "dotfiles-codex-edit-signs" },
+					text = { "" },
+					maxwidth = 1,
+					colwidth = 1,
+				},
+			},
 			{ text = { "%*" } },
 			{
 				text = { M.sign },
 				sign = {
 					namespace = { "gitsigns_signs_.*", "dotfiles-review-added-file" },
-					maxwidth = 2,
+					text = { "▎" },
+					maxwidth = 1,
 					colwidth = 1,
 					auto = true,
 				},
@@ -156,11 +155,12 @@ function M.setup()
 			{
 				text = { M.sign },
 				sign = {
-					name = { ".*" },
-					text = { ".*" },
-					namespace = { ".*" },
-					maxwidth = 2,
-					colwidth = 1,
+					namespace = { "diagnostic%.signs" },
+					maxwidth = 1,
+					-- Keep Neovim's trailing sign padding so the diagnostic circle
+					-- does not touch the first code cell. Git + diagnostic use three
+					-- cells total when both segments are active.
+					colwidth = 2,
 					auto = true,
 				},
 			},
