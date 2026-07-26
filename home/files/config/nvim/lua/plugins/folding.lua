@@ -8,8 +8,14 @@ return {
 		event = "VeryLazy",
 		dependencies = { "kevinhwang91/promise-async" },
 		opts = {
-			provider_selector = function(_, _, _)
-				return { "treesitter", "indent" }
+			provider_selector = function(_, filetype, _)
+				local language = vim.treesitter.language.get_lang(filetype) or filetype
+				local ok, query = pcall(vim.treesitter.query.get, language, "folds")
+				if ok and query then
+					return { "treesitter", "indent" }
+				end
+
+				return "indent"
 			end,
 		},
 		config = function(_, opts)
