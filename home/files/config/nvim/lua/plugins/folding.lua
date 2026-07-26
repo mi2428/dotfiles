@@ -8,6 +8,11 @@ return {
 		event = "VeryLazy",
 		dependencies = { "kevinhwang91/promise-async" },
 		opts = {
+			-- The Folded highlight already marks the entire closed screen row.
+			-- Preserve the first line's syntax text without adding ufo's ellipsis.
+			fold_virt_text_handler = function(virt_text)
+				return virt_text
+			end,
 			provider_selector = function(_, filetype, _)
 				local language = vim.treesitter.language.get_lang(filetype) or filetype
 				local ok, query = pcall(vim.treesitter.query.get, language, "folds")

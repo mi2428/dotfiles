@@ -14,6 +14,12 @@ local function marker(width, glyph, group)
 	return "%#" .. group .. "#" .. string.format("%" .. width .. "s", glyph)
 end
 
+local function replace_initial_highlight(rendered, group)
+	return rendered:gsub("^%%#[^#]+#", function()
+		return "%#" .. group .. "#"
+	end, 1)
+end
+
 local function visible_neighbors(args, current)
 	local cached = visible_neighbor_cache[args.win]
 	if args.tick ~= nil and cached and cached.tick == args.tick and cached.current == current then
@@ -74,7 +80,19 @@ end
 
 function M.fold(args)
 	local rendered = builtin.foldfunc(args)
-	if rendered == "" or statuscol_C.fold_info(args.wp, args.lnum).level > 0 then
+	if rendered == "" then
+		return rendered
+	end
+
+	if statuscol_C.fold_info(args.wp, args.lnum).level > 0 then
+		if args.virtnum == 0 and rendered:find(args.fold.open, 1, true) then
+			local group = (args.cul and args.relnum == 0) and "DotfilesCursorLineFoldOpen" or "DotfilesFoldOpen"
+			return replace_initial_highlight(rendered, group)
+		end
+		if args.virtnum == 0 and rendered:find(args.fold.close, 1, true) then
+			local group = (args.cul and args.relnum == 0) and "DotfilesCursorLineFoldClosed" or "DotfilesFoldClosed"
+			return replace_initial_highlight(rendered, group)
+		end
 		return rendered
 	end
 
@@ -82,10 +100,7 @@ function M.fold(args)
 	-- no fold. Keep the cell for stable layout, but only paint the rail where za
 	-- can actually act. Cursor rows retain the ordinary cursorline background.
 	local inactive_group = (args.cul and args.relnum == 0) and "CursorLineFold" or "LineNr"
-	local inactive = rendered:gsub("^%%#[^#]+#", function()
-		return "%#" .. inactive_group .. "#"
-	end, 1)
-	return inactive
+	return replace_initial_highlight(rendered, inactive_group)
 end
 
 function M.fold_click(args)

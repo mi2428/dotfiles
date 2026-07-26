@@ -14,6 +14,8 @@ vim.wo.number = true
 vim.wo.relativenumber = true
 vim.wo.foldcolumn = "1"
 vim.opt.fillchars:append({ fold = " ", foldopen = "󰅀", foldclose = "󰅃", foldsep = " " })
+vim.api.nvim_set_hl(0, "DotfilesFoldOpen", { fg = "#0000ff" })
+vim.api.nvim_set_hl(0, "DotfilesFoldClosed", { fg = "#ff00ff" })
 vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.fn["repeat"]({ "line" }, 1000))
 vim.api.nvim_win_set_cursor(0, { 500, 0 })
 statuscolumn.setup()
@@ -37,12 +39,9 @@ assert(rendered_statuscolumn(left, 500):match("500$") ~= nil, "current line must
 assert(rendered_statuscolumn(left, 499, 5) == "    󰄿", "upper marker must stay right-aligned in the number field")
 assert(rendered_statuscolumn(left, 501, 5) == "    󰄼", "lower marker must stay right-aligned in the number field")
 local nonfold = rendered_statuscolumn_result(left, 480, 5)
-assert(
-	not vim.iter(nonfold.highlights):any(function(highlight)
-		return highlight.group == "FoldColumn"
-	end),
-	"a line where za cannot act must not paint the fold rail: " .. vim.inspect(nonfold.highlights)
-)
+assert(not vim.iter(nonfold.highlights):any(function(highlight)
+	return highlight.group == "FoldColumn"
+end), "a line where za cannot act must not paint the fold rail: " .. vim.inspect(nonfold.highlights))
 
 for _, case in ipairs({
 	{ count = 9, cursor = 5 },
@@ -111,12 +110,16 @@ vim.api.nvim_win_set_cursor(win, { 2, 0 })
 vim.cmd.normal({ args = { "zO" }, bang = true })
 local number_width = math.max(vim.wo[win].numberwidth, #tostring(vim.api.nvim_buf_line_count(0)))
 local gutter_width = number_width + 1
-local open_fold = rendered_statuscolumn(win, 2, gutter_width)
-assert(
-	open_fold:sub(1, #"󰅀") == "󰅀",
-	"an open fold must use the MDI down chevron: " .. vim.inspect(open_fold)
-)
+local open_fold_result = rendered_statuscolumn_result(win, 2, gutter_width)
+local open_fold = open_fold_result.str
+assert(open_fold:sub(1, #"󰅀") == "󰅀", "an open fold must use the MDI down chevron: " .. vim.inspect(open_fold))
 assert(vim.fn.strdisplaywidth("󰅀") == 1, "the open fold glyph must occupy exactly one cell")
+assert(
+	vim.iter(open_fold_result.highlights):any(function(highlight)
+		return highlight.group == "DotfilesFoldOpen"
+	end),
+	"the open fold sign must use its sapphire state highlight: " .. vim.inspect(open_fold_result.highlights)
+)
 assert(
 	vim.fn.strdisplaywidth(open_fold) == gutter_width,
 	"the fold and number fields must occupy one plus number width"
@@ -132,10 +135,17 @@ statuscolumn.fold_click({ button = "l", clicks = 2, mousepos = { winid = win, li
 assert(vim.fn.foldclosed(2) == -1, "double click must not toggle a fold")
 statuscolumn.fold_click({ button = "l", clicks = 1, mousepos = { winid = win, line = 2 } })
 assert(vim.fn.foldclosed(2) == 2, "single click must toggle a fold")
-local closed_fold = rendered_statuscolumn(win, 2, gutter_width)
+local closed_fold_result = rendered_statuscolumn_result(win, 2, gutter_width)
+local closed_fold = closed_fold_result.str
 assert(closed_fold:sub(1, #"󰅃") == "󰅃", "a closed fold must use the MDI up chevron")
 assert(vim.fn.strdisplaywidth("󰅃") == 1, "the closed fold glyph must occupy exactly one cell")
 assert(vim.fn.strdisplaywidth(closed_fold) == gutter_width, "a closed fold must keep the one-cell fold field")
+assert(
+	vim.iter(closed_fold_result.highlights):any(function(highlight)
+		return highlight.group == "DotfilesFoldClosed"
+	end),
+	"the closed fold sign must use its mauve state highlight: " .. vim.inspect(closed_fold_result.highlights)
+)
 
 local after_closed_fold = rendered_statuscolumn(win, 4, gutter_width)
 assert(
