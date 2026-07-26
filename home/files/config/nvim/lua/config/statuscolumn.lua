@@ -38,16 +38,7 @@ local function isolated_sign_highlight(group)
 end
 
 function M.fold(args)
-	local rendered = builtin.foldfunc(args)
-	if rendered == "" then
-		return rendered
-	end
-
-	-- IMPORTANT: Keep 'foldcolumn' at auto:1 so nested folds still render one
-	-- structural glyph. This extra highlighted cell widens only the visual rail;
-	-- setting 'foldcolumn' to 2 would expose a second fold-depth marker instead.
-	local group = (args.cul and args.relnum == 0) and "CursorLineFold" or "FoldColumn"
-	return rendered .. "%#" .. group .. "# %*"
+	return builtin.foldfunc(args)
 end
 
 function M.fold_click(args)

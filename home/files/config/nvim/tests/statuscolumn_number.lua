@@ -13,7 +13,7 @@ vim.wo.numberwidth = 3
 vim.wo.number = true
 vim.wo.relativenumber = true
 vim.wo.foldcolumn = "1"
-vim.opt.fillchars:append({ fold = " ", foldopen = "", foldclose = "", foldsep = " " })
+vim.opt.fillchars:append({ fold = " ", foldopen = "󰅀", foldclose = "󰅃", foldsep = " " })
 vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.fn["repeat"]({ "line" }, 1000))
 vim.api.nvim_win_set_cursor(0, { 500, 0 })
 statuscolumn.setup()
@@ -34,8 +34,8 @@ end
 
 local left = vim.api.nvim_get_current_win()
 assert(rendered_statuscolumn(left, 500):match("500$") ~= nil, "current line must render its absolute number")
-assert(rendered_statuscolumn(left, 499, 6) == "     󰄿", "upper marker must stay right-aligned in the number field")
-assert(rendered_statuscolumn(left, 501, 6) == "     󰄼", "lower marker must stay right-aligned in the number field")
+assert(rendered_statuscolumn(left, 499, 5) == "    󰄿", "upper marker must stay right-aligned in the number field")
+assert(rendered_statuscolumn(left, 501, 5) == "    󰄼", "lower marker must stay right-aligned in the number field")
 
 for _, case in ipairs({
 	{ count = 9, cursor = 5 },
@@ -46,18 +46,17 @@ for _, case in ipairs({
 	vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.fn["repeat"]({ "line" }, case.count))
 	vim.api.nvim_win_set_cursor(left, { case.cursor, 0 })
 	local width = math.max(vim.wo[left].numberwidth, #tostring(case.count))
-	local gutter_width = width + 2
+	local gutter_width = width + 1
 	assert(
-		rendered_statuscolumn(left, case.cursor, gutter_width)
-			== "  " .. string.format("%" .. width .. "d", case.cursor),
+		rendered_statuscolumn(left, case.cursor, gutter_width) == " " .. string.format("%" .. width .. "d", case.cursor),
 		("current number width must track a %d-line buffer"):format(case.count)
 	)
 	assert(
-		rendered_statuscolumn(left, case.cursor - 1, gutter_width) == string.rep(" ", width + 1) .. "󰄿",
+		rendered_statuscolumn(left, case.cursor - 1, gutter_width) == string.rep(" ", width) .. "󰄿",
 		("upper marker width must track a %d-line buffer"):format(case.count)
 	)
 	assert(
-		rendered_statuscolumn(left, case.cursor + 1, gutter_width) == string.rep(" ", width + 1) .. "󰄼",
+		rendered_statuscolumn(left, case.cursor + 1, gutter_width) == string.rep(" ", width) .. "󰄼",
 		("lower marker width must track a %d-line buffer"):format(case.count)
 	)
 end
@@ -103,22 +102,32 @@ vim.cmd("2,3fold")
 local win = vim.api.nvim_get_current_win()
 vim.api.nvim_win_set_cursor(win, { 2, 0 })
 vim.cmd.normal({ args = { "zO" }, bang = true })
-local open_fold = rendered_statuscolumn(win, 2)
-assert(open_fold:sub(1, #"") == "", "an open fold must use the one-cell chevron: " .. vim.inspect(open_fold))
-assert(vim.fn.strdisplaywidth("") == 1, "the open fold glyph must occupy exactly one cell")
-assert(open_fold:sub(#"" + 1, #"" + 1) == " ", "the fold glyph must be followed by a second rail cell")
-assert(rendered_statuscolumn(win, 3):sub(1, 2) == "  ", "a fold continuation must paint a two-cell fold rail")
+local number_width = math.max(vim.wo[win].numberwidth, #tostring(vim.api.nvim_buf_line_count(0)))
+local gutter_width = number_width + 1
+local open_fold = rendered_statuscolumn(win, 2, gutter_width)
 assert(
-	rendered_statuscolumn_result(win, 3).highlights[1].group == "FoldColumn",
-	"blank fold continuation cells must inherit the colored FoldColumn rail"
+	open_fold:sub(1, #"󰅀") == "󰅀",
+	"an open fold must use the MDI down chevron: " .. vim.inspect(open_fold)
+)
+assert(vim.fn.strdisplaywidth("󰅀") == 1, "the open fold glyph must occupy exactly one cell")
+assert(
+	vim.fn.strdisplaywidth(open_fold) == gutter_width,
+	"the fold and number fields must occupy one plus number width"
+)
+local continuation = rendered_statuscolumn_result(win, 3, gutter_width)
+assert(continuation.str == string.rep(" ", number_width) .. "󰄼", "a fold continuation must use one rail cell")
+assert(
+	continuation.highlights[1].group == "FoldColumn",
+	"the fold continuation cell must inherit the colored FoldColumn rail"
 )
 assert(_G.dotfiles_foldcolumn_click == statuscolumn.fold_click_handler, "fold clicks must bypass statuscol dispatch")
 statuscolumn.fold_click({ button = "l", clicks = 2, mousepos = { winid = win, line = 2 } })
 assert(vim.fn.foldclosed(2) == -1, "double click must not toggle a fold")
 statuscolumn.fold_click({ button = "l", clicks = 1, mousepos = { winid = win, line = 2 } })
 assert(vim.fn.foldclosed(2) == 2, "single click must toggle a fold")
-local closed_fold = rendered_statuscolumn(win, 2)
-assert(closed_fold:sub(1, #"") == "", "a closed fold must use the one-cell chevron")
-assert(vim.fn.strdisplaywidth("") == 1, "the closed fold glyph must occupy exactly one cell")
+local closed_fold = rendered_statuscolumn(win, 2, gutter_width)
+assert(closed_fold:sub(1, #"󰅃") == "󰅃", "a closed fold must use the MDI up chevron")
+assert(vim.fn.strdisplaywidth("󰅃") == 1, "the closed fold glyph must occupy exactly one cell")
+assert(vim.fn.strdisplaywidth(closed_fold) == gutter_width, "a closed fold must keep the one-cell fold field")
 
 print("statuscolumn number regression: ok")

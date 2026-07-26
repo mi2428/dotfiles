@@ -310,8 +310,10 @@ local function set_relative_number(enabled)
 end
 
 local fold_symbols = {
-	close = "",
-	open = "",
+	-- Keep both directions horizontal so their MDI glyph bounds stay visually
+	-- balanced inside a tall terminal cell.
+	close = "󰅃",
+	open = "󰅀",
 	sep = " ",
 }
 

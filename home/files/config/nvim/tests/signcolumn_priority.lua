@@ -20,7 +20,7 @@ vim.wo.cursorline = true
 vim.wo.cursorlineopt = "both"
 vim.wo.foldcolumn = "1"
 vim.wo.foldmethod = "manual"
-vim.opt.fillchars:append({ fold = " ", foldopen = "", foldclose = "", foldsep = " " })
+vim.opt.fillchars:append({ fold = " ", foldopen = "󰅀", foldclose = "󰅃", foldsep = " " })
 vim.api.nvim_set_hl(0, "GitSignsAdd", { fg = "#00ff00" })
 vim.api.nvim_set_hl(0, "GitSignsChange", { fg = "#ffff00" })
 vim.api.nvim_set_hl(0, "DiagnosticSignError", { fg = "#ff0000" })
@@ -177,7 +177,7 @@ vim.api.nvim_buf_set_extmark(0, codex_namespace, 0, 0, {
 local with_codex = rendered_statuscolumn_result()
 assert(with_codex.str == with_diagnostic, "Codex must color the number without adding a sign cell")
 assert(
-	with_codex.str:match("^%s+1[GS]● $") ~= nil,
+	with_codex.str:match("^󰅀%s+1[GS]● $") ~= nil,
 	"the combined row must render fold, number, Git, and diagnostic in the requested order: " .. with_codex.str
 )
 assert(
