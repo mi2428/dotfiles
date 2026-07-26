@@ -45,6 +45,15 @@ local function all_windows_at_least(minimum)
 	return true
 end
 
+local function all_windows_nowrap()
+	for _, winid in ipairs(normal_windows()) do
+		if vim.wo[winid].wrap then
+			return false
+		end
+	end
+	return true
+end
+
 local function window_widths()
 	return vim.tbl_map(vim.api.nvim_win_get_width, vim.api.nvim_tabpage_list_wins(0))
 end
@@ -91,6 +100,7 @@ assert(
 	"the first watched file was not opened"
 )
 assert_equal(#vim.api.nvim_tabpage_list_wins(0), 1, "one watched file must use one window")
+assert(all_windows_nowrap(), "a single watched window must disable line wrapping")
 
 vim.g.dotfiles_diff_watch_min_width = 39
 vim.api.nvim_exec_autocmds("VimResized", { modeline = false })
@@ -113,6 +123,7 @@ assert(
 	all_windows_at_least(39),
 	("each watched window must retain the configured minimum width: %s"):format(vim.inspect(window_widths()))
 )
+assert(all_windows_nowrap(), "every watched split must disable line wrapping")
 assert_equal(
 	vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()),
 	vim.uv.fs_realpath(second),
@@ -129,10 +140,9 @@ assert(
 assert_equal(#vim.api.nvim_tabpage_list_wins(0), 2, "additional watched files must not create more splits")
 visible = visible_paths()
 assert(visible[vim.uv.fs_realpath(third)], "the latest edited file must be visible")
-assert(
-	visible[vim.uv.fs_realpath(first)] or visible[vim.uv.fs_realpath(second)],
-	"one previously watched file must remain visible beside the latest edit"
-)
+assert(visible[vim.uv.fs_realpath(second)], "the most recently used split must remain visible")
+assert(not visible[vim.uv.fs_realpath(first)], "the least recently used split must show the new edit")
+assert(all_windows_nowrap(), "reusing the oldest watched split must preserve nowrap")
 assert_equal(
 	vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()),
 	vim.uv.fs_realpath(third),
@@ -149,6 +159,7 @@ assert(
 			and current_visible[vim.uv.fs_realpath(second)]
 			and current_visible[vim.uv.fs_realpath(third)]
 			and all_windows_at_least(26)
+			and all_windows_nowrap()
 	end, 20),
 	"increasing width capacity must expose every watched file that fits"
 )

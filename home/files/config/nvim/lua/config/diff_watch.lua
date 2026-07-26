@@ -103,6 +103,34 @@ local function normal_tab_windows()
 	return windows
 end
 
+local function configure_watched_window(winid)
+	vim.wo[winid].wrap = false
+	if state.window_recency[winid] == nil then
+		state.window_recency_clock = state.window_recency_clock + 1
+		state.window_recency[winid] = state.window_recency_clock
+	end
+end
+
+local function mark_watched_window_used(winid)
+	configure_watched_window(winid)
+	state.window_recency_clock = state.window_recency_clock + 1
+	state.window_recency[winid] = state.window_recency_clock
+end
+
+local function oldest_watched_window()
+	local oldest_win
+	local oldest_recency
+	for _, winid in ipairs(normal_tab_windows()) do
+		local recency = state.window_recency[winid]
+		local bufnr = vim.api.nvim_win_get_buf(winid)
+		if recency and not vim.bo[bufnr].modified and (not oldest_recency or recency < oldest_recency) then
+			oldest_win = winid
+			oldest_recency = recency
+		end
+	end
+	return oldest_win
+end
+
 local function layout_capacity()
 	-- Vertical separators consume one column between adjacent windows.
 	local configured = tonumber(vim.g.dotfiles_diff_watch_min_width)
@@ -125,6 +153,7 @@ local function ensure_file_layout(buffers)
 	local other_windows = 0
 	for _, winid in ipairs(normal_tab_windows()) do
 		if watched[vim.api.nvim_win_get_buf(winid)] then
+			configure_watched_window(winid)
 			visible[#visible + 1] = winid
 		else
 			other_windows = other_windows + 1
@@ -172,8 +201,15 @@ local function ensure_file_layout(buffers)
 			vim.cmd("rightbelow vsplit")
 			local winid = vim.api.nvim_get_current_win()
 			vim.api.nvim_win_set_buf(winid, bufnr)
+			configure_watched_window(winid)
 			visible[#visible + 1] = winid
 			visible_buffers[bufnr] = true
+		end
+	end
+
+	for winid in pairs(state.window_recency) do
+		if not vim.api.nvim_win_is_valid(winid) or not watched[vim.api.nvim_win_get_buf(winid)] then
+			state.window_recency[winid] = nil
 		end
 	end
 
@@ -355,11 +391,11 @@ local function flush_pending_follow()
 	state.pending_follow = nil
 	local winid = vim.fn.bufwinid(candidate.bufnr)
 	if winid == -1 or not vim.api.nvim_win_is_valid(winid) then
-		winid = vim.api.nvim_get_current_win()
+		winid = oldest_watched_window() or vim.api.nvim_get_current_win()
 		vim.api.nvim_win_set_buf(winid, candidate.bufnr)
-	else
-		vim.api.nvim_set_current_win(winid)
 	end
+	vim.api.nvim_set_current_win(winid)
+	mark_watched_window_used(winid)
 
 	local line_count = vim.api.nvim_buf_line_count(candidate.bufnr)
 	local line = math.max(1, math.min(candidate.line, line_count))
@@ -638,6 +674,8 @@ function M.setup()
 		scope_dir = scope_dir,
 		snapshots = {},
 		timer = nil,
+		window_recency = {},
+		window_recency_clock = 0,
 	}
 
 	codex_edits.setup({
