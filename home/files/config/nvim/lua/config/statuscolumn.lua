@@ -3,6 +3,7 @@ local M = {}
 local builtin = require("statuscol.builtin")
 local sign_highlight_cache = {}
 local sign_highlight_index = 0
+local visible_neighbor_cache = {}
 
 local function number_width(args)
 	return math.max(vim.wo[args.win].numberwidth, #tostring(vim.api.nvim_buf_line_count(args.buf)))
@@ -10,6 +11,39 @@ end
 
 local function marker(width, glyph, group)
 	return "%#" .. group .. "#" .. string.format("%" .. width .. "s", glyph)
+end
+
+local function visible_neighbors(args, current)
+	local cached = visible_neighbor_cache[args.win]
+	if args.tick ~= nil and cached and cached.tick == args.tick and cached.current == current then
+		return cached.above, cached.below
+	end
+
+	local above = current - 1
+	local below = current + 1
+	vim.api.nvim_win_call(args.win, function()
+		if above > 0 then
+			local fold_start = vim.fn.foldclosed(above)
+			if fold_start ~= -1 then
+				above = fold_start
+			end
+		end
+
+		local fold_end = vim.fn.foldclosedend(current)
+		if fold_end ~= -1 then
+			below = fold_end + 1
+		end
+	end)
+
+	if args.tick ~= nil then
+		visible_neighbor_cache[args.win] = {
+			tick = args.tick,
+			current = current,
+			above = above,
+			below = below,
+		}
+	end
+	return above, below
 end
 
 local function reset_sign_highlights()
@@ -92,11 +126,14 @@ function M.number(args, segment)
 	local ai = has_ai_indicator(args, segment)
 	local number_group = ai and (args.lnum == current and "DotfilesCursorLineCodexNr" or "DotfilesCodexLineNr")
 	local group = number_group or (args.lnum == current and "CursorLineNr" or "LineNr")
-	if args.rnu and args.lnum == current - 1 then
-		return marker(width, "󰄿", number_group or "DotfilesStatuscolumnMarker")
-	end
-	if args.rnu and args.lnum == current + 1 then
-		return marker(width, "󰄼", number_group or "DotfilesStatuscolumnMarker")
+	if args.rnu then
+		local above, below = visible_neighbors(args, current)
+		if args.lnum == above then
+			return marker(width, "󰄿", number_group or "DotfilesStatuscolumnMarker")
+		end
+		if args.lnum == below then
+			return marker(width, "󰄼", number_group or "DotfilesStatuscolumnMarker")
+		end
 	end
 	local number = args.lnum
 	if args.rnu then
@@ -122,6 +159,7 @@ end
 
 function M.setup()
 	reset_sign_highlights()
+	visible_neighbor_cache = {}
 	vim.api.nvim_create_autocmd("ColorScheme", {
 		group = vim.api.nvim_create_augroup("dotfiles-statuscolumn-sign-highlights", { clear = true }),
 		callback = reset_sign_highlights,

@@ -130,4 +130,16 @@ assert(closed_fold:sub(1, #"󰅃") == "󰅃", "a closed fold must use the MDI up
 assert(vim.fn.strdisplaywidth("󰅃") == 1, "the closed fold glyph must occupy exactly one cell")
 assert(vim.fn.strdisplaywidth(closed_fold) == gutter_width, "a closed fold must keep the one-cell fold field")
 
+local after_closed_fold = rendered_statuscolumn(win, 4, gutter_width)
+assert(
+	after_closed_fold:sub(-#"󰄼") == "󰄼",
+	"the first visible line after a closed fold must retain the lower marker: " .. vim.inspect(after_closed_fold)
+)
+vim.api.nvim_win_set_cursor(win, { 4, 0 })
+local closed_fold_above = rendered_statuscolumn(win, 2, gutter_width)
+assert(
+	closed_fold_above:find("󰄿", 1, true) ~= nil,
+	"a closed fold immediately above the cursor must retain the upper marker: " .. vim.inspect(closed_fold_above)
+)
+
 print("statuscolumn number regression: ok")
