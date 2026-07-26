@@ -37,34 +37,11 @@ local function set_minimap_highlights()
 	set("MiniMapGitDelete", colors.red)
 end
 
-local function minimap_line_content_width(map_win, screen_row)
+local function overlaps_minimap_content(map_win, screen_row)
 	local map_position = vim.api.nvim_win_get_position(map_win)
 	local map_line = screen_row - map_position[1] - 1
 	local map_buf = vim.api.nvim_win_get_buf(map_win)
-	if map_line < 0 or map_line >= vim.api.nvim_buf_line_count(map_buf) then
-		return 0
-	end
-
-	local map_width = vim.api.nvim_win_get_width(map_win)
-	local line = vim.api.nvim_buf_get_lines(map_buf, map_line, map_line + 1, false)[1] or ""
-	local content_width = 0
-	for index = 1, math.min(map_width, vim.fn.strchars(line)) do
-		local char = vim.fn.strcharpart(line, index - 1, 1)
-		if char ~= " " and char ~= "⠀" then
-			content_width = index
-		end
-	end
-
-	local extmarks = vim.api.nvim_buf_get_extmarks(map_buf, -1, { map_line, 0 }, { map_line, -1 }, { details = true })
-	for _, extmark in ipairs(extmarks) do
-		local virtual_width = 0
-		for _, chunk in ipairs(extmark[4].virt_text or {}) do
-			virtual_width = virtual_width + vim.fn.strdisplaywidth(chunk[1])
-		end
-		content_width = math.max(content_width, extmark[3] + virtual_width)
-	end
-
-	return math.min(content_width, map_width)
+	return map_line >= 0 and map_line < vim.api.nvim_buf_line_count(map_buf)
 end
 
 local function setup_cursorline_mask(map)
@@ -101,17 +78,7 @@ local function setup_cursorline_mask(map)
 				return
 			end
 			local cursor_position = vim.fn.screenpos(win, cursor_line + 1, 1)
-			local content_width = minimap_line_content_width(map_win, cursor_position.row)
-			local map_slice_start = map_width - overlap + 1
-			local mask_width = math.min(overlap, math.max(content_width - map_slice_start + 1, 0))
-			if mask_width == 0 then
-				return
-			end
-
-			local window_info = vim.fn.getwininfo(win)[1]
-			local text_width = vim.api.nvim_win_get_width(win) - window_info.textoff
-			local mask_column = text_width - overlap
-			if mask_column < 0 then
+			if not overlaps_minimap_content(map_win, cursor_position.row) then
 				return
 			end
 
@@ -119,8 +86,8 @@ local function setup_cursorline_mask(map)
 				ephemeral = true,
 				hl_mode = "replace",
 				priority = 10000,
-				virt_text = { { string.rep(" ", mask_width), "MiniMapCursorLineMask" } },
-				virt_text_win_col = mask_column,
+				virt_text = { { string.rep(" ", overlap), "MiniMapCursorLineMask" } },
+				virt_text_pos = "right_align",
 			})
 		end,
 	})
