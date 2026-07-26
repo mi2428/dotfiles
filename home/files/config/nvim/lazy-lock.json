@@ -41,6 +41,7 @@
   "render-markdown.nvim": { "branch": "main", "commit": "f422cb5c6855f150e2ddcfaf44e7157b98b34f6a" },
   "rustaceanvim": { "branch": "main", "commit": "88575b98bb9937fb9983ddec5e532b67e75ce677" },
   "snacks.nvim": { "branch": "main", "commit": "882c996cf28183f4d63640de0b4c02ec886d01f2" },
+  "statuscol.nvim": { "branch": "main", "commit": "887b8a03ea3804628505c9002fd07bd06a3db2e0" },
   "tiny-inline-diagnostic.nvim": { "branch": "main", "commit": "6264451f14119d63a52580e5198d6baf8518b0b2" },
   "trouble.nvim": { "branch": "main", "commit": "bd67efe408d4816e25e8491cc5ad4088e708a69a" },
   "vim-helm": { "branch": "master", "commit": "2c8525fd98e57472769d137317bca83e477858ce" },

@@ -291,18 +291,6 @@ local function schedule_current_mode_ui()
 	end)
 end
 
-local function statuscolumn_number_width()
-	return math.max(vim.wo.numberwidth, #tostring(vim.fn.line("$")))
-end
-
-local function statuscolumn_padding()
-	return string.rep(" ", statuscolumn_number_width())
-end
-
-local function statuscolumn_marker(width, marker)
-	return "%#DotfilesStatuscolumnMarker#" .. string.format("%" .. width .. "s", marker)
-end
-
 local function set_relative_number(enabled)
 	vim.opt_local.relativenumber = enabled
 end
@@ -312,81 +300,6 @@ local fold_symbols = {
 	open = "",
 	sep = " ",
 }
-
-function _G.dotfiles_foldcolumn()
-	if vim.v.virtnum ~= 0 then
-		return " "
-	end
-
-	local line = vim.v.lnum
-	local level = vim.fn.foldlevel(line)
-	if level == 0 then
-		return " "
-	end
-
-	local symbol = fold_symbols.sep
-	if vim.fn.foldclosed(line) == line then
-		symbol = fold_symbols.close
-	elseif line == 1 or level > vim.fn.foldlevel(line - 1) then
-		symbol = fold_symbols.open
-	end
-
-	local highlight = vim.v.relnum == 0 and "%#CursorLineFold#" or "%#FoldColumn#"
-	return highlight .. symbol
-end
-
-function _G.dotfiles_foldcolumn_click(_, clicks, button)
-	-- Neovim reports rapid clicks as 1, 2, 3, 4. Handling every
-	-- event would toggle twice on a double-click and look like a no-op.
-	if button ~= "l" or clicks ~= 1 then
-		return
-	end
-
-	local mouse = vim.fn.getmousepos()
-	if mouse.winid == 0 or mouse.line == 0 then
-		return
-	end
-
-	vim.api.nvim_win_call(mouse.winid, function()
-		if vim.fn.foldlevel(mouse.line) == 0 then
-			return
-		end
-		vim.api.nvim_win_set_cursor(mouse.winid, { mouse.line, 0 })
-		local command = vim.fn.foldclosed(mouse.line) == -1 and "zc" or "zo"
-		vim.cmd.normal({ args = { command }, bang = true })
-	end)
-end
-
-function _G.dotfiles_statuscolumn()
-	if vim.v.virtnum ~= 0 then
-		return statuscolumn_padding()
-	end
-
-	local width = statuscolumn_number_width()
-	local current = vim.fn.line(".")
-	local line = vim.v.lnum
-	local relnum = vim.v.relnum
-	local relative_mode = vim.wo.relativenumber
-
-	if not relative_mode then
-		local number_hl = line == current and "%#CursorLineNr#" or "%#LineNr#"
-		return number_hl .. string.format("%" .. width .. "d", line)
-	end
-
-	if line == current - 1 then
-		return statuscolumn_marker(width, "󰄿")
-	end
-
-	if line == current then
-		return "%#CursorLineNr#" .. string.format("%" .. width .. "d", line)
-	end
-
-	if line == current + 1 then
-		return statuscolumn_marker(width, "󰄼")
-	end
-
-	return "%#LineNr#" .. string.format("%" .. width .. "d", relnum)
-end
 
 opt.termguicolors = true
 opt.background = "dark"
@@ -407,8 +320,6 @@ opt.fillchars:append({
 	foldclose = fold_symbols.close,
 	foldsep = fold_symbols.sep,
 })
-opt.statuscolumn =
-	"%@v:lua.dotfiles_foldcolumn_click@%{%v:lua.dotfiles_foldcolumn()%}%T%s%=%{%v:lua.dotfiles_statuscolumn()%}"
 opt.cursorline = true
 opt.foldcolumn = "auto:1"
 opt.foldlevel = 99
@@ -416,8 +327,6 @@ opt.foldlevelstart = 99
 opt.foldenable = true
 opt.showtabline = 2
 opt.showmode = false
--- Collapse unused sign slots, but expand to keep two concurrent signs visible.
-opt.signcolumn = "auto:2"
 opt.scrolloff = 8
 opt.sidescrolloff = 4
 
