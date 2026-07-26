@@ -335,8 +335,10 @@ function _G.dotfiles_foldcolumn()
 	return highlight .. symbol
 end
 
-function _G.dotfiles_foldcolumn_click(_, _, button)
-	if button ~= "l" then
+function _G.dotfiles_foldcolumn_click(_, clicks, button)
+	-- Neovim reports rapid clicks as 1, 2, 3, 4. Handling every
+	-- event would toggle twice on a double-click and look like a no-op.
+	if button ~= "l" or clicks ~= 1 then
 		return
 	end
 
@@ -350,7 +352,8 @@ function _G.dotfiles_foldcolumn_click(_, _, button)
 			return
 		end
 		vim.api.nvim_win_set_cursor(mouse.winid, { mouse.line, 0 })
-		vim.cmd.normal({ args = { "za" }, bang = true })
+		local command = vim.fn.foldclosed(mouse.line) == -1 and "zc" or "zo"
+		vim.cmd.normal({ args = { command }, bang = true })
 	end)
 end
 
