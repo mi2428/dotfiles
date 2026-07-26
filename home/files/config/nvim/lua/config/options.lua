@@ -202,9 +202,8 @@ local function mode_highlight_group(base, scene)
 end
 
 local function refresh_statuscolumn_highlights()
-	-- IMPORTANT: The blank fold separator is a continuous visual rail, not
-	-- unused gutter space. Keep its background in the fold chevron's blue
-	-- family so open folds remain traceable between their marker rows.
+	-- Inside an active fold, blank separators are rail segments rather than
+	-- unused gutter space. M.fold applies this background only where za can act.
 	local fold_background = blend(colors.blue, colors.base, 0.18)
 
 	vim.api.nvim_set_hl(0, "LineNr", { fg = colors.overlay0 })

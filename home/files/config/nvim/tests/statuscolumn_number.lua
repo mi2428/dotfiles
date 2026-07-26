@@ -36,6 +36,13 @@ local left = vim.api.nvim_get_current_win()
 assert(rendered_statuscolumn(left, 500):match("500$") ~= nil, "current line must render its absolute number")
 assert(rendered_statuscolumn(left, 499, 5) == "    󰄿", "upper marker must stay right-aligned in the number field")
 assert(rendered_statuscolumn(left, 501, 5) == "    󰄼", "lower marker must stay right-aligned in the number field")
+local nonfold = rendered_statuscolumn_result(left, 480, 5)
+assert(
+	not vim.iter(nonfold.highlights):any(function(highlight)
+		return highlight.group == "FoldColumn"
+	end),
+	"a line where za cannot act must not paint the fold rail: " .. vim.inspect(nonfold.highlights)
+)
 
 for _, case in ipairs({
 	{ count = 9, cursor = 5 },
@@ -134,6 +141,14 @@ local after_closed_fold = rendered_statuscolumn(win, 4, gutter_width)
 assert(
 	after_closed_fold:sub(-#"󰄼") == "󰄼",
 	"the first visible line after a closed fold must retain the lower marker: " .. vim.inspect(after_closed_fold)
+)
+local after_closed_fold_result = rendered_statuscolumn_result(win, 4, gutter_width)
+assert(
+	not vim.iter(after_closed_fold_result.highlights):any(function(highlight)
+		return highlight.group == "FoldColumn"
+	end),
+	"the first non-fold line after a closed fold must not paint the rail: "
+		.. vim.inspect(after_closed_fold_result.highlights)
 )
 vim.api.nvim_win_set_cursor(win, { 4, 0 })
 local closed_fold_above = rendered_statuscolumn(win, 2, gutter_width)

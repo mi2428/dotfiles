@@ -1,6 +1,7 @@
 local M = {}
 
 local builtin = require("statuscol.builtin")
+local statuscol_C = require("statuscol.ffidef").C
 local sign_highlight_cache = {}
 local sign_highlight_index = 0
 local visible_neighbor_cache = {}
@@ -72,7 +73,19 @@ local function isolated_sign_highlight(group)
 end
 
 function M.fold(args)
-	return builtin.foldfunc(args)
+	local rendered = builtin.foldfunc(args)
+	if rendered == "" or statuscol_C.fold_info(args.wp, args.lnum).level > 0 then
+		return rendered
+	end
+
+	-- builtin.foldfunc highlights its padding with FoldColumn even when there is
+	-- no fold. Keep the cell for stable layout, but only paint the rail where za
+	-- can actually act. Cursor rows retain the ordinary cursorline background.
+	local inactive_group = (args.cul and args.relnum == 0) and "CursorLineFold" or "LineNr"
+	local inactive = rendered:gsub("^%%#[^#]+#", function()
+		return "%#" .. inactive_group .. "#"
+	end, 1)
+	return inactive
 end
 
 function M.fold_click(args)
