@@ -223,6 +223,11 @@ local function refresh_statuscolumn_highlights()
 		)
 		vim.api.nvim_set_hl(
 			0,
+			mode_highlight_group("StatuscolumnMarker", scene),
+			{ fg = style.fg, bg = style.bg, bold = true }
+		)
+		vim.api.nvim_set_hl(
+			0,
 			mode_highlight_group("CursorLineCodexNr", scene),
 			{ fg = colors.sky, bg = style.bg, bold = true }
 		)
@@ -233,6 +238,7 @@ local function refresh_statuscolumn_highlights()
 	vim.api.nvim_set_hl(0, "CursorLineSign", { bg = default.bg })
 	vim.api.nvim_set_hl(0, "CursorLineFold", { fg = colors.blue, bg = default.bg })
 	vim.api.nvim_set_hl(0, "CursorLineNr", { fg = default.fg, bg = default.bg, bold = true })
+	vim.api.nvim_set_hl(0, "DotfilesStatuscolumnMarker", { fg = default.fg, bg = default.bg, bold = true })
 	vim.api.nvim_set_hl(0, "DotfilesCursorLineCodexNr", { fg = colors.sky, bg = default.bg, bold = true })
 end
 
@@ -244,6 +250,7 @@ local function set_window_highlights(win, scene)
 		CursorLineSign = mode_highlight_group("CursorLineSign", scene),
 		CursorLineFold = mode_highlight_group("CursorLineFold", scene),
 		CursorLineNr = mode_highlight_group("CursorLineNr", scene),
+		DotfilesStatuscolumnMarker = mode_highlight_group("StatuscolumnMarker", scene),
 		DotfilesCursorLineCodexNr = mode_highlight_group("CursorLineCodexNr", scene),
 	}
 	local entries = {}

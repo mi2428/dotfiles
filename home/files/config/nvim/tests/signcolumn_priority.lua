@@ -14,6 +14,8 @@ assert(priority > 30, "Gitsigns must outrank Codex and diagnostic signs")
 
 vim.api.nvim_buf_set_lines(0, 0, -1, false, { "sign priority regression", "fold body" })
 vim.bo.modified = false
+vim.wo.number = true
+vim.wo.relativenumber = true
 vim.wo.cursorline = true
 vim.wo.cursorlineopt = "both"
 vim.wo.foldcolumn = "1"
@@ -24,6 +26,7 @@ vim.api.nvim_set_hl(0, "GitSignsChange", { fg = "#ffff00" })
 vim.api.nvim_set_hl(0, "DiagnosticSignError", { fg = "#ff0000" })
 vim.api.nvim_set_hl(0, "DiagnosticSignWarn", { fg = "#ffff00" })
 vim.api.nvim_set_hl(0, "DiagnosticInfo", { fg = "#00ffff" })
+vim.api.nvim_set_hl(0, "DotfilesStatuscolumnMarker", { fg = "#ffffff", bold = true })
 vim.api.nvim_set_hl(0, "DotfilesCodexLineNr", { fg = "#00ffff", bold = true })
 vim.api.nvim_set_hl(0, "DotfilesCursorLineCodexNr", { fg = "#00ffff", bold = true })
 require("config.statuscolumn").setup()
@@ -215,7 +218,18 @@ vim.api.nvim_buf_set_extmark(0, git_namespace, 0, 0, {
 	sign_text = "G",
 	sign_hl_group = "GitSignsAdd",
 })
-local marker_highlights = rendered_statuscolumn_result(1).highlights
+local marker_result = rendered_statuscolumn_result(1)
+assert(
+	marker_result.str:match("󰄿G$") ~= nil,
+	"the upper marker must render before the Git sign: " .. marker_result.str
+)
+assert(
+	vim.iter(marker_result.highlights):any(function(highlight)
+		return highlight.group == "DotfilesStatuscolumnMarker"
+	end),
+	"the upper marker must use its dedicated highlight: " .. vim.inspect(marker_result.highlights)
+)
+local marker_highlights = marker_result.highlights
 local marker_sign_index
 for index, highlight in ipairs(marker_highlights) do
 	if highlight.group:match("^DotfilesStatuscolumnSign%d+$") then

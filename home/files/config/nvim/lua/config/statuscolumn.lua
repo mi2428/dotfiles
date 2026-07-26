@@ -8,6 +8,10 @@ local function number_width(args)
 	return math.max(vim.wo[args.win].numberwidth, #tostring(vim.api.nvim_buf_line_count(args.buf)))
 end
 
+local function marker(width, glyph, group)
+	return "%#" .. group .. "#" .. string.format("%" .. width .. "s", glyph)
+end
+
 local function reset_sign_highlights()
 	sign_highlight_cache = {}
 	sign_highlight_index = 0
@@ -97,6 +101,12 @@ function M.number(args, segment)
 	local ai = has_ai_indicator(args, segment)
 	local number_group = ai and (args.lnum == current and "DotfilesCursorLineCodexNr" or "DotfilesCodexLineNr")
 	local group = number_group or (args.lnum == current and "CursorLineNr" or "LineNr")
+	if args.rnu and args.lnum == current - 1 then
+		return marker(width, "󰄿", number_group or "DotfilesStatuscolumnMarker")
+	end
+	if args.rnu and args.lnum == current + 1 then
+		return marker(width, "󰄼", number_group or "DotfilesStatuscolumnMarker")
+	end
 	local number = args.lnum
 	if args.rnu then
 		number = args.relnum > 0 and args.relnum or (args.nu == false and 0 or args.lnum)

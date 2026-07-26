@@ -34,8 +34,8 @@ end
 
 local left = vim.api.nvim_get_current_win()
 assert(rendered_statuscolumn(left, 500):match("500$") ~= nil, "current line must render its absolute number")
-assert(rendered_statuscolumn(left, 499, 6) == "     1", "upper relative number must stay right-aligned")
-assert(rendered_statuscolumn(left, 501, 6) == "     1", "lower relative number must stay right-aligned")
+assert(rendered_statuscolumn(left, 499, 6) == "     󰄿", "upper marker must stay right-aligned in the number field")
+assert(rendered_statuscolumn(left, 501, 6) == "     󰄼", "lower marker must stay right-aligned in the number field")
 
 for _, case in ipairs({
 	{ count = 9, cursor = 5 },
@@ -53,12 +53,12 @@ for _, case in ipairs({
 		("current number width must track a %d-line buffer"):format(case.count)
 	)
 	assert(
-		rendered_statuscolumn(left, case.cursor - 1, gutter_width) == string.rep(" ", width + 1) .. "1",
-		("upper relative-number width must track a %d-line buffer"):format(case.count)
+		rendered_statuscolumn(left, case.cursor - 1, gutter_width) == string.rep(" ", width + 1) .. "󰄿",
+		("upper marker width must track a %d-line buffer"):format(case.count)
 	)
 	assert(
-		rendered_statuscolumn(left, case.cursor + 1, gutter_width) == string.rep(" ", width + 1) .. "1",
-		("lower relative-number width must track a %d-line buffer"):format(case.count)
+		rendered_statuscolumn(left, case.cursor + 1, gutter_width) == string.rep(" ", width + 1) .. "󰄼",
+		("lower marker width must track a %d-line buffer"):format(case.count)
 	)
 end
 
@@ -76,9 +76,9 @@ local args = {
 
 assert(statuscolumn.number(args):match("%s*500$") ~= nil, "current relative line must remain absolute")
 args.lnum, args.relnum = 499, 1
-assert(statuscolumn.number(args):match("%s*1$") ~= nil, "line above the cursor must use its relative number")
+assert(statuscolumn.number(args):find("󰄿", 1, true), "line above the cursor must use the upper marker")
 args.lnum, args.relnum = 501, 1
-assert(statuscolumn.number(args):match("%s*1$") ~= nil, "line below the cursor must use its relative number")
+assert(statuscolumn.number(args):find("󰄼", 1, true), "line below the cursor must use the lower marker")
 args.lnum, args.relnum = 480, 20
 assert(statuscolumn.number(args):match("%s*20$") ~= nil, "other relative lines must render relative numbers")
 args.rnu, args.lnum, args.relnum = false, 480, 20

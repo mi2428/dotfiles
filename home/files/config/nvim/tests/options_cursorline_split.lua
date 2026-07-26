@@ -35,6 +35,11 @@ assert_match(
 )
 assert_match(
 	left_default,
+	"DotfilesStatuscolumnMarker:DotfilesStatuscolumnMarkerDefault",
+	"the first window must use default relative-number marker colors"
+)
+assert_match(
+	left_default,
 	"DotfilesCursorLineCodexNr:DotfilesCursorLineCodexNrDefault",
 	"the first window must compose the Codex number color with the default cursorline scene"
 )
@@ -63,6 +68,11 @@ assert_match(
 	vim.wo[right].winhighlight,
 	"CursorLine:DotfilesCursorLineCommand",
 	"command mode must update the active split"
+)
+assert_match(
+	vim.wo[right].winhighlight,
+	"DotfilesStatuscolumnMarker:DotfilesStatuscolumnMarkerCommand",
+	"command mode must update the relative-number marker colors"
 )
 assert_match(
 	vim.wo[right].winhighlight,
