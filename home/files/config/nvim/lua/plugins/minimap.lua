@@ -56,6 +56,22 @@ local function set_cursorline_mask(buf, line, column, width, repeat_linebreak)
 	})
 end
 
+local function cursorline_mask_row_span(
+	first_cursor_row,
+	last_cursor_row,
+	cursor_row,
+	first_map_row,
+	last_map_row,
+	source_first_row,
+	source_last_row
+)
+	first_cursor_row = first_cursor_row == 0 and source_first_row or math.min(first_cursor_row, cursor_row)
+	last_cursor_row = last_cursor_row == 0 and source_last_row or math.max(last_cursor_row, cursor_row)
+
+	return math.max(first_map_row, source_first_row, first_cursor_row),
+		math.min(last_map_row, source_last_row, last_cursor_row)
+end
+
 local function mask_cursorline_rows(
 	buf,
 	win,
@@ -122,7 +138,28 @@ local function mask_cursorline_rows(
 		end
 	end
 
-	for screen_row = first_map_row, last_map_row do
+	local _, first_cursor_row = position_at(0)
+	local _, last_cursor_row = position_at(character_count)
+	-- IMPORTANT: Never change this back to iterating every MiniMap content row.
+	-- Tall windows with short MiniMap content made that scan call `screenpos()`
+	-- hundreds of times per redraw, causing foreground Ghostty redraw backlog,
+	-- visible freezes during repeated cursor movement, and multi-second delayed
+	-- `:qa`. Compute the cursor logical line's screen-row range first and
+	-- intersect it with MiniMap/source viewport rows: excluded rows cannot
+	-- produce a mask. The row-0 endpoint fallback intentionally covers partially
+	-- visible giant wrapped lines. Complexity must scale with overlapping wrapped
+	-- cursor rows, not MiniMap content height.
+	local first_target_row, last_target_row = cursorline_mask_row_span(
+		first_cursor_row,
+		last_cursor_row,
+		cursor_row,
+		first_map_row,
+		last_map_row,
+		source_first_row,
+		source_last_row
+	)
+
+	for screen_row = first_target_row, last_target_row do
 		local byte_column = find_row(screen_row)
 		if byte_column then
 			set_cursorline_mask(buf, line, byte_column, width, false)
