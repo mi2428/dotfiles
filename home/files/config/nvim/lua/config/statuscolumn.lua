@@ -102,13 +102,46 @@ local function isolated_sign_highlight(group)
 	return derived
 end
 
-function M.fold(args)
+local function signs_for_line(args, segment)
+	return segment and segment.sign and segment.sign.wins[args.win] and segment.sign.wins[args.win].signs[args.lnum]
+end
+
+local function fold_diagnostic(args, segment, fold_info)
+	if args.virtnum ~= 0 then
+		return nil
+	end
+
+	local signs = signs_for_line(args, segment)
+	local sign = signs and signs[1]
+	if not sign then
+		return nil
+	end
+
+	local base_group
+	if fold_info.level > 0 then
+		base_group = (args.cul and args.relnum == 0) and "CursorLineFold" or "FoldColumn"
+	else
+		base_group = (args.cul and args.relnum == 0) and "CursorLineFold" or "LineNr"
+	end
+	local source_group = args.relnum == 0 and sign.cursorline_hl_group or sign.sign_hl_group
+	if not source_group or source_group == "" then
+		source_group = sign.sign_hl_group
+	end
+	return "%#" .. base_group .. "#%#" .. isolated_sign_highlight(source_group) .. "#" .. sign.sign_text .. "%*"
+end
+
+function M.fold(args, segment)
 	local rendered = builtin.foldfunc(args)
 	if rendered == "" then
 		return rendered
 	end
 
 	local fold_info = statuscol_C.fold_info(args.wp, args.lnum)
+	local diagnostic = fold_diagnostic(args, segment, fold_info)
+	if diagnostic then
+		return diagnostic
+	end
+
 	if fold_info.level > 0 then
 		if args.virtnum == 0 and rendered:find(args.fold.open, 1, true) then
 			local group = (args.cul and args.relnum == 0) and "DotfilesCursorLineFoldOpen" or "DotfilesFoldOpen"
@@ -168,10 +201,7 @@ local function has_ai_indicator(args, segment)
 	-- IMPORTANT: Number rendering is a per-screen-row hot path. Read the sign
 	-- table that statuscol.nvim builds once per redraw; querying extmarks here
 	-- would multiply API work by every visible row during cursor movement.
-	local signs = segment
-		and segment.sign
-		and segment.sign.wins[args.win]
-		and segment.sign.wins[args.win].signs[args.lnum]
+	local signs = signs_for_line(args, segment)
 	return signs ~= nil and #signs > 0
 end
 
@@ -226,7 +256,17 @@ function M.setup()
 
 	require("statuscol").setup({
 		segments = {
-			{ text = { M.fold }, click = "v:lua.dotfiles_foldcolumn_click" },
+			{
+				-- Diagnostics own the fold rail cell on their line. M.fold falls back
+				-- to the fold state, depth label, or blank rail when none is present.
+				text = { M.fold },
+				click = "v:lua.dotfiles_foldcolumn_click",
+				sign = {
+					namespace = { "diagnostic%.signs" },
+					maxwidth = 1,
+					colwidth = 1,
+				},
+			},
 			{ text = { "%=" } },
 			{
 				-- Consume the sole Codex sign as number metadata; M.number deliberately
@@ -247,18 +287,6 @@ function M.setup()
 					text = { "▎" },
 					maxwidth = 1,
 					colwidth = 1,
-					auto = true,
-				},
-			},
-			{
-				text = { M.sign },
-				sign = {
-					namespace = { "diagnostic%.signs" },
-					maxwidth = 1,
-					-- Keep Neovim's trailing sign padding so the diagnostic circle
-					-- does not touch the first code cell. Git + diagnostic use three
-					-- cells total when both segments are active.
-					colwidth = 2,
 					auto = true,
 				},
 			},

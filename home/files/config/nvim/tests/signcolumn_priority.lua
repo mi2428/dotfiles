@@ -12,7 +12,12 @@ local specs = dofile(vim.fs.joinpath(nvim_root, "lua/plugins/git.lua"))
 local priority = assert(specs[1].opts.sign_priority, "Gitsigns priority must be configured")
 assert(priority > 30, "Gitsigns must outrank Codex and diagnostic signs")
 
-vim.api.nvim_buf_set_lines(0, 0, -1, false, { "sign priority regression", "fold body" })
+vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+	"sign priority regression",
+	"fold body one",
+	"fold body two",
+	"fold body three",
+})
 vim.bo.modified = false
 vim.wo.number = true
 vim.wo.relativenumber = true
@@ -32,7 +37,7 @@ vim.api.nvim_set_hl(0, "DotfilesCursorLineFoldClosed", { fg = "#ff00ff" })
 vim.api.nvim_set_hl(0, "DotfilesCodexLineNr", { fg = "#00ffff", bold = true })
 vim.api.nvim_set_hl(0, "DotfilesCursorLineCodexNr", { fg = "#00ffff", bold = true })
 require("config.statuscolumn").setup()
-vim.cmd("1,2fold")
+vim.cmd("1,4fold")
 vim.cmd.normal({ args = { "zO" }, bang = true })
 
 local git_namespace = vim.api.nvim_create_namespace("gitsigns_signs_test")
@@ -133,6 +138,22 @@ local with_legacy = rendered_statuscolumn()
 assert(with_legacy == two_git, "unrouted legacy signs must not appear beside the Git-only colorbar")
 vim.fn.sign_unplace(legacy_group, { buffer = bufnr, id = 1 })
 
+assert(
+	rendered_statuscolumn_result(2).str:sub(1, 1) == "1",
+	"the first open-fold continuation must start with its depth label"
+)
+local depth_diagnostic = vim.api.nvim_buf_set_extmark(0, diagnostic_namespace, 1, 0, {
+	priority = 10,
+	sign_text = "●",
+	sign_hl_group = "DiagnosticSignWarn",
+})
+assert(
+	rendered_statuscolumn_result(2).str:sub(1, #"●") == "●",
+	"a diagnostic must replace a fold depth label in the rail"
+)
+vim.api.nvim_buf_del_extmark(0, diagnostic_namespace, depth_diagnostic)
+assert(rendered_statuscolumn_result(2).str:sub(1, 1) == "1", "removing a diagnostic must restore the fold depth label")
+
 vim.api.nvim_buf_set_extmark(0, diagnostic_namespace, 0, 0, {
 	priority = 10,
 	sign_text = "●",
@@ -140,36 +161,42 @@ vim.api.nvim_buf_set_extmark(0, diagnostic_namespace, 0, 0, {
 })
 local with_diagnostic = rendered_statuscolumn()
 assert(
-	with_diagnostic:match("1[GS]● $") ~= nil,
-	"diagnostic must render after the line number and Git colorbar: " .. with_diagnostic
+	with_diagnostic:match("^●%s+1[GS]$") ~= nil,
+	"diagnostic must replace the open-fold glyph while Git stays after the number: " .. with_diagnostic
 )
-local right_columns = assert(with_diagnostic:match("1([GS]● )$"), "the three right-hand cells must be present")
-assert(vim.fn.strdisplaywidth(right_columns) == 3, "Git and diagnostic signs must use at most three cells")
-local compact_diagnostic = rendered_statuscolumn_result(1, 7)
-local diagnostic_start
-local diagnostic_end
-for index, highlight in ipairs(compact_diagnostic.highlights) do
+assert(
+	vim.fn.strdisplaywidth(with_diagnostic) == vim.fn.strdisplaywidth(two_git),
+	"moving diagnostics into the fold rail must not add statuscolumn cells"
+)
+local diagnostic_result = rendered_statuscolumn_result()
+local diagnostic_highlight_index
+local isolated_count = 0
+for index, highlight in ipairs(diagnostic_result.highlights) do
 	if
 		highlight.group:match("^DotfilesStatuscolumnSign%d+$")
 		and vim.api.nvim_get_hl(0, { name = highlight.group, link = false }).fg == 0xff0000
 	then
-		diagnostic_start = highlight.start
-		for next_index = index + 1, #compact_diagnostic.highlights do
-			if compact_diagnostic.highlights[next_index].start > diagnostic_start then
-				diagnostic_end = compact_diagnostic.highlights[next_index].start
-				break
-			end
-		end
-		break
+		diagnostic_highlight_index = index
+	end
+	if highlight.group:match("^DotfilesStatuscolumnSign%d+$") then
+		isolated_count = isolated_count + 1
 	end
 end
-assert(diagnostic_start ~= nil and diagnostic_end ~= nil, "diagnostic highlight boundaries must be present")
-local diagnostic_cell = compact_diagnostic.str:sub(diagnostic_start + 1, diagnostic_end)
-assert(vim.fn.strdisplaywidth(diagnostic_cell) == 2, "diagnostics must retain their padding cell: " .. vim.inspect({
-	cell = diagnostic_cell,
-	result = compact_diagnostic,
-}))
-assert_isolated_signs(rendered_statuscolumn_result(), 2, "CursorLineSign")
+assert(diagnostic_highlight_index ~= nil, "the diagnostic source foreground must be preserved")
+assert(
+	diagnostic_result.highlights[diagnostic_highlight_index - 1].group == "CursorLineFold",
+	"a cursor-line diagnostic in the rail must retain the native fold-cell background"
+)
+assert(vim.api.nvim_get_hl(0, {
+	name = diagnostic_result.highlights[diagnostic_highlight_index].group,
+	link = false,
+}).nocombine == true, "the diagnostic must not inherit number or fold sign styles")
+assert(isolated_count == 2, "Git and the rail diagnostic must each isolate their source highlight")
+
+vim.cmd.normal({ args = { "zc" }, bang = true })
+assert(vim.fn.foldclosed(1) == 1, "the test fold must be closed")
+assert(rendered_statuscolumn():sub(1, #"●") == "●", "a diagnostic must replace the closed-fold glyph too")
+vim.cmd.normal({ args = { "zo" }, bang = true })
 
 vim.api.nvim_buf_set_extmark(0, codex_namespace, 0, 0, {
 	priority = 30,
@@ -179,8 +206,8 @@ vim.api.nvim_buf_set_extmark(0, codex_namespace, 0, 0, {
 local with_codex = rendered_statuscolumn_result()
 assert(with_codex.str == with_diagnostic, "Codex must color the number without adding a sign cell")
 assert(
-	with_codex.str:match("^󰅀%s+1[GS]● $") ~= nil,
-	"the combined row must render fold, number, Git, and diagnostic in the requested order: " .. with_codex.str
+	with_codex.str:match("^●%s+1[GS]$") ~= nil,
+	"the combined row must render the rail diagnostic, number, and Git sign in order: " .. with_codex.str
 )
 assert(
 	vim.iter(with_codex.highlights):any(function(highlight)
@@ -212,6 +239,47 @@ vim.api.nvim_buf_clear_namespace(0, review_namespace, 0, -1)
 assert(rendered_statuscolumn():match("1$") ~= nil, "empty sign segments must collapse automatically")
 
 vim.cmd.normal({ args = { "zE" }, bang = true })
+vim.api.nvim_buf_set_extmark(0, diagnostic_namespace, 0, 0, {
+	priority = 10,
+	sign_text = "●",
+	sign_hl_group = "DiagnosticSignError",
+})
+assert(
+	rendered_statuscolumn():match("^●%s+1$") ~= nil,
+	"a diagnostic outside folds must still occupy the fold rail cell"
+)
+vim.api.nvim_buf_clear_namespace(0, diagnostic_namespace, 0, -1)
+
+local severity_namespace = vim.api.nvim_create_namespace("dotfiles-statuscolumn-severity-test")
+vim.diagnostic.config({
+	severity_sort = true,
+	signs = {
+		severity = { min = vim.diagnostic.severity.WARN },
+		text = {
+			[vim.diagnostic.severity.ERROR] = "E",
+			[vim.diagnostic.severity.WARN] = "W",
+		},
+	},
+})
+vim.diagnostic.set(severity_namespace, 0, {
+	{ lnum = 0, col = 0, severity = vim.diagnostic.severity.WARN, message = "lower priority" },
+	{ lnum = 0, col = 0, severity = vim.diagnostic.severity.ERROR, message = "highest priority" },
+})
+local strongest_diagnostic = rendered_statuscolumn_result()
+assert(
+	strongest_diagnostic.str:match("^E%s+1$") ~= nil,
+	"the strongest same-line diagnostic must represent the rail cell: " .. strongest_diagnostic.str
+)
+assert(
+	vim.iter(strongest_diagnostic.highlights):any(function(highlight)
+		return highlight.group:match("^DotfilesStatuscolumnSign%d+$")
+			and vim.api.nvim_get_hl(0, { name = highlight.group, link = false }).fg
+				== vim.api.nvim_get_hl(0, { name = "DiagnosticSignError", link = false }).fg
+	end),
+	"the representative diagnostic must retain the strongest severity highlight"
+)
+vim.diagnostic.reset(severity_namespace, 0)
+
 vim.wo.foldcolumn = "0"
 vim.api.nvim_buf_set_lines(0, 0, -1, false, { "above", "cursor", "below" })
 vim.api.nvim_win_set_cursor(0, { 2, 0 })
