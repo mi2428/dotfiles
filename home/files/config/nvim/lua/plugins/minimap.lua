@@ -19,11 +19,13 @@ local function set_minimap_highlights()
 		vim.api.nvim_set_hl(0, name, {
 			fg = accent,
 			bg = blend(accent, colors.base, 0.24),
+			blend = 25,
 			bold = true,
 		})
 	end
 
-	vim.api.nvim_set_hl(0, "MiniMapSearch", { fg = colors.base, bg = colors.yellow, bold = true })
+	vim.api.nvim_set_hl(0, "MiniMapNormal", { fg = colors.text, bg = "NONE", blend = 100 })
+	vim.api.nvim_set_hl(0, "MiniMapSearch", { fg = colors.base, bg = colors.yellow, blend = 25, bold = true })
 	set("MiniMapDiagnosticError", colors.red)
 	set("MiniMapDiagnosticWarn", colors.yellow)
 	set("MiniMapDiagnosticInfo", colors.sky)
@@ -78,7 +80,7 @@ return {
 				window = {
 					show_integration_count = false,
 					width = 12,
-					winblend = 25,
+					winblend = 100,
 				},
 			}
 		end,
