@@ -518,6 +518,8 @@ return {
 					explorer = {
 						layout = {
 							preview = false,
+							hidden = { "input" },
+							auto_hide = { "input" },
 							layout = {
 								backdrop = false,
 								width = 40,
