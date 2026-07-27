@@ -365,12 +365,16 @@ return {
 				float = { border = "rounded" },
 				underline = { severity = vim.diagnostic.severity.ERROR },
 				signs = {
-					severity = { min = vim.diagnostic.severity.INFO },
-					-- Use proven fold/relnum chevrons and the classic fold plus for INFO.
+					severity = { min = vim.diagnostic.severity.HINT },
+					-- Previous one-cell rail glyphs:
+					-- [vim.diagnostic.severity.ERROR] = "󰄽"
+					-- [vim.diagnostic.severity.WARN] = "󰄾"
+					-- [vim.diagnostic.severity.INFO] = "+"
 					text = {
-						[vim.diagnostic.severity.ERROR] = "󰄽",
-						[vim.diagnostic.severity.WARN] = "󰄾",
-						[vim.diagnostic.severity.INFO] = "+",
+						[vim.diagnostic.severity.ERROR] = "●",
+						[vim.diagnostic.severity.WARN] = "●",
+						[vim.diagnostic.severity.INFO] = "●",
+						[vim.diagnostic.severity.HINT] = "●",
 					},
 				},
 				virtual_text = false,

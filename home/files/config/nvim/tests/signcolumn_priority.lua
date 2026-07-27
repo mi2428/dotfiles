@@ -11,9 +11,7 @@ package.path = table.concat({
 local specs = dofile(vim.fs.joinpath(nvim_root, "lua/plugins/git.lua"))
 local priority = assert(specs[1].opts.sign_priority, "Gitsigns priority must be configured")
 assert(priority > 30, "Gitsigns must outrank Codex and diagnostic signs")
-assert(vim.fn.strdisplaywidth("󰄽") == 1, "the left double-chevron error glyph must occupy one rail cell")
-assert(vim.fn.strdisplaywidth("󰄾") == 1, "the double-chevron warning glyph must occupy one rail cell")
-assert(vim.fn.strdisplaywidth("+") == 1, "the information glyph must occupy one rail cell")
+assert(vim.fn.strdisplaywidth("●") == 1, "diagnostic circles must occupy one rail cell")
 
 vim.api.nvim_buf_set_lines(0, 0, -1, false, {
 	"sign priority regression",
@@ -34,6 +32,7 @@ vim.api.nvim_set_hl(0, "GitSignsChange", { fg = "#ffff00" })
 vim.api.nvim_set_hl(0, "DiagnosticSignError", { fg = "#ff0000", bg = "#110000" })
 vim.api.nvim_set_hl(0, "DiagnosticSignWarn", { fg = "#ffff00", bg = "#111100" })
 vim.api.nvim_set_hl(0, "DiagnosticSignInfo", { fg = "#00ffff", bg = "#001111" })
+vim.api.nvim_set_hl(0, "DiagnosticSignHint", { fg = "#00ff88", bg = "#001108" })
 vim.api.nvim_set_hl(0, "DiagnosticInfo", { fg = "#00ffff" })
 vim.api.nvim_set_hl(0, "FoldColumn", { fg = "#0000ff", bg = "#222222" })
 vim.api.nvim_set_hl(0, "CursorLineFold", { fg = "#0000ff", bg = "#333333" })
@@ -152,24 +151,21 @@ assert(
 )
 local depth_diagnostic = vim.api.nvim_buf_set_extmark(0, diagnostic_namespace, 1, 0, {
 	priority = 10,
-	sign_text = "●",
+	sign_text = "D",
 	sign_hl_group = "DiagnosticSignWarn",
 })
-assert(
-	rendered_statuscolumn_result(2).str:sub(1, #"●") == "●",
-	"a diagnostic must replace a fold depth label in the rail"
-)
+assert(rendered_statuscolumn_result(2).str:sub(1, 1) == "D", "a diagnostic must replace a fold depth label in the rail")
 vim.api.nvim_buf_del_extmark(0, diagnostic_namespace, depth_diagnostic)
 assert(rendered_statuscolumn_result(2).str:sub(1, 1) == "1", "removing a diagnostic must restore the fold depth label")
 
 vim.api.nvim_buf_set_extmark(0, diagnostic_namespace, 0, 0, {
 	priority = 10,
-	sign_text = "●",
+	sign_text = "D",
 	sign_hl_group = "DiagnosticSignError",
 })
 local with_diagnostic = rendered_statuscolumn()
 assert(
-	with_diagnostic:match("^●%s+1[GS]$") ~= nil,
+	with_diagnostic:match("^D%s+1[GS]$") ~= nil,
 	"diagnostic must replace the open-fold glyph while Git stays after the number: " .. with_diagnostic
 )
 assert(
@@ -210,7 +206,7 @@ assert(isolated_count == 2, "Git and the rail diagnostic must each isolate their
 
 vim.cmd.normal({ args = { "zc" }, bang = true })
 assert(vim.fn.foldclosed(1) == 1, "the test fold must be closed")
-assert(rendered_statuscolumn():sub(1, #"●") == "●", "a diagnostic must replace the closed-fold glyph too")
+assert(rendered_statuscolumn():sub(1, 1) == "D", "a diagnostic must replace the closed-fold glyph too")
 vim.cmd.normal({ args = { "zo" }, bang = true })
 
 vim.api.nvim_buf_set_extmark(0, codex_namespace, 0, 0, {
@@ -221,7 +217,7 @@ vim.api.nvim_buf_set_extmark(0, codex_namespace, 0, 0, {
 local with_codex = rendered_statuscolumn_result()
 assert(with_codex.str == with_diagnostic, "Codex must color the number without adding a sign cell")
 assert(
-	with_codex.str:match("^●%s+1[GS]$") ~= nil,
+	with_codex.str:match("^D%s+1[GS]$") ~= nil,
 	"the combined row must render the rail diagnostic, number, and Git sign in order: " .. with_codex.str
 )
 assert(
@@ -256,11 +252,11 @@ assert(rendered_statuscolumn():match("1$") ~= nil, "empty sign segments must col
 vim.cmd.normal({ args = { "zE" }, bang = true })
 vim.api.nvim_buf_set_extmark(0, diagnostic_namespace, 0, 0, {
 	priority = 10,
-	sign_text = "●",
+	sign_text = "D",
 	sign_hl_group = "DiagnosticSignError",
 })
 assert(
-	rendered_statuscolumn():match("^●%s+1$") ~= nil,
+	rendered_statuscolumn():match("^D%s+1$") ~= nil,
 	"a diagnostic outside folds must still occupy the fold rail cell"
 )
 vim.api.nvim_buf_clear_namespace(0, diagnostic_namespace, 0, -1)
@@ -269,11 +265,12 @@ local severity_namespace = vim.api.nvim_create_namespace("dotfiles-statuscolumn-
 vim.diagnostic.config({
 	severity_sort = true,
 	signs = {
-		severity = { min = vim.diagnostic.severity.INFO },
+		severity = { min = vim.diagnostic.severity.HINT },
 		text = {
-			[vim.diagnostic.severity.ERROR] = "󰄽",
-			[vim.diagnostic.severity.WARN] = "󰄾",
-			[vim.diagnostic.severity.INFO] = "+",
+			[vim.diagnostic.severity.ERROR] = "●",
+			[vim.diagnostic.severity.WARN] = "●",
+			[vim.diagnostic.severity.INFO] = "●",
+			[vim.diagnostic.severity.HINT] = "●",
 		},
 	},
 })
@@ -283,7 +280,7 @@ vim.diagnostic.set(severity_namespace, 0, {
 })
 local strongest_diagnostic = rendered_statuscolumn_result()
 assert(
-	strongest_diagnostic.str:match("^󰄽%s+1$") ~= nil,
+	strongest_diagnostic.str:match("^●%s+1$") ~= nil,
 	"the strongest same-line diagnostic must represent the rail cell: " .. strongest_diagnostic.str
 )
 assert(
@@ -292,7 +289,7 @@ assert(
 			and vim.api.nvim_get_hl(0, { name = highlight.group, link = false }).fg
 				== vim.api.nvim_get_hl(0, { name = "DiagnosticSignError", link = false }).fg
 	end),
-	"the representative diagnostic must retain the strongest severity highlight"
+	"the representative diagnostic must retain the strongest severity highlight: " .. vim.inspect(strongest_diagnostic)
 )
 vim.diagnostic.reset(severity_namespace, 0)
 
@@ -301,15 +298,16 @@ vim.diagnostic.set(severity_namespace, 0, {
 })
 local information_diagnostic = rendered_statuscolumn_result()
 assert(
-	information_diagnostic.str:match("^%+%s+1$") ~= nil,
-	"an information diagnostic must use the plus glyph in the rail: " .. information_diagnostic.str
+	information_diagnostic.str:match("^●%s+1$") ~= nil,
+	"an information diagnostic must use the severity-colored circle in the rail: " .. information_diagnostic.str
 )
 vim.diagnostic.reset(severity_namespace, 0)
 
 local severities = {
-	{ severity = vim.diagnostic.severity.ERROR, glyph = "󰄽", foreground = 0xff0000 },
-	{ severity = vim.diagnostic.severity.WARN, glyph = "󰄾", foreground = 0xffff00 },
-	{ severity = vim.diagnostic.severity.INFO, glyph = "+", foreground = 0x00ffff },
+	{ severity = vim.diagnostic.severity.ERROR, glyph = "●", foreground = 0xff0000 },
+	{ severity = vim.diagnostic.severity.WARN, glyph = "●", foreground = 0xffff00 },
+	{ severity = vim.diagnostic.severity.INFO, glyph = "●", foreground = 0x00ffff },
+	{ severity = vim.diagnostic.severity.HINT, glyph = "●", foreground = 0x00ff88 },
 }
 local function assert_diagnostic_background(result, expected)
 	assert(result.str:sub(1, #expected.glyph) == expected.glyph, "unexpected diagnostic glyph: " .. result.str)
