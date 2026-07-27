@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Small Herdr NDJSON-over-TCP client.
-
-The relay must be bound only to a trusted network: this client has no TLS or
-authentication.  Example: herdr-client snapshot; use ``read`` to
-print an agent's text, or ``prompt TARGET TEXT`` to submit a prompt.
-"""
+"""Small, stdlib-only Herdr NDJSON-over-TCP client (protocol 17)."""
 
 from __future__ import annotations
 
@@ -12,11 +7,45 @@ import argparse
 import json
 import socket
 import sys
+import time
 import uuid
-from typing import Any, Dict, Iterable, Optional, Sequence
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
 
+# Pythonista users can edit these CLI defaults in this one file.
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8765
+DEFAULT_SOCKET_TIMEOUT = 10.0
+DEFAULT_RAW_PARAMS = "{}"
+DEFAULT_READ_SOURCE = "visible"
+DEFAULT_READ_LINES = None
+DEFAULT_READ_FORMAT = None
+DEFAULT_READ_STRIP_ANSI: Optional[bool] = None
+DEFAULT_WAIT_UNTIL: Tuple[str, ...] = ()
+DEFAULT_WAIT_TIMEOUT_MS = None
+DEFAULT_EVENT_SUBSCRIPTIONS: Tuple[Dict[str, Any], ...] = ({"type": "pane.updated"},)
+DEFAULT_EVENT_WAIT_TIMEOUT_MS = None
+DEFAULT_JOB_KIND = "codex"
+DEFAULT_JOB_WORKSPACE_ID = None
+DEFAULT_JOB_CWD = None
+DEFAULT_JOB_LABEL = None
+DEFAULT_JOB_ENV = None
+DEFAULT_JOB_FOCUS: Optional[bool] = None
+DEFAULT_JOB_AGENT_ARGS: Tuple[str, ...] = ()
+DEFAULT_JOB_START_TIMEOUT_MS = None
+DEFAULT_AGENT_READY_TIMEOUT_MS = 30000
+DEFAULT_AGENT_READY_POLL_SECONDS = 0.25
+DEFAULT_JOB_WAIT = False
+DEFAULT_JOB_UNTIL: Tuple[str, ...] = ()
+DEFAULT_JOB_TIMEOUT_MS = None
+DEFAULT_JOB_READ_FINAL = False
+DEFAULT_PROMPT_WAIT = False
+DEFAULT_PROMPT_UNTIL: Tuple[str, ...] = ()
+DEFAULT_PROMPT_TIMEOUT_MS = None
+VALID_AGENT_STATUSES = ("idle", "working", "blocked", "done", "unknown")
+TEMPORARY_AGENT_READY_CODES = ("agent_not_ready", "agent_launch_pending", "not_ready")
 JsonObject = Dict[str, Any]
+_DEFAULT_TIMEOUT = object()
 
 
 class HerdrClientError(Exception):
@@ -40,68 +69,200 @@ class HerdrRemoteError(HerdrClientError):
         super().__init__("Herdr error {}: {}".format(code, self.message))
 
 
-class HerdrClient:
-    """Issue one-shot Herdr JSON-RPC-like requests through a TCP relay."""
+class JobSubmissionError(HerdrClientError):
+    """A job failure that retains created resource identifiers for recovery."""
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765,
-                 timeout: float = 10.0) -> None:
+    def __init__(self, cause: Exception, context: JsonObject) -> None:
+        self.cause = cause
+        self.context = context
+        super().__init__("job submission failed: {}".format(cause))
+
+
+def _json_line(value: JsonObject) -> bytes:
+    """Encode a JSON object as one compact UTF-8 NDJSON line."""
+    try:
+        return (json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise HerdrProtocolError("request is not JSON serializable: {}".format(exc)) from exc
+
+
+def _decode_response(raw_line: bytes) -> JsonObject:
+    """Decode and validate a UTF-8 JSON object line."""
+    if not raw_line.endswith(b"\n"):
+        raise HerdrProtocolError("response is not newline-delimited")
+    try:
+        value = json.loads(raw_line.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise HerdrProtocolError("malformed response JSON: {}".format(exc)) from exc
+    if not isinstance(value, dict):
+        raise HerdrProtocolError("response is not a JSON object")
+    return value
+
+
+def _raise_remote_error(response: JsonObject) -> None:
+    """Raise a normalized exception for an error envelope."""
+    error = response.get("error")
+    if not isinstance(error, dict):
+        raise HerdrProtocolError("error response is not an object")
+    raise HerdrRemoteError(error.get("code"), error.get("message", "unknown error"))
+
+
+def _local_timeout(socket_timeout: float, timeout_ms: Optional[int]) -> Optional[float]:
+    """Keep intentional server waits from being cut short by local I/O limits."""
+    if timeout_ms is None:
+        return None
+    return max(socket_timeout, timeout_ms / 1000.0 + 1.0)
+
+
+def _response_agent(response: JsonObject) -> JsonObject:
+    """Extract an AgentInfo object from a successful agent response when present."""
+    result = response.get("result")
+    if not isinstance(result, dict):
+        return {}
+    agent = result.get("agent", {})
+    return agent if isinstance(agent, dict) else {}
+
+
+def _is_temporary_ready_error(error: HerdrRemoteError) -> bool:
+    """Return whether a remote error can occur while an agent is launching."""
+    return str(error.code).lower() in TEMPORARY_AGENT_READY_CODES
+
+
+class NDJSONConnection:
+    """Persistent Herdr stream with retained events and per-id pending responses."""
+
+    def __init__(self, host: str, port: int, timeout: float) -> None:
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+        self.socket: Optional[socket.socket] = None
+        self.reader: Any = None
+        self.events: List[JsonObject] = []
+        self.pending: Dict[str, List[JsonObject]] = {}
+
+    def __enter__(self) -> "NDJSONConnection":
+        """Open the TCP stream."""
+        try:
+            self.socket = socket.create_connection((self.host, self.port), self.timeout)
+            self.socket.settimeout(self.timeout)
+            self.reader = self.socket.makefile("rb")
+            return self
+        except (OSError, socket.timeout) as exc:
+            self.close()
+            raise HerdrTransportError(str(exc)) from exc
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        """Close the TCP stream."""
+        self.close()
+
+    def close(self) -> None:
+        """Close reader and socket, allowing repeated safe cleanup."""
+        if self.reader is not None:
+            self.reader.close()
+            self.reader = None
+        if self.socket is not None:
+            self.socket.close()
+            self.socket = None
+
+    def send(self, method: str, params: Optional[JsonObject] = None) -> str:
+        """Write a request and return its generated request id."""
+        if self.socket is None:
+            raise HerdrTransportError("connection is not open")
+        request_id = uuid.uuid4().hex
+        try:
+            self.socket.sendall(_json_line({"id": request_id, "method": method,
+                                            "params": params or {}}))
+        except (OSError, socket.timeout) as exc:
+            raise HerdrTransportError(str(exc)) from exc
+        return request_id
+
+    def receive(self, timeout: Any = _DEFAULT_TIMEOUT) -> JsonObject:
+        """Read one envelope, optionally overriding the socket timeout for this read."""
+        if self.socket is None or self.reader is None:
+            raise HerdrTransportError("connection is not open")
+        old_timeout = self.socket.gettimeout()
+        try:
+            if timeout is not _DEFAULT_TIMEOUT:
+                self.socket.settimeout(timeout)
+            raw_line = self.reader.readline()
+        except (OSError, socket.timeout) as exc:
+            raise HerdrTransportError(str(exc)) from exc
+        finally:
+            if self.socket is not None:
+                self.socket.settimeout(old_timeout)
+        if not raw_line:
+            raise HerdrTransportError("connection closed before response")
+        return _decode_response(raw_line)
+
+    @staticmethod
+    def is_event(envelope: JsonObject) -> bool:
+        """Return whether an id-less envelope is a pushed subscription event."""
+        return "id" not in envelope and "event" in envelope and "data" in envelope
+
+    def _retain(self, envelope: JsonObject) -> None:
+        """Retain an event or response until its consumer asks for it."""
+        if self.is_event(envelope):
+            self.events.append(envelope)
+            return
+        request_id = envelope.get("id")
+        if not isinstance(request_id, str):
+            raise HerdrProtocolError("response has no string id")
+        if request_id == "" and "error" in envelope:
+            _raise_remote_error(envelope)
+        self.pending.setdefault(request_id, []).append(envelope)
+
+    def wait_response(self, request_id: str, timeout: Any = _DEFAULT_TIMEOUT) -> JsonObject:
+        """Return a requested response while retaining other IDs and all events."""
+        while True:
+            waiting = self.pending.get(request_id)
+            if waiting:
+                response = waiting.pop(0)
+                if not waiting:
+                    del self.pending[request_id]
+                if "error" in response:
+                    _raise_remote_error(response)
+                if "result" not in response:
+                    raise HerdrProtocolError("matching response has neither result nor error")
+                return response
+            self._retain(self.receive(timeout))
+
+    def call(self, method: str, params: Optional[JsonObject] = None,
+             timeout: Any = _DEFAULT_TIMEOUT) -> JsonObject:
+        """Send one request and wait for its matching response."""
+        return self.wait_response(self.send(method, params), timeout)
+
+    def subscribe(self, subscriptions: Sequence[JsonObject] = DEFAULT_EVENT_SUBSCRIPTIONS
+                  ) -> JsonObject:
+        """Start subscriptions and return the server acknowledgement."""
+        return self.call("events.subscribe", {"subscriptions": list(subscriptions)})
+
+    def iter_events(self) -> Iterator[JsonObject]:
+        """Yield retained and future events without an ordinary I/O timeout."""
+        while True:
+            if self.events:
+                yield self.events.pop(0)
+            else:
+                self._retain(self.receive(None))
+
+
+class HerdrClient:
+    """Issue one-shot or persistent Herdr JSON-RPC-like requests."""
+
+    def __init__(self, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
+                 timeout: float = DEFAULT_SOCKET_TIMEOUT) -> None:
         self.host = host
         self.port = port
         self.timeout = timeout
 
+    def connect(self, timeout: Optional[float] = None) -> NDJSONConnection:
+        """Return an unopened connection, optionally bounding its connect timeout."""
+        return NDJSONConnection(self.host, self.port,
+                                self.timeout if timeout is None else timeout)
+
     def call(self, method: str, params: Optional[JsonObject] = None) -> JsonObject:
-        """Send one request and return its matching successful response."""
-        request_id = uuid.uuid4().hex
-        request = {"id": request_id, "method": method, "params": params or {}}
-        try:
-            encoded = (json.dumps(request, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
-        except (TypeError, ValueError) as exc:
-            raise HerdrProtocolError("request is not JSON serializable: {}".format(exc)) from exc
-        try:
-            with socket.create_connection((self.host, self.port), self.timeout) as connection:
-                connection.settimeout(self.timeout)
-                connection.sendall(encoded)
-                reader = connection.makefile("rb")
-                try:
-                    for raw_line in reader:
-                        response = self._decode_response(raw_line)
-                        if response.get("id") == "" and "error" in response:
-                            self._raise_remote_error(response)
-                        if response.get("id") != request_id:
-                            continue
-                        if "error" in response:
-                            self._raise_remote_error(response)
-                        if "result" not in response:
-                            raise HerdrProtocolError("matching response has neither result nor error")
-                        return response
-                finally:
-                    reader.close()
-        except HerdrClientError:
-            raise
-        except (OSError, socket.timeout) as exc:
-            raise HerdrTransportError(str(exc)) from exc
-        raise HerdrTransportError("connection closed before matching response")
-
-    @staticmethod
-    def _decode_response(raw_line: bytes) -> JsonObject:
-        """Decode and validate one UTF-8 JSON object line."""
-        if not raw_line.endswith(b"\n"):
-            raise HerdrProtocolError("response is not newline-delimited")
-        try:
-            response = json.loads(raw_line.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise HerdrProtocolError("malformed response JSON: {}".format(exc)) from exc
-        if not isinstance(response, dict):
-            raise HerdrProtocolError("response is not a JSON object")
-        return response
-
-    @staticmethod
-    def _raise_remote_error(response: JsonObject) -> None:
-        """Raise the normalized exception for a Herdr error envelope."""
-        error = response["error"]
-        if not isinstance(error, dict):
-            raise HerdrProtocolError("error response is not an object")
-        raise HerdrRemoteError(error.get("code"), error.get("message", "unknown error"))
+        """Send any one-shot RPC and return its matching successful response."""
+        with self.connect() as connection:
+            return connection.call(method, params)
 
     def ping(self) -> JsonObject:
         """Call ``ping``."""
@@ -115,12 +276,21 @@ class HerdrClient:
         """Call ``agent.list``."""
         return self.call("agent.list")
 
-    def read_agent(self, target: str, source: str = "visible", lines: Optional[int] = None,
-                   fmt: Optional[str] = None, strip_ansi: Optional[bool] = None) -> JsonObject:
+    def get_agent(self, target: str, io_timeout: Any = _DEFAULT_TIMEOUT) -> JsonObject:
+        """Call ``agent.get`` for an agent name or pane id target."""
+        if io_timeout is _DEFAULT_TIMEOUT:
+            return self.call("agent.get", {"target": target})
+        connect_timeout = (self.timeout if io_timeout is None
+                           else min(self.timeout, float(io_timeout)))
+        with self.connect(connect_timeout) as connection:
+            return connection.call("agent.get", {"target": target}, io_timeout)
+
+    def read_agent(self, target: str, source: str = DEFAULT_READ_SOURCE,
+                   lines: Optional[int] = DEFAULT_READ_LINES,
+                   fmt: Optional[str] = DEFAULT_READ_FORMAT,
+                   strip_ansi: Optional[bool] = DEFAULT_READ_STRIP_ANSI) -> JsonObject:
         """Read an agent source, optionally constraining its presentation."""
-        if source == "recent-unwrapped":
-            source = "recent_unwrapped"
-        params = {"target": target, "source": source}
+        params: JsonObject = {"target": target, "source": source.replace("-", "_")}
         if lines is not None:
             params["lines"] = lines
         if fmt is not None:
@@ -131,48 +301,272 @@ class HerdrClient:
 
     def prompt(self, target: str, text: str,
                wait: Optional[JsonObject] = None) -> JsonObject:
-        """Submit text and optionally wait until the agent reaches a settled status."""
-        params = {"target": target, "text": text}
+        """Submit text and optionally wait for the newly submitted turn."""
+        params: JsonObject = {"target": target, "text": text}
         if wait is not None:
             params["wait"] = wait
-        return self.call("agent.prompt", params)
+        with self.connect() as connection:
+            if wait is None:
+                return connection.call("agent.prompt", params)
+            timeout_ms = wait.get("timeout_ms")
+            return connection.call("agent.prompt", params,
+                                   _local_timeout(self.timeout, timeout_ms))
 
     def send_keys(self, target: str, keys: Iterable[str]) -> JsonObject:
         """Send key names to an agent."""
         return self.call("agent.send_keys", {"target": target, "keys": list(keys)})
 
+    def start_agent(self, name: str, kind: str, pane_id: str,
+                    args: Optional[Sequence[str]] = DEFAULT_JOB_AGENT_ARGS,
+                    start_timeout_ms: Optional[int] = DEFAULT_JOB_START_TIMEOUT_MS
+                    ) -> JsonObject:
+        """Start an agent and wait until its pane is interactively ready."""
+        ready_timeout_ms = (start_timeout_ms if start_timeout_ms is not None
+                            else DEFAULT_AGENT_READY_TIMEOUT_MS)
+        if ready_timeout_ms < 0:
+            raise HerdrProtocolError("agent ready timeout must be non-negative")
+        deadline = time.monotonic() + ready_timeout_ms / 1000.0
+        params: JsonObject = {"name": name, "kind": kind, "pane_id": pane_id}
+        if args:
+            params["args"] = list(args)
+        if start_timeout_ms is not None:
+            params["timeout_ms"] = start_timeout_ms
+        try:
+            remaining = self._ready_time_left(pane_id, ready_timeout_ms, deadline)
+            with self.connect(min(self.timeout, remaining)) as connection:
+                response = connection.call(
+                    "agent.start", params, remaining)
+        except HerdrTransportError as exc:
+            if time.monotonic() >= deadline:
+                raise self._ready_timeout_error(pane_id, ready_timeout_ms) from exc
+            raise
+        agent = _response_agent(response)
+        if agent.get("interactive_ready") is True and not agent.get("launch_pending"):
+            return response
+        ready_agent = self._wait_until_agent_ready(pane_id, ready_timeout_ms, deadline)
+        result = response.get("result")
+        if isinstance(result, dict):
+            result["agent"] = ready_agent
+        return response
+
+    @staticmethod
+    def _ready_timeout_error(pane_id: str, timeout_ms: int) -> HerdrTransportError:
+        """Create a clear timeout error for the shared start/ready deadline."""
+        return HerdrTransportError(
+            "agent in pane {} was not interactive-ready within {} ms".format(
+                pane_id, timeout_ms))
+
+    def _ready_time_left(self, pane_id: str, timeout_ms: int,
+                         deadline: float) -> float:
+        """Return positive seconds remaining in the shared start/ready deadline."""
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise self._ready_timeout_error(pane_id, timeout_ms)
+        return remaining
+
+    def _wait_until_agent_ready(self, pane_id: str, timeout_ms: int,
+                                deadline: float) -> JsonObject:
+        """Poll pane-targeted agent state until its interactive launch is complete."""
+        if DEFAULT_AGENT_READY_POLL_SECONDS <= 0:
+            raise HerdrProtocolError("DEFAULT_AGENT_READY_POLL_SECONDS must be positive")
+        while True:
+            try:
+                agent = _response_agent(self.get_agent(
+                    pane_id, self._ready_time_left(pane_id, timeout_ms, deadline)))
+                if agent.get("interactive_ready") is True and not agent.get("launch_pending"):
+                    return agent
+            except HerdrRemoteError as exc:
+                if not _is_temporary_ready_error(exc):
+                    raise
+            except HerdrTransportError as exc:
+                if time.monotonic() >= deadline:
+                    raise self._ready_timeout_error(pane_id, timeout_ms) from exc
+                raise
+            remaining = self._ready_time_left(pane_id, timeout_ms, deadline)
+            time.sleep(min(DEFAULT_AGENT_READY_POLL_SECONDS, remaining))
+
+    def wait_agent(self, target: str, until: Optional[Sequence[str]] = None,
+                   timeout_ms: Optional[int] = None) -> JsonObject:
+        """Wait for an agent without shortening intentional server waits."""
+        params: JsonObject = {"target": target}
+        if until:
+            params["until"] = list(until)
+        if timeout_ms is not None:
+            params["timeout_ms"] = timeout_ms
+        with self.connect() as connection:
+            return connection.call("agent.wait", params,
+                                   _local_timeout(self.timeout, timeout_ms))
+
+    def wait_event(self, match_event: JsonObject,
+                   timeout_ms: Optional[int] = None) -> JsonObject:
+        """Wait for an event object without shortening intentional server waits."""
+        params: JsonObject = {"match_event": match_event}
+        if timeout_ms is not None:
+            params["timeout_ms"] = timeout_ms
+        with self.connect() as connection:
+            return connection.call("events.wait", params,
+                                   _local_timeout(self.timeout, timeout_ms))
+
+    def stream_events(self, subscriptions: Sequence[JsonObject] = DEFAULT_EVENT_SUBSCRIPTIONS
+                      ) -> Iterator[JsonObject]:
+        """Subscribe and yield pushed events on one persistent connection."""
+        with self.connect() as connection:
+            connection.subscribe(subscriptions)
+            for event in connection.iter_events():
+                yield event
+
+    def submit_job(self, name: str, prompt_text: str, kind: str = DEFAULT_JOB_KIND,
+                   workspace_id: Optional[str] = DEFAULT_JOB_WORKSPACE_ID,
+                   cwd: Optional[str] = DEFAULT_JOB_CWD,
+                   label: Optional[str] = DEFAULT_JOB_LABEL,
+                   env: Optional[JsonObject] = DEFAULT_JOB_ENV,
+                   focus: Optional[bool] = DEFAULT_JOB_FOCUS,
+                   agent_args: Optional[Sequence[str]] = DEFAULT_JOB_AGENT_ARGS,
+                   start_timeout_ms: Optional[int] = DEFAULT_JOB_START_TIMEOUT_MS,
+                   wait_for_prompt: bool = DEFAULT_JOB_WAIT,
+                   wait_until: Optional[Sequence[str]] = DEFAULT_JOB_UNTIL,
+                   wait_timeout_ms: Optional[int] = DEFAULT_JOB_TIMEOUT_MS,
+                   read_final: bool = DEFAULT_JOB_READ_FINAL) -> JsonObject:
+        """Create a tab, start/prompt an agent, and optionally read its final output."""
+        context: JsonObject = {"tab_id": None, "pane_id": None, "agent_name": name}
+        try:
+            tab_params: JsonObject = {}
+            for key, value in (("workspace_id", workspace_id), ("cwd", cwd),
+                               ("label", label), ("env", env), ("focus", focus)):
+                if value is not None:
+                    tab_params[key] = value
+            tab_response = self.call("tab.create", tab_params)
+            tab_result = tab_response.get("result", {})
+            if not isinstance(tab_result, dict):
+                raise HerdrProtocolError("tab.create result is not an object")
+            tab = tab_result.get("tab", {})
+            if isinstance(tab, dict):
+                context["tab_id"] = tab.get("tab_id")
+            root_pane = tab_result.get("root_pane", {})
+            if not isinstance(root_pane, dict) or not root_pane.get("pane_id"):
+                raise HerdrProtocolError("tab.create result lacks root_pane.pane_id")
+            pane_id = root_pane["pane_id"]
+            context["pane_id"] = pane_id
+            start_response = self.start_agent(name, kind, pane_id, agent_args,
+                                              start_timeout_ms)
+            start_result = start_response.get("result", {})
+            agent = start_result.get("agent", {}) if isinstance(start_result, dict) else {}
+            target = agent.get("name") if isinstance(agent, dict) else None
+            target = str(target or name)
+            context["agent_name"] = target
+            prompt_wait: Optional[JsonObject] = None
+            if wait_for_prompt or read_final:
+                prompt_wait = {}
+                if wait_until:
+                    prompt_wait["until"] = list(wait_until)
+                if wait_timeout_ms is not None:
+                    prompt_wait["timeout_ms"] = wait_timeout_ms
+            prompt_response = self.prompt(target, prompt_text, prompt_wait)
+            output: JsonObject = {"tab": tab_response, "agent_start": start_response,
+                                  "prompt": prompt_response, "ids": dict(context)}
+            if read_final:
+                output["read"] = self.read_agent(target)
+            return output
+        except HerdrClientError as exc:
+            raise JobSubmissionError(exc, context) from exc
+
+
+def _json_object(text: str, option: str) -> JsonObject:
+    """Parse one CLI JSON object argument."""
+    try:
+        value = json.loads(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("{} must be JSON: {}".format(option, exc))
+    if not isinstance(value, dict):
+        raise argparse.ArgumentTypeError("{} must be a JSON object".format(option))
+    return value
+
+
+def _wait_object(until: Sequence[str], timeout_ms: Optional[int]) -> JsonObject:
+    """Build an agent prompt wait object, omitting unspecified schema fields."""
+    value: JsonObject = {}
+    if until:
+        value["until"] = list(until)
+    if timeout_ms is not None:
+        value["timeout_ms"] = timeout_ms
+    return value
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default="127.0.0.1", help="relay host (default: %(default)s)")
-    parser.add_argument("--port", type=int, default=8765, help="relay TCP port (default: %(default)s)")
-    parser.add_argument("--timeout", type=float, default=10.0, help="I/O timeout in seconds (default: %(default)s)")
+    parser.add_argument("--host", default=DEFAULT_HOST, help="relay host (default: %(default)s)")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="relay TCP port (default: %(default)s)")
+    parser.add_argument("--timeout", type=float, default=DEFAULT_SOCKET_TIMEOUT, help="I/O timeout seconds (default: %(default)s)")
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("ping", "snapshot", "agents"):
         commands.add_parser(name)
+    raw = commands.add_parser("raw", help="call any Herdr RPC")
+    raw.add_argument("method")
+    raw.add_argument("params", nargs="?", default=DEFAULT_RAW_PARAMS,
+                     type=lambda text: _json_object(text, "params"))
     read = commands.add_parser("read", help="print agent text when available")
     read.add_argument("target")
-    read.add_argument("--source", default="visible",
-                      choices=("visible", "recent", "recent_unwrapped", "recent-unwrapped", "detection"))
-    read.add_argument("--lines", type=int)
-    read.add_argument("--format", dest="fmt")
-    read.add_argument("--strip-ansi", action="store_true")
+    read.add_argument("--source", default=DEFAULT_READ_SOURCE)
+    read.add_argument("--lines", type=int, default=DEFAULT_READ_LINES)
+    read.add_argument("--format", dest="fmt", default=DEFAULT_READ_FORMAT)
+    read.add_argument("--strip-ansi", action="store_true", default=DEFAULT_READ_STRIP_ANSI)
     prompt = commands.add_parser("prompt")
     prompt.add_argument("target")
     prompt.add_argument("text")
-    prompt.add_argument("--wait", action="store_true")
+    prompt.add_argument("--wait", action="store_true", default=DEFAULT_PROMPT_WAIT)
+    prompt.add_argument("--until", action="append", choices=VALID_AGENT_STATUSES,
+                        default=list(DEFAULT_PROMPT_UNTIL))
+    prompt.add_argument("--timeout-ms", type=int, default=DEFAULT_PROMPT_TIMEOUT_MS)
     keys = commands.add_parser("keys")
     keys.add_argument("target")
     keys.add_argument("keys", nargs="+")
+    agent_wait = commands.add_parser("wait", help="wait for an agent")
+    agent_wait.add_argument("target")
+    agent_wait.add_argument("--until", action="append", choices=VALID_AGENT_STATUSES,
+                            default=list(DEFAULT_WAIT_UNTIL))
+    agent_wait.add_argument("--timeout-ms", type=int, default=DEFAULT_WAIT_TIMEOUT_MS)
+    event_wait = commands.add_parser("event-wait", help="wait for one event")
+    event_wait.add_argument("match_event", type=lambda text: _json_object(text, "match_event"))
+    event_wait.add_argument("--timeout-ms", type=int, default=DEFAULT_EVENT_WAIT_TIMEOUT_MS)
+    events = commands.add_parser("events", help="stream subscription event envelopes")
+    events.add_argument("subscriptions", nargs="*",
+                        type=lambda text: _json_object(text, "subscription"),
+                        default=list(DEFAULT_EVENT_SUBSCRIPTIONS))
+    job = commands.add_parser("job", help="create a tab, start and prompt an agent")
+    job.add_argument("name")
+    job.add_argument("prompt_text")
+    job.add_argument("--kind", default=DEFAULT_JOB_KIND)
+    job.add_argument("--workspace-id", default=DEFAULT_JOB_WORKSPACE_ID)
+    job.add_argument("--cwd", default=DEFAULT_JOB_CWD)
+    job.add_argument("--label", default=DEFAULT_JOB_LABEL)
+    job.add_argument("--env", type=lambda text: _json_object(text, "--env"),
+                     default=DEFAULT_JOB_ENV)
+    job.add_argument("--focus", action="store_true", default=DEFAULT_JOB_FOCUS)
+    job.add_argument("--agent-arg", action="append", default=list(DEFAULT_JOB_AGENT_ARGS))
+    job.add_argument("--start-timeout-ms", type=int, default=DEFAULT_JOB_START_TIMEOUT_MS)
+    job.add_argument("--wait", action="store_true", default=DEFAULT_JOB_WAIT)
+    job.add_argument("--until", action="append", choices=VALID_AGENT_STATUSES,
+                     default=list(DEFAULT_JOB_UNTIL))
+    job.add_argument("--timeout-ms", type=int, default=DEFAULT_JOB_TIMEOUT_MS)
+    job.add_argument("--read-final", action="store_true", default=DEFAULT_JOB_READ_FINAL)
     return parser
+
+
+def _validate_args(args: argparse.Namespace) -> None:
+    """Validate shared command-line numeric values."""
+    if not 1 <= args.port <= 65535 or args.timeout <= 0:
+        raise SystemExit("--port must be 1..65535 and --timeout must be positive")
+    for name in ("timeout_ms", "start_timeout_ms"):
+        value = getattr(args, name, None)
+        if value is not None and value < 0:
+            raise SystemExit("--{} must be non-negative".format(name.replace("_", "-")))
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """Run the CLI and return a shell status."""
     args = build_parser().parse_args(argv)
-    if not 1 <= args.port <= 65535 or args.timeout <= 0:
-        raise SystemExit("--port must be 1..65535 and --timeout must be positive")
+    _validate_args(args)
     client = HerdrClient(args.host, args.port, args.timeout)
     try:
         if args.command == "ping":
@@ -181,19 +575,46 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             response = client.snapshot()
         elif args.command == "agents":
             response = client.agents()
+        elif args.command == "raw":
+            response = client.call(args.method, args.params)
         elif args.command == "read":
             response = client.read_agent(args.target, args.source, args.lines, args.fmt,
-                                         True if args.strip_ansi else None)
+                                         args.strip_ansi)
             text = response.get("result", {}).get("read", {}).get("text")
             if isinstance(text, str):
                 print(text, end="" if text.endswith("\n") else "\n")
                 return 0
         elif args.command == "prompt":
-            response = client.prompt(args.target, args.text, {} if args.wait else None)
-        else:
+            use_wait = args.wait or bool(args.until) or args.timeout_ms is not None
+            response = client.prompt(args.target, args.text,
+                                     _wait_object(args.until, args.timeout_ms) if use_wait else None)
+        elif args.command == "keys":
             response = client.send_keys(args.target, args.keys)
+        elif args.command == "wait":
+            response = client.wait_agent(args.target, args.until, args.timeout_ms)
+        elif args.command == "event-wait":
+            response = client.wait_event(args.match_event, args.timeout_ms)
+        elif args.command == "events":
+            with client.connect() as connection:
+                response = connection.subscribe(args.subscriptions)
+                print(json.dumps(response, ensure_ascii=False, sort_keys=True,
+                                 separators=(",", ":")), flush=True)
+                for event in connection.iter_events():
+                    print(json.dumps(event, ensure_ascii=False, sort_keys=True,
+                                     separators=(",", ":")), flush=True)
+            return 0
+        else:
+            response = client.submit_job(
+                args.name, args.prompt_text, args.kind, args.workspace_id, args.cwd,
+                args.label, args.env, args.focus, args.agent_arg,
+                args.start_timeout_ms, args.wait or args.read_final, args.until,
+                args.timeout_ms, args.read_final)
         print(json.dumps(response, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
         return 0
+    except JobSubmissionError as exc:
+        print(json.dumps({"error": str(exc), "context": exc.context},
+                         ensure_ascii=False, sort_keys=True), file=sys.stderr)
+        return 1
     except HerdrClientError as exc:
         print("herdr-client: {}".format(exc), file=sys.stderr)
         return 1
