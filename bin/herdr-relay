@@ -1,0 +1,88 @@
+#!/bin/sh
+# Bridge a loopback TCP port to Herdr's Unix socket for foreground debugging.
+
+set -u
+
+DEFAULT_SOCKET="${XDG_CONFIG_HOME:-$HOME/.config}/herdr/herdr.sock"
+host='127.0.0.1'
+port='8765'
+socket="$DEFAULT_SOCKET"
+quiet=false
+
+usage() {
+  cat <<'EOF'
+Usage: herdr-relay [options]
+
+Expose a local TCP relay for Herdr's newline-delimited JSON Unix socket.
+Runs socat in the foreground. By default, payloads in both directions are
+dumped to stderr for debugging; they may contain private agent content.
+
+Options:
+  -H, --host HOST       Listen host (default: 127.0.0.1)
+  -p, --port PORT       TCP port (default: 8765; range: 1-65535)
+  -s, --socket PATH     Herdr Unix socket (default: XDG_CONFIG_HOME/herdr/herdr.sock)
+  -q, --quiet           Do not dump relayed payloads
+  -h, --help            Show this help
+EOF
+}
+
+die() {
+  printf '%s\n' "herdr-relay: $*" >&2
+  exit 2
+}
+
+need_value() {
+  [ "$#" -ge 2 ] || die "option $1 requires a value"
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -H | --host)
+      need_value "$@"
+      host=$2
+      shift 2
+      ;;
+    -p | --port)
+      need_value "$@"
+      port=$2
+      shift 2
+      ;;
+    -s | --socket)
+      need_value "$@"
+      socket=$2
+      shift 2
+      ;;
+    -q | --quiet)
+      quiet=true
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      [ "$#" -eq 0 ] || die "unexpected argument: $1"
+      ;;
+    *)
+      die "unknown option: $1"
+      ;;
+  esac
+done
+
+case "$port" in
+  '' | *[!0-9]*) die "port must be a number from 1 to 65535: $port" ;;
+esac
+if [ "$port" -lt 1 ] 2>/dev/null || [ "$port" -gt 65535 ] 2>/dev/null; then
+  die "port must be in the range 1 to 65535: $port"
+fi
+
+[ -n "$host" ] || die 'listen host must not be empty'
+[ -S "$socket" ] || die "Unix socket does not exist or is not a socket: $socket"
+command -v socat >/dev/null 2>&1 || die 'socat is not installed; run brew install socat'
+
+if [ "$quiet" = true ]; then
+  exec socat "TCP4-LISTEN:${port},bind=${host},reuseaddr,fork,keepalive" "UNIX-CONNECT:${socket}"
+else
+  exec socat -v "TCP4-LISTEN:${port},bind=${host},reuseaddr,fork,keepalive" "UNIX-CONNECT:${socket}"
+fi
