@@ -356,6 +356,7 @@ opt.number = true
 opt.numberwidth = 3
 opt.relativenumber = true
 opt.fillchars:append({
+	diff = " ",
 	fold = " ",
 	foldopen = fold_symbols.open,
 	foldclose = fold_symbols.close,

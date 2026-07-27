@@ -608,7 +608,7 @@ return {
 							action = ":Lazy",
 							enabled = package.loaded.lazy ~= nil,
 						},
-						{ icon = " ", key = "q", desc = "Quit", action = ":qa" },
+						{ icon = " ", key = "q", desc = "Quit", action = ":DotfilesQuitAll" },
 					},
 				},
 				formats = {

@@ -22,6 +22,9 @@ local function set_diffview_highlights()
 	vim.api.nvim_set_hl(0, "DiffviewDim1", { fg = colors.surface2 })
 	vim.api.nvim_set_hl(0, "DiffviewNormal", { fg = colors.text, bg = "NONE" })
 	vim.api.nvim_set_hl(0, "DiffviewCursorLine", { bg = colors.surface0 })
+	-- Diffview maps actual deletions and alignment filler to separate groups.
+	-- Keep real deletions red, but make the empty side of pure additions blank.
+	vim.api.nvim_set_hl(0, "DiffviewDiffDeleteDim", { fg = "NONE", bg = "NONE" })
 end
 
 return {
@@ -97,6 +100,13 @@ return {
 		},
 		opts = {
 			enhanced_diff_hl = true,
+			hooks = {
+				diff_buf_win_enter = function(_, win)
+					vim.api.nvim_win_call(win, function()
+						vim.opt_local.fillchars:append({ diff = " " })
+					end)
+				end,
+			},
 			view = {
 				default = {
 					layout = "diff2_horizontal",
@@ -113,6 +123,12 @@ return {
 				pattern = "*",
 				callback = set_diffview_highlights,
 			})
+			set_diffview_highlights()
+		end,
+		config = function(_, opts)
+			require("diffview").setup(opts)
+			-- diffview.setup() recreates DiffviewDiffDeleteDim as a Comment link.
+			-- Apply our blank filler style after the plugin finishes its highlights.
 			set_diffview_highlights()
 		end,
 	},

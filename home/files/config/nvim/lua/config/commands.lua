@@ -11,6 +11,17 @@ end
 
 abbrev_excmd("qw", "wq", { desc = "Fix :qw typo" })
 
+vim.api.nvim_create_user_command("DotfilesQuitAll", function(args)
+	local choice = vim.fn.confirm("Quit all Neovim windows?", "&Yes\n&No", 2)
+	if choice == 1 then
+		vim.cmd({ cmd = "quitall", bang = args.bang })
+	end
+end, { bang = true, desc = "Quit all Neovim windows after confirmation" })
+
+for _, command in ipairs({ "qa", "qall", "quitall" }) do
+	abbrev_excmd(command, "DotfilesQuitAll", { desc = "Confirm before :" .. command })
+end
+
 vim.api.nvim_create_user_command("SudoWriteCurrentBuffer", function()
 	local file = vim.api.nvim_buf_get_name(0)
 	if file == "" then
