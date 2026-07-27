@@ -13,6 +13,134 @@ local function file_exists(path)
 	return path ~= nil and vim.uv.fs_stat(path) ~= nil
 end
 
+local function parent_directory(path)
+	path = normalize_path(path)
+	return path and vim.fs.dirname(path) or nil
+end
+
+local function project_root(path, markers)
+	path = normalize_path(path)
+	return path and vim.fs.root(path, markers) or nil
+end
+
+local function golangcilint_options(path)
+	local directory = parent_directory(path)
+	if directory == nil then
+		return nil
+	end
+	local in_workspace = project_root(path, { "go.mod", "go.work" }) ~= nil
+	return {
+		cwd = directory,
+		wrap_linter = function(linter)
+			-- nvim-lint decides between a package directory and a single file
+			-- when its module is first required, using Neovim's cwd. Resolve that
+			-- choice per buffer instead so editing another repository cannot make
+			-- typecheck analyze one Go file in isolation.
+			if linter.args and #linter.args > 0 then
+				linter.args[#linter.args] = in_workspace and "." or vim.fs.basename(path)
+			end
+			return linter
+		end,
+	}
+end
+
+local function tflint_options(path)
+	local directory = parent_directory(path)
+	if directory == nil then
+		return nil
+	end
+	local config_root = project_root(path, ".tflint.hcl")
+	return {
+		cwd = directory,
+		wrap_linter = function(linter)
+			-- A shared config may cover many Terraform modules. Keep its rules,
+			-- but lint only the module containing the current buffer.
+			local args = {}
+			for _, arg in ipairs(linter.args or {}) do
+				if arg ~= "--recursive" then
+					args[#args + 1] = arg
+				end
+			end
+			if config_root then
+				args[#args + 1] = "--config=" .. vim.fs.joinpath(config_root, ".tflint.hcl")
+			end
+			linter.args = args
+			return linter
+		end,
+	}
+end
+
+local function hadolint_options(path)
+	local directory = parent_directory(path)
+	if directory == nil then
+		return nil
+	end
+	return {
+		cwd = project_root(path, { ".hadolint.yaml", ".hadolint.yml" }) or directory,
+	}
+end
+
+local function actionlint_cwd(path)
+	local git_root = project_root(path, ".git")
+	if git_root then
+		return git_root
+	end
+
+	local workflows_directory = parent_directory(path)
+	local github_directory = workflows_directory and vim.fs.dirname(workflows_directory) or nil
+	if github_directory and vim.fs.basename(github_directory) == ".github" then
+		return vim.fs.dirname(github_directory)
+	end
+	return workflows_directory
+end
+
+local tflint_severities = {
+	error = vim.diagnostic.severity.ERROR,
+	warning = vim.diagnostic.severity.WARN,
+	notice = vim.diagnostic.severity.INFO,
+}
+
+local function parse_tflint(output, bufnr, linter_cwd)
+	local ok, decoded = pcall(vim.json.decode, output)
+	if not ok or type(decoded) ~= "table" then
+		return {}
+	end
+
+	local buffer_path = normalize_path(vim.api.nvim_buf_get_name(bufnr))
+	local diagnostics = {}
+	local issues = type(decoded.issues) == "table" and decoded.issues or {}
+	for _, issue in ipairs(issues) do
+		issue = type(issue) == "table" and issue or {}
+		local range = type(issue.range) == "table" and issue.range or {}
+		local filename = range.filename
+		local start = type(range.start) == "table" and range.start or {}
+		local finish = type(range["end"]) == "table" and range["end"] or {}
+		if type(filename) == "string" then
+			local absolute = filename:match("^/") or filename:match("^%a:[/\\]") or filename:match("^\\\\")
+			local issue_path = absolute and normalize_path(filename)
+				or (linter_cwd and normalize_path(vim.fs.joinpath(linter_cwd, filename)))
+			if issue_path == buffer_path then
+				local rule = type(issue.rule) == "table" and issue.rule or {}
+				local message = type(issue.message) == "string" and issue.message or "Terraform lint issue"
+				if type(rule.link) == "string" then
+					message = message .. "\nReference: " .. rule.link
+				end
+				diagnostics[#diagnostics + 1] = {
+					lnum = math.max((tonumber(start.line) or 1) - 1, 0),
+					end_lnum = math.max((tonumber(finish.line) or tonumber(start.line) or 1) - 1, 0),
+					col = math.max((tonumber(start.column) or 1) - 1, 0),
+					end_col = math.max((tonumber(finish.column) or tonumber(start.column) or 1) - 1, 0),
+					severity = tflint_severities[rule.severity] or vim.diagnostic.severity.WARN,
+					source = "tflint",
+					code = type(rule.name) == "string" and rule.name or nil,
+					message = message,
+				}
+			end
+		end
+	end
+	return diagnostics
+end
+
 local function find_helm_chart_root(path)
 	path = normalize_path(path)
 	if path == nil then
@@ -535,6 +663,7 @@ return {
 			-- Incomplete Go code commonly makes package loading fail while editing.
 			-- Keep any parsed diagnostics, but do not notify about the process exit code.
 			lint.linters.golangcilint.ignore_exitcode = true
+			lint.linters.tflint.parser = parse_tflint
 
 			lint.linters.helm_lint = {
 				cmd = "helm",
@@ -570,28 +699,52 @@ return {
 				["yaml.ansible"] = { "yamllint" },
 			}
 
-			local function try_lint()
-				lint.try_lint()
-
+			local function try_lint(args)
 				local bufnr = vim.api.nvim_get_current_buf()
 				local path = vim.api.nvim_buf_get_name(bufnr)
 				local filetype = vim.bo[bufnr].filetype
+				-- Non-stdin linters cannot observe unsaved edits, so running them on
+				-- InsertLeave only burns CPU while reporting stale disk contents.
+				local stdin_only = args and args.event == "InsertLeave"
+				if filetype == "go" then
+					local options = not stdin_only and golangcilint_options(path)
+					if options then
+						lint.try_lint("golangcilint", options)
+					end
+				elseif filetype == "terraform" or filetype == "terraform-vars" then
+					local options = not stdin_only and tflint_options(path)
+					if options then
+						lint.try_lint("tflint", options)
+					end
+				elseif filetype == "dockerfile" then
+					local options = hadolint_options(path)
+					if options then
+						options.filter = stdin_only and "stdin" or nil
+						lint.try_lint("hadolint", options)
+					end
+				else
+					lint.try_lint(nil, stdin_only and { filter = "stdin" } or nil)
+				end
 
 				if filetype == "helm" then
-					local chart_root = find_helm_chart_root(path)
-					if chart_root then
-						lint.try_lint("helm_lint", { cwd = chart_root })
+					if not stdin_only then
+						local chart_root = find_helm_chart_root(path)
+						if chart_root then
+							lint.try_lint("helm_lint", { cwd = chart_root })
+						end
 					end
 					if is_helm_values_file(path) then
-						lint.try_lint("yamllint")
+						lint.try_lint("yamllint", stdin_only and { filter = "stdin" } or nil)
 					end
-				elseif filetype:match("^yaml") and is_kubernetes_buffer(bufnr) then
+				elseif not stdin_only and filetype:match("^yaml") and is_kubernetes_buffer(bufnr) then
 					lint.try_lint("kubeconform")
 				end
 
-				local path = vim.api.nvim_buf_get_name(0)
 				if path:match("/%.github/workflows/.*%.ya?ml$") then
-					lint.try_lint("actionlint")
+					lint.try_lint("actionlint", {
+						cwd = actionlint_cwd(path),
+						filter = stdin_only and "stdin" or nil,
+					})
 				end
 			end
 
