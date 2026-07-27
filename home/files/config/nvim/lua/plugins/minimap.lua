@@ -20,14 +20,13 @@ local function set_minimap_highlights()
 		vim.api.nvim_set_hl(0, name, {
 			fg = accent,
 			bg = blend(accent, colors.base, 0.24),
-			blend = 25,
 			bold = true,
 		})
 	end
 
-	vim.api.nvim_set_hl(0, "MiniMapNormal", { fg = colors.text, bg = "NONE", blend = 100 })
+	vim.api.nvim_set_hl(0, "MiniMapNormal", { fg = colors.text, bg = "NONE" })
 	vim.api.nvim_set_hl(0, "MiniMapCursorLineMask", { bg = "NONE" })
-	vim.api.nvim_set_hl(0, "MiniMapSearch", { fg = colors.base, bg = colors.yellow, blend = 25, bold = true })
+	vim.api.nvim_set_hl(0, "MiniMapSearch", { fg = colors.base, bg = colors.yellow, bold = true })
 	set("MiniMapDiagnosticError", colors.red)
 	set("MiniMapDiagnosticWarn", colors.yellow)
 	set("MiniMapDiagnosticInfo", colors.sky)
@@ -218,29 +217,52 @@ local function setup_cursorline_mask(map)
 	})
 end
 
-local function explorer_left_column()
-	local ok, snacks = pcall(require, "snacks")
-	if not ok or not snacks.picker or not snacks.picker.get then
-		return nil
+local function is_code_window(win)
+	if not win or not vim.api.nvim_win_is_valid(win) then
+		return false
+	end
+	if vim.api.nvim_win_get_config(win).relative ~= "" then
+		return false
 	end
 
-	for _, picker in ipairs(snacks.picker.get({ source = "explorer" })) do
-		local root = picker.layout and picker.layout.root
-		local win = root and root.win
-		if
-			root
-			and root.opts
-			and root.opts.position == "right"
-			and win
-			and vim.api.nvim_win_is_valid(win)
-			and vim.api.nvim_win_get_config(win).relative == ""
-		then
-			return vim.api.nvim_win_get_position(win)[2]
+	local buf = vim.api.nvim_win_get_buf(win)
+	return vim.bo[buf].buftype == ""
+end
+
+local function source_window(map)
+	local current = vim.api.nvim_get_current_win()
+	if is_code_window(current) then
+		map._dotfiles_source_win = current
+		return current
+	end
+
+	local source_buf = map.current.buf_data.source
+	if source_buf and vim.api.nvim_buf_is_valid(source_buf) then
+		for _, win in ipairs(vim.fn.win_findbuf(source_buf)) do
+			if is_code_window(win) then
+				map._dotfiles_source_win = win
+				return win
+			end
 		end
+	end
+
+	if is_code_window(map._dotfiles_source_win) then
+		return map._dotfiles_source_win
 	end
 end
 
-local function update_minimap_position(map)
+local function redraw_after_geometry_change(map)
+	if map._dotfiles_geometry_redraw then
+		return
+	end
+	map._dotfiles_geometry_redraw = true
+	vim.schedule(function()
+		map._dotfiles_geometry_redraw = false
+		vim.cmd.redraw({ bang = true })
+	end)
+end
+
+local function update_minimap_geometry(map)
 	local map_win = map.current.win_data[vim.api.nvim_get_current_tabpage()]
 	if not map_win or not vim.api.nvim_win_is_valid(map_win) then
 		return
@@ -251,28 +273,37 @@ local function update_minimap_position(map)
 		return
 	end
 
-	local col = explorer_left_column() or vim.o.columns
-	if config.col == col then
+	local source_win = source_window(map)
+	if not source_win then
+		return
+	end
+
+	local position = vim.api.nvim_win_get_position(source_win)
+	local row = position[1]
+	local col = position[2] + vim.api.nvim_win_get_width(source_win)
+	local height = vim.api.nvim_win_get_height(source_win)
+	if config.row == row and config.col == col and config.height == height then
 		return
 	end
 
 	vim.api.nvim_win_set_config(map_win, {
 		relative = "editor",
 		anchor = "NE",
-		row = config.row,
+		row = row,
 		col = col,
 		width = config.width,
-		height = config.height,
+		height = height,
 		focusable = config.focusable,
 		zindex = config.zindex,
 	})
+	redraw_after_geometry_change(map)
 end
 
-local function setup_explorer_layout(map)
-	if map._dotfiles_explorer_layout then
+local function setup_code_layout(map)
+	if map._dotfiles_code_layout then
 		return
 	end
-	map._dotfiles_explorer_layout = true
+	map._dotfiles_code_layout = true
 
 	local pending = false
 	local function schedule_update()
@@ -282,19 +313,22 @@ local function setup_explorer_layout(map)
 		pending = true
 		vim.schedule(function()
 			pending = false
-			update_minimap_position(map)
+			update_minimap_geometry(map)
 		end)
 	end
 
 	local original_refresh = map.refresh
 	map.refresh = function(...)
 		local result = original_refresh(...)
-		schedule_update()
+		-- mini.map first restores its editor-height defaults and only then queues
+		-- content encoding. Constrain the float synchronously so encoding observes
+		-- the code window's actual text height.
+		update_minimap_geometry(map)
 		return result
 	end
 
 	vim.api.nvim_create_autocmd({ "WinNew", "WinClosed", "WinResized", "VimResized" }, {
-		group = vim.api.nvim_create_augroup("dotfiles-mini-map-explorer-layout", { clear = true }),
+		group = vim.api.nvim_create_augroup("dotfiles-mini-map-code-layout", { clear = true }),
 		callback = schedule_update,
 	})
 	schedule_update()
@@ -346,7 +380,10 @@ return {
 				window = {
 					show_integration_count = false,
 					width = 12,
-					winblend = 100,
+					winblend = 0,
+					-- treesitter-context uses zindex 20. Keep the map above
+					-- pinned code while leaving room for menus and popups.
+					zindex = 30,
 				},
 			}
 		end,
@@ -362,7 +399,7 @@ return {
 
 			map.setup(opts)
 			setup_cursorline_mask(map)
-			setup_explorer_layout(map)
+			setup_code_layout(map)
 			map.open()
 		end,
 	},
