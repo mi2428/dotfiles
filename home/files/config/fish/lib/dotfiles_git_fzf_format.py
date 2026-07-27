@@ -294,7 +294,10 @@ def format_prs(list_width: int) -> None:
         )
         title = ellipsize(row["title"], title_width)
         display = f"{number}  {branch}  {updated}  {author}  {title}"
-        print("\t".join([row["number"], row["url"], display]))
+        # Keep the full head branch as a hidden field so callers can persist a
+        # reproducible command after fzf returns, even when the display is
+        # ellipsized.
+        print("\t".join([row["number"], row["url"], display, row["head"]]))
 
 
 def main() -> None:

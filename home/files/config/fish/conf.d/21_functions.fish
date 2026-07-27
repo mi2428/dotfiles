@@ -82,6 +82,38 @@ function yy
     return $yazi_status
 end
 
+# Some interactive commands resolve a missing argument in fzf from an external
+# Fish process.  Let that process report the reproducible command, then add it
+# to this shell's in-memory history once the command has completed successfully.
+function __dotfiles_run_with_resolved_history --argument-names executable
+    set -e argv[1]
+
+    set -l resolved_history_file (mktemp -t dotfiles-history.XXXXXX)
+    or return 1
+
+    command env DOTFILES_RESOLVED_HISTORY_FILE="$resolved_history_file" "$executable" $argv
+    set -l command_status $status
+
+    if test $command_status -eq 0; and test -s "$resolved_history_file"
+        set -l resolved_command (string collect <"$resolved_history_file" | string trim)
+        if test -n "$resolved_command"
+            builtin history append "$resolved_command"
+            builtin history save
+        end
+    end
+
+    command rm -f -- "$resolved_history_file"
+    return $command_status
+end
+
+function work --wraps work --description 'Open a coding workspace'
+    __dotfiles_run_with_resolved_history work $argv
+end
+
+function gh-review --wraps gh-review --description 'Open a GitHub review workspace'
+    __dotfiles_run_with_resolved_history gh-review $argv
+end
+
 function __dotfiles_zz_filter_candidates --argument-names include_all
     # `fd --follow` reports paths reached through symlinks, so its basename
     # excludes alone do not reliably prune Nix profile trees.  Filter absolute

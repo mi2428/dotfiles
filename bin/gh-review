@@ -2,6 +2,11 @@
 
 set -g __dotfiles_gh_review_self_path (path resolve (status filename))
 set -g __dotfiles_gh_review_script_dir (path dirname "$__dotfiles_gh_review_self_path")
+set -g __dotfiles_gh_review_history_file ''
+if set -q DOTFILES_RESOLVED_HISTORY_FILE
+    set __dotfiles_gh_review_history_file "$DOTFILES_RESOLVED_HISTORY_FILE"
+    set -e DOTFILES_RESOLVED_HISTORY_FILE
+end
 set -l helper_file (path resolve "$__dotfiles_gh_review_script_dir/../home/files/config/fish/lib/dotfiles_git_ui_helpers.fish")
 
 source "$helper_file"; or begin
@@ -21,6 +26,12 @@ end
 
 function need_cmd --argument-names name
     command -q -- "$name"; or die "missing required command: $name"
+end
+
+function report_resolved_history
+    test -n "$__dotfiles_gh_review_history_file"; or return 0
+
+    string join ' ' -- (string escape -- $argv) >"$__dotfiles_gh_review_history_file"
 end
 
 function usage
@@ -192,7 +203,7 @@ function select_open_pr --argument-names self_path
     test -n "$selected"; or return 1
 
     set -l fields (string split \t -- "$selected")
-    printf '%s\n' "$fields[1]"
+    printf '%s\n' "$fields[4]"
 end
 
 if test (count $argv) -ge 1
@@ -222,6 +233,7 @@ builtin cd "$repo_root"
 set -l mode pr
 set -l pr_ref ''
 set -l local_base_arg ''
+set -l selected_pr_interactively 0
 
 if test (count $argv) -ge 1
     switch "$argv[1]"
@@ -295,6 +307,7 @@ else
 
     if test -z "$pr_ref"
         set pr_ref (select_open_pr "$__dotfiles_gh_review_self_path"); or exit 1
+        set selected_pr_interactively 1
     end
 
     set -l pr_meta
@@ -311,6 +324,10 @@ else
     set head_ref "$pr_fields[5]"
 
     test -n "$pr_number"; or die 'failed to resolve the pull request'
+
+    if test $selected_pr_interactively -eq 1
+        report_resolved_history gh-review "$head_ref"
+    end
 
     set -l url_parts (string split / -- "$pr_url")
     set -l pr_owner "$url_parts[4]"

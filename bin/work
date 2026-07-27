@@ -3,6 +3,11 @@
 set -g __dotfiles_work_self_path (path resolve (status filename))
 set -g __dotfiles_work_script_dir (path dirname "$__dotfiles_work_self_path")
 set -g __dotfiles_work_git_b_path "$__dotfiles_work_script_dir/git-b"
+set -g __dotfiles_work_history_file ''
+if set -q DOTFILES_RESOLVED_HISTORY_FILE
+    set __dotfiles_work_history_file "$DOTFILES_RESOLVED_HISTORY_FILE"
+    set -e DOTFILES_RESOLVED_HISTORY_FILE
+end
 set -l helper_file (path resolve "$__dotfiles_work_script_dir/../home/files/config/fish/lib/dotfiles_git_ui_helpers.fish")
 
 source "$helper_file"; or begin
@@ -17,6 +22,12 @@ end
 
 function need_cmd --argument-names name
     command -q -- "$name"; or die "missing required command: $name"
+end
+
+function report_resolved_history
+    test -n "$__dotfiles_work_history_file"; or return 0
+
+    string join ' ' -- (string escape -- $argv) >"$__dotfiles_work_history_file"
 end
 
 function usage
@@ -215,6 +226,7 @@ set -l directory_option 0
 set -l fetch_origin 0
 set -l operands
 set -l args $argv
+set -l original_args $argv
 
 while test (count $args) -gt 0
     switch "$args[1]"
@@ -284,15 +296,22 @@ end
 if test $worktree_mode -eq 1
     builtin cd -- "$root"; or die "could not enter repository: $root"
     set -l worktree_action
+    set -l selected_worktree_interactively 0
     if test $create_branch -eq 1
         set worktree_action (command "$__dotfiles_work_git_b_path" __create-worktree "$branch" "$start_ref"); or exit $status
     else
+        test -n "$branch"; or set selected_worktree_interactively 1
         set worktree_action (command "$__dotfiles_work_git_b_path" __resolve-worktree "$branch"); or exit $status
     end
 
     set -l fields (string split \t -- "$worktree_action")
     test "$fields[1]" = cd; and test -n "$fields[2]"; or die 'git-b returned an invalid worktree action'
     set root (path resolve "$fields[2]")
+
+    if test $selected_worktree_interactively -eq 1
+        test -n "$fields[3]"; or die 'git-b did not report the selected branch'
+        report_resolved_history work $original_args "$fields[3]"
+    end
 end
 
 set -l main_root (repository_main_root "$root"); or die 'could not determine the main worktree'
