@@ -549,7 +549,7 @@ local LspChip = {
 		vim.api.nvim_set_hl(0, "DotfilesDiagnosticError", { fg = colors.red, bg = settings.git_diff, bold = true })
 		vim.api.nvim_set_hl(0, "DotfilesDiagnosticWarn", { fg = colors.yellow, bg = settings.git_diff, bold = true })
 		vim.api.nvim_set_hl(0, "DotfilesDiagnosticInfo", { fg = colors.sky, bg = settings.git_diff, bold = true })
-		vim.api.nvim_set_hl(0, "DotfilesDiagnosticHint", { fg = colors.rosewater, bg = settings.git_diff, bold = true })
+		vim.api.nvim_set_hl(0, "DotfilesDiagnosticHint", { fg = colors.teal, bg = settings.git_diff, bold = true })
 	end,
 }
 
