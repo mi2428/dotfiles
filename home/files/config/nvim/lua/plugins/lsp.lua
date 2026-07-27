@@ -365,11 +365,12 @@ return {
 				float = { border = "rounded" },
 				underline = { severity = vim.diagnostic.severity.ERROR },
 				signs = {
-					severity = { min = vim.diagnostic.severity.WARN },
-					-- Use mirrored double chevrons from the proven fold and relnum glyph family.
+					severity = { min = vim.diagnostic.severity.INFO },
+					-- Use proven fold/relnum chevrons and the classic fold plus for INFO.
 					text = {
 						[vim.diagnostic.severity.ERROR] = "󰄽",
 						[vim.diagnostic.severity.WARN] = "󰄾",
+						[vim.diagnostic.severity.INFO] = "+",
 					},
 				},
 				virtual_text = false,

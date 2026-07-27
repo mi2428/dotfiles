@@ -13,6 +13,7 @@ local priority = assert(specs[1].opts.sign_priority, "Gitsigns priority must be 
 assert(priority > 30, "Gitsigns must outrank Codex and diagnostic signs")
 assert(vim.fn.strdisplaywidth("󰄽") == 1, "the left double-chevron error glyph must occupy one rail cell")
 assert(vim.fn.strdisplaywidth("󰄾") == 1, "the double-chevron warning glyph must occupy one rail cell")
+assert(vim.fn.strdisplaywidth("+") == 1, "the information glyph must occupy one rail cell")
 
 vim.api.nvim_buf_set_lines(0, 0, -1, false, {
 	"sign priority regression",
@@ -30,9 +31,14 @@ vim.wo.foldmethod = "manual"
 vim.opt.fillchars:append({ fold = " ", foldopen = "󰅀", foldclose = "󰅃", foldsep = " " })
 vim.api.nvim_set_hl(0, "GitSignsAdd", { fg = "#00ff00" })
 vim.api.nvim_set_hl(0, "GitSignsChange", { fg = "#ffff00" })
-vim.api.nvim_set_hl(0, "DiagnosticSignError", { fg = "#ff0000" })
-vim.api.nvim_set_hl(0, "DiagnosticSignWarn", { fg = "#ffff00" })
+vim.api.nvim_set_hl(0, "DiagnosticSignError", { fg = "#ff0000", bg = "#110000" })
+vim.api.nvim_set_hl(0, "DiagnosticSignWarn", { fg = "#ffff00", bg = "#111100" })
+vim.api.nvim_set_hl(0, "DiagnosticSignInfo", { fg = "#00ffff", bg = "#001111" })
 vim.api.nvim_set_hl(0, "DiagnosticInfo", { fg = "#00ffff" })
+vim.api.nvim_set_hl(0, "FoldColumn", { fg = "#0000ff", bg = "#222222" })
+vim.api.nvim_set_hl(0, "CursorLineFold", { fg = "#0000ff", bg = "#333333" })
+vim.api.nvim_set_hl(0, "DotfilesTestCursorLineFold", { fg = "#0000ff", bg = "#444444" })
+vim.wo.winhighlight = "CursorLineFold:DotfilesTestCursorLineFold"
 vim.api.nvim_set_hl(0, "DotfilesStatuscolumnMarker", { fg = "#ffffff", bold = true })
 vim.api.nvim_set_hl(0, "DotfilesCursorLineFoldOpen", { fg = "#0000ff" })
 vim.api.nvim_set_hl(0, "DotfilesCursorLineFoldClosed", { fg = "#ff00ff" })
@@ -193,6 +199,13 @@ assert(vim.api.nvim_get_hl(0, {
 	name = diagnostic_result.highlights[diagnostic_highlight_index].group,
 	link = false,
 }).nocombine == true, "the diagnostic must not inherit number or fold sign styles")
+assert(vim.api.nvim_get_hl(0, {
+	name = diagnostic_result.highlights[diagnostic_highlight_index].group,
+	link = false,
+}).bg == vim.api.nvim_get_hl(0, {
+	name = "DotfilesTestCursorLineFold",
+	link = false,
+}).bg, "the diagnostic cell must explicitly use the resolved cursor-line fold background")
 assert(isolated_count == 2, "Git and the rail diagnostic must each isolate their source highlight")
 
 vim.cmd.normal({ args = { "zc" }, bang = true })
@@ -256,10 +269,11 @@ local severity_namespace = vim.api.nvim_create_namespace("dotfiles-statuscolumn-
 vim.diagnostic.config({
 	severity_sort = true,
 	signs = {
-		severity = { min = vim.diagnostic.severity.WARN },
+		severity = { min = vim.diagnostic.severity.INFO },
 		text = {
 			[vim.diagnostic.severity.ERROR] = "󰄽",
 			[vim.diagnostic.severity.WARN] = "󰄾",
+			[vim.diagnostic.severity.INFO] = "+",
 		},
 	},
 })
@@ -281,6 +295,67 @@ assert(
 	"the representative diagnostic must retain the strongest severity highlight"
 )
 vim.diagnostic.reset(severity_namespace, 0)
+
+vim.diagnostic.set(severity_namespace, 0, {
+	{ lnum = 0, col = 0, severity = vim.diagnostic.severity.INFO, message = "information" },
+})
+local information_diagnostic = rendered_statuscolumn_result()
+assert(
+	information_diagnostic.str:match("^%+%s+1$") ~= nil,
+	"an information diagnostic must use the plus glyph in the rail: " .. information_diagnostic.str
+)
+vim.diagnostic.reset(severity_namespace, 0)
+
+local severities = {
+	{ severity = vim.diagnostic.severity.ERROR, glyph = "󰄽", foreground = 0xff0000 },
+	{ severity = vim.diagnostic.severity.WARN, glyph = "󰄾", foreground = 0xffff00 },
+	{ severity = vim.diagnostic.severity.INFO, glyph = "+", foreground = 0x00ffff },
+}
+local function assert_diagnostic_background(result, expected)
+	assert(result.str:sub(1, #expected.glyph) == expected.glyph, "unexpected diagnostic glyph: " .. result.str)
+	local sign_index
+	for index, highlight in ipairs(result.highlights) do
+		if
+			highlight.group:match("^DotfilesStatuscolumnSign%d+$")
+			and vim.api.nvim_get_hl(0, { name = highlight.group, link = false }).fg == expected.foreground
+		then
+			sign_index = index
+			break
+		end
+	end
+	assert(sign_index ~= nil, "diagnostic highlight is missing: " .. vim.inspect(result))
+	assert(
+		result.highlights[sign_index - 1].group == expected.base,
+		("expected %s beneath %s: %s"):format(expected.base, expected.glyph, vim.inspect(result.highlights))
+	)
+	assert(
+		vim.api.nvim_get_hl(0, { name = result.highlights[sign_index].group, link = false }).bg
+			== vim.api.nvim_get_hl(0, { name = expected.base, link = false }).bg,
+		("the %s diagnostic cell must copy the %s background"):format(expected.glyph, expected.base)
+	)
+end
+
+vim.api.nvim_win_set_cursor(0, { 4, 0 })
+vim.cmd("1,4fold")
+vim.cmd.normal({ args = { "zO" }, bang = true })
+for _, item in ipairs(severities) do
+	vim.diagnostic.set(severity_namespace, 0, {
+		{ lnum = 1, col = 0, severity = item.severity, message = "inside fold" },
+	})
+	item.base = "FoldColumn"
+	assert_diagnostic_background(rendered_statuscolumn_result(2), item)
+	vim.diagnostic.reset(severity_namespace, 0)
+end
+
+vim.cmd.normal({ args = { "zE" }, bang = true })
+for _, item in ipairs(severities) do
+	vim.diagnostic.set(severity_namespace, 0, {
+		{ lnum = 1, col = 0, severity = item.severity, message = "outside fold" },
+	})
+	item.base = "LineNr"
+	assert_diagnostic_background(rendered_statuscolumn_result(2), item)
+	vim.diagnostic.reset(severity_namespace, 0)
+end
 
 vim.wo.foldcolumn = "0"
 vim.api.nvim_buf_set_lines(0, 0, -1, false, { "above", "cursor", "below" })

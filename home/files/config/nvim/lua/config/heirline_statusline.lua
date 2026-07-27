@@ -264,7 +264,7 @@ local function lsp_chip_text()
 	local severities = {
 		{ vim.diagnostic.severity.ERROR, "󰅚", "DotfilesDiagnosticError" },
 		{ vim.diagnostic.severity.WARN, "󰀪", "DotfilesDiagnosticWarn" },
-		{ vim.diagnostic.severity.INFO, "", "DotfilesDiagnosticInfo" },
+		{ vim.diagnostic.severity.INFO, "󰋽", "DotfilesDiagnosticInfo" },
 		{ vim.diagnostic.severity.HINT, "󰌵", "DotfilesDiagnosticHint" },
 	}
 

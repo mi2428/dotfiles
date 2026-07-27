@@ -82,13 +82,25 @@ local function reset_sign_highlights()
 	sign_highlight_index = 0
 end
 
-local function isolated_sign_highlight(group)
+local function resolved_window_highlight(win, group)
+	for entry in vim.wo[win].winhighlight:gmatch("[^,]+") do
+		local source, target = entry:match("^([^:]+):(.*)$")
+		if source == group and target ~= "" then
+			return target
+		end
+	end
+	return group
+end
+
+local function isolated_sign_highlight(group, background_group, win)
 	group = group ~= "" and group or "NoTexthl"
-	if group == "CursorLineSign" or group == "SignColumn" then
+	if group == background_group then
 		return group
 	end
 
-	local cached = sign_highlight_cache[group]
+	local resolved_background = background_group and resolved_window_highlight(win, background_group) or nil
+	local cache_key = group .. "\0" .. (resolved_background or "")
+	local cached = sign_highlight_cache[cache_key]
 	if cached then
 		return cached
 	end
@@ -96,9 +108,18 @@ local function isolated_sign_highlight(group)
 	sign_highlight_index = sign_highlight_index + 1
 	local derived = "DotfilesStatuscolumnSign" .. sign_highlight_index
 	local attributes = vim.api.nvim_get_hl(0, { name = group, link = false })
+	-- The rail or native sign column owns the cell background. Signs contribute
+	-- foreground/style only, even if a colorscheme assigns them a background.
+	attributes.bg = nil
+	attributes.ctermbg = nil
+	if resolved_background then
+		local background = vim.api.nvim_get_hl(0, { name = resolved_background, link = false })
+		attributes.bg = background.bg
+		attributes.ctermbg = background.ctermbg
+	end
 	attributes.nocombine = true
 	vim.api.nvim_set_hl(0, derived, attributes)
-	sign_highlight_cache[group] = derived
+	sign_highlight_cache[cache_key] = derived
 	return derived
 end
 
@@ -127,7 +148,8 @@ local function fold_diagnostic(args, segment, fold_info)
 	if not source_group or source_group == "" then
 		source_group = sign.sign_hl_group
 	end
-	return "%#" .. base_group .. "#%#" .. isolated_sign_highlight(source_group) .. "#" .. sign.sign_text .. "%*"
+	local isolated = isolated_sign_highlight(source_group, base_group, args.win)
+	return "%#" .. base_group .. "#%#" .. isolated .. "#" .. sign.sign_text .. "%*"
 end
 
 function M.fold(args, segment)
@@ -231,14 +253,19 @@ function M.number(args, segment)
 	return "%#" .. group .. "#" .. string.format("%" .. width .. "d", number)
 end
 
+local function sign_base_group(args)
+	return (args.cul and args.relnum == 0) and "CursorLineSign" or "SignColumn"
+end
+
 function M.sign_base(args)
-	return (args.cul and args.relnum == 0) and "%#CursorLineSign#" or "%#SignColumn#"
+	return "%#" .. sign_base_group(args) .. "#"
 end
 
 function M.sign(args, segment)
 	local rendered = builtin.signfunc(args, segment)
+	local base_group = sign_base_group(args)
 	return rendered:gsub("%%#([^#]+)#", function(group)
-		local isolated = isolated_sign_highlight(group)
+		local isolated = isolated_sign_highlight(group, base_group, args.win)
 		if isolated == group then
 			return "%#" .. group .. "#"
 		end

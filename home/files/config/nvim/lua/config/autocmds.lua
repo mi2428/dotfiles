@@ -253,7 +253,7 @@ autocmd("LspAttach", {
 			return function()
 				vim.diagnostic.jump({
 					count = count,
-					severity = { min = vim.diagnostic.severity.WARN },
+					severity = { min = vim.diagnostic.severity.INFO },
 				})
 			end
 		end
@@ -278,8 +278,8 @@ autocmd("LspAttach", {
 		map("n", "<leader>rn", vim.lsp.buf.rename, "LSP rename")
 		map({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, "LSP code action")
 		map("n", "<leader>ds", vim.diagnostic.open_float, "Line diagnostics")
-		map("n", "[d", diagnostic_jump(-1), "Previous error or warning")
-		map("n", "]d", diagnostic_jump(1), "Next error or warning")
+		map("n", "[d", diagnostic_jump(-1), "Previous error, warning, or information")
+		map("n", "]d", diagnostic_jump(1), "Next error, warning, or information")
 
 		if client and client:supports_method("textDocument/inlayHint") then
 			vim.lsp.inlay_hint.enable(true, { bufnr = args.buf })

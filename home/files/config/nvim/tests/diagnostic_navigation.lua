@@ -25,14 +25,16 @@ vim.api.nvim_buf_set_lines(0, 0, -1, false, {
 local namespace = vim.api.nvim_create_namespace("dotfiles-diagnostic-navigation-test")
 vim.diagnostic.set(namespace, 0, {
 	{ lnum = 1, col = 0, severity = vim.diagnostic.severity.HINT, message = "skip hint" },
-	{ lnum = 2, col = 0, severity = vim.diagnostic.severity.INFO, message = "skip information" },
+	{ lnum = 2, col = 0, severity = vim.diagnostic.severity.INFO, message = "visit information" },
 	{ lnum = 3, col = 0, severity = vim.diagnostic.severity.WARN, message = "visit warning" },
 	{ lnum = 4, col = 0, severity = vim.diagnostic.severity.ERROR, message = "visit error" },
 })
 
 vim.api.nvim_win_set_cursor(0, { 1, 0 })
 mapping("]d")()
-assert(vim.api.nvim_win_get_cursor(0)[1] == 4, "]d must skip HINT and INFO and land on WARN")
+assert(vim.api.nvim_win_get_cursor(0)[1] == 3, "]d must skip HINT and land on INFO")
+mapping("]d")()
+assert(vim.api.nvim_win_get_cursor(0)[1] == 4, "]d must continue from INFO to WARN")
 mapping("]d")()
 assert(vim.api.nvim_win_get_cursor(0)[1] == 5, "]d must continue from WARN to ERROR")
 mapping("[d")()
