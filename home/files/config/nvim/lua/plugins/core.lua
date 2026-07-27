@@ -1,11 +1,47 @@
 local fzf_theme = require("config.fzf")
 
+local function refresh_folds_after_fzf()
+	local buf = vim.api.nvim_get_current_buf()
+	-- fzf-lua closes its terminal before Neovim has always completed the
+	-- terminal-to-normal mode transition. UFO can obtain ranges in that gap but
+	-- cannot apply them, leaving the first selected buffer permanently pending.
+	-- Wait for normal mode before retrying the fold application.
+	local function refresh(attempt)
+		if not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_buf_is_loaded(buf) then
+			return
+		end
+		if vim.api.nvim_get_mode().mode ~= "n" then
+			if attempt < 40 then
+				vim.defer_fn(function()
+					refresh(attempt + 1)
+				end, 50)
+			end
+			return
+		end
+
+		local ok, ufo = pcall(require, "ufo")
+		if ok and ufo.hasAttached(buf) then
+			ufo.enableFold(buf)
+		end
+	end
+
+	vim.defer_fn(function()
+		refresh(1)
+	end, 50)
+end
+
+local function fzf_open_file(selected, opts)
+	require("fzf-lua.actions").file_edit_or_qf(selected, opts)
+	refresh_folds_after_fzf()
+end
+
 local function fzf_open_in_current_window(selected, opts)
 	local previous_buf = vim.api.nvim_get_current_buf()
 	local previous_name = vim.api.nvim_buf_get_name(previous_buf)
 	local was_modified = vim.bo[previous_buf].modified
 
 	require("fzf-lua.actions").file_edit(selected, opts)
+	refresh_folds_after_fzf()
 
 	if not vim.api.nvim_buf_is_valid(previous_buf) or previous_buf == vim.api.nvim_get_current_buf() then
 		return
@@ -22,6 +58,7 @@ end
 local function fzf_open_in_vsplit(selected, opts)
 	require("fzf-lua.actions").file_vsplit(selected, opts)
 	vim.cmd("wincmd =")
+	refresh_folds_after_fzf()
 end
 
 return {
@@ -67,6 +104,7 @@ return {
 				actions = {
 					files = {
 						true,
+						["enter"] = fzf_open_file,
 						["ctrl-e"] = fzf_open_in_current_window,
 						["ctrl-v"] = fzf_open_in_vsplit,
 						["ctrl-q"] = function(selected, opts)
