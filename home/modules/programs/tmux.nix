@@ -12,6 +12,7 @@ let
     "scripts/battery.sh"
     "scripts/edit-scrollback.sh"
     "scripts/lazygit-popup.sh"
+    "scripts/session-popup.sh"
     "scripts/storage.sh"
     "scripts/window-label.sh"
     "scripts/yazi-popup.sh"
