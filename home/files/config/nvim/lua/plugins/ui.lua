@@ -516,7 +516,27 @@ return {
 			picker = {
 				sources = {
 					explorer = {
-						layout = { layout = { position = "right" } },
+						layout = {
+							preview = false,
+							layout = {
+								backdrop = false,
+								width = 40,
+								min_width = 40,
+								height = 0,
+								position = "right",
+								border = "none",
+								box = "vertical",
+								{ win = "list", border = "none" },
+								{ win = "preview", title = "{preview}", height = 0.4, border = "top" },
+								{
+									win = "input",
+									height = 1,
+									border = true,
+									title = "{title} {live} {flags}",
+									title_pos = "center",
+								},
+							},
+						},
 						watch = false,
 					},
 				},
