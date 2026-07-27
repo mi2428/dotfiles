@@ -1061,6 +1061,9 @@ return {
 						},
 					},
 					groups = {
+						options = {
+							toggle_hidden_on_enter = not collapse_review_groups,
+						},
 						items = {
 							{
 								name = "docs",

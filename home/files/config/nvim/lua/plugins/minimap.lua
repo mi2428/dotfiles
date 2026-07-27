@@ -218,6 +218,88 @@ local function setup_cursorline_mask(map)
 	})
 end
 
+local function explorer_left_column()
+	local ok, snacks = pcall(require, "snacks")
+	if not ok or not snacks.picker or not snacks.picker.get then
+		return nil
+	end
+
+	for _, picker in ipairs(snacks.picker.get({ source = "explorer" })) do
+		local root = picker.layout and picker.layout.root
+		local win = root and root.win
+		if
+			root
+			and root.opts
+			and root.opts.position == "right"
+			and win
+			and vim.api.nvim_win_is_valid(win)
+			and vim.api.nvim_win_get_config(win).relative == ""
+		then
+			return vim.api.nvim_win_get_position(win)[2]
+		end
+	end
+end
+
+local function update_minimap_position(map)
+	local map_win = map.current.win_data[vim.api.nvim_get_current_tabpage()]
+	if not map_win or not vim.api.nvim_win_is_valid(map_win) then
+		return
+	end
+
+	local config = vim.api.nvim_win_get_config(map_win)
+	if config.relative ~= "editor" or config.anchor ~= "NE" then
+		return
+	end
+
+	local col = explorer_left_column() or vim.o.columns
+	if config.col == col then
+		return
+	end
+
+	vim.api.nvim_win_set_config(map_win, {
+		relative = "editor",
+		anchor = "NE",
+		row = config.row,
+		col = col,
+		width = config.width,
+		height = config.height,
+		focusable = config.focusable,
+		zindex = config.zindex,
+	})
+end
+
+local function setup_explorer_layout(map)
+	if map._dotfiles_explorer_layout then
+		return
+	end
+	map._dotfiles_explorer_layout = true
+
+	local pending = false
+	local function schedule_update()
+		if pending then
+			return
+		end
+		pending = true
+		vim.schedule(function()
+			pending = false
+			update_minimap_position(map)
+		end)
+	end
+
+	local original_refresh = map.refresh
+	map.refresh = function(...)
+		local result = original_refresh(...)
+		schedule_update()
+		return result
+	end
+
+	vim.api.nvim_create_autocmd({ "WinNew", "WinClosed", "WinResized", "VimResized" }, {
+		group = vim.api.nvim_create_augroup("dotfiles-mini-map-explorer-layout", { clear = true }),
+		callback = schedule_update,
+	})
+	schedule_update()
+end
+
 return {
 	{
 		"nvim-mini/mini.map",
@@ -280,6 +362,7 @@ return {
 
 			map.setup(opts)
 			setup_cursorline_mask(map)
+			setup_explorer_layout(map)
 			map.open()
 		end,
 	},
