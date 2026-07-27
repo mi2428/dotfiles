@@ -36,7 +36,10 @@ end
 vim.api.nvim_buf_set_lines(0, 0, -1, false, source_lines)
 
 map.setup({
-	integrations = { map.gen_integration.diagnostic({ error = "ErrorMsg" }) },
+	integrations = {
+		map.gen_integration.builtin_search({ search = "Search" }),
+		map.gen_integration.diagnostic({ error = "ErrorMsg" }),
+	},
 	symbols = { encode = map.gen_encode_symbols.dot("4x2") },
 	window = {
 		focusable = false,
@@ -119,6 +122,27 @@ local second_marks = vim.api.nvim_buf_get_extmarks(
 )
 assert(#first_marks == 1 and #second_marks == 1, "each minimap must have exactly one cursor marker")
 assert(first_marks[1][2] ~= second_marks[1][2], "split minimaps must render independent cursor positions")
+
+vim.fn.setreg("/", "line 0042")
+vim.v.hlsearch = 1
+map.refresh({}, { integrations = true, lines = false, scrollbar = false })
+local native_integration_namespace = assert(namespaces.MiniMapIntegrations)
+local mirror_integration_namespace = assert(namespaces["dotfiles-mini-map-mirror-integrations"])
+local function integration_count(source_win, map_win)
+	local namespace = source_win == map._dotfiles_source_win and native_integration_namespace
+		or mirror_integration_namespace
+	return #vim.api.nvim_buf_get_extmarks(vim.api.nvim_win_get_buf(map_win), namespace, 0, -1, {})
+end
+wait_for(function()
+	return integration_count(first, first_map) > 0 and integration_count(second, second_map) > 0
+end, "search integration was not rendered in every minimap")
+require("config.multi_search").setup()
+vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-l>", true, false, true), "x", false)
+wait_for(function()
+	return vim.v.hlsearch == 0
+		and integration_count(first, first_map) == 0
+		and integration_count(second, second_map) == 0
+end, "<C-l> search clearing did not clear every minimap")
 
 local reused_mirror_buf = manager.mirrors[first].buf
 vim.api.nvim_set_current_win(first)

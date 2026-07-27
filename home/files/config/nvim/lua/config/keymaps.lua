@@ -1,5 +1,21 @@
 local map = vim.keymap.set
 
+local function resize_pane_toward(direction)
+	local current_win = vim.api.nvim_get_current_win()
+	local neighbor_win = vim.fn.win_getid(vim.fn.winnr(direction))
+	if neighbor_win == 0 or neighbor_win == current_win or not vim.api.nvim_win_is_valid(neighbor_win) then
+		return
+	end
+
+	if direction == "h" or direction == "l" then
+		local width = vim.api.nvim_win_get_width(neighbor_win)
+		vim.api.nvim_win_set_width(neighbor_win, math.max(vim.o.winminwidth, width - 5))
+	else
+		local height = vim.api.nvim_win_get_height(neighbor_win)
+		vim.api.nvim_win_set_height(neighbor_win, math.max(vim.o.winminheight, height - 5))
+	end
+end
+
 local function toggle_diffview()
 	if vim.t.diffview_view_initialized then
 		vim.cmd.DiffviewClose()
@@ -124,6 +140,22 @@ map("n", "<C-w>.", "<cmd>BufferLineMoveNext<cr>", { desc = "Move buffer right" }
 map("n", "<C-w>g", bufferline_group_action, { desc = "Bufferline group action" })
 map("n", "<C-w>-", "<cmd>split<cr>", { desc = "Horizontal split" })
 map("n", "<C-w>|", "<cmd>vsplit<cr>", { desc = "Vertical split" })
+map("n", "<C-w>h", "<cmd>wincmd h<cr>", { desc = "Move to left pane" })
+map("n", "<C-w>j", "<cmd>wincmd j<cr>", { desc = "Move to lower pane" })
+map("n", "<C-w>k", "<cmd>wincmd k<cr>", { desc = "Move to upper pane" })
+map("n", "<C-w>l", "<cmd>wincmd l<cr>", { desc = "Move to right pane" })
+map("n", "<C-w>H", function()
+	resize_pane_toward("h")
+end, { desc = "Resize pane left" })
+map("n", "<C-w>J", function()
+	resize_pane_toward("j")
+end, { desc = "Resize pane down" })
+map("n", "<C-w>K", function()
+	resize_pane_toward("k")
+end, { desc = "Resize pane up" })
+map("n", "<C-w>L", function()
+	resize_pane_toward("l")
+end, { desc = "Resize pane right" })
 for i = 1, 9 do
 	map("n", "<C-w>" .. i, "<cmd>BufferLineGoToBuffer " .. i .. "<cr>", { desc = "Go to buffer " .. i })
 end

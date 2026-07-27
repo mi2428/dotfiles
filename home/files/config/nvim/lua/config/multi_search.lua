@@ -258,6 +258,14 @@ end
 function M.nohl()
 	vim.cmd("nohlsearch")
 	M.clear()
+
+	-- mini.map's builtin search watcher does not reliably observe :nohlsearch
+	-- (notably when invoked through <C-l>). Refresh only its integrations; the
+	-- multi-window wrapper propagates this to every pane-local minimap.
+	local minimap = package.loaded["mini.map"]
+	if minimap and minimap.refresh then
+		minimap.refresh({}, { integrations = true, lines = false, scrollbar = false })
+	end
 end
 
 local function setup_nohl_abbrev(lhs)
