@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+"""Small Herdr NDJSON-over-TCP client.
+
+The relay must be bound only to a trusted network: this client has no TLS or
+authentication.  Example: herdr-client snapshot; use ``read`` to
+print an agent's text, or ``prompt TARGET TEXT`` to submit a prompt.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import socket
+import sys
+import uuid
+from typing import Any, Dict, Iterable, Optional, Sequence
+
+
+JsonObject = Dict[str, Any]
+
+
+class HerdrClientError(Exception):
+    """Base class for client transport and protocol failures."""
+
+
+class HerdrTransportError(HerdrClientError):
+    """Raised when the TCP connection cannot provide a complete response."""
+
+
+class HerdrProtocolError(HerdrClientError):
+    """Raised when a peer sends invalid or unexpected NDJSON."""
+
+
+class HerdrRemoteError(HerdrClientError):
+    """A Herdr error response, preserving its code and message."""
+
+    def __init__(self, code: Any, message: Any) -> None:
+        self.code = code
+        self.message = str(message)
+        super().__init__("Herdr error {}: {}".format(code, self.message))
+
+
+class HerdrClient:
+    """Issue one-shot Herdr JSON-RPC-like requests through a TCP relay."""
+
+    def __init__(self, host: str = "127.0.0.1", port: int = 8765,
+                 timeout: float = 10.0) -> None:
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+
+    def call(self, method: str, params: Optional[JsonObject] = None) -> JsonObject:
+        """Send one request and return its matching successful response."""
+        request_id = uuid.uuid4().hex
+        request = {"id": request_id, "method": method, "params": params or {}}
+        try:
+            encoded = (json.dumps(request, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            raise HerdrProtocolError("request is not JSON serializable: {}".format(exc)) from exc
+        try:
+            with socket.create_connection((self.host, self.port), self.timeout) as connection:
+                connection.settimeout(self.timeout)
+                connection.sendall(encoded)
+                reader = connection.makefile("rb")
+                try:
+                    for raw_line in reader:
+                        response = self._decode_response(raw_line)
+                        if response.get("id") == "" and "error" in response:
+                            self._raise_remote_error(response)
+                        if response.get("id") != request_id:
+                            continue
+                        if "error" in response:
+                            self._raise_remote_error(response)
+                        if "result" not in response:
+                            raise HerdrProtocolError("matching response has neither result nor error")
+                        return response
+                finally:
+                    reader.close()
+        except HerdrClientError:
+            raise
+        except (OSError, socket.timeout) as exc:
+            raise HerdrTransportError(str(exc)) from exc
+        raise HerdrTransportError("connection closed before matching response")
+
+    @staticmethod
+    def _decode_response(raw_line: bytes) -> JsonObject:
+        """Decode and validate one UTF-8 JSON object line."""
+        if not raw_line.endswith(b"\n"):
+            raise HerdrProtocolError("response is not newline-delimited")
+        try:
+            response = json.loads(raw_line.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise HerdrProtocolError("malformed response JSON: {}".format(exc)) from exc
+        if not isinstance(response, dict):
+            raise HerdrProtocolError("response is not a JSON object")
+        return response
+
+    @staticmethod
+    def _raise_remote_error(response: JsonObject) -> None:
+        """Raise the normalized exception for a Herdr error envelope."""
+        error = response["error"]
+        if not isinstance(error, dict):
+            raise HerdrProtocolError("error response is not an object")
+        raise HerdrRemoteError(error.get("code"), error.get("message", "unknown error"))
+
+    def ping(self) -> JsonObject:
+        """Call ``ping``."""
+        return self.call("ping")
+
+    def snapshot(self) -> JsonObject:
+        """Call ``session.snapshot``."""
+        return self.call("session.snapshot")
+
+    def agents(self) -> JsonObject:
+        """Call ``agent.list``."""
+        return self.call("agent.list")
+
+    def read_agent(self, target: str, source: str = "visible", lines: Optional[int] = None,
+                   fmt: Optional[str] = None, strip_ansi: Optional[bool] = None) -> JsonObject:
+        """Read an agent source, optionally constraining its presentation."""
+        if source == "recent-unwrapped":
+            source = "recent_unwrapped"
+        params = {"target": target, "source": source}
+        if lines is not None:
+            params["lines"] = lines
+        if fmt is not None:
+            params["format"] = fmt
+        if strip_ansi is not None:
+            params["strip_ansi"] = strip_ansi
+        return self.call("agent.read", params)
+
+    def prompt(self, target: str, text: str,
+               wait: Optional[JsonObject] = None) -> JsonObject:
+        """Submit text and optionally wait until the agent reaches a settled status."""
+        params = {"target": target, "text": text}
+        if wait is not None:
+            params["wait"] = wait
+        return self.call("agent.prompt", params)
+
+    def send_keys(self, target: str, keys: Iterable[str]) -> JsonObject:
+        """Send key names to an agent."""
+        return self.call("agent.send_keys", {"target": target, "keys": list(keys)})
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--host", default="127.0.0.1", help="relay host (default: %(default)s)")
+    parser.add_argument("--port", type=int, default=8765, help="relay TCP port (default: %(default)s)")
+    parser.add_argument("--timeout", type=float, default=10.0, help="I/O timeout in seconds (default: %(default)s)")
+    commands = parser.add_subparsers(dest="command", required=True)
+    for name in ("ping", "snapshot", "agents"):
+        commands.add_parser(name)
+    read = commands.add_parser("read", help="print agent text when available")
+    read.add_argument("target")
+    read.add_argument("--source", default="visible",
+                      choices=("visible", "recent", "recent_unwrapped", "recent-unwrapped", "detection"))
+    read.add_argument("--lines", type=int)
+    read.add_argument("--format", dest="fmt")
+    read.add_argument("--strip-ansi", action="store_true")
+    prompt = commands.add_parser("prompt")
+    prompt.add_argument("target")
+    prompt.add_argument("text")
+    prompt.add_argument("--wait", action="store_true")
+    keys = commands.add_parser("keys")
+    keys.add_argument("target")
+    keys.add_argument("keys", nargs="+")
+    return parser
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Run the CLI and return a shell status."""
+    args = build_parser().parse_args(argv)
+    if not 1 <= args.port <= 65535 or args.timeout <= 0:
+        raise SystemExit("--port must be 1..65535 and --timeout must be positive")
+    client = HerdrClient(args.host, args.port, args.timeout)
+    try:
+        if args.command == "ping":
+            response = client.ping()
+        elif args.command == "snapshot":
+            response = client.snapshot()
+        elif args.command == "agents":
+            response = client.agents()
+        elif args.command == "read":
+            response = client.read_agent(args.target, args.source, args.lines, args.fmt,
+                                         True if args.strip_ansi else None)
+            text = response.get("result", {}).get("read", {}).get("text")
+            if isinstance(text, str):
+                print(text, end="" if text.endswith("\n") else "\n")
+                return 0
+        elif args.command == "prompt":
+            response = client.prompt(args.target, args.text, {} if args.wait else None)
+        else:
+            response = client.send_keys(args.target, args.keys)
+        print(json.dumps(response, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+        return 0
+    except HerdrClientError as exc:
+        print("herdr-client: {}".format(exc), file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
