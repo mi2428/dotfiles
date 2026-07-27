@@ -50,7 +50,8 @@ function worktree_path_for_branch --argument-names branch
     if set -q WORK_WORKTREE_HOME; and test -n "$WORK_WORKTREE_HOME"
         set -l repo_slug (__dotfiles_git_ui_slugify (path basename "$main_root"))
         test -n "$repo_slug"; or set repo_slug repository
-        set container (path normalize "$WORK_WORKTREE_HOME/$repo_slug")
+        set -l repo_id (__dotfiles_git_ui_stable_id (canonical_path "$main_root")); or die 'could not derive a worktree repository id'
+        set container (path normalize "$WORK_WORKTREE_HOME/$repo_slug-$repo_id")
     end
 
     set -l branch_slug (string replace -ar '[^[:alnum:]._-]+' '-' -- "$branch")

@@ -9,6 +9,26 @@ function __dotfiles_git_ui_slugify --argument-names text
         | cut -c1-36
 end
 
+function __dotfiles_git_ui_stable_id --argument-names text
+    if command -q sha256sum
+        set -l fields (printf '%s' "$text" | command sha256sum | string split ' ')
+        test -n "$fields[1]"; or return 1
+        string sub -l 12 -- "$fields[1]"
+        return
+    end
+
+    if command -q shasum
+        set -l fields (printf '%s' "$text" | command shasum -a 256 | string split ' ')
+        test -n "$fields[1]"; or return 1
+        string sub -l 12 -- "$fields[1]"
+        return
+    end
+
+    set -l fields (printf '%s' "$text" | command cksum | string split ' ')
+    test -n "$fields[1]"; or return 1
+    printf '%08x\n' "$fields[1]"
+end
+
 function __dotfiles_git_ui_current_terminal_size
     set -l width ''
     set -l height ''
