@@ -363,12 +363,13 @@ return {
 			vim.diagnostic.config({
 				severity_sort = true,
 				float = { border = "rounded" },
-				underline = true,
+				underline = { severity = vim.diagnostic.severity.ERROR },
 				signs = {
 					severity = { min = vim.diagnostic.severity.WARN },
+					-- Use mirrored double chevrons from the proven fold and relnum glyph family.
 					text = {
-						[vim.diagnostic.severity.ERROR] = "●",
-						[vim.diagnostic.severity.WARN] = "●",
+						[vim.diagnostic.severity.ERROR] = "󰄽",
+						[vim.diagnostic.severity.WARN] = "󰄾",
 					},
 				},
 				virtual_text = false,

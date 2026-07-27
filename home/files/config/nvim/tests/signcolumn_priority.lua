@@ -11,6 +11,8 @@ package.path = table.concat({
 local specs = dofile(vim.fs.joinpath(nvim_root, "lua/plugins/git.lua"))
 local priority = assert(specs[1].opts.sign_priority, "Gitsigns priority must be configured")
 assert(priority > 30, "Gitsigns must outrank Codex and diagnostic signs")
+assert(vim.fn.strdisplaywidth("󰄽") == 1, "the left double-chevron error glyph must occupy one rail cell")
+assert(vim.fn.strdisplaywidth("󰄾") == 1, "the double-chevron warning glyph must occupy one rail cell")
 
 vim.api.nvim_buf_set_lines(0, 0, -1, false, {
 	"sign priority regression",
@@ -256,8 +258,8 @@ vim.diagnostic.config({
 	signs = {
 		severity = { min = vim.diagnostic.severity.WARN },
 		text = {
-			[vim.diagnostic.severity.ERROR] = "E",
-			[vim.diagnostic.severity.WARN] = "W",
+			[vim.diagnostic.severity.ERROR] = "󰄽",
+			[vim.diagnostic.severity.WARN] = "󰄾",
 		},
 	},
 })
@@ -267,7 +269,7 @@ vim.diagnostic.set(severity_namespace, 0, {
 })
 local strongest_diagnostic = rendered_statuscolumn_result()
 assert(
-	strongest_diagnostic.str:match("^E%s+1$") ~= nil,
+	strongest_diagnostic.str:match("^󰄽%s+1$") ~= nil,
 	"the strongest same-line diagnostic must represent the rail cell: " .. strongest_diagnostic.str
 )
 assert(

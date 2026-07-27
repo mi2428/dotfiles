@@ -249,6 +249,14 @@ autocmd("LspAttach", {
 		local map = function(mode, lhs, rhs, desc)
 			vim.keymap.set(mode, lhs, rhs, { buffer = args.buf, desc = desc })
 		end
+		local diagnostic_jump = function(count)
+			return function()
+				vim.diagnostic.jump({
+					count = count,
+					severity = { min = vim.diagnostic.severity.WARN },
+				})
+			end
+		end
 		local function glance_open(method, fallback)
 			return function()
 				local ok, glance = pcall(require, "glance")
@@ -270,8 +278,8 @@ autocmd("LspAttach", {
 		map("n", "<leader>rn", vim.lsp.buf.rename, "LSP rename")
 		map({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, "LSP code action")
 		map("n", "<leader>ds", vim.diagnostic.open_float, "Line diagnostics")
-		map("n", "[d", vim.diagnostic.goto_prev, "Previous diagnostic")
-		map("n", "]d", vim.diagnostic.goto_next, "Next diagnostic")
+		map("n", "[d", diagnostic_jump(-1), "Previous error or warning")
+		map("n", "]d", diagnostic_jump(1), "Next error or warning")
 
 		if client and client:supports_method("textDocument/inlayHint") then
 			vim.lsp.inlay_hint.enable(true, { bufnr = args.buf })
