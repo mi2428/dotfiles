@@ -217,7 +217,7 @@ local function refresh_statuscolumn_highlights()
 	vim.api.nvim_set_hl(0, "Visual", { bg = blend(colors.mauve, colors.base, 0.4), bold = true })
 
 	for scene, style in pairs(mode_styles) do
-		vim.api.nvim_set_hl(0, mode_highlight_group("CursorLine", scene), { bg = style.bg })
+		vim.api.nvim_set_hl(0, mode_highlight_group("CursorLine", scene), { bg = style.bg, nocombine = true })
 		vim.api.nvim_set_hl(0, mode_highlight_group("CursorLineSign", scene), { bg = style.bg })
 		vim.api.nvim_set_hl(0, mode_highlight_group("CursorLineFold", scene), { fg = colors.blue, bg = style.bg })
 		vim.api.nvim_set_hl(
@@ -253,7 +253,7 @@ local function refresh_statuscolumn_highlights()
 	end
 
 	local default = mode_styles.default
-	vim.api.nvim_set_hl(0, "CursorLine", { bg = default.bg })
+	vim.api.nvim_set_hl(0, "CursorLine", { bg = default.bg, nocombine = true })
 	vim.api.nvim_set_hl(0, "CursorLineSign", { bg = default.bg })
 	vim.api.nvim_set_hl(0, "CursorLineFold", { fg = colors.blue, bg = default.bg })
 	vim.api.nvim_set_hl(0, "DotfilesCursorLineFoldOpen", { fg = colors.sapphire, bg = default.bg })

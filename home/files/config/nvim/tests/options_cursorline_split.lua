@@ -51,6 +51,13 @@ assert(folded.bg == folded_background, "closed folds must use the emphasized ful
 
 local left = vim.api.nvim_get_current_win()
 local left_default = vim.wo[left].winhighlight
+local default_cursorline = vim.api.nvim_get_hl(0, { name = "DotfilesCursorLineDefault", link = false })
+assert(default_cursorline.bg ~= nil, "the ordinary cursor line must define a full-line background")
+assert(default_cursorline.nocombine == true, "the cursor-line background must override diff-line backgrounds")
+assert(
+	not default_cursorline.underline and not default_cursorline.undercurl and not default_cursorline.overline,
+	"the ordinary cursor line must not fall back to a line decoration"
+)
 assert_match(left_default, "Normal:ErrorMsg", "existing window highlight overrides must be preserved")
 assert_match(
 	left_default,
