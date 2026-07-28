@@ -9,7 +9,8 @@ package.path = table.concat({
 }, ";")
 
 local specs = dofile(vim.fs.joinpath(nvim_root, "lua/plugins/git.lua"))
-local priority = assert(specs[1].opts.sign_priority, "Gitsigns priority must be configured")
+local gitsigns_opts = type(specs[1].opts) == "function" and specs[1].opts() or specs[1].opts
+local priority = assert(gitsigns_opts.sign_priority, "Gitsigns priority must be configured")
 assert(priority > 30, "Gitsigns must outrank Codex and diagnostic signs")
 assert(vim.fn.strdisplaywidth("●") == 1, "diagnostic circles must occupy one rail cell")
 

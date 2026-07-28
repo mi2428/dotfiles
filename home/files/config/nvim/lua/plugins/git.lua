@@ -246,8 +246,11 @@ local function is_gitsigns_revision(win)
 	return vim.startswith(vim.api.nvim_buf_get_name(buf), "gitsigns://")
 end
 
-local function start_gitsigns_revision_treesitter(win)
+local function start_gitsigns_revision_treesitter(win, filetype)
 	local buf = vim.api.nvim_win_get_buf(win)
+	if filetype and filetype ~= "" and vim.bo[buf].filetype ~= filetype then
+		vim.bo[buf].filetype = filetype
+	end
 	if vim.bo[buf].filetype ~= "" then
 		pcall(vim.treesitter.start, buf)
 	end
@@ -296,13 +299,20 @@ local function refresh_gitsigns_diff_styles()
 			return vim.wo[win].diff and is_gitsigns_revision(win)
 		end)
 		if has_revision then
+			local worktree_filetype = vim.iter(wins):find(function(win)
+				return vim.wo[win].diff
+					and not is_gitsigns_revision(win)
+					and vim.bo[vim.api.nvim_win_get_buf(win)].filetype ~= ""
+			end)
+			worktree_filetype = worktree_filetype and vim.bo[vim.api.nvim_win_get_buf(worktree_filetype)].filetype
+				or nil
 			for _, win in ipairs(wins) do
 				if vim.wo[win].diff then
 					local revision = is_gitsigns_revision(win)
 					active[win] = true
 					save_gitsigns_diff_window(win)
 					if revision then
-						start_gitsigns_revision_treesitter(win)
+						start_gitsigns_revision_treesitter(win, worktree_filetype)
 					end
 					style_diff_window(win, {
 						layout_name = "diff2_vertical",
@@ -339,26 +349,58 @@ return {
 	{
 		"lewis6991/gitsigns.nvim",
 		event = { "BufReadPre", "BufNewFile" },
-		opts = {
-			base = review.gitsigns_base() or diff_watch.gitsigns_base(),
-			attach_to_untracked = diff_watch.is_active(),
-			sign_priority = 100,
-			signs = {
-				add = { text = "▎" },
-				change = { text = "▎" },
-				delete = { text = "▎" },
-				topdelete = { text = "▎" },
-				changedelete = { text = "▎" },
-				untracked = { text = "▎" },
-			},
-			signcolumn = true,
-			numhl = false,
-			linehl = false,
-			current_line_blame = false,
-			preview_config = {
-				border = "rounded",
-			},
-		},
+		opts = function()
+			local configured_base = review.gitsigns_base() or diff_watch.gitsigns_base()
+			-- Gitsigns' plugin script starts the initial attach before lazy.nvim
+			-- applies this user config. Correct only that first normal buffer after
+			-- on_attach returns and the cache entry has been registered.
+			local initial_base_scheduled = false
+			local function is_normal_file_buffer(bufnr)
+				if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_buf_is_loaded(bufnr) then
+					return false
+				end
+				local name = vim.api.nvim_buf_get_name(bufnr)
+				return vim.bo[bufnr].buftype == ""
+					and name ~= ""
+					and not vim.startswith(name, "gitsigns://")
+					and vim.uv.fs_stat(name) ~= nil
+			end
+			return {
+				base = configured_base,
+				on_attach = function(bufnr)
+					if initial_base_scheduled or not configured_base or not is_normal_file_buffer(bufnr) then
+						return
+					end
+					initial_base_scheduled = true
+					vim.schedule(function()
+						if not is_normal_file_buffer(bufnr) then
+							initial_base_scheduled = false
+							return
+						end
+						vim.api.nvim_buf_call(bufnr, function()
+							require("gitsigns").change_base(configured_base, false)
+						end)
+					end)
+				end,
+				attach_to_untracked = diff_watch.is_active(),
+				sign_priority = 100,
+				signs = {
+					add = { text = "▎" },
+					change = { text = "▎" },
+					delete = { text = "▎" },
+					topdelete = { text = "▎" },
+					changedelete = { text = "▎" },
+					untracked = { text = "▎" },
+				},
+				signcolumn = true,
+				numhl = false,
+				linehl = false,
+				current_line_blame = false,
+				preview_config = {
+					border = "rounded",
+				},
+			}
+		end,
 		init = function()
 			vim.api.nvim_create_autocmd("ColorScheme", {
 				group = vim.api.nvim_create_augroup("dotfiles-gitsigns-catppuccin", { clear = true }),
@@ -369,31 +411,6 @@ return {
 		end,
 		config = function(_, opts)
 			require("gitsigns").setup(opts)
-
-			-- Gitsigns may attach on BufReadPre before its configured base is
-			-- applied. Reapply it so review and HEAD-watch buffers do not fall
-			-- back to the Git index.
-			local base = review.gitsigns_base() or diff_watch.gitsigns_base()
-			if base then
-				local function apply_configured_base()
-					require("gitsigns").change_base(base, true)
-				end
-				local function apply_configured_base_after_attach()
-					-- Gitsigns attaches asynchronously. Retry during startup so a
-					-- slow initial attach cannot leave configured buffers on index base.
-					for _, delay in ipairs({ 100, 500, 1000 }) do
-						vim.defer_fn(apply_configured_base, delay)
-					end
-				end
-
-				vim.api.nvim_create_autocmd({ "BufEnter", "VimEnter" }, {
-					group = vim.api.nvim_create_augroup("dotfiles-gitsigns-configured-base", { clear = true }),
-					callback = function()
-						apply_configured_base_after_attach()
-					end,
-				})
-				apply_configured_base_after_attach()
-			end
 		end,
 	},
 	{

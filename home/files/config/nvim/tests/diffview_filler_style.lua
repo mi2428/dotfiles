@@ -252,6 +252,7 @@ vim.api.nvim_buf_set_lines(gitsigns_main_buf, 0, -1, false, {
 	"local added_three = 3",
 	"return value",
 })
+vim.bo[gitsigns_main_buf].filetype = "lua"
 vim.wo[gitsigns_main].cursorline = true
 vim.wo[gitsigns_main].cursorlineopt = "both"
 vim.wo[gitsigns_main].fillchars = "diff:-"
@@ -264,7 +265,7 @@ local gitsigns_revision_buf = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_buf_set_name(gitsigns_revision_buf, "gitsigns:///tmp/.git//HEAD:dotfiles-gitsigns-diff-main.lua")
 vim.api.nvim_win_set_buf(gitsigns_revision, gitsigns_revision_buf)
 vim.api.nvim_buf_set_lines(gitsigns_revision_buf, 0, -1, false, { "local value = 1", "", "return value" })
-vim.bo[gitsigns_revision_buf].filetype = "lua"
+vim.bo[gitsigns_revision_buf].filetype = "tf"
 vim.bo[gitsigns_revision_buf].buftype = "nowrite"
 vim.api.nvim_exec_autocmds("BufWinEnter", { buffer = gitsigns_revision_buf, modeline = false })
 vim.api.nvim_exec_autocmds("FileType", { buffer = gitsigns_revision_buf, modeline = false })
@@ -281,6 +282,10 @@ assert(
 		return vim.treesitter.highlighter.active[gitsigns_revision_buf] ~= nil
 	end),
 	"Gitsigns revision buffers must start Tree-sitter despite their nowrite buftype"
+)
+assert(
+	vim.bo[gitsigns_revision_buf].filetype == vim.bo[gitsigns_main_buf].filetype,
+	"Gitsigns revision buffers must use the worktree filetype"
 )
 
 for win, side in pairs({
@@ -319,8 +324,16 @@ assert(
 	vim.o.diffopt:find("filler", 1, true),
 	"Gitsigns diff must retain Neovim filler rows for paired screen alignment"
 )
-vim.wo[gitsigns_revision].foldenable = false
-vim.wo[gitsigns_main].foldenable = false
+assert(vim.wo[gitsigns_revision].foldenable, "Gitsigns revision pane must keep native diff folds enabled")
+assert(vim.wo[gitsigns_main].foldenable, "Gitsigns worktree pane must keep native diff folds enabled")
+for _, diff_win in ipairs({ gitsigns_revision, gitsigns_main }) do
+	vim.api.nvim_win_call(diff_win, function()
+		-- Keep folds enabled while exposing every buffer line for the focused
+		-- filler assertion below. Disabling foldenable masks asymmetric diff-fold
+		-- regressions in the real Gitsigns lifecycle.
+		vim.cmd.normal({ args = { "zR" }, bang = true })
+	end)
+end
 local function screen_row_for_buffer_line(win, lnum)
 	return vim.api.nvim_win_call(win, function()
 		local filler = 0
