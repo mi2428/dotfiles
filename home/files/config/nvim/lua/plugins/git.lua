@@ -4,6 +4,16 @@ local diffview_panel = require("config.diffview_snacks_panel")
 local review = require("config.review")
 local colors = catppuccin.palette()
 
+local function blend(foreground, background, alpha)
+	local function channel(color, offset)
+		return tonumber(color:sub(offset, offset + 1), 16)
+	end
+	local function mix(offset)
+		return math.floor(channel(foreground, offset) * alpha + channel(background, offset) * (1 - alpha) + 0.5)
+	end
+	return ("#%02x%02x%02x"):format(mix(2), mix(4), mix(6))
+end
+
 local function set_gitsigns_highlights()
 	vim.api.nvim_set_hl(0, "GitSignsAdd", { fg = colors.green, bg = "NONE" })
 	vim.api.nvim_set_hl(0, "GitSignsChange", { fg = colors.peach, bg = "NONE" })
@@ -22,10 +32,43 @@ local function set_diffview_highlights()
 	vim.api.nvim_set_hl(0, "DiffviewSecondary", { fg = colors.mauve })
 	vim.api.nvim_set_hl(0, "DiffviewDim1", { fg = colors.surface2 })
 	vim.api.nvim_set_hl(0, "DiffviewNormal", { fg = colors.text, bg = "NONE" })
-	vim.api.nvim_set_hl(0, "DiffviewCursorLine", { bg = colors.surface0 })
+	vim.api.nvim_set_hl(0, "DiffviewDiffChangeDelete", { bg = blend(colors.red, colors.base, 0.18) })
+	vim.api.nvim_set_hl(0, "DiffviewDiffTextDelete", { bg = blend(colors.red, colors.base, 0.42) })
+	vim.api.nvim_set_hl(0, "DiffviewDiffChangeAdd", { bg = blend(colors.green, colors.base, 0.18) })
+	vim.api.nvim_set_hl(0, "DiffviewDiffTextAdd", { bg = blend(colors.green, colors.base, 0.42) })
 	-- Diffview maps actual deletions and alignment filler to separate groups.
 	-- Keep real deletions red, but make the empty side of pure additions blank.
 	vim.api.nvim_set_hl(0, "DiffviewDiffDeleteDim", { fg = "NONE", bg = "NONE" })
+end
+
+local function replace_winhighlight(win, group, target)
+	local entries = vim.split(vim.wo[win].winhighlight, ",", { plain = true, trimempty = true })
+	local replacement = group .. ":" .. target
+	local replaced = false
+	for index, entry in ipairs(entries) do
+		if vim.startswith(entry, group .. ":") then
+			entries[index] = replacement
+			replaced = true
+			break
+		end
+	end
+	if not replaced then
+		entries[#entries + 1] = replacement
+	end
+	vim.wo[win].winhighlight = table.concat(entries, ",")
+end
+
+local function style_diff_window(win, ctx)
+	vim.api.nvim_win_call(win, function()
+		vim.opt_local.fillchars:append({ diff = " " })
+	end)
+
+	local side
+	if ctx and (ctx.layout_name == "diff2_horizontal" or ctx.layout_name == "diff2_vertical") then
+		side = ctx.symbol == "a" and "Delete" or ctx.symbol == "b" and "Add" or nil
+	end
+	replace_winhighlight(win, "DiffChange", side and ("DiffviewDiffChange" .. side) or "DiffviewDiffChange")
+	replace_winhighlight(win, "DiffText", side and ("DiffviewDiffText" .. side) or "DiffviewDiffText")
 end
 
 return {
@@ -102,10 +145,8 @@ return {
 		opts = {
 			enhanced_diff_hl = true,
 			hooks = {
-				diff_buf_win_enter = function(_, win)
-					vim.api.nvim_win_call(win, function()
-						vim.opt_local.fillchars:append({ diff = " " })
-					end)
+				diff_buf_win_enter = function(_, win, ctx)
+					style_diff_window(win, ctx)
 				end,
 				view_opened = diffview_panel.attach,
 				view_closed = diffview_panel.detach,
