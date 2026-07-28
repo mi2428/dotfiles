@@ -226,7 +226,6 @@ set -l directory_option 0
 set -l fetch_origin 0
 set -l operands
 set -l args $argv
-set -l original_args $argv
 
 while test (count $args) -gt 0
     switch "$args[1]"
@@ -287,6 +286,7 @@ set requested_dir (path resolve "$requested_dir" 2>/dev/null); or die "directory
 test -d "$requested_dir"; or die "not a directory: $requested_dir"
 set -l root (git -C "$requested_dir" rev-parse --show-toplevel 2>/dev/null); or die "not inside a Git repository: $requested_dir"
 set root (path resolve "$root")
+set -l invocation_root "$root"
 
 if test $fetch_origin -eq 1
     git -C "$root" remote get-url origin >/dev/null 2>/dev/null; or die 'cannot fetch: origin remote is not configured'
@@ -310,7 +310,11 @@ if test $worktree_mode -eq 1
 
     if test $selected_worktree_interactively -eq 1
         test -n "$fields[3]"; or die 'git-b did not report the selected branch'
-        report_resolved_history work $original_args "$fields[3]"
+        set -l resolved_history_args -w -C "$invocation_root"
+        if test $fetch_origin -eq 1
+            set -a resolved_history_args --fetch
+        end
+        report_resolved_history work $resolved_history_args "$fields[3]"
     end
 end
 
