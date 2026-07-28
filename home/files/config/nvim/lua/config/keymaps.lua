@@ -146,16 +146,27 @@ map("n", "-", function()
 end, { desc = "Open parent directory" })
 -- Keep buffer cycling on doubled brackets so a lone `[` or `]` does not wait
 -- for a longer mapping. This deliberately replaces Neovim's section motions.
--- Use built-in buffer commands: BufferLine is lazy-loaded and unavailable early
--- in startup. Its visual order is the inverse of :bnext/:bprevious here.
+-- Follow Bufferline's visual order, including buffers moved by the user.
+local function cycle_bufferline(command)
+	-- Bufferline rebuilds its component list while rendering the tabline. A
+	-- picker can enter a newly-created buffer before that render happens, which
+	-- leaves BufferLineCycle* unable to find the current buffer.
+	vim.cmd.redrawtabline()
+	vim.cmd(command)
+end
+
 local function map_buffer_cycles(bufnr)
 	local opts = { nowait = true }
 	if bufnr then
 		opts.buffer = bufnr
 	end
 
-	map("n", "[[", "<cmd>bprevious<cr>", vim.tbl_extend("force", opts, { desc = "Previous buffer" }))
-	map("n", "]]", "<cmd>bnext<cr>", vim.tbl_extend("force", opts, { desc = "Next buffer" }))
+	map("n", "[[", function()
+		cycle_bufferline("BufferLineCyclePrev")
+	end, vim.tbl_extend("force", opts, { desc = "Previous buffer" }))
+	map("n", "]]", function()
+		cycle_bufferline("BufferLineCycleNext")
+	end, vim.tbl_extend("force", opts, { desc = "Next buffer" }))
 end
 
 map_buffer_cycles()
