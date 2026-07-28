@@ -368,6 +368,13 @@ return {
 			return {
 				base = configured_base,
 				on_attach = function(bufnr)
+					vim.keymap.set("n", "]h", function()
+						require("gitsigns").nav_hunk("next")
+					end, { buffer = bufnr, desc = "Next Git hunk" })
+					vim.keymap.set("n", "[h", function()
+						require("gitsigns").nav_hunk("prev")
+					end, { buffer = bufnr, desc = "Previous Git hunk" })
+
 					if initial_base_scheduled or not configured_base or not is_normal_file_buffer(bufnr) then
 						return
 					end
