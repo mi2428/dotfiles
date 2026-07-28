@@ -229,7 +229,7 @@ map("n", "<leader>G", function()
 	end
 end, { desc = "Git status / review diff" })
 map("n", "<leader>gd", toggle_diffview, { desc = "Toggle Git diff view" })
-map("n", "<leader>gg", toggle_gitsigns_diff_peek, { desc = "Toggle Git diff peek" })
+map("n", "<leader>gp", toggle_gitsigns_diff_peek, { desc = "Toggle Git diff peek" })
 map("n", "<leader>gh", "<cmd>DiffviewFileHistory %<cr>", { desc = "File history" })
 map("n", "<leader>gH", "<cmd>DiffviewFileHistory<cr>", { desc = "Branch history" })
 map("n", "<leader>b", function()
