@@ -841,13 +841,6 @@ return {
 				desc = "GitHub issues (all)",
 			},
 			{
-				"<leader>gp",
-				function()
-					require("snacks").picker.gh_pr()
-				end,
-				desc = "GitHub pull requests (open)",
-			},
-			{
 				"<leader>gA",
 				function()
 					require("snacks").picker.gh_pr({ state = "all" })
