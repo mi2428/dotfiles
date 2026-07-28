@@ -123,6 +123,28 @@ return {
 			grep = {
 				rg_opts = [[--column --line-number --no-heading --color=always --smart-case --hidden --glob '!.git/**' -e]],
 			},
+			git = {
+				status = {
+					-- git_status uses fzf's native diff preview, so it cannot use
+					-- fzf-lua's separate titled preview window. Draw both panes in
+					-- fzf instead to match the files and git_files pickers.
+					winopts = {
+						border = "none",
+						title = false,
+					},
+					fzf_opts = {
+						["--input-border"] = "none",
+						["--list-border"] = "rounded",
+						["--list-label"] = " Git Status ",
+						["--preview-label"] = " Diff ",
+					},
+					keymap = {
+						fzf = {
+							["focus"] = [[transform-preview-label:printf " %s " "$(basename -- {-1})"]],
+						},
+					},
+				},
+			},
 			buffers = {
 				headers = false,
 			},
