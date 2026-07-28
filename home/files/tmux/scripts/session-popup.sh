@@ -14,10 +14,6 @@ if ! command -v fzf >/dev/null 2>&1; then
   exit 127
 fi
 
-current_session=$(
-  "$tmux_bin" display-message -p '#{session_name}'
-)
-
 selected=$(
   "$tmux_bin" list-sessions \
     -F '#{session_id}  #{session_name}  (#{session_windows} windows, #{?session_attached,attached,detached})' |
@@ -25,8 +21,7 @@ selected=$(
       --layout=reverse \
       --info=inline \
       --no-multi \
-      --prompt='session> ' \
-      --header="current: ${current_session} · enter: switch · esc: cancel"
+      --prompt='session> '
 ) || exit 0
 
 [ -n "$selected" ] || exit 0
