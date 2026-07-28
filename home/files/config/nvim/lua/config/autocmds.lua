@@ -64,8 +64,7 @@ autocmd("TextYankPost", {
 	end,
 })
 
-local function is_empty_editor_window(win)
-	local buf = vim.api.nvim_win_get_buf(win)
+local function is_empty_editor_buffer(buf)
 	return vim.bo[buf].buftype == ""
 		and vim.bo[buf].filetype == ""
 		and vim.api.nvim_buf_get_name(buf) == ""
@@ -74,29 +73,62 @@ local function is_empty_editor_window(win)
 		and vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] == ""
 end
 
-local function is_snacks_window(win)
-	local filetype = vim.bo[vim.api.nvim_win_get_buf(win)].filetype
-	return filetype == "snacks_layout_box" or filetype == "snacks_terminal"
+local function is_empty_editor_window(win)
+	return is_empty_editor_buffer(vim.api.nvim_win_get_buf(win))
+end
+
+local auxiliary_filetypes = {
+	aerial = true,
+	["aerial-nav"] = true,
+	minimap = true,
+	snacks_layout_box = true,
+	snacks_terminal = true,
+}
+
+local function is_auxiliary_buffer(buf)
+	return auxiliary_filetypes[vim.bo[buf].filetype] == true
+end
+
+local function is_auxiliary_window(win)
+	return is_auxiliary_buffer(vim.api.nvim_win_get_buf(win))
+end
+
+local function is_user_buffer(buf)
+	return vim.api.nvim_buf_is_valid(buf)
+		and vim.bo[buf].buflisted
+		and vim.bo[buf].buftype == ""
+		and not is_auxiliary_buffer(buf)
+		and not is_empty_editor_buffer(buf)
+end
+
+local function has_user_buffer()
+	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+		if is_user_buffer(buf) then
+			return true
+		end
+	end
+	return false
 end
 
 local function should_exit_after_quit(quitting_win)
-	local has_snacks = false
+	local has_auxiliary_window = false
 	for _, win in ipairs(vim.api.nvim_list_wins()) do
-		if vim.api.nvim_win_get_config(win).relative == "" then
-			local is_snacks = is_snacks_window(win)
-			if win ~= quitting_win and not is_snacks and not is_empty_editor_window(win) then
+		local is_auxiliary = is_auxiliary_window(win)
+		if is_auxiliary then
+			has_auxiliary_window = true
+		elseif vim.api.nvim_win_get_config(win).relative == "" then
+			if win ~= quitting_win and not is_empty_editor_window(win) then
 				return false
 			end
-			has_snacks = has_snacks or is_snacks
 		end
 	end
 
-	return has_snacks
+	return has_auxiliary_window
 end
 
 local function has_modified_user_buffer()
 	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-		if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].modified and vim.bo[buf].filetype ~= "snacks_terminal" then
+		if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].modified and not is_auxiliary_buffer(buf) then
 			return true
 		end
 	end
@@ -104,29 +136,29 @@ local function has_modified_user_buffer()
 end
 
 local function is_user_editor_window(win)
-	return vim.api.nvim_win_get_config(win).relative == "" and not is_snacks_window(win)
+	return vim.api.nvim_win_get_config(win).relative == "" and not is_auxiliary_window(win)
 end
 
-local snacks_exit_pending = false
+local auxiliary_exit_pending = false
 
 local function exit_after_quit()
-	if snacks_exit_pending then
+	if auxiliary_exit_pending then
 		return
 	end
 
-	snacks_exit_pending = true
+	auxiliary_exit_pending = true
 	local function try_exit(attempts_left)
 		-- QuitPre still runs inside the original :quit command. A short timer keeps
-		-- :quitall from being nested in that command while Snacks tears down layouts.
+		-- :quitall from being nested in that command while auxiliary layouts tear down.
 		vim.defer_fn(function()
 			if has_modified_user_buffer() then
-				snacks_exit_pending = false
+				auxiliary_exit_pending = false
 				return
 			end
 
 			local ok, err = pcall(vim.cmd, "quitall!")
 			if not ok then
-				snacks_exit_pending = false
+				auxiliary_exit_pending = false
 				vim.notify(("Failed to exit Neovim: %s"):format(err), vim.log.levels.ERROR)
 				return
 			end
@@ -134,7 +166,7 @@ local function exit_after_quit()
 			if attempts_left > 1 then
 				try_exit(attempts_left - 1)
 			else
-				snacks_exit_pending = false
+				auxiliary_exit_pending = false
 				vim.notify("Failed to exit Neovim after closing the last editor", vim.log.levels.ERROR)
 			end
 		end, 20)
@@ -144,13 +176,31 @@ local function exit_after_quit()
 end
 
 autocmd("QuitPre", {
-	desc = "Exit Neovim when quitting the last editor window leaves only Snacks windows",
-	group = augroup("dotfiles-quit-with-only-snacks", { clear = true }),
+	desc = "Exit Neovim when quitting the last editor window leaves only auxiliary windows",
+	group = augroup("dotfiles-quit-with-only-auxiliary-windows", { clear = true }),
 	callback = function()
 		local win = vim.api.nvim_get_current_win()
 		if is_user_editor_window(win) and should_exit_after_quit(win) then
 			exit_after_quit()
 		end
+	end,
+})
+
+autocmd("BufDelete", {
+	desc = "Exit Neovim after deleting the last user buffer",
+	group = augroup("dotfiles-quit-after-last-buffer", { clear = true }),
+	callback = function(args)
+		if not is_user_buffer(args.buf) then
+			return
+		end
+
+		-- BufDelete fires before the buffer leaves the list and before buffer
+		-- deletion helpers install their replacement buffer.
+		vim.schedule(function()
+			if not has_user_buffer() then
+				exit_after_quit()
+			end
+		end)
 	end,
 })
 
