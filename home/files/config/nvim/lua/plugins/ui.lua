@@ -480,8 +480,10 @@ return {
 		},
 		keys = {
 			{
-				"<leader>o",
-				"<cmd>AerialToggle! right<cr>",
+				"<leader>s",
+				function()
+					require("config.sidebar").toggle_aerial()
+				end,
 				desc = "Toggle symbol outline",
 			},
 			{
@@ -943,9 +945,9 @@ return {
 				desc = "Close terminal tab",
 			},
 			{
-				"<leader>e",
+				"<leader>o",
 				function()
-					require("snacks").explorer()
+					require("config.sidebar").toggle_explorer()
 				end,
 				desc = "File explorer",
 			},

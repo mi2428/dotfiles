@@ -7,6 +7,46 @@ package.path = table.concat({
 	package.path,
 }, ";")
 
+local specs = dofile(vim.fs.joinpath(nvim_root, "lua/plugins/ui.lua"))
+local aerial_spec
+local snacks_spec
+for _, spec in ipairs(specs) do
+	if spec[1] == "stevearc/aerial.nvim" then
+		aerial_spec = spec
+	elseif spec[1] == "folke/snacks.nvim" then
+		snacks_spec = spec
+	end
+end
+
+local function find_key(spec, lhs)
+	for _, key in ipairs(spec.keys or {}) do
+		if key[1] == lhs then
+			return key
+		end
+	end
+end
+
+local aerial_key = assert(find_key(aerial_spec, "<leader>s"), "<leader>s must toggle Aerial")
+local explorer_key = assert(find_key(snacks_spec, "<leader>o"), "<leader>o must toggle Explorer")
+assert(find_key(aerial_spec, "<leader>o") == nil, "Aerial must not shadow the Explorer toggle")
+assert(find_key(snacks_spec, "<leader>e") == nil, "the old Explorer toggle must be removed")
+
+local calls = {}
+local real_sidebar = package.loaded["config.sidebar"]
+package.loaded["config.sidebar"] = {
+	toggle_aerial = function()
+		calls.aerial = (calls.aerial or 0) + 1
+	end,
+	toggle_explorer = function()
+		calls.explorer = (calls.explorer or 0) + 1
+	end,
+}
+aerial_key[2]()
+explorer_key[2]()
+assert(calls.aerial == 1, "<leader>s did not call the Aerial sidebar toggle")
+assert(calls.explorer == 1, "<leader>o did not call the Explorer sidebar toggle")
+package.loaded["config.sidebar"] = real_sidebar
+
 vim.o.columns = 160
 vim.o.lines = 50
 vim.o.splitright = true
@@ -30,7 +70,6 @@ local fake_picker = {
 	},
 }
 local real_snacks = package.loaded.snacks
-local real_sidebar = package.loaded["config.sidebar"]
 package.loaded.snacks = {
 	picker = {
 		get = function()
