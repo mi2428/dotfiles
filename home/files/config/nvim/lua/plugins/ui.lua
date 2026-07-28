@@ -484,8 +484,24 @@ return {
 				"<cmd>AerialToggle! right<cr>",
 				desc = "Toggle symbol outline",
 			},
+			{
+				"<leader>ss",
+				function()
+					require("aerial").snacks_picker()
+				end,
+				desc = "Symbols (Aerial + Snacks)",
+			},
+			{
+				"<leader>sf",
+				function()
+					require("aerial").fzf_lua_picker()
+				end,
+				desc = "Symbols (Aerial + fzf-lua)",
+			},
 		},
 		dependencies = {
+			"folke/snacks.nvim",
+			"ibhagwan/fzf-lua",
 			"nvim-tree/nvim-web-devicons",
 		},
 		opts = {
@@ -731,13 +747,6 @@ return {
 					require("snacks").picker()
 				end,
 				desc = "Pickers",
-			},
-			{
-				"<leader>ss",
-				function()
-					require("snacks").picker.lsp_symbols()
-				end,
-				desc = "LSP symbols",
 			},
 			{
 				"<leader>sS",
