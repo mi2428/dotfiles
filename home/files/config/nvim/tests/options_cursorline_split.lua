@@ -183,12 +183,50 @@ vim.cmd.vsplit()
 local auxiliary = vim.api.nvim_get_current_win()
 local auxiliary_buffer = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_win_set_buf(auxiliary, auxiliary_buffer)
+vim.wo[auxiliary].cursorline = true
 vim.bo[auxiliary_buffer].filetype = "aerial"
 vim.wo[auxiliary].number = false
 vim.wo[auxiliary].relativenumber = false
+vim.wait(50)
+assert(
+	vim.wo[auxiliary].cursorline,
+	"Aerial must retain its cursor line so its cursor remains distinct from AerialLine"
+)
+for _, event in ipairs({ "BufEnter", "ModeChanged", "WinEnter" }) do
+	vim.api.nvim_exec_autocmds(event, { modeline = false })
+end
+vim.wait(50)
+assert(vim.wo[auxiliary].cursorline, "mode UI refreshes must not hide Aerial's navigation cursor")
+assert_match(
+	vim.wo[auxiliary].winhighlight,
+	"CursorLine:DotfilesCursorLineDefault",
+	"Aerial must use the normal-mode cursor-line background"
+)
+vim.api.nvim_exec_autocmds("CmdlineEnter", { modeline = false })
+assert(vim.wo[auxiliary].cursorline, "command mode must not hide Aerial's navigation cursor")
+assert_match(
+	vim.wo[auxiliary].winhighlight,
+	"CursorLine:DotfilesCursorLineCommand",
+	"Aerial must use the command-mode cursor-line background"
+)
+vim.api.nvim_exec_autocmds("CmdlineLeave", { modeline = false })
+vim.wait(50)
+assert(vim.wo[auxiliary].cursorline, "leaving command mode must restore Aerial's navigation cursor")
+assert_match(
+	vim.wo[auxiliary].winhighlight,
+	"CursorLine:DotfilesCursorLineDefault",
+	"leaving command mode must restore Aerial's normal cursor-line background"
+)
+vim.api.nvim_exec_autocmds("ColorScheme", { modeline = false })
+assert(vim.wo[auxiliary].cursorline, "colorscheme refreshes must not hide Aerial's navigation cursor")
 vim.api.nvim_exec_autocmds("InsertEnter", { modeline = false })
 vim.api.nvim_exec_autocmds("InsertLeave", { modeline = false })
 assert(not vim.wo[auxiliary].number, "mode changes must preserve an auxiliary window's disabled number column")
 assert(not vim.wo[auxiliary].relativenumber, "leaving insert mode must not add a relative-number gutter to Aerial")
+
+vim.wo[auxiliary].cursorline = true
+vim.bo[auxiliary_buffer].filetype = "aerial-nav"
+vim.wait(50)
+assert(vim.wo[auxiliary].cursorline, "Aerial nav must retain the cursor line requested by the plugin")
 
 print("cursorline split regression: ok")

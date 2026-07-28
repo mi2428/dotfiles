@@ -135,6 +135,10 @@ local function refresh_mode_styles()
 end
 
 local function cursorline_enabled(buf)
+	local cursorline_filetypes = {
+		aerial = true,
+		["aerial-nav"] = true,
+	}
 	local ignored_filetypes = {
 		DiffviewFiles = true,
 		dashboard = true,
@@ -152,7 +156,8 @@ local function cursorline_enabled(buf)
 		Trouble = true,
 	}
 
-	return vim.bo[buf].buftype == "" and ignored_filetypes[vim.bo[buf].filetype] ~= true
+	local filetype = vim.bo[buf].filetype
+	return cursorline_filetypes[filetype] == true or (vim.bo[buf].buftype == "" and ignored_filetypes[filetype] ~= true)
 end
 
 local function current_mode_scene()

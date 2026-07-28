@@ -524,6 +524,7 @@ return {
 				max_width = { 40, 0.25 },
 				resize_to_content = false,
 				win_opts = {
+					cursorline = true,
 					number = false,
 					relativenumber = false,
 					statuscolumn = "",

@@ -41,6 +41,7 @@ for _, dependency in ipairs(aerial.dependencies or {}) do
 end
 assert(dependencies["folke/snacks.nvim"], "Aerial must declare its Snacks integration")
 assert(dependencies["ibhagwan/fzf-lua"], "Aerial must declare its fzf-lua integration")
+assert(aerial.opts.layout.win_opts.cursorline == true, "Aerial must show its navigation cursor")
 assert(aerial.opts.layout.win_opts.number == false, "Aerial must disable absolute line numbers")
 assert(aerial.opts.layout.win_opts.relativenumber == false, "Aerial must disable relative line numbers")
 assert(aerial.opts.layout.win_opts.statuscolumn == "", "Aerial must disable the custom statuscolumn gutter")
