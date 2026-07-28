@@ -1,0 +1,349 @@
+#!/usr/bin/env python3
+"""Render a Snacks-inspired GitHub PR preview for the external fzf picker."""
+
+from __future__ import annotations
+
+import json
+import math
+import os
+import re
+import shutil
+import subprocess
+import sys
+import unicodedata
+from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+RESET = "\033[0m"
+
+COLORS = {
+    "base": "17;17;27",
+    "text": "205;214;244",
+    "overlay": "127;132;156",
+    "surface": "69;71;90",
+    "blue": "137;180;250",
+    "lavender": "180;190;254",
+    "mauve": "203;166;247",
+    "teal": "148;226;213",
+    "sky": "137;220;235",
+    "peach": "250;179;135",
+    "yellow": "249;226;175",
+    "green": "40;167;69",
+    "red": "215;58;73",
+    "gray": "106;115;125",
+    "white": "255;255;255",
+    "code": "69;71;90",
+    "h1_bg": "90;61;80",
+    "h2_bg": "92;72;71",
+    "h3_bg": "91;85;82",
+    "h4_bg": "68;85;78",
+    "h5_bg": "54;77;99",
+    "h6_bg": "72;75;104",
+}
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def style(
+    text: str,
+    foreground: str = "text",
+    *,
+    background: str | None = None,
+    bold: bool = False,
+    italic: bool = False,
+) -> str:
+    codes = []
+    if bold:
+        codes.append("1")
+    if italic:
+        codes.append("3")
+    codes.append(f"38;2;{COLORS.get(foreground, foreground)}")
+    if background:
+        codes.append(f"48;2;{COLORS.get(background, background)}")
+    return f"\033[{';'.join(codes)}m{text}{RESET}"
+
+
+def badge(text: str, background: str, foreground: str = "base") -> str:
+    return style(f" {text} ", foreground, background=background, bold=True)
+
+
+def prop(label: str, value: str) -> str:
+    return f"{style(label, 'lavender', bold=True)}{style(':', 'overlay')} {value}"
+
+
+def display_date(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return raw
+    now = datetime.now(timezone.utc)
+    day = str(parsed.day)
+    if parsed.year == now.year:
+        return f"{parsed.strftime('%b')} {day}"
+    return f"{parsed.strftime('%b')} {day}, {parsed.year}"
+
+
+def status_value(item: dict[str, Any]) -> str:
+    state = str(item.get("state") or "open").lower()
+    if item.get("isDraft"):
+        return badge(" Draft", "gray", "white")
+    if state == "merged":
+        return badge(" Merged", "mauve", "white")
+    if state == "closed":
+        return badge(" Closed", "red", "white")
+    return badge(" Open", "green", "white")
+
+
+def merge_status_value(item: dict[str, Any]) -> str | None:
+    if str(item.get("state") or "").upper() != "OPEN":
+        return None
+    raw = str(item.get("mergeStateStatus") or "").lower()
+    statuses = {
+        "clean": (" Clean", "green"),
+        "dirty": (" Dirty", "red"),
+        "blocked": (" Blocked", "red"),
+        "unstable": (" Unstable", "yellow"),
+        "behind": (" Behind", "yellow"),
+        "draft": (" Draft", "gray"),
+        "has_hooks": (" Has Hooks", "green"),
+        "unknown": (" Unknown", "gray"),
+    }
+    text, color = statuses.get(raw, (f" {raw.title() or 'Unknown'}", "red"))
+    return style(text, color, italic=color in {"red", "yellow"})
+
+
+def normalize_check_status(check: dict[str, Any]) -> str | None:
+    kind = check.get("__typename")
+    if kind == "CheckRun":
+        if check.get("status") != "COMPLETED":
+            return "Pending"
+        raw = str(check.get("conclusion") or "PENDING").upper()
+    elif kind == "StatusContext":
+        raw = str(check.get("state") or "PENDING").upper()
+    else:
+        return None
+
+    if raw == "SUCCESS":
+        return "Success"
+    if raw in {"FAILURE", "ERROR", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"}:
+        return "Failure"
+    if raw in {"PENDING", "EXPECTED", "IN_PROGRESS", "QUEUED", "REQUESTED", "WAITING"}:
+        return "Pending"
+    if raw in {"SKIPPED", "NEUTRAL", "CANCELLED", "STALE"}:
+        return "Skipped"
+    return None
+
+
+def checks_value(item: dict[str, Any]) -> str | None:
+    workflows: dict[str, str] = {}
+    for index, check in enumerate(item.get("statusCheckRollup") or []):
+        status = normalize_check_status(check)
+        if not status:
+            continue
+        name = check.get("context") or (
+            f"{check.get('workflowName') or ''}:{check.get('name') or index}"
+        )
+        workflows[str(name)] = status
+
+    if not workflows:
+        return None
+
+    counts = Counter(workflows.values())
+    specs = {
+        "Success": ("", "green"),
+        "Failure": ("", "red"),
+        "Pending": ("", "yellow"),
+        "Skipped": ("", "surface"),
+    }
+    chunks = []
+    blocks = []
+    for name in ("Success", "Failure", "Pending", "Skipped"):
+        count = counts.get(name, 0)
+        if not count:
+            continue
+        icon, color = specs[name]
+        chunks.append(badge(f"{icon} {count}", color))
+        blocks.append(style("■" * count, color))
+    return " ".join(chunks) + "  " + "".join(blocks)
+
+
+def mergeable_value(item: dict[str, Any]) -> str | None:
+    raw = item.get("mergeable")
+    if raw is None:
+        return None
+    mergeable = raw is True or str(raw).upper() == "MERGEABLE"
+    return style("" if mergeable else "", "green" if mergeable else "red")
+
+
+def changes_value(item: dict[str, Any]) -> str | None:
+    files = item.get("changedFiles")
+    additions = int(item.get("additions") or 0)
+    deletions = int(item.get("deletions") or 0)
+    if files is None and additions == 0 and deletions == 0:
+        return None
+
+    chunks = []
+    if files is not None:
+        chunks.append(badge(f" {files}", "mauve"))
+    if additions:
+        chunks.append(style(f"+{additions}", "green", bold=True))
+    if deletions:
+        chunks.append(style(f"-{deletions}", "red", bold=True))
+
+    total = additions + deletions
+    if total:
+        unit = math.ceil(total / 5)
+        added_blocks = math.floor((0.5 + additions) / unit)
+        deleted_blocks = math.floor((0.5 + deletions) / unit)
+        neutral_blocks = max(0, 5 - added_blocks - deleted_blocks)
+        chunks.append(
+            style("■" * added_blocks, "green")
+            + style("■" * deleted_blocks, "red")
+            + style("■" * neutral_blocks, "surface")
+        )
+    return " ".join(chunks)
+
+
+def markdown_text(item: dict[str, Any]) -> str:
+    body = str(item.get("body") or "_No description._")
+    body = re.sub(r"<!--.*?-->\s*", "", body, flags=re.DOTALL)
+
+    threads = []
+    for comment in item.get("comments") or []:
+        threads.append((comment.get("createdAt") or "", "Comment", comment))
+    for review in item.get("reviews") or []:
+        threads.append((review.get("submittedAt") or "", "Review", review))
+    threads.sort(key=lambda entry: entry[0])
+
+    sections = [body.strip()]
+    for _, kind, thread in threads:
+        thread_body = str(thread.get("body") or "").strip()
+        if not thread_body:
+            continue
+        author = (thread.get("author") or {}).get("login") or "unknown"
+        state = str(thread.get("state") or "").replace("_", " ").title()
+        suffix = f" · {state}" if state else ""
+        sections.append(f"---\n\n** {author}** · {kind}{suffix}\n\n{thread_body}")
+    return "\n\n".join(sections) + "\n"
+
+
+def display_width(text: str) -> int:
+    width = 0
+    for char in text:
+        if unicodedata.combining(char):
+            continue
+        width += 2 if unicodedata.east_asian_width(char) in {"F", "W"} else 1
+    return width
+
+
+def colorize_glow(rendered: str, width: int) -> str:
+    heading_colors = {
+        3: ("red", "h1_bg"),
+        4: ("peach", "h2_bg"),
+        5: ("yellow", "h3_bg"),
+        6: ("green", "h4_bg"),
+        7: ("blue", "h5_bg"),
+        8: ("lavender", "h6_bg"),
+    }
+    output = []
+    for raw_line in rendered.splitlines():
+        plain = ANSI_RE.sub("", raw_line).rstrip()
+        heading = re.match(r"^\s*(▓{3,8})\s+(.*)$", plain)
+        if heading:
+            foreground, background = heading_colors[len(heading.group(1))]
+            text = " " + heading.group(2).strip()
+            padding = " " * max(0, width - display_width(text))
+            output.append(
+                style(text + padding, foreground, background=background, bold=True)
+            )
+            continue
+
+        # Glow retains layout and emphasis when stdout is a pipe, but emits
+        # empty SGR colors. Restore the Catppuccin groups used by the matching
+        # Snacks Markdown preview while preserving its wrapping and tables.
+        colored = raw_line.replace("\033[;1m", "\033[1m")
+        colored = colored.replace(
+            "\033[;m",
+            f"\033[38;2;235;160;172;48;2;{COLORS['code']}m",
+        )
+        colored = colored.replace(RESET, RESET + f"\033[38;2;{COLORS['text']}m")
+        output.append(f"\033[38;2;{COLORS['text']}m{colored}{RESET}")
+    return "\n".join(output) + ("\n" if rendered.endswith("\n") else "")
+
+
+def render_markdown(markdown: str, width: int, glow_style: str) -> str:
+    glow = shutil.which("glow")
+    if not glow:
+        return markdown
+
+    command = [glow, "-w", str(max(20, width)), "-"]
+    if glow_style and Path(glow_style).is_file():
+        command[1:1] = ["-s", glow_style]
+    environment = os.environ.copy()
+    environment.pop("NO_COLOR", None)
+    rendered = subprocess.run(
+        command,
+        input=markdown,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=environment,
+    )
+    if rendered.returncode != 0:
+        return markdown
+    return colorize_glow(rendered.stdout, width)
+
+
+def main() -> None:
+    if len(sys.argv) != 4:
+        print("usage: dotfiles_gh_pr_preview.py WIDTH REPO GLOW_STYLE", file=sys.stderr)
+        raise SystemExit(2)
+
+    try:
+        width = max(20, int(sys.argv[1]))
+    except ValueError as exc:
+        raise SystemExit(f"invalid preview width: {sys.argv[1]}") from exc
+
+    repo = sys.argv[2]
+    glow_style = sys.argv[3]
+    item = json.load(sys.stdin)
+
+    lines = []
+    branch = ""
+    if item.get("baseRefName") and item.get("headRefName"):
+        branch = " " + style(str(item["baseRefName"]), "lavender")
+        branch += style(" ← ", "overlay")
+        branch += style(str(item["headRefName"]), "lavender")
+    lines.append(prop("Status", status_value(item) + branch))
+    lines.append(prop("Repo", style(" ", "mauve") + style(repo, "lavender")))
+
+    author = (item.get("author") or {}).get("login")
+    if author:
+        lines.append(prop("Author", badge(f" {author}", "sky")))
+    for label, field in (("Created", "createdAt"), ("Updated", "updatedAt")):
+        value = display_date(item.get(field))
+        if value:
+            lines.append(prop(label, style(value, "peach")))
+
+    optional = (
+        ("Merge Status", merge_status_value(item)),
+        ("Checks", checks_value(item)),
+        ("Mergeable", mergeable_value(item)),
+        ("Changes", changes_value(item)),
+    )
+    for label, value in optional:
+        if value:
+            lines.append(prop(label, value))
+
+    lines.extend(["", style("─" * width, "overlay"), ""])
+    sys.stdout.write("\n".join(lines) + "\n")
+    sys.stdout.write(render_markdown(markdown_text(item), width, glow_style))
+
+
+if __name__ == "__main__":
+    main()

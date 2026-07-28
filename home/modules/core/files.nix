@@ -30,6 +30,7 @@ let
     (name: _: lib.nameValuePair ".local/bin/${name}" (mkLink (binRoot + "/${name}")))
     (lib.filterAttrs (_: type: type == "regular") (builtins.readDir binRoot));
   codexNvimEditEvent = ../../files/libexec/dotfiles/codex-nvim-edit-event;
+  ghReviewPreview = ../../files/libexec/dotfiles/gh-review-preview;
   macCompatibilityFiles = lib.optionalAttrs pkgs.stdenv.isDarwin {
     "Library/Application Support/com.mitchellh.ghostty/themes" =
       mkLink ../../files/config/ghostty/themes;
@@ -70,6 +71,7 @@ in {
 
   home.file = binFiles // macCompatibilityFiles // {
     ".local/libexec/dotfiles/codex-nvim-edit-event" = mkLink codexNvimEditEvent;
+    ".local/libexec/dotfiles/gh-review-preview" = mkLink ghReviewPreview;
     ".curlrc" = mkLink ../../files/curl/curlrc;
     ".lesskey" = mkLink ../../files/less/lesskey;
     ".screenrc" = mkLink ../../files/screen/screenrc;

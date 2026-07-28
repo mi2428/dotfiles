@@ -160,7 +160,7 @@ function set_tmux_env --argument-names session key value
     end
 end
 
-function select_open_pr --argument-names self_path
+function select_open_pr --argument-names self_path repo
     need_cmd fzf
     need_cmd python3
 
@@ -168,7 +168,11 @@ function select_open_pr --argument-names self_path
     set -l size (__dotfiles_git_ui_current_terminal_size)
     set -l cols $size[1]
     set -l preview_width_percent 50
-    set -l preview_cmd "$self_path --preview-pr {1}"
+    set -l preview_cmd (string join ' ' -- \
+        (string escape -- "$self_path") \
+        --preview-pr \
+        '{1}' \
+        (string escape -- "$repo"))
 
     if not string match -rq '^[0-9]+$' -- "$cols"
         set cols 160
@@ -226,8 +230,8 @@ if test (count $argv) -ge 1
             usage
             exit 0
         case --preview-pr
-            test (count $argv) -eq 2; or die '--preview-pr requires a PR number or URL'
-            __dotfiles_git_ui_render_pr_preview "$argv[2]" "$glow_style_path"
+            test (count $argv) -eq 3; or die '--preview-pr requires a PR number or URL and repository'
+            __dotfiles_git_ui_render_pr_preview "$argv[2]" "$glow_style_path" "$argv[3]"
             exit 0
         case --edit-pane
             test (count $argv) -ge 3; or die '--edit-pane requires a user shell and Neovim server address'
@@ -320,7 +324,7 @@ else
     set repo_name "$repo_parts[2]"
 
     if test -z "$pr_ref"
-        set pr_ref (select_open_pr "$__dotfiles_gh_review_self_path"); or exit 1
+        set pr_ref (select_open_pr "$__dotfiles_gh_review_self_path" "$repo_name_with_owner"); or exit 1
         set selected_pr_interactively 1
     end
 

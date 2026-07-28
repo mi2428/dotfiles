@@ -1,5 +1,11 @@
 set -g __dotfiles_git_ui_helper_dir (path dirname (status filename))
 set -g __dotfiles_git_ui_formatter_py "$__dotfiles_git_ui_helper_dir/dotfiles_git_fzf_format.py"
+set -g __dotfiles_git_ui_pr_preview_py "$HOME/.local/libexec/dotfiles/gh-review-preview"
+set -l __dotfiles_git_ui_repo_pr_preview (path resolve "$__dotfiles_git_ui_helper_dir/../../../libexec/dotfiles/gh-review-preview")
+if test -f "$__dotfiles_git_ui_repo_pr_preview"
+    set __dotfiles_git_ui_pr_preview_py "$__dotfiles_git_ui_repo_pr_preview"
+end
+set -e __dotfiles_git_ui_repo_pr_preview
 
 function __dotfiles_git_ui_slugify --argument-names text
     printf '%s' "$text" \
@@ -71,57 +77,22 @@ function __dotfiles_git_ui_current_terminal_size
     printf '%s\n%s\n' "$width" "$height"
 end
 
-function __dotfiles_git_ui_render_pr_preview --argument-names pr_ref glow_style_path
+function __dotfiles_git_ui_render_pr_preview --argument-names pr_ref glow_style_path repo
     command -q gh; or return 127
-    command -q jq; or return 127
+    command -q python3; or return 127
 
     set -l width 100
     if set -q FZF_PREVIEW_COLUMNS
         set width "$FZF_PREVIEW_COLUMNS"
     end
 
-    set -l markdown (
-        gh pr view "$pr_ref" --json number,title,url,author,baseRefName,headRefName,body,reviews,comments \
-        | jq -r '
-            def clip($n): .[0:$n];
-            def body_or_default:
-                if (.body // "") == "" then "_No description._" else .body end;
-            def review_section:
-                (.reviews | clip(4)) as $reviews
-                | if ($reviews | length) == 0 then
-                    "## Reviews\n\n_No reviews yet._"
-                  else
-                    "## Reviews\n\n"
-                    + ($reviews | map("### \(.author.login) [\(.state)]\n\n" + ((.body // "") | if . == "" then "_No body._" else . end)) | join("\n\n"))
-                  end;
-            def comment_section:
-                (.comments | clip(4)) as $comments
-                | if ($comments | length) == 0 then
-                    "## Comments\n\n_No issue comments._"
-                  else
-                    "## Comments\n\n"
-                    + ($comments | map("### \(.author.login)\n\n" + ((.body // "") | if . == "" then "_No body._" else . end)) | join("\n\n"))
-                  end;
-            "# PR #\(.number): \(.title)\n\n"
-            + "- URL: \(.url)\n"
-            + "- Author: \(.author.login)\n"
-            + "- Base: `\(.baseRefName)`\n"
-            + "- Head: `\(.headRefName)`\n\n"
-            + "## Description\n\n"
-            + body_or_default
-            + "\n\n"
-            + review_section
-            + "\n\n"
-            + comment_section
-        ' \
-        | string collect
-    )
-
-    if command -q glow
-        printf '%s\n' "$markdown" | glow -s "$glow_style_path" -w "$width" -
-    else
-        printf '%s\n' "$markdown"
+    if test -z "$repo"
+        set repo (gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)
     end
+
+    gh pr view "$pr_ref" \
+        --json additions,author,baseRefName,body,changedFiles,comments,createdAt,deletions,headRefName,isDraft,mergeable,mergeStateStatus,reviews,state,statusCheckRollup,updatedAt \
+        | command python3 "$__dotfiles_git_ui_pr_preview_py" "$width" "$repo" "$glow_style_path"
 end
 
 function __dotfiles_git_ui_delta_lazygit
