@@ -470,6 +470,43 @@ return {
 		end,
 	},
 	{
+		"stevearc/aerial.nvim",
+		cmd = {
+			"AerialClose",
+			"AerialInfo",
+			"AerialNavToggle",
+			"AerialOpen",
+			"AerialToggle",
+		},
+		keys = {
+			{
+				"<leader>o",
+				"<cmd>AerialToggle! right<cr>",
+				desc = "Toggle symbol outline",
+			},
+		},
+		dependencies = {
+			"nvim-tree/nvim-web-devicons",
+		},
+		opts = {
+			attach_mode = "global",
+			filter_kind = false,
+			show_guides = true,
+			layout = {
+				default_direction = "right",
+				placement = "edge",
+				min_width = 30,
+				max_width = { 40, 0.25 },
+				resize_to_content = false,
+				win_opts = {
+					number = false,
+					relativenumber = false,
+					statuscolumn = "",
+				},
+			},
+		},
+	},
+	{
 		"folke/snacks.nvim",
 		priority = 1000,
 		lazy = false,
