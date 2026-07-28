@@ -181,18 +181,63 @@ local function window_order()
 	return windows
 end
 
+local function fixed_window_heights(windows)
+	local heights = {}
+	for _, win in ipairs(windows) do
+		if vim.api.nvim_win_is_valid(win) then
+			local buf = vim.api.nvim_win_get_buf(win)
+			if vim.wo[win].winfixheight or vim.bo[buf].filetype == "trouble" or vim.bo[buf].buftype == "quickfix" then
+				heights[win] = vim.api.nvim_win_get_height(win)
+			end
+		end
+	end
+	return heights
+end
+
 local function remember_layout()
 	local tabpage = vim.api.nvim_get_current_tabpage()
 	if state.layouts[tabpage] then
 		return
 	end
 
+	local windows = window_order()
 	state.layouts[tabpage] = {
 		command = vim.fn.winrestcmd(),
 		current_win = vim.api.nvim_get_current_win(),
 		layout = vim.fn.winlayout(),
-		windows = window_order(),
+		windows = windows,
+		fixed_heights = fixed_window_heights(windows),
 	}
+end
+
+local function restore_saved_window_heights(tabpage)
+	tabpage = tabpage or vim.api.nvim_get_current_tabpage()
+	local snapshot = state.layouts[tabpage]
+	if not snapshot or not vim.api.nvim_tabpage_is_valid(tabpage) or tabpage ~= vim.api.nvim_get_current_tabpage() then
+		return
+	end
+
+	for _, win in ipairs(snapshot.windows) do
+		if not vim.api.nvim_win_is_valid(win) or vim.api.nvim_win_get_tabpage(win) ~= tabpage then
+			return
+		end
+	end
+
+	local saved_windows = {}
+	for _, win in ipairs(snapshot.windows) do
+		saved_windows[win] = true
+	end
+	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+		if not saved_windows[win] and not group_for_win(win) then
+			return
+		end
+	end
+
+	for win, height in pairs(snapshot.fixed_heights) do
+		if height then
+			pcall(vim.api.nvim_win_set_height, win, height)
+		end
+	end
 end
 
 local function restore_layout(tabpage)
@@ -439,6 +484,7 @@ local function show_workspace(target_group)
 			end
 		end
 	end
+	restore_saved_window_heights()
 
 	local group = target_group or current_group()
 	local tab = active_tab(group)
@@ -700,6 +746,7 @@ function M.new(opts)
 	end
 
 	state.active_group = group.id
+	restore_saved_window_heights()
 	focus_tab(tab)
 	redraw_winbars()
 	return tab
