@@ -191,6 +191,9 @@ end
 
 local function style_diff_window(win, ctx)
 	diffview_windows[win] = diffview_windows[win] or {}
+	-- The right/main revision is the actionable side in Diffview. Keep its
+	-- minimap, but do not duplicate the same overview over the left/base pane.
+	vim.w[win].dotfiles_disable_minimap = ctx ~= nil and ctx.symbol == "a"
 	local buf = vim.api.nvim_win_get_buf(win)
 	vim.b[buf].dotfiles_disable_hlchunk = true
 	local chunk_namespace = vim.api.nvim_get_namespaces().chunk

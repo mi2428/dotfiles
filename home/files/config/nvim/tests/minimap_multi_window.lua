@@ -82,6 +82,21 @@ wait_for(function()
 	return count_mirrors() == 1
 end, "vertical split did not create a second minimap")
 
+vim.w[first].dotfiles_disable_minimap = true
+map.refresh({}, { integrations = false, lines = false, scrollbar = false })
+wait_for(function()
+	return count_mirrors() == 0 and manager.map_window_for_source(first) == nil
+end, "a window-local minimap opt-out did not remove the inactive split map")
+vim.api.nvim_set_current_win(first)
+map.refresh({}, { integrations = false, lines = false, scrollbar = false })
+assert(map._dotfiles_source_win == second, "a minimap-disabled split must not take native map ownership")
+vim.w[first].dotfiles_disable_minimap = false
+vim.api.nvim_set_current_win(second)
+map.refresh({}, { integrations = false, lines = false, scrollbar = false })
+wait_for(function()
+	return count_mirrors() == 1
+end, "re-enabling a split minimap did not restore its mirror")
+
 local first_map = assert_map_geometry(first)
 local second_map = assert_map_geometry(second)
 assert(first_map ~= second_map, "split windows must not share a minimap window")

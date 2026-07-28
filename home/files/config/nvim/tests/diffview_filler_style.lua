@@ -107,6 +107,7 @@ vim.wo.winhighlight = table.concat(winhighlight, ",")
 local win = vim.api.nvim_get_current_win()
 diffview.opts.hooks.diff_buf_win_enter(0, win, { layout_name = "diff2_horizontal", symbol = "a" })
 assert(vim.wo.fillchars:find("diff: ", 1, true), "Diffview addition filler must render as a blank space")
+assert(vim.w[win].dotfiles_disable_minimap == true, "the left Diffview pane must not receive a minimap")
 assert(type(diffview_windows[win]) == "table", "Diffview editor windows must receive cursor-line redraw state")
 assert(
 	vim.wait(1000, function()
@@ -167,6 +168,7 @@ assert(
 )
 
 diffview.opts.hooks.diff_buf_win_enter(0, win, { layout_name = "diff2_vertical", symbol = "b" })
+assert(vim.w[win].dotfiles_disable_minimap == false, "the right Diffview pane must retain its minimap")
 assert(
 	vim.wo.winhighlight:find("DiffChange:DiffviewDiffChangeAdd", 1, true),
 	"right changed lines must use the addition background"
