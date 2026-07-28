@@ -132,6 +132,17 @@ return {
 			},
 		},
 		config = function(_, opts)
+			local BaseMod = require("hlchunk.mods.base_mod")
+			if not BaseMod._dotfiles_buffer_disable_patched then
+				local should_render = BaseMod.shouldRender
+				function BaseMod:shouldRender(buf)
+					if vim.b[buf].dotfiles_disable_hlchunk then
+						return false
+					end
+					return should_render(self, buf)
+				end
+				BaseMod._dotfiles_buffer_disable_patched = true
+			end
 			require("hlchunk").setup(opts)
 		end,
 	},

@@ -147,6 +147,7 @@ for source, spec in pairs(cursorline_test_groups) do
 	assert(source_hl.fg == expected.fg, source .. " must preserve its mode-specific foreground")
 	assert(target_hl.fg == expected.fg, spec.target .. " must preserve its mode-specific foreground")
 end
+assert(vim.b[vim.api.nvim_win_get_buf(win)].dotfiles_disable_hlchunk, "Diffview editors must suppress chunk borders")
 assert(vim.wo.cursorline, "Diffview code windows must enable the ordinary cursor line")
 assert(
 	vim.wo.cursorlineopt == "number",

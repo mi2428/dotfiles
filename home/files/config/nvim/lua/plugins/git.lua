@@ -191,6 +191,12 @@ end
 
 local function style_diff_window(win, ctx)
 	diffview_windows[win] = diffview_windows[win] or {}
+	local buf = vim.api.nvim_win_get_buf(win)
+	vim.b[buf].dotfiles_disable_hlchunk = true
+	local chunk_namespace = vim.api.nvim_get_namespaces().chunk
+	if chunk_namespace then
+		vim.api.nvim_buf_clear_namespace(buf, chunk_namespace, 0, -1)
+	end
 	vim.api.nvim_win_call(win, function()
 		vim.opt_local.fillchars:append({ diff = " " })
 		vim.wo.cursorline = true
