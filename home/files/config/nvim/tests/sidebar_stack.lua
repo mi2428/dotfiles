@@ -1,0 +1,70 @@
+local dotfiles_root = assert(vim.env.DOTFILES_ROOT, "DOTFILES_ROOT is required")
+local nvim_root = vim.fs.joinpath(dotfiles_root, "home/files/config/nvim")
+vim.opt.runtimepath:prepend(nvim_root)
+package.path = table.concat({
+	vim.fs.joinpath(nvim_root, "lua/?.lua"),
+	vim.fs.joinpath(nvim_root, "lua/?/init.lua"),
+	package.path,
+}, ";")
+
+vim.o.columns = 160
+vim.o.lines = 50
+vim.o.splitright = true
+local editor = vim.api.nvim_get_current_win()
+vim.cmd.vnew()
+local explorer = vim.api.nvim_get_current_win()
+vim.bo.filetype = "snacks_layout_box"
+vim.api.nvim_win_set_width(explorer, 40)
+vim.cmd.vnew()
+local aerial = vim.api.nvim_get_current_win()
+vim.bo.filetype = "aerial"
+
+local layout_updates = 0
+local fake_picker = {
+	closed = false,
+	layout = {
+		root = { win = explorer },
+		update = function()
+			layout_updates = layout_updates + 1
+		end,
+	},
+}
+local real_snacks = package.loaded.snacks
+local real_sidebar = package.loaded["config.sidebar"]
+package.loaded.snacks = {
+	picker = {
+		get = function()
+			return { fake_picker }
+		end,
+	},
+}
+package.loaded["config.sidebar"] = nil
+local sidebar = require("config.sidebar")
+sidebar.sync()
+
+local explorer_position = vim.fn.win_screenpos(explorer)
+local aerial_position = vim.fn.win_screenpos(aerial)
+assert(
+	explorer_position[2] == aerial_position[2],
+	"Explorer and Aerial must share one sidebar column: " .. vim.inspect(vim.fn.winlayout())
+)
+assert(explorer_position[1] < aerial_position[1], "Explorer must be above Aerial")
+assert(vim.api.nvim_win_get_width(explorer) == vim.api.nvim_win_get_width(aerial), "sidebar widths must match")
+assert(
+	math.abs(vim.api.nvim_win_get_height(explorer) - vim.api.nvim_win_get_height(aerial)) <= 1,
+	"stacked sidebar panes must split the available height evenly"
+)
+assert(vim.api.nvim_win_get_width(editor) > 40, "the editor must remain beside the stacked sidebar")
+assert(layout_updates == 1, "stacking must refresh the nested Snacks picker layout")
+
+vim.api.nvim_win_close(aerial, true)
+sidebar.sync()
+assert(
+	vim.api.nvim_win_get_height(explorer) == vim.api.nvim_win_get_height(editor),
+	"Explorer must regain full height after Aerial closes"
+)
+assert(layout_updates == 2, "expanding Explorer must refresh its nested picker layout")
+
+package.loaded.snacks = real_snacks
+package.loaded["config.sidebar"] = real_sidebar
+print("stacked Explorer and Aerial sidebar regression: ok")

@@ -961,6 +961,7 @@ return {
 			local snacks = require("snacks")
 
 			snacks.setup(opts)
+			require("config.sidebar").setup()
 			snacks.toggle.diagnostics():map("<leader>ud")
 			snacks.toggle.inlay_hints():map("<leader>uh")
 			snacks.toggle.words():map("<leader>uw")
