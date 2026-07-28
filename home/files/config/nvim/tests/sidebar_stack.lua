@@ -104,6 +104,20 @@ assert(
 )
 assert(layout_updates == 2, "expanding Explorer must refresh its nested picker layout")
 
+local aerial_open
+local real_aerial = package.loaded.aerial
+package.loaded.aerial = {
+	open = function(opts)
+		aerial_open = { opts = opts, source = vim.api.nvim_get_current_win() }
+	end,
+}
+vim.api.nvim_set_current_win(explorer)
+assert(sidebar.open_aerial({ source_win = editor }), "startup Aerial failed to open")
+assert(aerial_open.source == editor, "startup Aerial must attach to the requested editor window")
+assert(aerial_open.opts.focus == false, "startup Aerial must not steal focus")
+assert(vim.api.nvim_get_current_win() == explorer, "startup Aerial must restore the previously focused window")
+package.loaded.aerial = real_aerial
+
 package.loaded.snacks = real_snacks
 package.loaded["config.sidebar"] = real_sidebar
 print("stacked Explorer and Aerial sidebar regression: ok")

@@ -86,6 +86,22 @@ local function source_window(tab)
 	end
 end
 
+local function load_aerial()
+	local ok, aerial = pcall(require, "aerial")
+	if ok then
+		return aerial
+	end
+
+	local lazy_ok, lazy = pcall(require, "lazy")
+	if lazy_ok then
+		pcall(lazy.load, { plugins = { "aerial.nvim" } })
+		ok, aerial = pcall(require, "aerial")
+		if ok then
+			return aerial
+		end
+	end
+end
+
 local function update_explorer_layout(picker)
 	if picker and picker.layout and not picker.closed then
 		pcall(picker.layout.update, picker.layout)
@@ -147,6 +163,40 @@ function M.toggle_explorer()
 	schedule_sync(tab)
 end
 
+function M.open_aerial(opts)
+	opts = opts or {}
+	local tab = vim.api.nvim_get_current_tabpage()
+	if find_window(tab, "aerial") then
+		schedule_sync(tab)
+		return true
+	end
+
+	local source = opts.source_win
+	if not (valid_window_in_tab(source, tab) and is_editor_window(source)) then
+		source = source_window(tab)
+	end
+	if not source then
+		vim.notify("No editor window available for Aerial", vim.log.levels.WARN)
+		return false
+	end
+
+	local aerial = load_aerial()
+	if not aerial then
+		vim.notify("Unable to load Aerial", vim.log.levels.ERROR)
+		return false
+	end
+
+	source_windows[tab] = source
+	local focused = vim.api.nvim_get_current_win()
+	vim.api.nvim_set_current_win(source)
+	aerial.open({ direction = "right", focus = opts.focus == true })
+	if opts.focus ~= true and vim.api.nvim_win_is_valid(focused) then
+		vim.api.nvim_set_current_win(focused)
+	end
+	schedule_sync(tab)
+	return true
+end
+
 function M.toggle_aerial()
 	local tab = vim.api.nvim_get_current_tabpage()
 	if find_window(tab, "aerial") then
@@ -155,14 +205,7 @@ function M.toggle_aerial()
 		return
 	end
 
-	local source = source_window(tab)
-	if not source then
-		vim.notify("No editor window available for Aerial", vim.log.levels.WARN)
-		return
-	end
-	vim.api.nvim_set_current_win(source)
-	require("aerial").open({ direction = "right", focus = true })
-	schedule_sync(tab)
+	M.open_aerial({ focus = true })
 end
 
 function M.setup()
