@@ -26,6 +26,15 @@ for _, key in ipairs(snacks.keys or {}) do
 end
 assert(popup_key, "floating terminal key is missing")
 assert(vim.deep_equal(popup_key.mode, { "n", "t" }), "floating terminal must toggle in normal and terminal modes")
+assert(popup_key.nowait == true, "floating terminal mapping must not wait while terminal input is active")
+
+local terminal_key = assert(
+	snacks.opts.terminal.win.keys.floating_terminal,
+	"Snacks terminals must install a buffer-local floating terminal mapping"
+)
+assert(terminal_key[1] == "<C-S-Bslash>", "buffer-local terminal mapping uses the wrong key")
+assert(terminal_key.mode == "t", "buffer-local floating terminal mapping must apply in terminal mode")
+assert(type(terminal_key[2]) == "function", "buffer-local terminal mapping must use a Lua callback")
 
 local mapping_calls = 0
 local original_popup_terminal = package.loaded["config.popup_terminal"]
@@ -35,8 +44,12 @@ package.loaded["config.popup_terminal"] = {
 	end,
 }
 popup_key[2]()
+terminal_key[2]()
+vim.wait(1000, function()
+	return mapping_calls == 2
+end)
 package.loaded["config.popup_terminal"] = original_popup_terminal
-assert(mapping_calls == 1, "floating terminal mapping did not call its dedicated toggle")
+assert(mapping_calls == 2, "global and buffer-local mappings must call the dedicated floating terminal toggle")
 
 local toggle_call
 local original_snacks = package.loaded.snacks

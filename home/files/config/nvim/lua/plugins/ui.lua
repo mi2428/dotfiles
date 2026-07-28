@@ -553,6 +553,20 @@ return {
 					position = "bottom",
 					height = 0.33,
 					stack = true,
+					keys = {
+						floating_terminal = {
+							"<C-S-Bslash>",
+							function()
+								-- Defer closing the current terminal window until its
+								-- input callback has released Neovim's text lock.
+								vim.schedule(function()
+									require("config.popup_terminal").toggle()
+								end)
+							end,
+							mode = "t",
+							desc = "Toggle floating terminal",
+						},
+					},
 					wo = {
 						winbar = "%!v:lua.dotfiles_terminal_winbar()",
 						winfixheight = true,
@@ -862,6 +876,7 @@ return {
 					require("config.popup_terminal").toggle()
 				end,
 				mode = { "n", "t" },
+				nowait = true,
 				desc = "Toggle floating terminal",
 			},
 			{
