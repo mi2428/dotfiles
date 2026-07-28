@@ -37,8 +37,8 @@ end
 function usage
     printf '%s\n' \
         'Usage:' \
-        '  gh-review [pr-number|pr-url]' \
-        '  gh-review --local [base-ref]' \
+        '  gh-review [-C directory] [pr-number|pr-url]' \
+        '  gh-review [-C directory] --local [base-ref]' \
         '' \
         'Open a tmux review session with Neovim, a stacked Snacks Explorer and' \
         'Aerial sidebar, and Trouble workspace diagnostics.' \
@@ -46,9 +46,10 @@ function usage
         'PR reviews create or reuse a detached review worktree under:' \
         '  ~/.cache/gh-review/<owner>/<repo>/pr-<number>' \
         '' \
-        "Local reviews stay in the current repository and default to origin's default branch." \
+        "Local reviews stay in the target repository and default to origin's default branch." \
         '' \
-        'Run this from inside the target git repository.'
+        'Use -C to choose a repository without changing directory. Otherwise, run' \
+        'this from inside the target git repository.'
 end
 
 function run_edit_pane --argument-names user_shell nvim_server
@@ -240,32 +241,61 @@ if test (count $argv) -ge 1
     end
 end
 
+set -l mode pr
+set -l pr_ref ''
+set -l local_base_arg ''
+set -l requested_dir '.'
+set -l operands
+set -l args $argv
+
+while test (count $args) -gt 0
+    switch "$args[1]"
+        case -h --help
+            usage
+            exit 0
+        case -C --directory
+            set -l directory_flag "$args[1]"
+            set args $args[2..-1]
+            test (count $args) -gt 0; or die "$directory_flag requires a directory"
+            set requested_dir "$args[1]"
+        case --local
+            set mode local
+        case --
+            set args $args[2..-1]
+            set -a operands $args
+            break
+        case '-*'
+            die "unknown option: $args[1]"
+        case '*'
+            set -a operands "$args[1]"
+    end
+    set args $args[2..-1]
+end
+
+if test "$mode" = local
+    test (count $operands) -le 1; or die 'expected at most one base ref after --local'
+    if test (count $operands) -eq 1
+        set local_base_arg "$operands[1]"
+    end
+else
+    test (count $operands) -le 1; or die 'expected at most one PR argument'
+    if test (count $operands) -eq 1
+        set pr_ref "$operands[1]"
+    end
+end
+
 need_cmd git
 # need_cmd lazygit
 need_cmd tmux
 need_cmd nvim
 
-set -l repo_root (git rev-parse --show-toplevel 2>/dev/null); or die 'run this inside a git repository'
+set requested_dir (path resolve "$requested_dir" 2>/dev/null); or die "directory does not exist: $requested_dir"
+test -d "$requested_dir"; or die "not a directory: $requested_dir"
+set -l repo_root (git -C "$requested_dir" rev-parse --show-toplevel 2>/dev/null); or die "not inside a Git repository: $requested_dir"
+set repo_root (path resolve "$repo_root")
 builtin cd "$repo_root"
 
-set -l mode pr
-set -l pr_ref ''
-set -l local_base_arg ''
 set -l selected_pr_interactively 0
-
-if test (count $argv) -ge 1
-    switch "$argv[1]"
-        case --local
-            set mode local
-            if test (count $argv) -ge 2
-                set local_base_arg "$argv[2]"
-            end
-            test (count $argv) -le 2; or die 'expected at most one base ref after --local'
-        case '*'
-            test (count $argv) -le 1; or die 'expected at most one PR argument'
-            set pr_ref "$argv[1]"
-    end
-end
 
 set -l repo_name (basename "$repo_root")
 set -l review_base ''
