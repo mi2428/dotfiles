@@ -39,7 +39,7 @@ function usage
         '' \
         'Open a tmux coding workspace where a repository is one session and each' \
         'worktree is a window containing:' \
-        '  - Neovim with a right-side Snacks Explorer' \
+        '  - Neovim with a stacked Snacks Explorer and Aerial outline' \
         '  - A tabbed Snacks terminal panel with lazygit and a shell' \
         "  - prefix+y popup: Yazi routed to that window's Neovim" \
         '' \

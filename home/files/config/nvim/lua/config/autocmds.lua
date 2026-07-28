@@ -227,6 +227,7 @@ autocmd("VimEnter", {
 			if workspace_mode then
 				local fzf_window = vim.api.nvim_get_current_win()
 				Snacks.explorer({ focus = false, watch = true })
+				require("config.sidebar").open_aerial({ source_win = editor_window })
 				vim.schedule(function()
 					require("config.terminal").toggle()
 					if vim.api.nvim_win_is_valid(editor_window) then
