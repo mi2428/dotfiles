@@ -1,19 +1,63 @@
 local map = vim.keymap.set
 
-local function resize_pane_toward(direction)
+local pane_resize_step = 5
+local pane_resize_repeat = "<Plug>(dotfiles-pane-resize-repeat)"
+local pane_resize_repeat_time = 500
+local pane_resize_saved_timeoutlen
+
+local opposite_direction = {
+	h = "l",
+	j = "k",
+	k = "j",
+	l = "h",
+}
+
+local function pane_neighbor(direction)
 	local current_win = vim.api.nvim_get_current_win()
 	local neighbor_win = vim.fn.win_getid(vim.fn.winnr(direction))
 	if neighbor_win == 0 or neighbor_win == current_win or not vim.api.nvim_win_is_valid(neighbor_win) then
-		return
+		return nil
+	end
+	return neighbor_win
+end
+
+local function resize_pane_toward(direction)
+	local current_win = vim.api.nvim_get_current_win()
+	local resized_win = pane_neighbor(direction)
+	if not resized_win then
+		-- tmux still moves the separator in the requested direction when the
+		-- focused pane is at an outer edge. In that case it shrinks the focused
+		-- pane using the separator on the opposite side.
+		if not pane_neighbor(opposite_direction[direction]) then
+			return
+		end
+		resized_win = current_win
 	end
 
 	if direction == "h" or direction == "l" then
-		local width = vim.api.nvim_win_get_width(neighbor_win)
-		vim.api.nvim_win_set_width(neighbor_win, math.max(vim.o.winminwidth, width - 5))
+		local width = vim.api.nvim_win_get_width(resized_win)
+		vim.api.nvim_win_set_width(resized_win, math.max(vim.o.winminwidth, width - pane_resize_step))
 	else
-		local height = vim.api.nvim_win_get_height(neighbor_win)
-		vim.api.nvim_win_set_height(neighbor_win, math.max(vim.o.winminheight, height - 5))
+		local height = vim.api.nvim_win_get_height(resized_win)
+		vim.api.nvim_win_set_height(resized_win, math.max(vim.o.winminheight, height - pane_resize_step))
 	end
+end
+
+local function enter_pane_resize_repeat()
+	if pane_resize_saved_timeoutlen == nil then
+		pane_resize_saved_timeoutlen = vim.o.timeoutlen
+	end
+	vim.o.timeoutlen = pane_resize_repeat_time
+end
+
+local function leave_pane_resize_repeat()
+	if pane_resize_saved_timeoutlen == nil then
+		return
+	end
+	if vim.o.timeoutlen == pane_resize_repeat_time then
+		vim.o.timeoutlen = pane_resize_saved_timeoutlen
+	end
+	pane_resize_saved_timeoutlen = nil
 end
 
 local function toggle_diffview()
@@ -139,23 +183,30 @@ map("n", "<C-w>,", "<cmd>BufferLineMovePrev<cr>", { desc = "Move buffer left" })
 map("n", "<C-w>.", "<cmd>BufferLineMoveNext<cr>", { desc = "Move buffer right" })
 map("n", "<C-w>g", bufferline_group_action, { desc = "Bufferline group action" })
 map("n", "<C-w>-", "<cmd>split<cr>", { desc = "Horizontal split" })
-map("n", "<C-w>|", "<cmd>vsplit<cr>", { desc = "Vertical split" })
+map("n", "<C-w>\\", "<cmd>vsplit<cr>", { desc = "Vertical split" })
 map("n", "<C-w>h", "<cmd>wincmd h<cr>", { desc = "Move to left pane" })
 map("n", "<C-w>j", "<cmd>wincmd j<cr>", { desc = "Move to lower pane" })
 map("n", "<C-w>k", "<cmd>wincmd k<cr>", { desc = "Move to upper pane" })
 map("n", "<C-w>l", "<cmd>wincmd l<cr>", { desc = "Move to right pane" })
-map("n", "<C-w>H", function()
-	resize_pane_toward("h")
-end, { desc = "Resize pane left" })
-map("n", "<C-w>J", function()
-	resize_pane_toward("j")
-end, { desc = "Resize pane down" })
-map("n", "<C-w>K", function()
-	resize_pane_toward("k")
-end, { desc = "Resize pane up" })
-map("n", "<C-w>L", function()
-	resize_pane_toward("l")
-end, { desc = "Resize pane right" })
+-- A complete <Plug> mapping that is also a prefix lets the next H/J/K/L use
+-- the same resize table without another <C-w>. A different key resolves this
+-- mapping, leaves repeat mode, and is then handled normally. Its 500 ms wait
+-- matches tmux's default `repeat-time` without changing the normal timeoutlen.
+map("n", pane_resize_repeat, leave_pane_resize_repeat)
+for key, spec in pairs({
+	H = { direction = "h", desc = "Resize pane left" },
+	J = { direction = "j", desc = "Resize pane down" },
+	K = { direction = "k", desc = "Resize pane up" },
+	L = { direction = "l", desc = "Resize pane right" },
+}) do
+	local action = "<Plug>(dotfiles-pane-resize-" .. spec.direction .. ")"
+	map("n", action, function()
+		resize_pane_toward(spec.direction)
+		enter_pane_resize_repeat()
+	end)
+	map("n", pane_resize_repeat .. key, action .. pane_resize_repeat, { remap = true })
+	map("n", "<C-w>" .. key, action .. pane_resize_repeat, { desc = spec.desc, remap = true })
+end
 for i = 1, 9 do
 	map("n", "<C-w>" .. i, "<cmd>BufferLineGoToBuffer " .. i .. "<cr>", { desc = "Go to buffer " .. i })
 end
