@@ -28,10 +28,21 @@ function need_cmd --argument-names name
     command -q -- "$name"; or die "missing required command: $name"
 end
 
-function report_resolved_history
+function report_resolved_history --argument-names comment
     test -n "$__dotfiles_gh_review_history_file"; or return 0
+    set -e argv[1]
 
-    string join ' ' -- (string escape -- $argv) >"$__dotfiles_gh_review_history_file"
+    # Keep the command executable while making the selected PR searchable in
+    # Fish history.  GitHub titles can contain line breaks that would otherwise
+    # turn one history entry into multiple commands.
+    set -l resolved_command (string join ' ' -- (string escape -- $argv))
+    set -l normalized_comment (string replace -ra '[[:space:]]+' ' ' -- "$comment" | string trim)
+
+    if test -n "$normalized_comment"
+        printf '%s # %s\n' "$resolved_command" "$normalized_comment" >"$__dotfiles_gh_review_history_file"
+    else
+        printf '%s\n' "$resolved_command" >"$__dotfiles_gh_review_history_file"
+    end
 end
 
 function usage
@@ -360,21 +371,24 @@ else
 
     set -l pr_meta
     if test -n "$pr_ref"
-        set pr_meta (gh pr view "$pr_ref" --json number,title,url,baseRefName,headRefName --jq '[.number,.title,.url,.baseRefName,.headRefName] | @tsv')
+        set pr_meta (gh pr view "$pr_ref" --json number,title,url,baseRefName,headRefName,author --jq '[.number,.title,.url,.baseRefName,.headRefName,(.author.login // "unknown")] | @tsv')
     else
-        set pr_meta (gh pr view --json number,title,url,baseRefName,headRefName --jq '[.number,.title,.url,.baseRefName,.headRefName] | @tsv')
+        set pr_meta (gh pr view --json number,title,url,baseRefName,headRefName,author --jq '[.number,.title,.url,.baseRefName,.headRefName,(.author.login // "unknown")] | @tsv')
     end
 
     set -l pr_fields (string split \t -- "$pr_meta")
     set pr_number "$pr_fields[1]"
+    set -l pr_title "$pr_fields[2]"
     set -l pr_url "$pr_fields[3]"
     set -l base_ref "$pr_fields[4]"
     set head_ref "$pr_fields[5]"
+    set -l pr_author "$pr_fields[6]"
 
     test -n "$pr_number"; or die 'failed to resolve the pull request'
 
     if test $selected_pr_interactively -eq 1
-        report_resolved_history gh-review -C "$repo_root" "$head_ref"
+        report_resolved_history "$pr_title (#$pr_number) by $pr_author" \
+            gh-review -C "$repo_root" "$head_ref"
     end
 
     set -l url_parts (string split / -- "$pr_url")
