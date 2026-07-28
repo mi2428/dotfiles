@@ -17,11 +17,13 @@ fi
 selected=$(
   "$tmux_bin" list-sessions \
     -F '#{session_id}  #{session_name}  (#{session_windows} windows, #{?session_attached,attached,detached})' |
-    env NO_COLOR= fzf \
+    env NO_COLOR= TMUX_BIN="$tmux_bin" fzf \
       --layout=reverse \
       --info=inline \
       --no-multi \
-      --prompt='session> '
+      --prompt='session> ' \
+      --preview="\"\$TMUX_BIN\" capture-pane -e -p -t {1}" \
+      --preview-window='right,60%,border-left'
 ) || exit 0
 
 [ -n "$selected" ] || exit 0
