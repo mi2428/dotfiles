@@ -111,4 +111,36 @@ for _, item in ipairs(items) do
 end
 assert(visible_working, "search mode must expand collapsed paths")
 
+local picker_opts = panel._picker_options({ view = view, collapsed = {}, directory_keys = {} }, 0)
+assert(picker_opts.source == "diffview_files", "the dedicated picker must expose its sidebar source")
+assert(picker_opts.layout.layout.position == "right", "the Diffview tree must open on the right")
+
+local deferred = {}
+local aerial_attempts = 0
+local original_defer_fn = vim.defer_fn
+local original_sidebar = package.loaded["config.sidebar"]
+vim.defer_fn = function(callback, delay)
+	deferred[#deferred + 1] = { callback = callback, delay = delay }
+end
+package.loaded["config.sidebar"] = {
+	open_aerial = function(opts)
+		aerial_attempts = aerial_attempts + 1
+		assert(opts.source_win == vim.api.nvim_get_current_win(), "Aerial must attach to the Diffview main window")
+		return aerial_attempts >= 2
+	end,
+}
+local fake_picker = { closed = false }
+local aerial_state = { picker = fake_picker }
+panel._schedule_aerial(aerial_state, fake_picker, vim.api.nvim_get_current_win())
+table.sort(deferred, function(left, right)
+	return left.delay < right.delay
+end)
+for _, pending in ipairs(deferred) do
+	pending.callback()
+end
+vim.defer_fn = original_defer_fn
+package.loaded["config.sidebar"] = original_sidebar
+assert(#deferred == 4, "Aerial startup must retry while Diffview still shows its null buffer")
+assert(aerial_attempts == 2 and aerial_state.aerial_opened, "Aerial startup must stop retrying after success")
+
 print("Diffview Snacks virtual panel regression: ok")

@@ -60,6 +60,7 @@ local aerial = vim.api.nvim_get_current_win()
 vim.bo.filetype = "aerial"
 
 local layout_updates = 0
+local picker_sources = {}
 local fake_picker = {
 	closed = false,
 	layout = {
@@ -72,14 +73,19 @@ local fake_picker = {
 local real_snacks = package.loaded.snacks
 package.loaded.snacks = {
 	picker = {
-		get = function()
-			return { fake_picker }
+		get = function(opts)
+			picker_sources[#picker_sources + 1] = opts.source
+			return opts.source == "diffview_files" and { fake_picker } or {}
 		end,
 	},
 }
 package.loaded["config.sidebar"] = nil
 local sidebar = require("config.sidebar")
 sidebar.sync()
+assert(
+	picker_sources[1] == "explorer" and picker_sources[2] == "diffview_files",
+	"the sidebar stack must discover both standard Explorer and the Diffview picker"
+)
 
 local explorer_position = vim.fn.win_screenpos(explorer)
 local aerial_position = vim.fn.win_screenpos(aerial)

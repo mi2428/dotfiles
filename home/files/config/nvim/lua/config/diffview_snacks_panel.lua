@@ -203,6 +203,21 @@ local function active_picker(state)
 	return picker and not picker.closed and picker or nil
 end
 
+local function schedule_aerial(state, picker, editor_win)
+	-- Diffview emits view_opened before its initial file has necessarily replaced
+	-- the null buffer in the main window. Retry until that window is a valid
+	-- Aerial source; later attempts become no-ops after the first success.
+	for _, delay in ipairs({ 0, 100, 500, 1000 }) do
+		vim.defer_fn(function()
+			if not state.aerial_opened and active_picker(state) == picker and vim.api.nvim_win_is_valid(editor_win) then
+				state.aerial_opened = require("config.sidebar").open_aerial({ source_win = editor_win })
+			end
+		end, delay)
+	end
+end
+
+M._schedule_aerial = schedule_aerial
+
 local function reveal_entry(state, entry)
 	local picker = active_picker(state)
 	if not picker or not entry then
@@ -381,6 +396,7 @@ local function picker_options(state, editor_win)
 	end
 
 	return {
+		source = "diffview_files",
 		title = "Diff files",
 		cwd = view.adapter.ctx.toplevel,
 		focus = false,
@@ -405,7 +421,7 @@ local function picker_options(state, editor_win)
 				width = 40,
 				min_width = 40,
 				height = 0,
-				position = "left",
+				position = "right",
 				border = "none",
 				box = "vertical",
 				{ win = "list", border = "none" },
@@ -516,10 +532,9 @@ local function picker_options(state, editor_win)
 			if vim.api.nvim_win_is_valid(editor_win) then
 				vim.api.nvim_set_current_win(editor_win)
 			end
-			-- A left Snacks split initially takes its width from only the current
-			-- Diffview window. Re-run Neovim's split equalizer after Snacks has
-			-- finished opening; the fixed-width sidebar stays at 40 columns while
-			-- the two Diffview windows regain equal widths.
+			-- Opening a fixed-width Snacks split temporarily disturbs Diffview's
+			-- equal halves. Restore them before the sidebar manager stacks Aerial
+			-- below this picker.
 			vim.schedule(function()
 				if active_picker(state) == picker and vim.api.nvim_win_is_valid(editor_win) then
 					vim.api.nvim_win_call(editor_win, function()
@@ -527,6 +542,7 @@ local function picker_options(state, editor_win)
 					end)
 				end
 			end)
+			schedule_aerial(state, picker, editor_win)
 		end,
 		on_close = function(picker)
 			if state.picker == picker then
@@ -538,6 +554,8 @@ local function picker_options(state, editor_win)
 		end,
 	}
 end
+
+M._picker_options = picker_options
 
 local function open_panel(state, focus)
 	local picker = active_picker(state)

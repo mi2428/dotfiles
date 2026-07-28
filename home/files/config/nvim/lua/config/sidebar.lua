@@ -3,6 +3,7 @@ local M = {}
 local sidebar_width = 40
 local source_windows = {}
 local sync_generation = 0
+local picker_sources = { "explorer", "diffview_files" }
 
 local function window_filetype(win)
 	return vim.bo[vim.api.nvim_win_get_buf(win)].filetype
@@ -25,14 +26,15 @@ local function explorer_picker(tab)
 	if not ok then
 		return
 	end
-	local got_pickers, pickers = pcall(snacks.picker.get, { source = "explorer", tab = false })
-	if not got_pickers then
-		return
-	end
-	for _, picker in ipairs(pickers) do
-		local root = picker.layout and picker.layout.root
-		if root and valid_window_in_tab(root.win, tab) then
-			return picker
+	for _, source in ipairs(picker_sources) do
+		local got_pickers, pickers = pcall(snacks.picker.get, { source = source, tab = false })
+		if got_pickers then
+			for _, picker in ipairs(pickers) do
+				local root = picker.layout and picker.layout.root
+				if root and valid_window_in_tab(root.win, tab) then
+					return picker
+				end
+			end
 		end
 	end
 end
