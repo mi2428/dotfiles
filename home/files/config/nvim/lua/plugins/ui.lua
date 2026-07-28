@@ -857,6 +857,14 @@ return {
 				desc = "Toggle terminal pane",
 			},
 			{
+				"<C-S-Bslash>",
+				function()
+					require("config.popup_terminal").toggle()
+				end,
+				mode = { "n", "t" },
+				desc = "Toggle floating terminal",
+			},
+			{
 				"<C-]>",
 				function()
 					vim.cmd.stopinsert()
