@@ -33,4 +33,7 @@ assert(vim.b[code_buf].miniindentscope_disable ~= true, "code buffers must retai
 local terminal_buf = new_filetype_buffer("snacks_terminal")
 assert(vim.b[terminal_buf].miniindentscope_disable == true, "Snacks terminals must disable indent scopes")
 
+local picker_buf = new_filetype_buffer("snacks_picker_list")
+assert(vim.b[picker_buf].miniindentscope_disable == true, "Snacks picker trees must not gain unrelated scope rails")
+
 print("terminal indentscope disable regression: ok")
