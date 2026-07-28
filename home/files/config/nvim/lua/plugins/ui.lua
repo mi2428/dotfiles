@@ -3,6 +3,13 @@ local colors = catppuccin.palette()
 local diff_watch = require("config.diff_watch")
 local tab_pill = require("config.tab_pill")
 
+local function toggle_floating_terminal_deferred()
+	-- Release terminal input's text lock before Snacks hides or creates a window.
+	vim.schedule(function()
+		require("config.popup_terminal").toggle()
+	end)
+end
+
 local function dashboard_square_row(glyphs)
 	local groups = {
 		"SnacksDashboardSquareRed",
@@ -556,14 +563,9 @@ return {
 					keys = {
 						floating_terminal = {
 							"<C-S-Bslash>",
-							function()
-								-- Defer closing the current terminal window until its
-								-- input callback has released Neovim's text lock.
-								vim.schedule(function()
-									require("config.popup_terminal").toggle()
-								end)
-							end,
+							toggle_floating_terminal_deferred,
 							mode = "t",
+							nowait = true,
 							desc = "Toggle floating terminal",
 						},
 					},
@@ -869,6 +871,16 @@ return {
 					require("config.popup_terminal").toggle()
 				end,
 				mode = { "n", "t" },
+				nowait = true,
+				desc = "Toggle floating terminal",
+			},
+			{
+				-- With CSI-u, shifted backslash reaches terminal mode as
+				-- Ctrl+Shift+Bar even though normal mode canonicalizes it to
+				-- Ctrl+Shift+Backslash.
+				"<C-S-Bar>",
+				toggle_floating_terminal_deferred,
+				mode = "t",
 				nowait = true,
 				desc = "Toggle floating terminal",
 			},

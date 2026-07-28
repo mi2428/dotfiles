@@ -18,15 +18,20 @@ end
 assert(snacks, "Snacks plugin spec was not found")
 
 local popup_key
+local shifted_bar_key
 for _, key in ipairs(snacks.keys or {}) do
 	if key[1] == "<C-S-Bslash>" then
 		popup_key = key
-		break
+	elseif key[1] == "<C-S-Bar>" then
+		shifted_bar_key = key
 	end
 end
 assert(popup_key, "floating terminal key is missing")
 assert(vim.deep_equal(popup_key.mode, { "n", "t" }), "floating terminal must toggle in normal and terminal modes")
 assert(popup_key.nowait == true, "floating terminal mapping must not wait while terminal input is active")
+assert(shifted_bar_key, "CSI-u shifted-bar fallback is missing")
+assert(shifted_bar_key.mode == "t", "shifted-bar fallback must only apply in terminal mode")
+assert(shifted_bar_key.nowait == true, "shifted-bar fallback must not wait while terminal input is active")
 
 local terminal_key = assert(
 	snacks.opts.terminal.win.keys.floating_terminal,
@@ -37,6 +42,7 @@ assert(terminal_key.mode == "t", "buffer-local floating terminal mapping must ap
 assert(type(terminal_key[2]) == "function", "buffer-local terminal mapping must use a Lua callback")
 
 local raw_key_lhs = "<C-\\>"
+local shifted_bar_lhs = "<C-S-Bar>"
 
 local mapping_calls = 0
 local original_popup_terminal = package.loaded["config.popup_terminal"]
@@ -47,11 +53,12 @@ package.loaded["config.popup_terminal"] = {
 }
 popup_key[2]()
 terminal_key[2]()
+shifted_bar_key[2]()
 vim.wait(1000, function()
-	return mapping_calls == 2
+	return mapping_calls == 3
 end)
 package.loaded["config.popup_terminal"] = original_popup_terminal
-assert(mapping_calls == 2, "global and buffer-local mappings must call the dedicated floating terminal toggle")
+assert(mapping_calls == 3, "all floating terminal mappings must call the dedicated toggle")
 
 local toggle_call
 local toggle_calls = 0
@@ -86,6 +93,12 @@ assert(raw_key[1] == raw_key_lhs, "raw fallback uses the wrong key")
 assert(raw_key.mode == "t", "raw fallback must apply in terminal mode")
 assert(raw_key.nowait == true, "raw fallback must not wait for terminal input")
 assert(type(raw_key[2]) == "function", "raw fallback must use a Lua callback")
+
+local shifted_bar = assert(toggle_call.opts.win.keys.shifted_bar, "popup must install a shifted-bar fallback")
+assert(shifted_bar[1] == shifted_bar_lhs, "shifted-bar fallback uses the wrong key")
+assert(shifted_bar.mode == "t", "shifted-bar fallback must apply in terminal mode")
+assert(shifted_bar.nowait == true, "shifted-bar fallback must not wait for terminal input")
+assert(type(shifted_bar[2]) == "function", "shifted-bar fallback must use a Lua callback")
 
 local non_popup_buffer = vim.api.nvim_create_buf(false, true)
 local non_popup_before = vim.api.nvim_buf_call(non_popup_buffer, function()
@@ -132,11 +145,21 @@ end)
 assert(popup_mapping.buffer == 1, "raw fallback must be buffer-local on the Snacks popup terminal")
 assert(type(popup_mapping.callback) == "function", "raw fallback must install a terminal-mode callback")
 
+local shifted_bar_mapping = vim.api.nvim_buf_call(popup_buffer, function()
+	return vim.fn.maparg(shifted_bar_lhs, "t", false, true)
+end)
+assert(shifted_bar_mapping.buffer == 1, "shifted-bar fallback must be buffer-local on the popup terminal")
+assert(type(shifted_bar_mapping.callback) == "function", "shifted-bar fallback must install a callback")
+
 local isolated_terminal = vim.api.nvim_create_buf(false, true)
 local isolated_mapping = vim.api.nvim_buf_call(isolated_terminal, function()
 	return vim.fn.maparg(raw_key_lhs, "t", false, true)
 end)
 assert(vim.tbl_isempty(isolated_mapping), "raw fallback must not be installed on non-popup terminal buffers")
+local isolated_shifted_bar = vim.api.nvim_buf_call(isolated_terminal, function()
+	return vim.fn.maparg(shifted_bar_lhs, "t", false, true)
+end)
+assert(vim.tbl_isempty(isolated_shifted_bar), "shifted-bar fallback must not leak to non-popup buffers")
 
 vim.api.nvim_set_current_win(popup.win)
 vim.cmd.startinsert()
@@ -146,12 +169,33 @@ assert(
 	end),
 	"popup must enter terminal mode before injecting the raw fallback"
 )
+shifted_bar_mapping.callback()
+assert(
+	vim.wait(1000, function()
+		return not popup:valid()
+	end),
+	"shifted-bar fallback must hide the popup from terminal mode"
+)
+vim.cmd.stopinsert()
+
+popup = actual_popup_terminal.toggle()
+popup_mapping = vim.api.nvim_buf_call(popup.buf, function()
+	return vim.fn.maparg(raw_key_lhs, "t", false, true)
+end)
+vim.api.nvim_set_current_win(popup.win)
+vim.cmd.startinsert()
+assert(
+	vim.wait(1000, function()
+		return vim.fn.mode(1):find("t", 1, true) ~= nil
+	end),
+	"reopened popup must enter terminal mode"
+)
 popup_mapping.callback()
 assert(
 	vim.wait(1000, function()
 		return not popup:valid()
 	end),
-	"raw fallback must hide the popup from terminal mode"
+	"raw fallback must still hide the popup from terminal mode"
 )
 vim.cmd.stopinsert()
 

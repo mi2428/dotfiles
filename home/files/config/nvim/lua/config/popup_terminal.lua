@@ -14,6 +14,20 @@ local function terminal_options()
 			title = " Terminal ",
 			title_pos = "center",
 			keys = {
+				shifted_bar = {
+					"<C-S-Bar>",
+					function()
+						-- CSI-u represents Ctrl+Shift+\ as Ctrl+Shift+Bar while
+						-- terminal input is active, even though normal mode
+						-- canonicalizes the same sequence to Ctrl+Shift+Backslash.
+						vim.schedule(function()
+							M.toggle()
+						end)
+					end,
+					mode = "t",
+					nowait = true,
+					desc = "Close floating terminal",
+				},
 				raw_control_backslash = {
 					"<C-\\>",
 					function()
