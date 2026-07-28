@@ -28,9 +28,9 @@ end
 vim.cmd.DotfilesQuitAll()
 vim.fn.confirm = original_confirm
 
-assert(confirmation.prompt == "Quit all Neovim windows?", "quit-all confirmation prompt changed")
-assert(confirmation.choices == "&Yes\n&No", "quit-all confirmation must offer y/N")
-assert(confirmation.default == 2, "quit-all confirmation must default to No")
+assert(confirmation.prompt == "Quit all Neovim windows? (Y/n)", "quit-all confirmation prompt changed")
+assert(confirmation.choices == "&Yes\n&No", "quit-all confirmation must offer Y/n")
+assert(confirmation.default == 1, "quit-all confirmation must default to Yes")
 assert(vim.api.nvim_get_current_win() ~= 0, "declining quit-all still exited Neovim")
 
 vim.api.nvim_buf_set_name(0, "")
