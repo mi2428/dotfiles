@@ -15,6 +15,10 @@ end
 
 vim.wo.winhighlight = "Normal:ErrorMsg"
 dofile(vim.fs.joinpath(nvim_root, "lua/config/options.lua"))
+local linematch = vim.tbl_filter(function(value)
+	return vim.startswith(value, "linematch:")
+end, vim.opt.diffopt:get())
+assert(vim.deep_equal(linematch, { "linematch:60" }), "diff hunks up to 60 lines must use line matching")
 
 local palette = require("config.catppuccin").palette()
 local function blend(fg, bg, alpha)

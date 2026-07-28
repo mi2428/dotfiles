@@ -326,7 +326,10 @@ vim.api.nvim_create_autocmd(
 	{ "BufEnter", "BufWinEnter", "BufWinLeave", "FileType", "ModeChanged", "WinEnter", "WinClosed" },
 	{
 		group = vim.api.nvim_create_augroup("dotfiles-gitsigns-diff-style", { clear = true }),
-		callback = function()
+		callback = function(args)
+			if args.event == "FileType" and vim.startswith(vim.api.nvim_buf_get_name(args.buf), "gitsigns://") then
+				pcall(vim.treesitter.start, args.buf)
+			end
 			vim.schedule(refresh_gitsigns_diff_styles)
 		end,
 	}

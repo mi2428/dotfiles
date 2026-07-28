@@ -266,9 +266,10 @@ vim.api.nvim_win_set_buf(gitsigns_revision, gitsigns_revision_buf)
 vim.api.nvim_buf_set_lines(gitsigns_revision_buf, 0, -1, false, { "local value = 1", "", "return value" })
 vim.bo[gitsigns_revision_buf].filetype = "lua"
 vim.bo[gitsigns_revision_buf].buftype = "nowrite"
+vim.api.nvim_exec_autocmds("BufWinEnter", { buffer = gitsigns_revision_buf, modeline = false })
+vim.api.nvim_exec_autocmds("FileType", { buffer = gitsigns_revision_buf, modeline = false })
 vim.wo[gitsigns_main].diff = true
 vim.wo[gitsigns_revision].diff = true
-vim.api.nvim_exec_autocmds("BufWinEnter", { buffer = gitsigns_revision_buf, modeline = false })
 assert(
 	vim.wait(1000, function()
 		return vim.wo[gitsigns_main].cursorlineopt == "number"
