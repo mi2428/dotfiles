@@ -53,6 +53,16 @@ vim.bo.filetype = "trouble"
 vim.api.nvim_set_current_win(editor)
 assert(vim.api.nvim_win_get_height(trouble) == 10, "Trouble must start at ten rows")
 
+local minimap_buf = vim.api.nvim_create_buf(false, true)
+local minimap = vim.api.nvim_open_win(minimap_buf, false, {
+	relative = "editor",
+	width = 1,
+	height = 1,
+	row = 0,
+	col = 0,
+	style = "minimal",
+})
+
 local terminal = require("config.terminal")
 terminal.setup()
 terminal.new()
@@ -69,5 +79,6 @@ assert(terminal_win and vim.api.nvim_win_get_height(terminal_win) == 15, "termin
 
 terminal.toggle()
 assert(vim.api.nvim_win_get_height(trouble) == 10, "closing a terminal must restore Trouble to ten rows")
+vim.api.nvim_win_close(minimap, true)
 
 print("terminal Trouble height regression: ok")

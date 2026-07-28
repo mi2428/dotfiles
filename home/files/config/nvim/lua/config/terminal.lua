@@ -228,7 +228,8 @@ local function restore_saved_window_heights(tabpage)
 		saved_windows[win] = true
 	end
 	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
-		if not saved_windows[win] and not group_for_win(win) then
+		local floating = vim.api.nvim_win_get_config(win).relative ~= ""
+		if not saved_windows[win] and not group_for_win(win) and not floating then
 			return
 		end
 	end
