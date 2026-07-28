@@ -18,6 +18,7 @@ selected=$(
   "$tmux_bin" list-sessions \
     -F '#{session_id}  #{session_name}  (#{session_windows} windows, #{?session_attached,attached,detached})' |
     env NO_COLOR= TMUX_BIN="$tmux_bin" fzf \
+      --no-height \
       --layout=reverse \
       --info=inline \
       --no-multi \
