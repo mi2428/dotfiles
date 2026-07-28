@@ -35,8 +35,10 @@ assert(filler.fg == nil and filler.bg == nil, "Diffview alignment filler must be
 assert(deletion.fg ~= nil and deletion.bg ~= nil, "real deletion highlighting must remain intact")
 
 for _, name in ipairs({
+	"DiffviewDiffAddAsDelete",
 	"DiffviewDiffChangeDelete",
 	"DiffviewDiffTextDelete",
+	"DiffviewDiffAdd",
 	"DiffviewDiffChangeAdd",
 	"DiffviewDiffTextAdd",
 }) do
@@ -52,6 +54,16 @@ assert(
 	vim.api.nvim_get_hl(0, { name = "DiffviewDiffChangeAdd", link = false }).bg
 		~= vim.api.nvim_get_hl(0, { name = "DiffviewDiffTextAdd", link = false }).bg,
 	"added lines and changed text must use different intensities"
+)
+assert(
+	vim.api.nvim_get_hl(0, { name = "DiffviewDiffAddAsDelete", link = false }).bg
+		== vim.api.nvim_get_hl(0, { name = "DiffviewDiffChangeDelete", link = false }).bg,
+	"pure deletions and changed deletion lines must share the subtle red background"
+)
+assert(
+	vim.api.nvim_get_hl(0, { name = "DiffviewDiffAdd", link = false }).bg
+		== vim.api.nvim_get_hl(0, { name = "DiffviewDiffChangeAdd", link = false }).bg,
+	"pure additions and changed addition lines must share the subtle green background"
 )
 
 local original_diffview = package.loaded.diffview
@@ -227,5 +239,76 @@ for _, scene in ipairs({
 	assert(cursor_row_diff.bg == scene_cursorline.bg, scene.name .. " diff row must use its mode color")
 end
 assert(diffview.opts.enhanced_diff_hl, "Diffview must separate deletion lines from alignment filler")
+
+vim.cmd.tabnew()
+local gitsigns_main = vim.api.nvim_get_current_win()
+local gitsigns_main_buf = vim.api.nvim_get_current_buf()
+vim.api.nvim_buf_set_name(gitsigns_main_buf, "/tmp/dotfiles-gitsigns-diff-main.lua")
+vim.wo[gitsigns_main].cursorline = true
+vim.wo[gitsigns_main].cursorlineopt = "both"
+vim.wo[gitsigns_main].fillchars = "diff:-"
+vim.wo[gitsigns_main].winhighlight = "CursorLine:TestDiffCursorLineNormal"
+local original_main_winhighlight = vim.wo[gitsigns_main].winhighlight
+
+vim.cmd.vsplit()
+local gitsigns_revision = vim.api.nvim_get_current_win()
+local gitsigns_revision_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_name(gitsigns_revision_buf, "gitsigns:///tmp/.git//HEAD:dotfiles-gitsigns-diff-main.lua")
+vim.api.nvim_win_set_buf(gitsigns_revision, gitsigns_revision_buf)
+vim.wo[gitsigns_main].diff = true
+vim.wo[gitsigns_revision].diff = true
+vim.api.nvim_exec_autocmds("BufWinEnter", { buffer = gitsigns_revision_buf, modeline = false })
+assert(
+	vim.wait(1000, function()
+		return vim.wo[gitsigns_main].cursorlineopt == "number"
+	end),
+	"Gitsigns diff windows did not receive the shared Diffview style"
+)
+
+for win, side in pairs({
+	[gitsigns_revision] = "Delete",
+	[gitsigns_main] = "Add",
+}) do
+	assert(vim.wo[win].cursorline, side .. " Gitsigns pane must enable the Diffview cursor line")
+	assert(vim.wo[win].cursorlineopt == "number", side .. " Gitsigns pane must suppress the editor-row underline")
+	assert(vim.wo[win].fillchars:find("diff: ", 1, true), side .. " Gitsigns pane must use blank diff filler")
+	assert(
+		vim.b[vim.api.nvim_win_get_buf(win)].dotfiles_disable_hlchunk,
+		side .. " Gitsigns pane must suppress chunk borders"
+	)
+	assert(
+		vim.wo[win].winhighlight:find("DiffChange:DiffviewDiffChange" .. side, 1, true),
+		side .. " Gitsigns pane must use the subtle changed-line background"
+	)
+	assert(
+		vim.wo[win].winhighlight:find("DiffText:DiffviewDiffText" .. side, 1, true),
+		side .. " Gitsigns pane must use the strong inline-change background"
+	)
+end
+assert(
+	vim.wo[gitsigns_revision].winhighlight:find("DiffAdd:DiffviewDiffAddAsDelete", 1, true),
+	"Gitsigns revision additions must render as Diffview deletions"
+)
+assert(
+	vim.wo[gitsigns_main].winhighlight:find("DiffAdd:DiffviewDiffAdd", 1, true),
+	"Gitsigns worktree additions must render as Diffview additions"
+)
+assert(vim.w[gitsigns_revision].dotfiles_disable_minimap, "Gitsigns revision pane must hide the minimap")
+assert(not vim.w[gitsigns_main].dotfiles_disable_minimap, "Gitsigns worktree pane must retain the minimap")
+
+vim.wo[gitsigns_main].diff = false
+vim.api.nvim_win_close(gitsigns_revision, true)
+vim.api.nvim_exec_autocmds("WinEnter", { modeline = false })
+assert(
+	vim.wait(1000, function()
+		return vim.wo[gitsigns_main].cursorlineopt == "both"
+	end),
+	"closing a Gitsigns diff did not restore the editor window style"
+)
+assert(
+	vim.wo[gitsigns_main].winhighlight == original_main_winhighlight,
+	"Gitsigns diff left stale winhighlight mappings"
+)
+assert(not vim.b[gitsigns_main_buf].dotfiles_disable_hlchunk, "Gitsigns diff left hlchunk disabled")
 
 print("Diffview blank filler regression: ok")

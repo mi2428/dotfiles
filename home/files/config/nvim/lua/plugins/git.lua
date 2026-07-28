@@ -4,6 +4,7 @@ local diffview_panel = require("config.diffview_snacks_panel")
 local review = require("config.review")
 local colors = catppuccin.palette()
 local diffview_windows = {}
+local gitsigns_diff_windows = {}
 local diffview_cursorline_provider = vim.api.nvim_create_namespace("dotfiles-diffview-cursorline-provider")
 local diffview_cursorline_groups = {
 	"DiffAdd",
@@ -156,6 +157,10 @@ local function set_gitsigns_highlights()
 end
 
 local function set_diffview_highlights()
+	local delete_change = blend(colors.red, colors.base, 0.18)
+	local delete_text = blend(colors.red, colors.base, 0.42)
+	local add_change = blend(colors.green, colors.base, 0.18)
+	local add_text = blend(colors.green, colors.base, 0.42)
 	vim.api.nvim_set_hl(0, "DiffviewFilePanelTitle", { fg = colors.blue, bold = true })
 	vim.api.nvim_set_hl(0, "DiffviewFilePanelCounter", { fg = colors.peach, bold = true })
 	vim.api.nvim_set_hl(0, "DiffviewFilePanelRootPath", { fg = colors.overlay1, italic = true })
@@ -163,10 +168,12 @@ local function set_diffview_highlights()
 	vim.api.nvim_set_hl(0, "DiffviewSecondary", { fg = colors.mauve })
 	vim.api.nvim_set_hl(0, "DiffviewDim1", { fg = colors.surface2 })
 	vim.api.nvim_set_hl(0, "DiffviewNormal", { fg = colors.text, bg = "NONE" })
-	vim.api.nvim_set_hl(0, "DiffviewDiffChangeDelete", { bg = blend(colors.red, colors.base, 0.18) })
-	vim.api.nvim_set_hl(0, "DiffviewDiffTextDelete", { bg = blend(colors.red, colors.base, 0.42) })
-	vim.api.nvim_set_hl(0, "DiffviewDiffChangeAdd", { bg = blend(colors.green, colors.base, 0.18) })
-	vim.api.nvim_set_hl(0, "DiffviewDiffTextAdd", { bg = blend(colors.green, colors.base, 0.42) })
+	vim.api.nvim_set_hl(0, "DiffviewDiffAddAsDelete", { bg = delete_change })
+	vim.api.nvim_set_hl(0, "DiffviewDiffChangeDelete", { bg = delete_change })
+	vim.api.nvim_set_hl(0, "DiffviewDiffTextDelete", { bg = delete_text })
+	vim.api.nvim_set_hl(0, "DiffviewDiffAdd", { bg = add_change })
+	vim.api.nvim_set_hl(0, "DiffviewDiffChangeAdd", { bg = add_change })
+	vim.api.nvim_set_hl(0, "DiffviewDiffTextAdd", { bg = add_text })
 	-- Diffview maps actual deletions and alignment filler to separate groups.
 	-- Keep real deletions red, but make the empty side of pure additions blank.
 	vim.api.nvim_set_hl(0, "DiffviewDiffDeleteDim", { fg = "NONE", bg = "NONE" })
@@ -218,10 +225,93 @@ local function style_diff_window(win, ctx)
 	if ctx and (ctx.layout_name == "diff2_horizontal" or ctx.layout_name == "diff2_vertical") then
 		side = ctx.symbol == "a" and "Delete" or ctx.symbol == "b" and "Add" or nil
 	end
+	if side then
+		replace_winhighlight(win, "DiffAdd", side == "Delete" and "DiffviewDiffAddAsDelete" or "DiffviewDiffAdd")
+		replace_winhighlight(win, "DiffDelete", "DiffviewDiffDeleteDim")
+	end
 	replace_winhighlight(win, "DiffChange", side and ("DiffviewDiffChange" .. side) or "DiffviewDiffChange")
 	replace_winhighlight(win, "DiffText", side and ("DiffviewDiffText" .. side) or "DiffviewDiffText")
 	vim.schedule(refresh_diffview_cursorline_namespaces)
 end
+
+local function is_gitsigns_revision(win)
+	local buf = vim.api.nvim_win_get_buf(win)
+	return vim.startswith(vim.api.nvim_buf_get_name(buf), "gitsigns://")
+end
+
+local function save_gitsigns_diff_window(win)
+	if gitsigns_diff_windows[win] then
+		return
+	end
+	local buf = vim.api.nvim_win_get_buf(win)
+	gitsigns_diff_windows[win] = {
+		buf = buf,
+		cursorline = vim.wo[win].cursorline,
+		cursorlineopt = vim.wo[win].cursorlineopt,
+		fillchars = vim.wo[win].fillchars,
+		winhighlight = vim.wo[win].winhighlight,
+		disable_hlchunk = vim.b[buf].dotfiles_disable_hlchunk,
+		disable_minimap = vim.w[win].dotfiles_disable_minimap,
+	}
+end
+
+local function restore_gitsigns_diff_window(win, state)
+	diffview_windows[win] = nil
+	if not vim.api.nvim_win_is_valid(win) then
+		return
+	end
+	vim.wo[win].cursorline = state.cursorline
+	vim.wo[win].cursorlineopt = state.cursorlineopt
+	vim.wo[win].fillchars = state.fillchars
+	vim.wo[win].winhighlight = state.winhighlight
+	vim.w[win].dotfiles_disable_minimap = state.disable_minimap
+	if vim.api.nvim_buf_is_valid(state.buf) then
+		vim.b[state.buf].dotfiles_disable_hlchunk = state.disable_hlchunk
+	end
+end
+
+-- Gitsigns diffthis() builds a regular Neovim diff instead of a Diffview
+-- layout, so Diffview's window hook never runs. Detect that pair by its
+-- gitsigns:// revision buffer and apply the same styling to both sides. Keep a
+-- snapshot because the worktree window survives after the revision closes.
+local function refresh_gitsigns_diff_styles()
+	local active = {}
+	for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
+		local wins = vim.api.nvim_tabpage_list_wins(tab)
+		local has_revision = vim.iter(wins):any(function(win)
+			return vim.wo[win].diff and is_gitsigns_revision(win)
+		end)
+		if has_revision then
+			for _, win in ipairs(wins) do
+				if vim.wo[win].diff then
+					active[win] = true
+					save_gitsigns_diff_window(win)
+					style_diff_window(win, {
+						layout_name = "diff2_vertical",
+						symbol = is_gitsigns_revision(win) and "a" or "b",
+					})
+				end
+			end
+		end
+	end
+
+	for win, state in pairs(gitsigns_diff_windows) do
+		if not active[win] then
+			restore_gitsigns_diff_window(win, state)
+			gitsigns_diff_windows[win] = nil
+		end
+	end
+end
+
+vim.api.nvim_create_autocmd(
+	{ "BufEnter", "BufWinEnter", "BufWinLeave", "FileType", "ModeChanged", "WinEnter", "WinClosed" },
+	{
+		group = vim.api.nvim_create_augroup("dotfiles-gitsigns-diff-style", { clear = true }),
+		callback = function()
+			vim.schedule(refresh_gitsigns_diff_styles)
+		end,
+	}
+)
 
 return {
 	{
