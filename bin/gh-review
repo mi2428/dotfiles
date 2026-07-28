@@ -40,8 +40,8 @@ function usage
         '  gh-review [pr-number|pr-url]' \
         '  gh-review --local [base-ref]' \
         '' \
-        'Open a tmux review session with Neovim, a Snacks Explorer sidebar,' \
-        'and Trouble workspace diagnostics.' \
+        'Open a tmux review session with Neovim, a stacked Snacks Explorer and' \
+        'Aerial sidebar, and Trouble workspace diagnostics.' \
         '' \
         'PR reviews create or reuse a detached review worktree under:' \
         '  ~/.cache/gh-review/<owner>/<repo>/pr-<number>' \

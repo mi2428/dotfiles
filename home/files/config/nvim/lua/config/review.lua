@@ -394,6 +394,7 @@ local function open_review_explorer()
 			end
 		end,
 	})
+	require("config.sidebar").open_aerial({ source_win = editor_win })
 end
 
 local arglist_loading = false
