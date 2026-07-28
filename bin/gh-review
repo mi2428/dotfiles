@@ -374,7 +374,7 @@ else
     test -n "$pr_number"; or die 'failed to resolve the pull request'
 
     if test $selected_pr_interactively -eq 1
-        report_resolved_history gh-review "$head_ref"
+        report_resolved_history gh-review -C "$repo_root" "$head_ref"
     end
 
     set -l url_parts (string split / -- "$pr_url")
