@@ -1,5 +1,6 @@
 local catppuccin = require("config.catppuccin")
 local diff_watch = require("config.diff_watch")
+local diffview_panel = require("config.diffview_snacks_panel")
 local review = require("config.review")
 local colors = catppuccin.palette()
 
@@ -106,6 +107,14 @@ return {
 						vim.opt_local.fillchars:append({ diff = " " })
 					end)
 				end,
+				view_opened = diffview_panel.attach,
+				view_closed = diffview_panel.detach,
+			},
+			keymaps = {
+				view = {
+					["<leader>e"] = diffview_panel.focus_current,
+					["<leader>b"] = diffview_panel.toggle_current,
+				},
 			},
 			view = {
 				default = {
@@ -127,6 +136,7 @@ return {
 		end,
 		config = function(_, opts)
 			require("diffview").setup(opts)
+			diffview_panel.setup_commands()
 			-- diffview.setup() recreates DiffviewDiffDeleteDim as a Comment link.
 			-- Apply our blank filler style after the plugin finishes its highlights.
 			set_diffview_highlights()
