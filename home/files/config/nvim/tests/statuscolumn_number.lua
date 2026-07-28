@@ -45,6 +45,15 @@ assert(not vim.iter(nonfold.highlights):any(function(highlight)
 	return highlight.group == "FoldColumn"
 end), "a line where za cannot act must not paint the fold rail: " .. vim.inspect(nonfold.highlights))
 
+vim.wo[left].number = false
+vim.wo[left].relativenumber = false
+vim.wo[left].foldcolumn = "0"
+vim.wo[left].signcolumn = "no"
+assert(rendered_statuscolumn(left, 500):match("^%s*$"), "number-disabled windows must not render line-number text")
+vim.wo[left].number = true
+vim.wo[left].relativenumber = true
+vim.wo[left].foldcolumn = "1"
+
 for _, case in ipairs({
 	{ count = 9, cursor = 5 },
 	{ count = 99, cursor = 50 },
@@ -78,6 +87,7 @@ local args = {
 	lnum = 500,
 	relnum = 0,
 	virtnum = 0,
+	nu = true,
 	rnu = true,
 }
 
@@ -92,6 +102,8 @@ args.rnu, args.lnum, args.relnum = false, 480, 20
 assert(statuscolumn.number(args):match("%s*480$") ~= nil, "absolute mode must render absolute numbers")
 args.virtnum = 1
 assert(statuscolumn.number(args) == "    ", "virtual rows must pad to the grown number width")
+args.nu = false
+assert(statuscolumn.number(args) == "", "disabled absolute and relative numbers must render nothing")
 
 vim.cmd.vsplit()
 local right = vim.api.nvim_get_current_win()

@@ -161,4 +161,23 @@ assert(
 )
 assert(vim.wo[left].winhighlight == left_default, "leaving command mode changed another split")
 
+vim.wo[right].number = true
+vim.wo[right].relativenumber = true
+vim.api.nvim_exec_autocmds("InsertEnter", { modeline = false })
+assert(not vim.wo[right].relativenumber, "insert mode must disable relative numbers in editor windows")
+vim.api.nvim_exec_autocmds("InsertLeave", { modeline = false })
+assert(vim.wo[right].relativenumber, "leaving insert mode must restore relative numbers in editor windows")
+
+vim.cmd.vsplit()
+local auxiliary = vim.api.nvim_get_current_win()
+local auxiliary_buffer = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_win_set_buf(auxiliary, auxiliary_buffer)
+vim.bo[auxiliary_buffer].filetype = "aerial"
+vim.wo[auxiliary].number = false
+vim.wo[auxiliary].relativenumber = false
+vim.api.nvim_exec_autocmds("InsertEnter", { modeline = false })
+vim.api.nvim_exec_autocmds("InsertLeave", { modeline = false })
+assert(not vim.wo[auxiliary].number, "mode changes must preserve an auxiliary window's disabled number column")
+assert(not vim.wo[auxiliary].relativenumber, "leaving insert mode must not add a relative-number gutter to Aerial")
+
 print("cursorline split regression: ok")

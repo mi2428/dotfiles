@@ -228,6 +228,9 @@ local function has_ai_indicator(args, segment)
 end
 
 function M.number(args, segment)
+	if not args.nu and not args.rnu then
+		return ""
+	end
 	local width = number_width(args)
 	if args.virtnum ~= 0 then
 		return string.rep(" ", width)

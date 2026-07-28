@@ -331,7 +331,9 @@ local function schedule_current_mode_ui()
 end
 
 local function set_relative_number(enabled)
-	vim.opt_local.relativenumber = enabled
+	-- Respect windows (Aerial, terminals, etc.) that intentionally disable the
+	-- number column instead of re-enabling a partial gutter on InsertLeave.
+	vim.opt_local.relativenumber = enabled and vim.wo.number
 end
 
 local fold_symbols = {
