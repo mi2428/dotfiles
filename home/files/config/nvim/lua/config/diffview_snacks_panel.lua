@@ -86,7 +86,27 @@ local function item_file(view, node)
 	return vim.fs.joinpath(view.adapter.ctx.toplevel, node.relative_path)
 end
 
+local function compact_directory(node)
+	if node.group or not node.dir then
+		return node, node.name
+	end
+
+	local tail = node
+	local names = { node.name }
+	while true do
+		local children = sorted_children(tail)
+		if #children ~= 1 or not children[1].dir then
+			break
+		end
+		tail = children[1]
+		names[#names + 1] = tail.name
+	end
+	return tail, table.concat(names, "/")
+end
+
 local function flatten_group(view, state, node, parent_item, items, expand_all, is_last)
+	local display_name
+	node, display_name = compact_directory(node)
 	state.directory_keys[node.key] = node.dir or nil
 
 	local collapsed = node.dir and not expand_all and state.collapsed[node.key] == true
@@ -98,8 +118,10 @@ local function flatten_group(view, state, node, parent_item, items, expand_all, 
 		open = node.dir and not collapsed,
 		parent = parent_item,
 		last = is_last,
+		group = node.group,
 		entry = node.entry,
 		entries = node.entries,
+		display_name = display_name,
 		type = node.dir and "directory" or "file",
 	}
 
@@ -154,6 +176,14 @@ M._normalize_status = normalize_status
 
 local function format_item(item, picker)
 	local ret = require("snacks.picker.format").file(item, picker)
+	if item.dir and item.display_name then
+		for _, part in ipairs(ret) do
+			if part.field == "file" then
+				part[1] = item.display_name
+				break
+			end
+		end
+	end
 	if item.oldpath then
 		ret[#ret + 1] = { "← " .. item.oldpath .. " ", "SnacksPickerComment" }
 	end

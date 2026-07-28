@@ -25,6 +25,7 @@ local working = entry("working", "lua/config/init.lua", "M", {
 })
 local deleted = entry("working", "lua/removed.lua", "D")
 local untracked = entry("working", "README.new", "?")
+local deep = entry("working", "packages/frontend/src/components/Button/index.lua", "M")
 local staged = entry("staged", "lua/config/init.lua", "M")
 local renamed = entry("staged", "lua/new_name.lua", "R", { oldpath = "lua/old_name.lua" })
 local conflict = entry("conflicting", "lua/conflicted.lua", "U")
@@ -33,7 +34,7 @@ local view = {
 	adapter = { ctx = { toplevel = "/virtual/repository" } },
 	files = {
 		conflicting = { conflict },
-		working = { working, deleted, untracked },
+		working = { working, deleted, untracked, deep },
 		staged = { staged, renamed },
 	},
 	panel = { cur_file = working },
@@ -61,6 +62,7 @@ assert(not roots[1].last and not roots[2].last and roots[3].last, "top-level tre
 assert(by_entry[working], "working file is missing")
 assert(by_entry[deleted], "deleted files must remain visible without a filesystem node")
 assert(by_entry[untracked], "untracked file is missing")
+assert(by_entry[deep], "deeply nested file is missing")
 assert(by_entry[staged], "staged file is missing")
 assert(by_entry[renamed].oldpath == "lua/old_name.lua", "rename source path must be retained")
 assert(by_entry[conflict], "conflicted file is missing")
@@ -71,6 +73,15 @@ assert(by_entry[staged].status == "M ", "staged status must use the left git-sta
 assert(by_entry[untracked].status == "??", "untracked status must use git porcelain form")
 assert(by_entry[conflict].status == "UU", "conflict status must use git porcelain form")
 assert(by_entry[working].parent and by_entry[working].parent.dir, "files must retain virtual directory parents")
+assert(
+	by_entry[deep].parent.display_name == "packages/frontend/src/components/Button",
+	"single-child directory chains must render as one compact folder"
+)
+assert(
+	by_entry[deep].parent.parent and by_entry[deep].parent.parent.group,
+	"compact folders must remove redundant indentation levels without losing their group parent"
+)
+local compact_key = by_entry[deep].parent.key
 local ancestor = by_entry[working].parent
 while ancestor.parent do
 	ancestor = ancestor.parent
@@ -87,6 +98,12 @@ for _, item in ipairs(items) do
 end
 assert(not visible_working, "collapsing a working directory must hide its descendants")
 assert(visible_staged, "collapsing working changes must not hide the staged copy of the same path")
+
+state.collapsed[compact_key] = true
+items = panel._build_items(view, state, false)
+for _, item in ipairs(items) do
+	assert(item.entry ~= deep, "collapsing a compact folder must hide its file descendants")
+end
 
 items = panel._build_items(view, state, true)
 for _, item in ipairs(items) do
