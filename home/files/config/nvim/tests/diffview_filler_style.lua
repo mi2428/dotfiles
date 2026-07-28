@@ -244,6 +244,14 @@ vim.cmd.tabnew()
 local gitsigns_main = vim.api.nvim_get_current_win()
 local gitsigns_main_buf = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_name(gitsigns_main_buf, "/tmp/dotfiles-gitsigns-diff-main.lua")
+vim.api.nvim_buf_set_lines(gitsigns_main_buf, 0, -1, false, {
+	"local value = 1",
+	"",
+	"local added_one = 1",
+	"local added_two = 2",
+	"local added_three = 3",
+	"return value",
+})
 vim.wo[gitsigns_main].cursorline = true
 vim.wo[gitsigns_main].cursorlineopt = "both"
 vim.wo[gitsigns_main].fillchars = "diff:-"
@@ -255,6 +263,9 @@ local gitsigns_revision = vim.api.nvim_get_current_win()
 local gitsigns_revision_buf = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_buf_set_name(gitsigns_revision_buf, "gitsigns:///tmp/.git//HEAD:dotfiles-gitsigns-diff-main.lua")
 vim.api.nvim_win_set_buf(gitsigns_revision, gitsigns_revision_buf)
+vim.api.nvim_buf_set_lines(gitsigns_revision_buf, 0, -1, false, { "local value = 1", "", "return value" })
+vim.bo[gitsigns_revision_buf].filetype = "lua"
+vim.bo[gitsigns_revision_buf].buftype = "nowrite"
 vim.wo[gitsigns_main].diff = true
 vim.wo[gitsigns_revision].diff = true
 vim.api.nvim_exec_autocmds("BufWinEnter", { buffer = gitsigns_revision_buf, modeline = false })
@@ -263,6 +274,12 @@ assert(
 		return vim.wo[gitsigns_main].cursorlineopt == "number"
 	end),
 	"Gitsigns diff windows did not receive the shared Diffview style"
+)
+assert(
+	vim.wait(1000, function()
+		return vim.treesitter.highlighter.active[gitsigns_revision_buf] ~= nil
+	end),
+	"Gitsigns revision buffers must start Tree-sitter despite their nowrite buftype"
 )
 
 for win, side in pairs({
@@ -290,12 +307,52 @@ assert(
 	"Gitsigns revision additions must render as Diffview deletions"
 )
 assert(
+	vim.wo[gitsigns_revision].winhighlight:find("DiffDelete:DiffviewDiffAddAsDelete", 1, true),
+	"Gitsigns revision filler must render with the deletion background"
+)
+assert(
 	vim.wo[gitsigns_main].winhighlight:find("DiffAdd:DiffviewDiffAdd", 1, true),
 	"Gitsigns worktree additions must render as Diffview additions"
+)
+assert(
+	vim.o.diffopt:find("filler", 1, true),
+	"Gitsigns diff must retain Neovim filler rows for paired screen alignment"
+)
+vim.wo[gitsigns_revision].foldenable = false
+vim.wo[gitsigns_main].foldenable = false
+local function screen_row_for_buffer_line(win, lnum)
+	return vim.api.nvim_win_call(win, function()
+		local filler = 0
+		for line = 1, lnum do
+			filler = filler + vim.fn.diff_filler(line)
+		end
+		return lnum + filler
+	end)
+end
+assert(
+	screen_row_for_buffer_line(gitsigns_revision, 3) == screen_row_for_buffer_line(gitsigns_main, 6),
+	"Gitsigns filler rows must keep the unchanged post-addition line screen-aligned"
+)
+
+vim.cmd.vsplit()
+local diffview_coexist = vim.api.nvim_get_current_win()
+local diffview_coexist_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_name(diffview_coexist_buf, "/tmp/dotfiles-diffview-coexist.lua")
+vim.api.nvim_buf_set_lines(diffview_coexist_buf, 0, -1, false, { "local other = true" })
+vim.api.nvim_win_set_buf(diffview_coexist, diffview_coexist_buf)
+vim.wo[diffview_coexist].diff = true
+vim.api.nvim_exec_autocmds("WinEnter", { modeline = false })
+assert(
+	vim.wait(1000, function()
+		return vim.wo[diffview_coexist].winhighlight:find("DiffDelete:DiffviewDiffDeleteDim", 1, true) ~= nil
+	end),
+	"a coexisting non-Gitsigns diff pane must retain its blank Diffview filler"
 )
 assert(vim.w[gitsigns_revision].dotfiles_disable_minimap, "Gitsigns revision pane must hide the minimap")
 assert(not vim.w[gitsigns_main].dotfiles_disable_minimap, "Gitsigns worktree pane must retain the minimap")
 
+vim.wo[diffview_coexist].diff = false
+vim.api.nvim_win_close(diffview_coexist, true)
 vim.wo[gitsigns_main].diff = false
 vim.api.nvim_win_close(gitsigns_revision, true)
 vim.api.nvim_exec_autocmds("WinEnter", { modeline = false })

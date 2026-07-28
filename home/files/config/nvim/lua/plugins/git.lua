@@ -227,7 +227,14 @@ local function style_diff_window(win, ctx)
 	end
 	if side then
 		replace_winhighlight(win, "DiffAdd", side == "Delete" and "DiffviewDiffAddAsDelete" or "DiffviewDiffAdd")
-		replace_winhighlight(win, "DiffDelete", "DiffviewDiffDeleteDim")
+		-- Core diff renders the empty side of an addition with DiffDelete. In a
+		-- Gitsigns revision pane that empty side represents a deletion, while
+		-- Diffview deliberately keeps its alignment filler uncolored.
+		replace_winhighlight(
+			win,
+			"DiffDelete",
+			ctx and ctx.gitsigns and side == "Delete" and "DiffviewDiffAddAsDelete" or "DiffviewDiffDeleteDim"
+		)
 	end
 	replace_winhighlight(win, "DiffChange", side and ("DiffviewDiffChange" .. side) or "DiffviewDiffChange")
 	replace_winhighlight(win, "DiffText", side and ("DiffviewDiffText" .. side) or "DiffviewDiffText")
@@ -237,6 +244,13 @@ end
 local function is_gitsigns_revision(win)
 	local buf = vim.api.nvim_win_get_buf(win)
 	return vim.startswith(vim.api.nvim_buf_get_name(buf), "gitsigns://")
+end
+
+local function start_gitsigns_revision_treesitter(win)
+	local buf = vim.api.nvim_win_get_buf(win)
+	if vim.bo[buf].filetype ~= "" then
+		pcall(vim.treesitter.start, buf)
+	end
 end
 
 local function save_gitsigns_diff_window(win)
@@ -284,11 +298,16 @@ local function refresh_gitsigns_diff_styles()
 		if has_revision then
 			for _, win in ipairs(wins) do
 				if vim.wo[win].diff then
+					local revision = is_gitsigns_revision(win)
 					active[win] = true
 					save_gitsigns_diff_window(win)
+					if revision then
+						start_gitsigns_revision_treesitter(win)
+					end
 					style_diff_window(win, {
 						layout_name = "diff2_vertical",
-						symbol = is_gitsigns_revision(win) and "a" or "b",
+						symbol = revision and "a" or "b",
+						gitsigns = revision,
 					})
 				end
 			end
