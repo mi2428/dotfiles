@@ -167,7 +167,7 @@ function select_open_pr --argument-names self_path
     set -l tab \t
     set -l size (__dotfiles_git_ui_current_terminal_size)
     set -l cols $size[1]
-    set -l preview_width_percent 42
+    set -l preview_width_percent 50
     set -l preview_cmd "$self_path --preview-pr {1}"
 
     if not string match -rq '^[0-9]+$' -- "$cols"
@@ -186,17 +186,31 @@ function select_open_pr --argument-names self_path
         gh pr list \
             --state open \
             --limit 200 \
-            --json number,title,author,updatedAt,baseRefName,headRefName,url \
-            --jq '.[] | [.number, .headRefName, .baseRefName, .updatedAt[0:10], .author.login, .title, .url] | @tsv' \
+            --json number,title,author,isDraft,state,headRefName,baseRefName,updatedAt,url,labels \
+            --jq '.[] | [.number, .title, .author.login, .isDraft, .state, .headRefName, .baseRefName, .updatedAt, .url, (.labels | map({name, color}) | @json)] | @tsv' \
         | __dotfiles_git_ui_format_fzf_rows prs "$list_width" '' \
-        | fzf \
+        | env FZF_DEFAULT_OPTS= FZF_DEFAULT_OPTS_FILE= fzf \
             --ansi \
-            --no-sort \
+            --no-height \
+            --layout=reverse \
+            --border=sharp \
+            --padding=0 \
+            --margin=0 \
+            --info=hidden \
+            --no-scrollbar \
+            --highlight-line \
+            --pointer=' ' \
+            --marker=' ' \
+            --gutter=' ' \
+            --cycle \
+            --tiebreak=index \
+            --ellipsis='…' \
             --delimiter="$tab" \
             --with-nth=3 \
-            --prompt='pr> ' \
+            --prompt=' ' \
+            --color='bg:-1,bg+:#63547e,fg:#cdd6f4,fg+:#f5e0dc,hl:#89b4fa,hl+:#b4befe,border:#89b4fa,separator:#89b4fa,gutter:-1,info:#7f849c,prompt:#cba6f7,pointer:#fab387,marker:#a6e3a1,spinner:#89dceb,header:#94e2d5,label:#89b4fa,query:#cdd6f4' \
             --preview="$preview_cmd" \
-            --preview-window="right,$preview_width_percent%,border-left,wrap"
+            --preview-window="right,$preview_width_percent%,border-left,wrap,noinfo"
     )
     or return 1
 
