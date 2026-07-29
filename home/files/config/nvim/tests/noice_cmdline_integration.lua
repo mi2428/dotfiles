@@ -23,13 +23,20 @@ end
 assert(noice, "Noice plugin spec was not found")
 assert(noice.event == "VeryLazy", "Noice must load after the startup UI has settled")
 assert(
-	vim.deep_equal(noice.dependencies, { "MunifTanjim/nui.nvim" }),
-	"Noice must declare only its required UI dependency"
+	vim.deep_equal(noice.dependencies, {
+		"MunifTanjim/nui.nvim",
+		"rachartier/tiny-inline-diagnostic.nvim",
+	}),
+	"Noice must load its popup and inline-diagnostic UI dependencies"
 )
 
 local original_cmdheight = vim.o.cmdheight
 noice.init()
 assert(vim.o.cmdheight == 0, "Noice must hide the native command-line area")
+assert(
+	package.preload["noice.view.backend.dotfiles_search_count"] ~= nil,
+	"Noice must register the custom search-count backend before setup"
+)
 vim.o.cmdheight = original_cmdheight
 
 local opts = noice.opts
@@ -42,10 +49,44 @@ assert(
 )
 assert(opts.messages.view_search == "search_count", "Search counts must use their dedicated inline view")
 assert(
-	opts.views.search_count.view == "virtualtext"
-		and opts.views.search_count.hl_group == "TinyInlineDiagnosticVirtualTextInfo",
-	"Search counts must use the filled tiny-inline-diagnostic style"
+	opts.views.search_count.backend == "dotfiles_search_count",
+	"Search counts must use the complete tiny-inline-diagnostic annotation renderer"
 )
+
+local chunks = require("config.noice_ui").search_count_virtual_text(" /builder            [1/35] ")
+assert(#chunks == 6, "Search count annotations must keep their six visual chunks")
+assert(
+	chunks[1][1] == "    " and chunks[1][2] == "TinyInlineDiagnosticVirtualTextArrowNoBg",
+	"Search counts need a diagnostic arrow without a CursorLine background"
+)
+assert(
+	chunks[2][1] == "" and chunks[2][2] == "TinyInlineInvDiagnosticVirtualTextInfoNoBg",
+	"Search counts need one rounded left edge without a CursorLine background"
+)
+assert(
+	chunks[3][1] == " " and chunks[3][2] == "TinyInlineDiagnosticVirtualTextInfo",
+	"Search count body padding must remain inside the pill"
+)
+assert(
+	chunks[4][1] == " " and chunks[4][2] == "TinyInlineDiagnosticVirtualTextInfo",
+	"Forward search counts need the Noice search-down icon"
+)
+assert(
+	chunks[5][1] == " Match 1 of 35 " and chunks[5][2] == "TinyInlineDiagnosticVirtualTextInfo",
+	"Search count text must explain the current match in English"
+)
+assert(
+	chunks[6][1] == "" and chunks[6][2] == "TinyInlineInvDiagnosticVirtualTextInfoNoBg",
+	"Search counts need one rounded right edge without a CursorLine background"
+)
+local reverse_chunks = require("config.noice_ui").search_count_virtual_text(" ?builder            [2/35] ")
+assert(reverse_chunks[4][1] == " ", "Reverse search counts need the Noice search-up icon")
+assert(reverse_chunks[5][1] == " Match 2 of 35 ", "Reverse search counts need the normalized match label")
+assert(
+	require("config.noice_ui").search_count_message("/", { current = 1, total = 999, incomplete = 2 }) == "/ [1/>999]",
+	"maxcount-limited searches must make their truncated total explicit"
+)
+
 assert(opts.notify.enabled == false, "Snacks must remain the notification provider")
 assert(opts.popupmenu.enabled == false, "blink.cmp must remain the command-line completion renderer")
 assert(opts.lsp.progress.enabled == false, "Noice must not replace LSP progress")

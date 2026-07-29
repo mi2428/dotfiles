@@ -2,19 +2,23 @@ return {
 	{
 		"folke/noice.nvim",
 		event = "VeryLazy",
-		dependencies = { "MunifTanjim/nui.nvim" },
+		dependencies = {
+			"MunifTanjim/nui.nvim",
+			"rachartier/tiny-inline-diagnostic.nvim",
+		},
 		init = function()
 			-- Noice owns the command-line and regular message surfaces; keep the
 			-- native command-line area hidden while its popups are active.
 			vim.o.cmdheight = 0
+			require("config.noice_ui").setup()
 		end,
 		opts = {
 			cmdline = {
 				enabled = true,
 				view = "cmdline_popup",
 			},
-			-- Let Noice render regular messages and confirmation prompts without
-			-- mixing them into the Snacks notification history.
+			-- Let Noice render regular messages without mixing them into the
+			-- Snacks notification history.
 			messages = {
 				enabled = true,
 				view = "mini",
@@ -43,11 +47,10 @@ return {
 				command_palette = true,
 			},
 			views = {
-				-- Search counts are inline messages, but use the same filled body as
-				-- tiny-inline-diagnostic instead of unbacked virtual text.
+				-- Keep the arrow, caps, icon, and body as separate chunks so only the
+				-- outside edges of the complete annotation are rounded.
 				search_count = {
-					view = "virtualtext",
-					hl_group = "TinyInlineDiagnosticVirtualTextInfo",
+					backend = "dotfiles_search_count",
 				},
 				cmdline_popup = {
 					position = { row = 3, col = "50%" },
