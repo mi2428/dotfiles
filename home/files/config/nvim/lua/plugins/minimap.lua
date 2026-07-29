@@ -101,18 +101,18 @@ end
 local function update_minimap_geometry(map)
 	local map_win = map.current.win_data[vim.api.nvim_get_current_tabpage()]
 	if not map_win or not vim.api.nvim_win_is_valid(map_win) then
-		return
+		return false
 	end
 	style_minimap_window(map_win)
 
 	local config = vim.api.nvim_win_get_config(map_win)
 	if config.relative ~= "editor" or config.anchor ~= "NE" then
-		return
+		return false
 	end
 
 	local source_win = source_window(map)
 	if not source_win then
-		return
+		return false
 	end
 
 	local position = vim.api.nvim_win_get_position(source_win)
@@ -130,7 +130,7 @@ local function update_minimap_geometry(map)
 		and config.height == height
 		and config.hide
 	then
-		return
+		return false
 	end
 
 	vim.api.nvim_win_set_config(map_win, {
@@ -145,6 +145,7 @@ local function update_minimap_geometry(map)
 		zindex = config.zindex,
 	})
 	redraw_after_geometry_change(map)
+	return true
 end
 
 local function setup_code_layout(map)
@@ -171,6 +172,15 @@ local function setup_code_layout(map)
 			return map.current.opts
 		end
 		return map.config or {}
+	end
+
+	local function native_geometry()
+		local win = map.current.win_data[vim.api.nvim_get_current_tabpage()]
+		if not win or not vim.api.nvim_win_is_valid(win) then
+			return nil
+		end
+		local config = vim.api.nvim_win_get_config(win)
+		return config.row, config.col, config.width, config.height, config.zindex, config.hide
 	end
 
 	local function scrollbar_offset(opts)
@@ -282,7 +292,7 @@ local function setup_code_layout(map)
 
 	local function update_mirror_geometry(instance)
 		if not vim.api.nvim_win_is_valid(instance.win) then
-			return false
+			return { geometry = false, size = false }
 		end
 
 		local current = vim.api.nvim_win_get_config(instance.win)
@@ -295,7 +305,7 @@ local function setup_code_layout(map)
 		if changed then
 			vim.api.nvim_win_set_config(instance.win, wanted)
 		end
-		return size_changed
+		return { geometry = changed, size = size_changed }
 	end
 
 	local function close_rendered_map(map_win)
@@ -391,12 +401,25 @@ local function setup_code_layout(map)
 		end
 	end
 
+	local function sync_focused_display()
+		local native = map.current.win_data[vim.api.nvim_get_current_tabpage()]
+		local display = native and manager.rendered_maps[native]
+		if not native or not display or not vim.api.nvim_win_is_valid(display.win) then
+			return
+		end
+		if manager.focused then
+			vim.api.nvim_win_set_cursor(display.win, vim.api.nvim_win_get_cursor(native))
+		end
+		vim.wo[display.win].cursorline = manager.focused
+	end
+
 	local function reconcile_mirrors()
+		local changes = { structure = false, geometry = false, size = false }
 		local official_win = map.current.win_data[vim.api.nvim_get_current_tabpage()]
 		if not official_win or not vim.api.nvim_win_is_valid(official_win) then
 			if not manager.enabled then
 				manager.close_all()
-				return false
+				return changes
 			end
 
 			-- Commands such as `:only` close floating windows together with ordinary
@@ -405,7 +428,7 @@ local function setup_code_layout(map)
 			local source_win = source_window(map)
 			if not source_win then
 				manager.close_all()
-				return false
+				return changes
 			end
 			local previous_win = vim.api.nvim_get_current_win()
 			if previous_win ~= source_win then
@@ -424,14 +447,15 @@ local function setup_code_layout(map)
 			end
 			if not official_win or not vim.api.nvim_win_is_valid(official_win) then
 				manager.close_all()
-				return false
+				return changes
 			end
+			changes.structure = true
 		end
 
 		local active_source = source_window(map)
 		if not active_source then
 			manager.close_all()
-			return false
+			return changes
 		end
 		local source_buf = vim.api.nvim_win_get_buf(active_source)
 		local previous_active = manager.active_source
@@ -466,10 +490,10 @@ local function setup_code_layout(map)
 		for win in pairs(vim.deepcopy(manager.mirrors)) do
 			if not wanted[win] or not is_code_window(win) then
 				close_mirror(win)
+				changes.structure = true
 			end
 		end
 
-		local content_changed = false
 		for win in pairs(wanted) do
 			local instance = manager.mirrors[win]
 			if not instance or not vim.api.nvim_win_is_valid(instance.win) then
@@ -477,12 +501,14 @@ local function setup_code_layout(map)
 					close_mirror(win)
 				end
 				instance = create_mirror(win)
-				content_changed = true
+				changes.structure = true
 			end
-			content_changed = update_mirror_geometry(instance) or content_changed
+			local geometry = update_mirror_geometry(instance)
+			changes.geometry = changes.geometry or geometry.geometry
+			changes.size = changes.size or geometry.size
 		end
 
-		return content_changed
+		return changes
 	end
 
 	local function refresh_mirror_lines(instance)
@@ -675,9 +701,17 @@ local function setup_code_layout(map)
 		manager.scheduled = false
 		local parts = manager.pending
 		manager.pending = {}
-		update_minimap_geometry(map)
-		local structure_changed = reconcile_mirrors()
-		if structure_changed then
+		local changes = { structure = false, geometry = false, size = false }
+		if parts.layout then
+			changes.geometry = update_minimap_geometry(map)
+		end
+		if parts.layout or parts.lines then
+			local reconciled = reconcile_mirrors()
+			changes.structure = reconciled.structure
+			changes.geometry = changes.geometry or reconciled.geometry
+			changes.size = reconciled.size
+		end
+		if changes.structure or changes.size then
 			parts.lines = true
 			parts.integrations = true
 			parts.scrollbar = true
@@ -694,7 +728,12 @@ local function setup_code_layout(map)
 				refresh_mirror_scrollbar(instance)
 			end
 		end
-		render_all_maps()
+		if parts.display or parts.lines or changes.structure or changes.geometry then
+			render_all_maps()
+		end
+		if parts.focus then
+			sync_focused_display()
+		end
 	end
 
 	function manager.schedule(parts)
@@ -718,16 +757,39 @@ local function setup_code_layout(map)
 
 	local original_refresh = map.refresh
 	map.refresh = function(opts, parts)
+		local source_win = source_window(map)
+		local ownership_changed = source_win and source_win ~= manager.active_source
+		local corrected_geometry = update_minimap_geometry(map)
+		local before_row, before_col, before_width, before_height, before_zindex, before_hide = native_geometry()
 		local result = original_refresh(opts, parts)
 		-- mini.map first restores its editor-height defaults and only then queues
 		-- content encoding. Constrain the float synchronously so encoding observes
 		-- the code window's actual text height.
 		update_minimap_geometry(map)
+		local after_row, after_col, after_width, after_height, after_zindex, after_hide = native_geometry()
 		local normalized =
 			vim.tbl_deep_extend("force", { integrations = true, lines = true, scrollbar = true }, parts or {})
-		vim.schedule(function()
-			manager.schedule(normalized)
-		end)
+		local size_changed = before_width ~= after_width or before_height ~= after_height
+		if size_changed and not normalized.lines then
+			original_refresh(map.current.opts, { integrations = true, lines = true, scrollbar = true })
+			update_minimap_geometry(map)
+			normalized.lines = true
+			normalized.integrations = true
+			normalized.scrollbar = true
+		end
+		local display_changed = corrected_geometry
+			or before_row ~= after_row
+			or before_col ~= after_col
+			or before_width ~= after_width
+			or before_height ~= after_height
+			or before_zindex ~= after_zindex
+			or before_hide ~= after_hide
+			or ownership_changed
+		if display_changed then
+			normalized.layout = true
+			normalized.display = true
+		end
+		manager.schedule(normalized)
 		return result
 	end
 
@@ -752,7 +814,7 @@ local function setup_code_layout(map)
 			if not entering then
 				manager.focused = false
 			end
-			manager.schedule({ scrollbar = true })
+			manager.schedule({ focus = true })
 			return result
 		end
 	end
@@ -776,7 +838,7 @@ local function setup_code_layout(map)
 			if manager.managing_windows > 0 then
 				return
 			end
-			manager.schedule({ integrations = true, lines = true, scrollbar = true })
+			manager.schedule({ layout = true, integrations = true, lines = true, scrollbar = true })
 		end,
 	})
 	vim.api.nvim_create_autocmd("WinEnter", {
@@ -799,6 +861,7 @@ local function setup_code_layout(map)
 				map.refresh({}, {
 					integrations = source_changed,
 					lines = source_changed or geometry_changed,
+					layout = source_changed or geometry_changed,
 				})
 			else
 				manager.schedule({ scrollbar = true })
@@ -810,11 +873,11 @@ local function setup_code_layout(map)
 		callback = function()
 			local native = map.current.win_data[vim.api.nvim_get_current_tabpage()]
 			if manager.focused and native and vim.api.nvim_get_current_win() == native then
-				manager.schedule({ scrollbar = true })
+				manager.schedule({ focus = true })
 			end
 		end,
 	})
-	manager.schedule({ integrations = true, lines = true, scrollbar = true })
+	manager.schedule({ layout = true, integrations = true, lines = true, scrollbar = true })
 end
 
 local function toggle_all_minimaps(map)

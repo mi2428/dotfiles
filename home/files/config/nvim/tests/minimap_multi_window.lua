@@ -120,16 +120,16 @@ wait_for(function()
 end, "vertical split did not create a second minimap")
 
 vim.w[first].dotfiles_disable_minimap = true
-map.refresh({}, { integrations = false, lines = false, scrollbar = false })
+map.refresh({}, { layout = true, integrations = false, lines = false, scrollbar = false })
 wait_for(function()
 	return count_mirrors() == 0 and manager.map_window_for_source(first) == nil
 end, "a window-local minimap opt-out did not remove the inactive split map")
 vim.api.nvim_set_current_win(first)
-map.refresh({}, { integrations = false, lines = false, scrollbar = false })
+map.refresh({}, { layout = true, integrations = false, lines = false, scrollbar = false })
 assert(map._dotfiles_source_win == second, "a minimap-disabled split must not take native map ownership")
 vim.w[first].dotfiles_disable_minimap = false
 vim.api.nvim_set_current_win(second)
-map.refresh({}, { integrations = false, lines = false, scrollbar = false })
+map.refresh({}, { layout = true, integrations = false, lines = false, scrollbar = false })
 wait_for(function()
 	return count_mirrors() == 1
 end, "re-enabling a split minimap did not restore its mirror")
@@ -158,6 +158,7 @@ end, "inactive split scrollbar did not track its own cursor")
 local namespaces = vim.api.nvim_get_namespaces()
 local mirror_line_namespace = assert(namespaces["dotfiles-mini-map-mirror-scroll-line"])
 local native_line_namespace = assert(namespaces.MiniMapScrollLine)
+local native_view_namespace = assert(namespaces.MiniMapScrollView)
 local first_marks = vim.api.nvim_buf_get_extmarks(
 	vim.api.nvim_win_get_buf(first_map),
 	first == map._dotfiles_source_win and native_line_namespace or mirror_line_namespace,
@@ -224,6 +225,12 @@ wait_for(function()
 		and vim.wo[display.win].cursorline
 end, "focused minimap did not retain its opaque display and focus line")
 assert_map_geometry(second)
+local focused_display = manager.rendered_maps[focused_native].win
+vim.api.nvim_win_set_cursor(focused_native, { 2, 0 })
+vim.api.nvim_exec_autocmds("CursorMoved", { modeline = false })
+wait_for(function()
+	return vim.api.nvim_win_get_cursor(focused_display)[1] == 2 and vim.wo[focused_display].cursorline
+end, "focused minimap cursor did not reach the visible display")
 map.toggle_focus(true)
 wait_for(function()
 	return not manager.focused
@@ -231,6 +238,7 @@ wait_for(function()
 		and vim.api.nvim_win_get_config(focused_native).hide
 		and manager.rendered_maps[focused_native]
 		and vim.api.nvim_win_is_valid(manager.rendered_maps[focused_native].win)
+		and not vim.wo[manager.rendered_maps[focused_native].win].cursorline
 end, "leaving minimap focus did not restore the display renderer")
 assert_map_geometry(second)
 
@@ -261,8 +269,68 @@ for _, win in ipairs({ first, second, third }) do
 	assert_map_geometry(win)
 end
 
-local benchmark_cursor = 0
-local function benchmark(iterations, callback)
+local function upvalue_index(fn, expected_name)
+	for index = 1, math.huge do
+		local name, value = debug.getupvalue(fn, index)
+		if not name then
+			break
+		end
+		if name == expected_name then
+			return index, value
+		end
+	end
+	error("missing upvalue: " .. expected_name)
+end
+
+local function drain_scheduled_work(message)
+	for _ = 1, 2 do
+		local event_loop_turn_complete = false
+		vim.schedule(function()
+			event_loop_turn_complete = true
+		end)
+		assert(
+			vim.wait(2000, function()
+				return event_loop_turn_complete and not manager.scheduled and next(manager.pending) == nil
+			end, 1),
+			message
+		)
+	end
+end
+
+local function snapshot_displays()
+	local snapshot = {}
+	for map_win, display in pairs(manager.rendered_maps) do
+		local config = vim.api.nvim_win_get_config(display.win)
+		snapshot[map_win] = {
+			win = display.win,
+			row = config.row,
+			col = config.col,
+			width = config.width,
+			height = config.height,
+			zindex = config.zindex,
+		}
+	end
+	return snapshot
+end
+
+local function assert_displays_unchanged(before, message)
+	for map_win, previous in pairs(before) do
+		local display = manager.rendered_maps[map_win]
+		assert(display and display.win == previous.win, message .. ": display id changed")
+		local config = vim.api.nvim_win_get_config(display.win)
+		assert(
+			config.row == previous.row
+				and config.col == previous.col
+				and config.width == previous.width
+				and config.height == previous.height
+				and config.zindex == previous.zindex,
+			message .. ": display geometry changed"
+		)
+	end
+	assert(vim.tbl_count(manager.rendered_maps) == vim.tbl_count(before), message .. ": display count changed")
+end
+
+local function component_average_ms(iterations, callback)
 	collectgarbage("collect")
 	local started = vim.uv.hrtime()
 	for _ = 1, iterations do
@@ -271,32 +339,129 @@ local function benchmark(iterations, callback)
 	return (vim.uv.hrtime() - started) / 1e6 / iterations
 end
 
-local function move_in_inactive_split()
+local function event_distribution(iterations, callback, message, refresh_count)
+	local samples = {}
+	for index = 1, iterations do
+		drain_scheduled_work(message .. ": work before event did not drain")
+		local refreshes_before = refresh_count()
+		local started = vim.uv.hrtime()
+		callback(index)
+		drain_scheduled_work(message .. ": work after event did not drain")
+		assert(refresh_count() == refreshes_before + 1, message .. ": did not invoke exactly one wrapped view refresh")
+		samples[index] = (vim.uv.hrtime() - started) / 1e6
+	end
+	table.sort(samples)
+	return {
+		median = samples[math.ceil(#samples / 2)],
+		p95 = samples[math.ceil(#samples * 0.95)],
+	}
+end
+
+local flush = upvalue(manager.schedule, "flush")
+local render_all_maps_index, render_all_maps = upvalue_index(flush, "render_all_maps")
+local display_reconciliations = 0
+debug.setupvalue(flush, render_all_maps_index, function(...)
+	display_reconciliations = display_reconciliations + 1
+	return render_all_maps(...)
+end)
+
+local original_refresh = map.refresh
+local view_refreshes = 0
+map.refresh = function(opts, parts)
+	if parts and parts.integrations == false and parts.lines == false then
+		view_refreshes = view_refreshes + 1
+	end
+	return original_refresh(opts, parts)
+end
+
+local display_before_events = snapshot_displays()
+local function native_map_line(source_line)
+	local native = assert(manager.map_window_for_source(first))
+	local source_rows = vim.api.nvim_buf_line_count(vim.api.nvim_win_get_buf(first))
+	local resolution = map.current.opts.symbols.encode.resolution.row
+	local rescaled_rows = math.min(source_rows, vim.api.nvim_win_get_height(native) * resolution)
+	local rescaled_row = math.floor((rescaled_rows / source_rows) * (source_line - 1)) + 1
+	return math.floor((rescaled_row - 1) / resolution) + 1
+end
+
+local cursor_moved = event_distribution(
+	100,
+	function(index)
+		vim.api.nvim_win_call(first, function()
+			vim.api.nvim_win_set_cursor(first, { 10 + (index % 2), 0 })
+			vim.api.nvim_exec_autocmds("CursorMoved", { modeline = false })
+		end)
+	end,
+	"CursorMoved",
+	function()
+		return view_refreshes
+	end
+)
+assert(display_reconciliations == 0, "CursorMoved reconciled display floats")
+assert_displays_unchanged(display_before_events, "CursorMoved")
+local native = assert(manager.map_window_for_source(first))
+local native_buf = vim.api.nvim_win_get_buf(native)
+local cursor_marks = vim.api.nvim_buf_get_extmarks(native_buf, native_line_namespace, 0, -1, {})
+assert(#cursor_marks == 1 and cursor_marks[1][2] == native_map_line(10) - 1, "CursorMoved left a stale rail")
+
+vim.api.nvim_win_call(first, function()
+	vim.api.nvim_win_set_cursor(first, { 120, 0 })
+	vim.fn.winrestview({ topline = 100 })
+end)
+drain_scheduled_work("WinScrolled fixture did not settle")
+
+local scrolled = event_distribution(
+	100,
+	function(index)
+		vim.api.nvim_win_call(first, function()
+			vim.fn.winrestview({ topline = 100 + (index % 2) })
+			vim.api.nvim_exec_autocmds("WinScrolled", { modeline = false })
+		end)
+	end,
+	"WinScrolled",
+	function()
+		return view_refreshes
+	end
+)
+assert(display_reconciliations == 0, "WinScrolled reconciled display floats")
+assert_displays_unchanged(display_before_events, "WinScrolled")
+local source_view = vim.api.nvim_win_call(first, function()
+	return { first = vim.fn.line("w0"), last = vim.fn.line("w$") }
+end)
+local view_marks = vim.api.nvim_buf_get_extmarks(native_buf, native_view_namespace, 0, -1, {})
+local first_view_row = native_map_line(source_view.first) - 1
+local last_view_row = native_map_line(source_view.last) - 1
+assert(#view_marks == last_view_row - first_view_row + 1, "WinScrolled left a stale viewport rail")
+for index, mark in ipairs(view_marks) do
+	assert(mark[2] == first_view_row + index - 1, "WinScrolled viewport rail is misplaced")
+end
+debug.setupvalue(flush, render_all_maps_index, render_all_maps)
+map.refresh = original_refresh
+
+assert(cursor_moved.median <= 2 and cursor_moved.p95 <= 5, "CursorMoved end-to-end latency regressed")
+assert(scrolled.median <= 2 and scrolled.p95 <= 5, "WinScrolled end-to-end latency regressed")
+
+local benchmark_cursor = 0
+local function refresh_moving_mirror_scrollbar()
 	benchmark_cursor = (benchmark_cursor % #source_lines) + 1
 	vim.api.nvim_win_set_cursor(second, { benchmark_cursor, 0 })
 	manager.refresh_scrollbars()
 end
 
-local two_mirror_scroll_ms = benchmark(1000, move_in_inactive_split)
-local two_mirror_content_ms = benchmark(20, manager.refresh_content)
-local flush = upvalue(manager.schedule, "flush")
-local two_mirror_layout_ms = benchmark(100, function()
-	manager.pending = { scrollbar = true }
-	flush()
-end)
+local two_mirror_scroll_ms = component_average_ms(1000, refresh_moving_mirror_scrollbar)
+local two_mirror_content_ms = component_average_ms(20, manager.refresh_content)
 
 vim.api.nvim_win_close(third, true)
 wait_for(function()
 	return count_mirrors() == 1
 end, "closing a source split leaked its mirror minimap")
 
-local one_mirror_scroll_ms = benchmark(1000, move_in_inactive_split)
-local one_mirror_content_ms = benchmark(20, manager.refresh_content)
-assert(two_mirror_scroll_ms < 1, "two-mirror scrollbar refresh regressed above 1 ms per cursor move")
-assert(one_mirror_scroll_ms < 1, "one-mirror scrollbar refresh regressed above 1 ms per cursor move")
-assert(two_mirror_content_ms < 100, "two-mirror content refresh regressed above 100 ms")
-assert(one_mirror_content_ms < 100, "one-mirror content refresh regressed above 100 ms")
-assert(two_mirror_layout_ms < 10, "two-mirror cropped layout refresh regressed above 10 ms")
+local one_mirror_scroll_ms = component_average_ms(1000, refresh_moving_mirror_scrollbar)
+local one_mirror_content_ms = component_average_ms(20, manager.refresh_content)
+assert(two_mirror_scroll_ms < 1, "two-mirror scrollbar component regressed above 1 ms per cursor update")
+assert(one_mirror_scroll_ms < 1, "one-mirror scrollbar component regressed above 1 ms per cursor update")
+assert(two_mirror_content_ms < 35, "mixed-geometry content refresh regressed above 35 ms")
+assert(one_mirror_content_ms < 5, "one-mirror content refresh regressed above 5 ms")
 
 local other_buf = vim.api.nvim_create_buf(true, false)
 local other_lines = {}
@@ -463,11 +628,14 @@ end)
 
 print("minimap multi-window regression: ok")
 print(
-	("minimap performance: scrollbar %.3f/%.3f ms, content %.3f/%.3f ms (2/1 mirrors), cropped layout %.3f ms"):format(
+	("minimap performance: end-to-end CursorMoved median/p95 %.3f/%.3f ms, WinScrolled %.3f/%.3f ms; component scrollbar %.3f/%.3f ms, content %.3f/%.3f ms (2/1 mirrors)"):format(
+		cursor_moved.median,
+		cursor_moved.p95,
+		scrolled.median,
+		scrolled.p95,
 		two_mirror_scroll_ms,
 		one_mirror_scroll_ms,
 		two_mirror_content_ms,
-		one_mirror_content_ms,
-		two_mirror_layout_ms
+		one_mirror_content_ms
 	)
 )

@@ -58,6 +58,23 @@ wait_for(function()
 	return map_win and vim.api.nvim_win_is_valid(map_win) and manager.rendered_maps[map_win]
 end, "minimap display renderer did not initialize")
 
+map.refresh({ window = { width = 8 } }, { lines = false, integrations = false, scrollbar = false })
+wait_for(function()
+	local display = manager.rendered_maps[map_win]
+	return vim.api.nvim_win_get_width(map_win) == 8
+		and display
+		and vim.api.nvim_win_is_valid(display.win)
+		and vim.api.nvim_win_get_width(display.win) == 8
+end, "a no-lines width update left stale display geometry")
+map.refresh({ window = { width = 12 } }, { lines = false, integrations = false, scrollbar = false })
+wait_for(function()
+	local display = manager.rendered_maps[map_win]
+	return vim.api.nvim_win_get_width(map_win) == 12
+		and display
+		and vim.api.nvim_win_is_valid(display.win)
+		and vim.api.nvim_win_get_width(display.win) == 12
+end, "restoring width left stale display geometry")
+
 local map_buf = vim.api.nvim_win_get_buf(map_win)
 vim.api.nvim_buf_clear_namespace(map_buf, -1, 0, -1)
 vim.api.nvim_buf_set_lines(map_buf, 0, -1, false, {
@@ -71,7 +88,7 @@ vim.api.nvim_buf_set_extmark(map_buf, virtual_namespace, 3, 0, {
 	virt_text = { { "X", "MiniMapSymbolLine" } },
 	virt_text_win_col = 8,
 })
-manager.schedule({ lines = false, integrations = false, scrollbar = false })
+manager.schedule({ lines = true, integrations = false, scrollbar = false })
 
 wait_for(function()
 	local display = manager.rendered_maps[map_win]
@@ -98,7 +115,7 @@ assert(display_view.topline == 1, "display must start at the first encoded row")
 assert(display_view.leftcol == 0, "display must start at the minimap rail")
 
 vim.api.nvim_buf_set_lines(map_buf, 2, -1, false, {})
-manager.schedule({ lines = false, integrations = false, scrollbar = false })
+manager.schedule({ lines = true, integrations = false, scrollbar = false })
 wait_for(function()
 	local shortened = manager.rendered_maps[map_win]
 	return shortened
