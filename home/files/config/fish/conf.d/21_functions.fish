@@ -465,7 +465,7 @@ function dot
         case s sync
             command git -C "$repo" pull
             and command git -C "$repo" push
-        case switch
+        case sw switch
             command task -d "$repo" hm.switch
         case gc
             command task -d "$repo" hm.gc
@@ -496,7 +496,7 @@ function dot
             echo ' pl, pull              alias of `git pull` command'
             echo ' ps, push              alias of `git push` command'
             echo ' s,  sync              run pull and then push'
-            echo '     switch            run `task hm.switch` in ~/dotfiles'
+            echo ' sw, switch            run `task hm.switch` in ~/dotfiles'
             echo '     gc                run `task hm.gc` in ~/dotfiles'
             echo '     upgrade           run package upgrade'
             echo '     rollback          discard unstaged tracked-file changes after confirmation'

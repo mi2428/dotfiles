@@ -322,7 +322,7 @@ dot() {
       return 0
       ;;
 
-    switch)
+    sw|switch)
       (builtin cd -- "$HOME/dotfiles" 2>/dev/null; task hm.switch)
       return 0
       ;;
@@ -371,6 +371,7 @@ dot() {
       echo " pl, pull              alias of \`git pull\` command"
       echo " ps, push              alias of \`git push\` command"
       echo " s,  sync              run pull and then push"
+      echo " sw, switch            run \`task hm.switch\` in ~/dotfiles"
       echo "     gc                run \`task hm.gc\` in ~/dotfiles"
       echo "     upgrade           run package upgrade"
       echo "     rollback          discard unstaged tracked-file changes after confirmation"
