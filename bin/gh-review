@@ -179,7 +179,7 @@ function select_open_pr --argument-names self_path repo
     set -l tab \t
     set -l size (__dotfiles_git_ui_current_terminal_size)
     set -l cols $size[1]
-    set -l preview_width_percent 50
+    set -l preview_height_percent 80
     set -l preview_cmd (string join ' ' -- \
         (string escape -- "$self_path") \
         --preview-pr \
@@ -190,7 +190,7 @@ function select_open_pr --argument-names self_path repo
         set cols 160
     end
 
-    set -l list_width (math -s0 "$cols - ($cols * $preview_width_percent / 100) - 5")
+    set -l list_width (math -s0 "$cols - 2")
     if test "$list_width" -le 72
         set list_width 72
     end
@@ -226,7 +226,7 @@ function select_open_pr --argument-names self_path repo
             --prompt=' ' \
             --color='bg:-1,bg+:#63547e,fg:#cdd6f4,fg+:#f5e0dc,hl:#89b4fa,hl+:#b4befe,border:#89b4fa,separator:#89b4fa,gutter:-1,info:#7f849c,prompt:#cba6f7,pointer:#fab387,marker:#a6e3a1,spinner:#89dceb,header:#94e2d5,label:#89b4fa,query:#cdd6f4' \
             --preview="$preview_cmd" \
-            --preview-window="right,$preview_width_percent%,border-left,wrap,noinfo"
+            --preview-window="down,$preview_height_percent%,border-top,wrap,noinfo"
     )
     or return 1
 
