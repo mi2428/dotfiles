@@ -25,7 +25,11 @@ vim.o.cmdheight = original_cmdheight
 local opts = noice.opts
 assert(opts.cmdline.enabled == true, "Noice must render the command line")
 assert(opts.cmdline.view == "cmdline_popup", "Noice must use the visible popup command line")
-assert(opts.messages.enabled == false, "Noice must leave regular messages to Neovim")
+assert(opts.messages.enabled == true, "Noice must render regular messages and confirmation prompts")
+assert(
+	opts.messages.view == "mini" and opts.messages.view_error == "mini" and opts.messages.view_warn == "mini",
+	"Noice messages must not be mixed into the Snacks notification history"
+)
 assert(opts.notify.enabled == false, "Snacks must remain the notification provider")
 assert(opts.popupmenu.enabled == false, "blink.cmp must remain the command-line completion renderer")
 assert(opts.lsp.progress.enabled == false, "Noice must not replace LSP progress")
@@ -38,7 +42,15 @@ assert(
 		and opts.lsp.override["cmp.entry.get_documentation"] == false,
 	"Noice must not override the existing LSP markdown renderers"
 )
-assert(opts.presets.bottom_search == true, "Search commands must remain on the native bottom line")
+assert(opts.presets.bottom_search == false, "Search commands must use the Noice popup")
 assert(opts.presets.command_palette == true, "The command popup must use the compact palette layout")
+assert(
+	opts.views.cmdline_popup.position.row == 3 and opts.views.cmdline_popup.position.col == "50%",
+	"Noice command input must stay in the upper popup"
+)
+assert(
+	opts.views.confirm.position.row == 3 and opts.views.confirm.position.col == "50%",
+	"Noice confirmation prompts must stay in the upper popup"
+)
 
-print("Noice command-line-only integration regression: ok")
+print("Noice command-line and message integration regression: ok")
