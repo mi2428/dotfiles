@@ -110,6 +110,13 @@ assert(
 )
 assert(layout_updates == 2, "expanding Explorer must refresh its nested picker layout")
 
+package.loaded.snacks.picker.get = function()
+	return {}
+end
+vim.api.nvim_win_set_width(explorer, 55)
+sidebar.sync()
+assert(vim.api.nvim_win_get_width(explorer) == 55, "a non-Explorer Snacks layout box must not be resized as a sidebar")
+
 local aerial_open
 local real_aerial = package.loaded.aerial
 package.loaded.aerial = {

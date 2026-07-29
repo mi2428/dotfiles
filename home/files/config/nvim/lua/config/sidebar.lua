@@ -44,7 +44,6 @@ local function explorer_window(tab, picker)
 	if root and valid_window_in_tab(root.win, tab) then
 		return root.win
 	end
-	return find_window(tab, "snacks_layout_box")
 end
 
 local function is_editor_window(win)
