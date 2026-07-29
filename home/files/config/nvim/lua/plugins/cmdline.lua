@@ -20,6 +20,7 @@ return {
 				view = "mini",
 				view_error = "mini",
 				view_warn = "mini",
+				view_search = "search_count",
 			},
 			-- Snacks remains the owner of vim.notify and notification history.
 			notify = { enabled = false },
@@ -42,6 +43,12 @@ return {
 				command_palette = true,
 			},
 			views = {
+				-- Search counts are inline messages, but use the same filled body as
+				-- tiny-inline-diagnostic instead of unbacked virtual text.
+				search_count = {
+					view = "virtualtext",
+					hl_group = "TinyInlineDiagnosticVirtualTextInfo",
+				},
 				cmdline_popup = {
 					position = { row = 3, col = "50%" },
 				},

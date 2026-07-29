@@ -30,6 +30,12 @@ assert(
 	opts.messages.view == "mini" and opts.messages.view_error == "mini" and opts.messages.view_warn == "mini",
 	"Noice messages must not be mixed into the Snacks notification history"
 )
+assert(opts.messages.view_search == "search_count", "Search counts must use their dedicated inline view")
+assert(
+	opts.views.search_count.view == "virtualtext"
+		and opts.views.search_count.hl_group == "TinyInlineDiagnosticVirtualTextInfo",
+	"Search counts must use the filled tiny-inline-diagnostic style"
+)
 assert(opts.notify.enabled == false, "Snacks must remain the notification provider")
 assert(opts.popupmenu.enabled == false, "blink.cmp must remain the command-line completion renderer")
 assert(opts.lsp.progress.enabled == false, "Noice must not replace LSP progress")
