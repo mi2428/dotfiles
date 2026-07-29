@@ -1,4 +1,7 @@
 keybind = super+shift+r=reload_config
+# Use left Option for terminal Meta bindings while preserving right Option for
+# macOS Unicode input.
+macos-option-as-alt = left
 # Keep plain ctrl-r available for fzf's native history widget. Trigger Atuin
 # through a dedicated Ghostty chord that emits a private CSI sequence.
 # A chord is used instead of ctrl+shift+r because the modified-letter trigger
