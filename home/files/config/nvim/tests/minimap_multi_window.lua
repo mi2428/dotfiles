@@ -25,6 +25,7 @@ end
 
 local specs = dofile(vim.fs.joinpath(nvim_root, "lua/plugins/minimap.lua"))
 local setup_code_layout = upvalue(specs[1].config, "setup_code_layout")
+local set_minimap_highlights = upvalue(specs[1].config, "set_minimap_highlights")
 local map = require("mini.map")
 
 vim.o.columns = 180
@@ -49,6 +50,7 @@ map.setup({
 		zindex = 30,
 	},
 })
+set_minimap_highlights()
 setup_code_layout(map)
 map.open()
 
@@ -69,9 +71,27 @@ local function assert_map_geometry(source_win)
 	assert(config.row == source_position[1], "minimap row does not match its source window")
 	assert(
 		config.col == source_position[2] + vim.api.nvim_win_get_width(source_win),
-		"minimap right edge does not match its source window"
+		"stateful minimap right edge does not match its source window"
 	)
+	assert(config.hide, "rectangular stateful minimap window must be hidden")
 	assert(config.height == vim.api.nvim_win_get_height(source_win), "minimap height does not match its source window")
+	assert(vim.wo[map_win].winblend == 0, "stateful minimap windows must remain opaque when focused")
+	assert(
+		vim.wo[map_win].winhighlight:find("EndOfBuffer:MiniMapNormal", 1, true),
+		"native and mirror minimap filler rows must use the minimap background"
+	)
+	local rendered_rows = assert(manager.rendered_rows[map_win], "minimap has no cropped display rows")
+	assert(vim.tbl_count(rendered_rows) > 0, "minimap has no visible content rows")
+	local expected_left = source_position[2] + vim.api.nvim_win_get_width(source_win) - config.width
+	for map_line, row in pairs(rendered_rows) do
+		assert(vim.api.nvim_win_is_valid(row.win), "cropped minimap row is invalid")
+		local row_config = vim.api.nvim_win_get_config(row.win)
+		assert(row_config.row == source_position[1] + map_line, "cropped minimap row is vertically misplaced")
+		assert(row_config.col == expected_left, "cropped minimap row is horizontally misplaced")
+		assert(row_config.height == 1, "cropped minimap row must be one screen row high")
+		assert(row_config.width == config.width, "encoded minimap row must cover from rail to pane edge")
+		assert(vim.wo[row.win].winblend == 0, "cropped minimap occupied intervals must be opaque")
+	end
 	return map_win
 end
 
@@ -174,6 +194,25 @@ wait_for(function()
 end, "returning focus did not restore native and mirror minimap ownership")
 assert(manager.mirrors[first].buf == reused_mirror_buf, "returning focus unnecessarily recreated the mirror buffer")
 
+local focused_native = assert(manager.map_window_for_source(second))
+map.toggle_focus()
+wait_for(function()
+	local focused_line = vim.api.nvim_win_get_cursor(focused_native)[1] - 1
+	local row = (manager.rendered_rows[focused_native] or {})[focused_line]
+	return manager.focused
+		and vim.api.nvim_get_current_win() == focused_native
+		and vim.api.nvim_win_get_config(focused_native).hide
+		and row
+		and vim.wo[row.win].cursorline
+end, "focused minimap did not retain cropped opaque rows and a visible focus line")
+map.toggle_focus(true)
+wait_for(function()
+	return not manager.focused
+		and vim.api.nvim_get_current_win() == second
+		and vim.api.nvim_win_get_config(focused_native).hide
+		and vim.tbl_count(manager.rendered_rows[focused_native] or {}) > 0
+end, "leaving minimap focus did not restore the cropped renderer")
+
 vim.cmd.split()
 local third = vim.api.nvim_get_current_win()
 wait_for(function()
@@ -194,6 +233,8 @@ wait_for(function()
 		and manager.mirrors[first] == nil
 		and manager.mirrors[second] ~= nil
 		and manager.mirrors[third] ~= nil
+		and vim.api.nvim_buf_line_count(vim.api.nvim_win_get_buf(manager.map_window_for_source(first)))
+			== vim.api.nvim_win_get_height(first)
 end, "changing split focus did not transfer the native minimap without losing mirrors")
 for _, win in ipairs({ first, second, third }) do
 	assert_map_geometry(win)
@@ -217,6 +258,11 @@ end
 
 local two_mirror_scroll_ms = benchmark(1000, move_in_inactive_split)
 local two_mirror_content_ms = benchmark(20, manager.refresh_content)
+local flush = upvalue(manager.schedule, "flush")
+local two_mirror_layout_ms = benchmark(100, function()
+	manager.pending = { scrollbar = true }
+	flush()
+end)
 
 vim.api.nvim_win_close(third, true)
 wait_for(function()
@@ -229,6 +275,7 @@ assert(two_mirror_scroll_ms < 1, "two-mirror scrollbar refresh regressed above 1
 assert(one_mirror_scroll_ms < 1, "one-mirror scrollbar refresh regressed above 1 ms per cursor move")
 assert(two_mirror_content_ms < 100, "two-mirror content refresh regressed above 100 ms")
 assert(one_mirror_content_ms < 100, "one-mirror content refresh regressed above 100 ms")
+assert(two_mirror_layout_ms < 10, "two-mirror cropped layout refresh regressed above 10 ms")
 
 local other_buf = vim.api.nvim_create_buf(true, false)
 local other_lines = {}
@@ -320,17 +367,71 @@ assert(
 )
 vim.api.nvim_win_close(non_code_win, true)
 
+-- `:only` closes floating windows without calling MiniMap.close(). The map is
+-- still logically enabled and must recover before a subsequent split is made.
+vim.cmd.only()
+wait_for(function()
+	local native = map.current.win_data[vim.api.nvim_get_current_tabpage()]
+	return native and vim.api.nvim_win_is_valid(native) and count_mirrors() == 0
+end, ":only did not restore the enabled native minimap")
+vim.cmd.split()
+wait_for(function()
+	return count_mirrors() == 1
+end, ":split after :only did not create a minimap for both code windows")
+for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+	if vim.api.nvim_win_get_config(win).relative == "" and vim.bo[vim.api.nvim_win_get_buf(win)].buftype == "" then
+		assert_map_geometry(win)
+	end
+end
+
+local active_empty_source = vim.api.nvim_get_current_win()
+vim.api.nvim_buf_set_lines(vim.api.nvim_win_get_buf(active_empty_source), 0, -1, false, { "" })
+map.refresh()
+wait_for(function()
+	local native = manager.map_window_for_source(active_empty_source)
+	return native
+		and vim.api.nvim_win_is_valid(native)
+		and vim.api.nvim_buf_line_count(vim.api.nvim_win_get_buf(native)) == 1
+		and vim.tbl_count(manager.rendered_rows[native] or {}) == 1
+end, "an empty source buffer did not retain its visible scrollbar row")
+local empty_native = manager.map_window_for_source(active_empty_source)
+local empty_line_marks = vim.api.nvim_buf_get_extmarks(
+	vim.api.nvim_win_get_buf(empty_native),
+	assert(vim.api.nvim_get_namespaces().MiniMapScrollLine),
+	0,
+	-1,
+	{}
+)
+assert(#empty_line_marks == 1 and empty_line_marks[1][2] == 0, "trimming moved the empty-buffer cursor rail")
+
+vim.cmd("leftabove 8vnew")
+local narrow_source = vim.api.nvim_get_current_win()
+wait_for(function()
+	local narrow_map = manager.map_window_for_source(narrow_source)
+	local row = narrow_map and (manager.rendered_rows[narrow_map] or {})[0]
+	return narrow_map
+		and vim.api.nvim_win_is_valid(narrow_map)
+		and vim.api.nvim_win_get_width(narrow_map) == vim.api.nvim_win_get_width(narrow_source)
+		and row
+		and vim.api.nvim_win_get_config(row.win).col == vim.api.nvim_win_get_position(narrow_source)[2]
+		and vim.api.nvim_win_get_width(row.win) == vim.api.nvim_win_get_width(narrow_map)
+end, "narrow pane did not re-encode and retain its rail inside the source window")
+
 map.close()
 wait_for(function()
 	return count_mirrors() == 0
 end, "closing mini.map leaked mirror windows")
+vim.wait(20, function()
+	return false
+end)
 
 print("minimap multi-window regression: ok")
 print(
-	("minimap performance: scrollbar %.3f/%.3f ms, content %.3f/%.3f ms (2/1 mirrors)"):format(
+	("minimap performance: scrollbar %.3f/%.3f ms, content %.3f/%.3f ms (2/1 mirrors), cropped layout %.3f ms"):format(
 		two_mirror_scroll_ms,
 		one_mirror_scroll_ms,
 		two_mirror_content_ms,
-		one_mirror_content_ms
+		one_mirror_content_ms,
+		two_mirror_layout_ms
 	)
 )
