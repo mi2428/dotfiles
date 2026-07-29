@@ -43,6 +43,7 @@ local function wait_for(predicate, message)
   assert(vim.wait(2000, predicate, 10), message)
 end
 vim.o.laststatus, vim.o.showtabline = 0, 0
+vim.o.sidescroll, vim.o.sidescrolloff = 1, 4
 local specs = dofile(vim.fs.joinpath(nvim_root, 'lua/plugins/minimap.lua'))
 local setup_code_layout = upvalue(specs[1].config, 'setup_code_layout')
 local set_minimap_highlights = upvalue(specs[1].config, 'set_minimap_highlights')
@@ -71,6 +72,18 @@ manager.schedule({ lines = true, integrations = false, scrollbar = false })
 wait_for(function() local display = manager.rendered_maps[map_win]; return display and vim.api.nvim_win_is_valid(display.win) and vim.api.nvim_win_get_height(display.win) == 3 end, 'display did not match encoded EOF')
 local position, source_width, map_width = vim.api.nvim_win_get_position(source), vim.api.nvim_win_get_width(source), vim.api.nvim_win_get_width(map_win)
 local row, map_left, pane_right = position[1] + 1, position[2] + source_width - map_width + 1, position[2] + source_width
+assert(vim.api.nvim_get_option_value('sidescrolloff', { scope = 'local', win = source }) == 4 + map_width, 'source did not reserve the minimap width')
+vim.api.nvim_win_set_cursor(source, { 1, 0 })
+for column = 1, #lines[1] - 1 do
+  vim.api.nvim_win_set_cursor(source, { 1, column })
+  vim.cmd.redraw()
+end
+local source_view = vim.api.nvim_win_call(source, vim.fn.winsaveview)
+local cursor_screen_column = position[2] + vim.api.nvim_win_call(source, function() return vim.fn.virtcol('.') - source_view.leftcol end)
+assert(cursor_screen_column < map_left, 'nowrap cursor entered the minimap interval')
+assert(map_left - cursor_screen_column - 1 >= 4, 'nowrap cursor lost the original horizontal context')
+vim.api.nvim_win_set_cursor(source, { 1, 0 })
+vim.api.nvim_win_call(source, function() vim.fn.winrestview({ leftcol = 0 }) end)
 vim.cmd.redraw({ bang = true })
 local source_cursorline_attr = vim.fn.screenattr(row, position[2] + 1)
 local minimap_blank_attr = vim.fn.screenattr(row, pane_right)

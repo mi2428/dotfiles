@@ -158,12 +158,14 @@ local function setup_code_layout(map)
 		active_source = nil,
 		enabled = false,
 		focused = false,
+		managing_options = 0,
 		managing_windows = 0,
 		mirrors = {},
 		pending = {},
 		rendered_maps = {},
 		scheduled = false,
 		source_buf = nil,
+		source_margins = {},
 	}
 	map._dotfiles_multi_window_manager = manager
 
@@ -202,6 +204,119 @@ local function setup_code_layout(map)
 		return result
 	end
 
+	local function get_local_sidescrolloff(win)
+		return vim.api.nvim_get_option_value("sidescrolloff", { scope = "local", win = win })
+	end
+
+	local function set_local_sidescrolloff(win, value)
+		manager.managing_options = manager.managing_options + 1
+		local ok, err = pcall(vim.api.nvim_set_option_value, "sidescrolloff", value, {
+			scope = "local",
+			win = win,
+		})
+		manager.managing_options = manager.managing_options - 1
+		if not ok then
+			error(err, 0)
+		end
+	end
+
+	local function restore_source_margin(win)
+		local state = manager.source_margins[win]
+		if not state then
+			return
+		end
+		manager.source_margins[win] = nil
+		if not vim.api.nvim_win_is_valid(win) then
+			return
+		end
+
+		-- Preserve an option value changed by the user after our last layout pass.
+		-- Otherwise restore -1 as -1 so a previously inherited global value keeps
+		-- following future global changes after the minimap closes.
+		if get_local_sidescrolloff(win) == state.applied then
+			set_local_sidescrolloff(win, state.restore_local)
+		end
+	end
+
+	local function restore_all_source_margins()
+		for win in pairs(vim.deepcopy(manager.source_margins)) do
+			restore_source_margin(win)
+		end
+	end
+
+	local function inherit_source_margin(win)
+		if not manager.enabled or manager.source_margins[win] or not is_code_window(win) then
+			return
+		end
+		local parent = vim.fn.win_getid(vim.fn.winnr("#"))
+		local parent_state = manager.source_margins[parent]
+		if not parent_state then
+			return
+		end
+
+		-- Splits copy window-local options. Remember the parent's unreserved value
+		-- before the copied, already-adjusted value can be mistaken for user intent.
+		manager.source_margins[win] = {
+			applied = get_local_sidescrolloff(win),
+			restore_local = parent_state.restore_local,
+		}
+	end
+
+	local function reserve_source_margin(source_win, map_win)
+		if not is_code_window(source_win) or not map_win or not vim.api.nvim_win_is_valid(map_win) then
+			return false
+		end
+		local map_width = vim.api.nvim_win_get_width(map_win)
+		if map_width * 2 > vim.api.nvim_win_get_width(source_win) then
+			-- 'sidescrolloff' is symmetric and centers the cursor when its value is
+			-- too large. It cannot keep the cursor left of a map occupying more than
+			-- half the pane, so leave that pre-existing narrow-pane case untouched.
+			restore_source_margin(source_win)
+			return false
+		end
+
+		local current = get_local_sidescrolloff(source_win)
+		local state = manager.source_margins[source_win]
+		if not state then
+			state = { restore_local = current }
+			manager.source_margins[source_win] = state
+		elseif state.applied ~= nil and current ~= state.applied then
+			-- Treat an intervening :setlocal as the new base instead of fighting it.
+			state.restore_local = current
+		end
+
+		local base = state.restore_local
+		if base < 0 then
+			base = vim.api.nvim_get_option_value("sidescrolloff", { scope = "global" })
+		end
+		local wanted = base + map_width
+		if current ~= wanted then
+			set_local_sidescrolloff(source_win, wanted)
+		end
+		state.applied = wanted
+		return current ~= wanted
+	end
+
+	local function sync_source_margins()
+		local wanted = {}
+		local native = map.current.win_data[vim.api.nvim_get_current_tabpage()]
+		if native and vim.api.nvim_win_is_valid(native) and is_code_window(manager.active_source) then
+			wanted[manager.active_source] = true
+			reserve_source_margin(manager.active_source, native)
+		end
+		for _, instance in pairs(manager.mirrors) do
+			if vim.api.nvim_win_is_valid(instance.win) and is_code_window(instance.source_win) then
+				wanted[instance.source_win] = true
+				reserve_source_margin(instance.source_win, instance.win)
+			end
+		end
+		for win in pairs(vim.deepcopy(manager.source_margins)) do
+			if not wanted[win] then
+				restore_source_margin(win)
+			end
+		end
+	end
+
 	local function source_to_map_line(instance, source_line)
 		local data = instance.encode_data
 		if not data or data.source_rows == 0 or data.map_rows == 0 then
@@ -236,6 +351,7 @@ local function setup_code_layout(map)
 	end
 
 	function manager.close_all()
+		restore_all_source_margins()
 		for map_win, display in pairs(manager.rendered_maps) do
 			manager.rendered_maps[map_win] = nil
 			manage_windows(function()
@@ -515,6 +631,7 @@ local function setup_code_layout(map)
 			changes.geometry = changes.geometry or geometry.geometry
 			changes.size = changes.size or geometry.size
 		end
+		sync_source_margins()
 
 		return changes
 	end
@@ -842,11 +959,23 @@ local function setup_code_layout(map)
 	local group = vim.api.nvim_create_augroup("dotfiles-mini-map-code-layout", { clear = true })
 	vim.api.nvim_create_autocmd({ "WinNew", "WinClosed", "WinResized", "VimResized" }, {
 		group = group,
-		callback = function()
+		callback = function(args)
 			if manager.managing_windows > 0 then
 				return
 			end
+			if args.event == "WinNew" then
+				inherit_source_margin(vim.api.nvim_get_current_win())
+			end
 			manager.schedule({ layout = true, integrations = true, lines = true, scrollbar = true })
+		end,
+	})
+	vim.api.nvim_create_autocmd("OptionSet", {
+		group = group,
+		pattern = "sidescrolloff",
+		callback = function()
+			if manager.managing_options == 0 and manager.enabled then
+				manager.schedule({ layout = true })
+			end
 		end,
 	})
 	vim.api.nvim_create_autocmd("WinEnter", {
