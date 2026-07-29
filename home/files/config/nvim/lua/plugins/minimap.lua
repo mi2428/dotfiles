@@ -1,5 +1,4 @@
 local colors = require("config.catppuccin").palette("mocha")
-local cursorline_mask_namespace = vim.api.nvim_create_namespace("dotfiles-mini-map-cursorline-mask")
 local mirror_integration_namespace = vim.api.nvim_create_namespace("dotfiles-mini-map-mirror-integrations")
 local mirror_scroll_line_namespace = vim.api.nvim_create_namespace("dotfiles-mini-map-mirror-scroll-line")
 local mirror_scroll_view_namespace = vim.api.nvim_create_namespace("dotfiles-mini-map-mirror-scroll-view")
@@ -27,8 +26,11 @@ local function set_minimap_highlights()
 		})
 	end
 
-	vim.api.nvim_set_hl(0, "MiniMapNormal", { fg = colors.text, bg = "NONE" })
-	vim.api.nvim_set_hl(0, "MiniMapCursorLineMask", { bg = "NONE" })
+	vim.api.nvim_set_hl(0, "MiniMapNormal", { fg = colors.text, bg = colors.base })
+	vim.api.nvim_set_hl(0, "MiniMapSymbolLine", { fg = colors.blue, bg = colors.base, bold = true })
+	vim.api.nvim_set_hl(0, "MiniMapSymbolView", { fg = colors.overlay2, bg = colors.base })
+	vim.api.nvim_set_hl(0, "MiniMapSymbolCount", { fg = colors.peach, bg = colors.base })
+	vim.api.nvim_set_hl(0, "MiniMapFocusedLine", { bg = colors.surface1 })
 	vim.api.nvim_set_hl(0, "MiniMapSearch", { fg = colors.base, bg = colors.yellow, bold = true })
 	set("MiniMapDiagnosticError", colors.red)
 	set("MiniMapDiagnosticWarn", colors.yellow)
@@ -39,187 +41,12 @@ local function set_minimap_highlights()
 	set("MiniMapGitDelete", colors.red)
 end
 
-local function minimap_content_rows(map_win)
-	local map_position = vim.api.nvim_win_get_position(map_win)
-	local map_buf = vim.api.nvim_win_get_buf(map_win)
-	local content_height = math.min(vim.api.nvim_buf_line_count(map_buf), vim.api.nvim_win_get_height(map_win))
-	local first_row = map_position[1] + 1
-	return first_row, first_row + content_height - 1, map_position
-end
-
-local function set_cursorline_mask(buf, line, column, width, repeat_linebreak)
-	vim.api.nvim_buf_set_extmark(buf, cursorline_mask_namespace, line, column, {
-		ephemeral = true,
-		hl_mode = "replace",
-		priority = 10000,
-		virt_text = { { string.rep(" ", width), "MiniMapCursorLineMask" } },
-		virt_text_pos = "right_align",
-		virt_text_repeat_linebreak = repeat_linebreak,
-	})
-end
-
-local function cursorline_mask_row_span(
-	first_cursor_row,
-	last_cursor_row,
-	cursor_row,
-	first_map_row,
-	last_map_row,
-	source_first_row,
-	source_last_row
-)
-	first_cursor_row = first_cursor_row == 0 and source_first_row or math.min(first_cursor_row, cursor_row)
-	last_cursor_row = last_cursor_row == 0 and source_last_row or math.max(last_cursor_row, cursor_row)
-
-	return math.max(first_map_row, source_first_row, first_cursor_row),
-		math.min(last_map_row, source_last_row, last_cursor_row)
-end
-
-local function mask_cursorline_rows(
-	buf,
-	win,
-	cursor,
-	first_map_row,
-	last_map_row,
-	width,
-	source_first_row,
-	source_last_row
-)
-	local line = cursor[1] - 1
-	local cursor_column = cursor[2]
-
-	if not vim.wo[win].wrap then
-		local cursor_row = vim.fn.screenpos(win, line + 1, cursor_column + 1).row
-		if cursor_row >= first_map_row and cursor_row <= last_map_row then
-			set_cursorline_mask(buf, line, cursor_column, width, false)
-		end
+local function style_minimap_window(win)
+	if not win or not vim.api.nvim_win_is_valid(win) then
 		return
 	end
 
-	-- If the minimap covers the rest of this window, repeating on wrapped
-	-- screen lines is exact and avoids inspecting even extremely long lines.
-	if first_map_row <= source_first_row and last_map_row >= source_last_row then
-		set_cursorline_mask(buf, line, 0, width, true)
-		return
-	end
-
-	local text = vim.api.nvim_buf_get_lines(buf, line, line + 1, false)[1] or ""
-	local is_ascii = not text:find("[\128-\255]")
-	local character_count = is_ascii and #text or vim.str_utfindex(text, "utf-32")
-	local cursor_character = is_ascii and cursor_column or vim.str_utfindex(text, "utf-32", cursor_column, false)
-	local cursor_row = vim.fn.screenpos(win, line + 1, cursor_column + 1).row
-
-	local function position_at(character)
-		local byte_column = is_ascii and character or vim.str_byteindex(text, "utf-32", character, false)
-		local screen_row = vim.fn.screenpos(win, line + 1, byte_column + 1).row
-		return byte_column, screen_row
-	end
-
-	local function find_row(target_row)
-		local before_cursor = target_row <= cursor_row
-		local low = before_cursor and 0 or cursor_character
-		local high = before_cursor and cursor_character or character_count
-
-		while low < high do
-			local middle = math.floor((low + high) / 2)
-			local _, screen_row = position_at(middle)
-			local position_is_before = screen_row < target_row
-			if screen_row == 0 then
-				position_is_before = before_cursor
-			end
-
-			if position_is_before then
-				low = middle + 1
-			else
-				high = middle
-			end
-		end
-
-		local byte_column, screen_row = position_at(low)
-		if screen_row == target_row then
-			return byte_column
-		end
-	end
-
-	local _, first_cursor_row = position_at(0)
-	local _, last_cursor_row = position_at(character_count)
-	-- IMPORTANT: Never change this back to iterating every MiniMap content row.
-	-- Tall windows with short MiniMap content made that scan call `screenpos()`
-	-- hundreds of times per redraw, causing foreground Ghostty redraw backlog,
-	-- visible freezes during repeated cursor movement, and multi-second delayed
-	-- `:qa`. Compute the cursor logical line's screen-row range first and
-	-- intersect it with MiniMap/source viewport rows: excluded rows cannot
-	-- produce a mask. The row-0 endpoint fallback intentionally covers partially
-	-- visible giant wrapped lines. Complexity must scale with overlapping wrapped
-	-- cursor rows, not MiniMap content height.
-	local first_target_row, last_target_row = cursorline_mask_row_span(
-		first_cursor_row,
-		last_cursor_row,
-		cursor_row,
-		first_map_row,
-		last_map_row,
-		source_first_row,
-		source_last_row
-	)
-
-	for screen_row = first_target_row, last_target_row do
-		local byte_column = find_row(screen_row)
-		if byte_column then
-			set_cursorline_mask(buf, line, byte_column, width, false)
-		end
-	end
-end
-
-local function setup_cursorline_mask(map)
-	vim.api.nvim_set_decoration_provider(cursorline_mask_namespace, {
-		on_win = function(_, win, buf)
-			local manager = map._dotfiles_multi_window_manager
-			local map_win = manager and manager.map_window_for_source(win)
-				or map.current.win_data[vim.api.nvim_win_get_tabpage(win)]
-			if
-				not vim.wo[win].cursorline
-				or not map_win
-				or not vim.api.nvim_win_is_valid(map_win)
-				or win == map_win
-			then
-				return
-			end
-
-			local map_config = vim.api.nvim_win_get_config(map_win)
-			if map_config.anchor ~= "NE" then
-				return
-			end
-			if vim.api.nvim_win_get_config(win).relative ~= "" then
-				return
-			end
-
-			local first_map_row, last_map_row, map_position = minimap_content_rows(map_win)
-			local source_position = vim.api.nvim_win_get_position(win)
-			local source_left = source_position[2] + 1
-			local source_right = source_left + vim.api.nvim_win_get_width(win) - 1
-			local map_width = vim.api.nvim_win_get_width(map_win)
-			local map_left = map_position[2] + 1
-			local map_right = map_left + map_width - 1
-			local overlap = math.min(source_right, map_right) - math.max(source_left, map_left) + 1
-			if overlap <= 0 then
-				return
-			end
-
-			local winbar_height = vim.wo[win].winbar == "" and 0 or 1
-			local source_first_row = source_position[1] + winbar_height + 1
-			local source_last_row = source_position[1] + winbar_height + vim.api.nvim_win_get_height(win)
-			local cursor = vim.api.nvim_win_get_cursor(win)
-			mask_cursorline_rows(
-				buf,
-				win,
-				cursor,
-				first_map_row,
-				last_map_row,
-				overlap,
-				source_first_row,
-				source_last_row
-			)
-		end,
-	})
+	vim.wo[win].winhighlight = "NormalFloat:MiniMapNormal,EndOfBuffer:MiniMapNormal,CursorLine:MiniMapFocusedLine"
 end
 
 local function is_code_window(win)
@@ -276,6 +103,7 @@ local function update_minimap_geometry(map)
 	if not map_win or not vim.api.nvim_win_is_valid(map_win) then
 		return
 	end
+	style_minimap_window(map_win)
 
 	local config = vim.api.nvim_win_get_config(map_win)
 	if config.relative ~= "editor" or config.anchor ~= "NE" then
@@ -291,7 +119,17 @@ local function update_minimap_geometry(map)
 	local row = position[1]
 	local col = position[2] + vim.api.nvim_win_get_width(source_win)
 	local height = vim.api.nvim_win_get_height(source_win)
-	if config.row == row and config.col == col and config.height == height then
+	local configured_width = ((map.current.opts or {}).window or {}).width
+		or ((map.config or {}).window or {}).width
+		or config.width
+	local width = math.min(configured_width, vim.api.nvim_win_get_width(source_win))
+	if
+		config.row == row
+		and config.col == col
+		and config.width == width
+		and config.height == height
+		and config.hide
+	then
 		return
 	end
 
@@ -300,8 +138,9 @@ local function update_minimap_geometry(map)
 		anchor = "NE",
 		row = row,
 		col = col,
-		width = config.width,
+		width = width,
 		height = height,
+		hide = true,
 		focusable = config.focusable,
 		zindex = config.zindex,
 	})
@@ -316,8 +155,11 @@ local function setup_code_layout(map)
 
 	local manager = {
 		active_source = nil,
+		enabled = false,
+		focused = false,
 		mirrors = {},
 		pending = {},
+		rendered_rows = {},
 		scheduled = false,
 		source_buf = nil,
 	}
@@ -357,6 +199,13 @@ local function setup_code_layout(map)
 			return
 		end
 		manager.mirrors[source_win] = nil
+		local rows = manager.rendered_rows[instance.win]
+		manager.rendered_rows[instance.win] = nil
+		for _, row in pairs(rows or {}) do
+			if vim.api.nvim_win_is_valid(row.win) then
+				pcall(vim.api.nvim_win_close, row.win, true)
+			end
+		end
 		if vim.api.nvim_win_is_valid(instance.win) then
 			pcall(vim.api.nvim_win_close, instance.win, true)
 		end
@@ -366,15 +215,25 @@ local function setup_code_layout(map)
 	end
 
 	function manager.close_all()
+		for map_win, rows in pairs(manager.rendered_rows) do
+			manager.rendered_rows[map_win] = nil
+			for _, row in pairs(rows) do
+				if vim.api.nvim_win_is_valid(row.win) then
+					pcall(vim.api.nvim_win_close, row.win, true)
+				end
+			end
+		end
 		for source_win in pairs(vim.deepcopy(manager.mirrors)) do
 			close_mirror(source_win)
 		end
 		manager.active_source = nil
+		manager.focused = false
 		manager.source_buf = nil
 	end
 
 	local function mirror_geometry(source_win, width)
 		local position = vim.api.nvim_win_get_position(source_win)
+		width = math.min(width, vim.api.nvim_win_get_width(source_win))
 		return {
 			relative = "editor",
 			anchor = "NE",
@@ -382,6 +241,7 @@ local function setup_code_layout(map)
 			col = position[2] + vim.api.nvim_win_get_width(source_win),
 			width = width,
 			height = vim.api.nvim_win_get_height(source_win),
+			hide = true,
 			focusable = false,
 			style = "minimal",
 			zindex = (options().window or {}).zindex or 10,
@@ -399,7 +259,7 @@ local function setup_code_layout(map)
 
 		local win = vim.api.nvim_open_win(buf, false, mirror_geometry(source_win, window_opts.width or 10))
 		vim.wo[win].winblend = window_opts.winblend or 0
-		vim.wo[win].winhighlight = "NormalFloat:MiniMapNormal"
+		style_minimap_window(win)
 		vim.wo[win].wrap = false
 
 		local instance = { buf = buf, win = win, source_win = source_win }
@@ -425,11 +285,142 @@ local function setup_code_layout(map)
 		return size_changed
 	end
 
+	local function close_rendered_row(rows, map_line)
+		local row = rows[map_line]
+		if not row then
+			return
+		end
+		rows[map_line] = nil
+		if vim.api.nvim_win_is_valid(row.win) then
+			pcall(vim.api.nvim_win_close, row.win, true)
+		end
+	end
+
+	local function render_map_rows(source_win, map_win)
+		if not is_code_window(source_win) or not vim.api.nvim_win_is_valid(map_win) then
+			return
+		end
+		-- Reclaim space only below the encoded minimap EOF. Every encoded row
+		-- owns the complete horizontal interval from the rail to the pane edge,
+		-- including blank cells to the right of its last glyph.
+		local rows = manager.rendered_rows[map_win] or {}
+		manager.rendered_rows[map_win] = rows
+		local map_buf = vim.api.nvim_win_get_buf(map_win)
+		local source_position = vim.api.nvim_win_get_position(source_win)
+		local map_width = vim.api.nvim_win_get_width(map_win)
+		local map_left = source_position[2] + vim.api.nvim_win_get_width(source_win) - map_width
+		local map_config = vim.api.nvim_win_get_config(map_win)
+		local native = map.current.win_data[vim.api.nvim_get_current_tabpage()]
+		local focused_line = manager.focused and map_win == native and vim.api.nvim_win_get_cursor(map_win)[1] - 1
+			or nil
+		local line_count = math.min(vim.api.nvim_buf_line_count(map_buf), vim.api.nvim_win_get_height(source_win))
+		local wanted = {}
+		for map_line = 0, line_count - 1 do
+			wanted[map_line] = true
+			local geometry = {
+				relative = "editor",
+				anchor = "NW",
+				row = source_position[1] + map_line,
+				col = map_left,
+				width = map_width,
+				height = 1,
+				focusable = false,
+				style = "minimal",
+				zindex = map_config.zindex,
+			}
+			local row = rows[map_line]
+			if not row or not vim.api.nvim_win_is_valid(row.win) then
+				local win = vim.api.nvim_open_win(map_buf, false, geometry)
+				row = { win = win }
+				rows[map_line] = row
+				vim.w[win].dotfiles_minimap_render_row = true
+				vim.wo[win].winblend = (options().window or {}).winblend or 0
+				vim.wo[win].cursorline = false
+				vim.wo[win].scrolloff = 0
+				vim.wo[win].wrap = false
+				style_minimap_window(win)
+				vim.api.nvim_win_set_cursor(win, { map_line + 1, 0 })
+				vim.api.nvim_win_call(win, function()
+					vim.fn.winrestview({ topline = map_line + 1, leftcol = 0 })
+				end)
+			else
+				local current = vim.api.nvim_win_get_config(row.win)
+				if
+					current.row ~= geometry.row
+					or current.col ~= geometry.col
+					or current.width ~= geometry.width
+					or current.zindex ~= geometry.zindex
+				then
+					vim.api.nvim_win_set_config(row.win, geometry)
+				end
+			end
+			vim.wo[row.win].cursorline = focused_line == map_line
+		end
+		for map_line in pairs(vim.deepcopy(rows)) do
+			if not wanted[map_line] then
+				close_rendered_row(rows, map_line)
+			end
+		end
+	end
+
+	local function render_all_maps()
+		local wanted = {}
+		local native = map.current.win_data[vim.api.nvim_get_current_tabpage()]
+		if native and vim.api.nvim_win_is_valid(native) and is_code_window(manager.active_source) then
+			wanted[native] = true
+			render_map_rows(manager.active_source, native)
+		end
+		for _, instance in pairs(manager.mirrors) do
+			if vim.api.nvim_win_is_valid(instance.win) then
+				wanted[instance.win] = true
+				render_map_rows(instance.source_win, instance.win)
+			end
+		end
+		for map_win, rows in pairs(manager.rendered_rows) do
+			if not wanted[map_win] then
+				manager.rendered_rows[map_win] = nil
+				for map_line in pairs(vim.deepcopy(rows)) do
+					close_rendered_row(rows, map_line)
+				end
+			end
+		end
+	end
+
 	local function reconcile_mirrors()
 		local official_win = map.current.win_data[vim.api.nvim_get_current_tabpage()]
 		if not official_win or not vim.api.nvim_win_is_valid(official_win) then
-			manager.close_all()
-			return false
+			if not manager.enabled then
+				manager.close_all()
+				return false
+			end
+
+			-- Commands such as `:only` close floating windows together with ordinary
+			-- splits, without going through MiniMap.close(). Reopen the native map
+			-- while keeping an explicit user toggle-off authoritative.
+			local source_win = source_window(map)
+			if not source_win then
+				manager.close_all()
+				return false
+			end
+			local previous_win = vim.api.nvim_get_current_win()
+			if previous_win ~= source_win then
+				vim.api.nvim_set_current_win(source_win)
+			end
+			map.open()
+			official_win = map.current.win_data[vim.api.nvim_get_current_tabpage()]
+			if previous_win ~= source_win then
+				vim.schedule(function()
+					vim.schedule(function()
+						if vim.api.nvim_win_is_valid(previous_win) then
+							vim.api.nvim_set_current_win(previous_win)
+						end
+					end)
+				end)
+			end
+			if not official_win or not vim.api.nvim_win_is_valid(official_win) then
+				manager.close_all()
+				return false
+			end
 		end
 
 		local active_source = source_window(map)
@@ -553,7 +544,6 @@ local function setup_code_layout(map)
 				end, encoded_lines)
 			end
 		end
-
 		vim.api.nvim_buf_set_lines(instance.buf, 0, -1, true, encoded_lines)
 		instance.encode_data = {
 			source_rows = #source_lines,
@@ -699,6 +689,7 @@ local function setup_code_layout(map)
 				refresh_mirror_scrollbar(instance)
 			end
 		end
+		render_all_maps()
 	end
 
 	function manager.schedule(parts)
@@ -729,13 +720,39 @@ local function setup_code_layout(map)
 		update_minimap_geometry(map)
 		local normalized =
 			vim.tbl_deep_extend("force", { integrations = true, lines = true, scrollbar = true }, parts or {})
-		manager.schedule(normalized)
+		vim.schedule(function()
+			manager.schedule(normalized)
+		end)
 		return result
+	end
+
+	local original_open = map.open
+	map.open = function(...)
+		manager.enabled = true
+		return original_open(...)
+	end
+
+	if map.toggle_focus then
+		local original_toggle_focus = map.toggle_focus
+		map.toggle_focus = function(...)
+			local native = map.current.win_data[vim.api.nvim_get_current_tabpage()]
+			local entering = native and vim.api.nvim_win_is_valid(native) and vim.api.nvim_get_current_win() ~= native
+			if entering then
+				manager.focused = true
+			end
+			local result = original_toggle_focus(...)
+			if not entering then
+				manager.focused = false
+			end
+			manager.schedule({ scrollbar = true })
+			return result
+		end
 	end
 
 	if map.close then
 		local original_close = map.close
 		map.close = function(...)
+			manager.enabled = false
 			manager.close_all()
 			return original_close(...)
 		end
@@ -751,9 +768,34 @@ local function setup_code_layout(map)
 	vim.api.nvim_create_autocmd("WinEnter", {
 		group = group,
 		callback = function()
-			if is_code_window(vim.api.nvim_get_current_win()) then
-				map.refresh({}, { integrations = false, lines = false })
+			local current = vim.api.nvim_get_current_win()
+			if is_code_window(current) then
+				local native = map.current.win_data[vim.api.nvim_get_current_tabpage()]
+				local window_opts = options().window or {}
+				local wanted_width = math.min(window_opts.width or 10, vim.api.nvim_win_get_width(current))
+				local geometry_changed = not native
+					or not vim.api.nvim_win_is_valid(native)
+					or vim.api.nvim_win_get_width(native) ~= wanted_width
+					or vim.api.nvim_win_get_height(native) ~= vim.api.nvim_win_get_height(current)
+				local source_changed = manager.source_buf ~= vim.api.nvim_win_get_buf(current)
+
+				-- The native map window moves between code windows. Re-encode only
+				-- when its grid dimensions or source buffer change; otherwise focus
+				-- changes can keep the cheaper scrollbar-only refresh.
+				map.refresh({}, {
+					integrations = source_changed,
+					lines = source_changed or geometry_changed,
+				})
 			else
+				manager.schedule({ scrollbar = true })
+			end
+		end,
+	})
+	vim.api.nvim_create_autocmd("CursorMoved", {
+		group = group,
+		callback = function()
+			local native = map.current.win_data[vim.api.nvim_get_current_tabpage()]
+			if manager.focused and native and vim.api.nvim_get_current_win() == native then
 				manager.schedule({ scrollbar = true })
 			end
 		end,
@@ -859,9 +901,9 @@ return {
 			set_minimap_highlights()
 
 			map.setup(opts)
-			setup_cursorline_mask(map)
 			setup_code_layout(map)
 			map.open()
+			style_minimap_window(map.current.win_data[vim.api.nvim_get_current_tabpage()])
 		end,
 	},
 }
