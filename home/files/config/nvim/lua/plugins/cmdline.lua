@@ -17,13 +17,13 @@ return {
 				enabled = true,
 				view = "cmdline_popup",
 			},
-			-- Let Noice render regular messages without mixing them into the
-			-- Snacks notification history.
+			-- Keep routine messages compact, but promote warnings and errors to
+			-- the shared Snacks notification surface.
 			messages = {
 				enabled = true,
 				view = "mini",
-				view_error = "mini",
-				view_warn = "mini",
+				view_error = "notify",
+				view_warn = "notify",
 				view_search = "search_count",
 			},
 			-- Snacks remains the owner of vim.notify and notification history.

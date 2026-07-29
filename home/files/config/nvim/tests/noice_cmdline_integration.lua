@@ -44,10 +44,14 @@ assert(opts.cmdline.enabled == true, "Noice must render the command line")
 assert(opts.cmdline.view == "cmdline_popup", "Noice must use the visible popup command line")
 assert(opts.messages.enabled == true, "Noice must render regular messages and confirmation prompts")
 assert(
-	opts.messages.view == "mini" and opts.messages.view_error == "mini" and opts.messages.view_warn == "mini",
-	"Noice messages must not be mixed into the Snacks notification history"
+	opts.messages.view == "mini" and opts.messages.view_error == "notify" and opts.messages.view_warn == "notify",
+	"Noice must keep routine messages compact while promoting warnings and errors to notifications"
 )
 assert(opts.messages.view_search == "search_count", "Search counts must use their dedicated inline view")
+assert(
+	require("noice.config.views").defaults.notify.backend[1] == "snacks",
+	"Noice notifications must prefer the existing Snacks notification backend"
+)
 assert(
 	opts.views.search_count.backend == "dotfiles_search_count",
 	"Search counts must use the complete tiny-inline-diagnostic annotation renderer"
@@ -102,8 +106,8 @@ assert(
 assert(opts.presets.bottom_search == false, "Search commands must use the Noice popup")
 assert(opts.presets.command_palette == true, "The command popup must use the compact palette layout")
 assert(
-	opts.views.cmdline_popup.position.row == 3 and opts.views.cmdline_popup.position.col == "50%",
-	"Noice command input must stay in the upper popup"
+	opts.views.cmdline_popup.position.row == -2 and opts.views.cmdline_popup.position.col == 0,
+	"Noice command input must stay above the bottom-left statusline"
 )
 assert(noice.config == nil, "Noice must use its standard setup path")
 assert(opts.routes == nil, "Noice must not install custom rich-confirmation routes")
