@@ -133,17 +133,24 @@ package.loaded["mini.map"] = {
 }
 local opts = specs[1].opts()
 package.loaded["mini.map"] = original_map
-assert(opts.window.winblend == 0, "minimap float must not blend with the code grid underneath")
+assert(opts.window.winblend == 0, "occupied minimap intervals must be fully opaque")
 assert(opts.window.zindex > 20, "minimap must render above treesitter-context's zindex")
 
 set_minimap_highlights()
 local normal = vim.api.nvim_get_hl(0, { name = "MiniMapNormal", link = false })
-assert(normal.bg == nil, "MiniMapNormal must use Neovim's transparent terminal-default background")
-assert(not normal.blend or normal.blend == 0, "MiniMapNormal must not blend with the code grid underneath")
+assert(normal.bg ~= nil, "MiniMapNormal must define an opaque occupied-interval background")
+assert(not normal.blend or normal.blend == 0, "MiniMapNormal must not blend source cells into occupied intervals")
 for _, group in ipairs({ "MiniMapDiagnosticError", "MiniMapSearch" }) do
 	local highlight = vim.api.nvim_get_hl(0, { name = group, link = false })
 	assert(highlight.bg ~= nil, group .. " must define its integration background")
-	assert(not highlight.blend or highlight.blend == 0, group .. " must not blend with code behind the minimap")
+	assert(not highlight.blend or highlight.blend == 0, group .. " must remain opaque")
 end
+
+pcall(vim.api.nvim_del_augroup_by_name, "dotfiles-mini-map-code-layout")
+vim.api.nvim_win_close(map_win, true)
+vim.api.nvim_buf_delete(map_buf, { force = true })
+vim.wait(20, function()
+	return false
+end)
 
 print("minimap code-area layout regression: ok")
