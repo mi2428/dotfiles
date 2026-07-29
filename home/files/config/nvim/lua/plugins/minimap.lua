@@ -166,6 +166,7 @@ local function setup_code_layout(map)
 		scheduled = false,
 		source_buf = nil,
 		source_margins = {},
+		wrap_margins = {},
 	}
 	map._dotfiles_multi_window_manager = manager
 
@@ -317,6 +318,174 @@ local function setup_code_layout(map)
 		end
 	end
 
+	local function clear_wrap_margin(win)
+		local state = manager.wrap_margins[win]
+		if not state then
+			return
+		end
+		manager.wrap_margins[win] = nil
+		if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
+			pcall(vim.api.nvim_buf_clear_namespace, state.buf, state.namespace, 0, -1)
+		end
+	end
+
+	local function clear_all_wrap_margins()
+		for win in pairs(vim.deepcopy(manager.wrap_margins)) do
+			clear_wrap_margin(win)
+		end
+	end
+
+	local function add_wrap_padding(source_win, buf, namespace, row, segment, text_width, map_width)
+		local line = row + 1
+		local screen_row_end = (segment + 1) * text_width
+		local padding_start = screen_row_end - map_width + 1
+		local line_end = vim.fn.virtcol({ line, "$" }, false, source_win)
+		if line_end <= padding_start then
+			return false
+		end
+
+		local byte_col = vim.fn.virtcol2col(source_win, line, padding_start)
+		if byte_col <= 0 then
+			return false
+		end
+		local character_range = vim.fn.virtcol({ line, byte_col }, true, source_win)
+		local padding_width = screen_row_end - character_range[1] + 1
+		if padding_width <= 0 then
+			return false
+		end
+		vim.api.nvim_buf_set_extmark(buf, namespace, row, byte_col - 1, {
+			-- No highlight is intentional: cells outside the float (for example when
+			-- a tab straddles the boundary) retain the source row's own background.
+			virt_text = { { string.rep(" ", padding_width) } },
+			virt_text_pos = "inline",
+			right_gravity = false,
+		})
+		return true
+	end
+
+	local function reserve_wrap_margin(source_win, map_win)
+		if
+			not is_code_window(source_win)
+			or not vim.wo[source_win].wrap
+			or vim.wo[source_win].linebreak
+			or vim.wo[source_win].showbreak ~= ""
+			or not map_win
+			or not vim.api.nvim_win_is_valid(map_win)
+		then
+			-- Neovim 0.12 can crash while resolving virtual columns when inline
+			-- virtual text is combined with linebreak or showbreak. Those opt-in
+			-- modes stay on native wrapping until that core interaction is safe.
+			clear_wrap_margin(source_win)
+			return
+		end
+		local win_info = vim.fn.getwininfo(source_win)[1]
+		local map_width = vim.api.nvim_win_get_width(map_win)
+		local text_width = win_info and win_info.width - win_info.textoff or 0
+		if text_width <= map_width then
+			clear_wrap_margin(source_win)
+			return
+		end
+
+		local map_buf = vim.api.nvim_win_get_buf(map_win)
+		local map_height = math.min(vim.api.nvim_buf_line_count(map_buf), vim.api.nvim_win_get_height(source_win))
+		if map_height <= 0 then
+			clear_wrap_margin(source_win)
+			return
+		end
+
+		local buf = vim.api.nvim_win_get_buf(source_win)
+		local view = vim.api.nvim_win_call(source_win, vim.fn.winsaveview)
+		if view.skipcol > 0 then
+			-- Replacing inline virtual text while Neovim is vertically scrolled inside
+			-- one very long wrapped line can crash 0.12. Re-enable the margin when the
+			-- view returns to a logical-line boundary (skipcol == 0).
+			clear_wrap_margin(source_win)
+			return
+		end
+		local state = manager.wrap_margins[source_win]
+		if not state then
+			state = { namespace = vim.api.nvim_create_namespace("") }
+			manager.wrap_margins[source_win] = state
+			-- Inline virtual text is buffer-owned by default. Restrict this anonymous
+			-- namespace to its source window so differently sized views of the same
+			-- buffer can reserve independent wrap widths.
+			vim.api.nvim__ns_set(state.namespace, { wins = { source_win } })
+		elseif state.buf and state.buf ~= buf and vim.api.nvim_buf_is_valid(state.buf) then
+			vim.api.nvim_buf_clear_namespace(state.buf, state.namespace, 0, -1)
+		end
+		vim.api.nvim_buf_clear_namespace(buf, state.namespace, 0, -1)
+		state.buf = buf
+
+		-- Neovim has no right-side wrap margin. Fill only the screen-row suffixes
+		-- covered by the minimap with window-scoped inline virtual spaces. Because
+		-- the padding stops at the encoded map EOF, later rows still use the full
+		-- editor width. virtcol2col() keeps boundaries correct for tabs, wide glyphs,
+		-- and breakindent.
+		local top_row = view.topline - 1
+		local line_count = vim.api.nvim_buf_line_count(buf)
+		local row = top_row
+		while row < line_count do
+			local rows_before = 0
+			if row > top_row then
+				rows_before = vim.api.nvim_win_text_height(source_win, {
+					start_row = top_row,
+					start_vcol = view.skipcol,
+					end_row = row,
+					end_vcol = 0,
+					max_height = map_height + 1,
+				}).all
+			end
+			if rows_before >= map_height then
+				break
+			end
+
+			local fold_end = vim.api.nvim_win_call(source_win, function()
+				return vim.fn.foldclosedend(row + 1)
+			end)
+			if fold_end >= row + 1 then
+				row = fold_end
+			else
+				local first_segment = row == top_row and math.floor(view.skipcol / text_width) or 0
+				for offset = 0, map_height - rows_before - 1 do
+					if
+						not add_wrap_padding(
+							source_win,
+							buf,
+							state.namespace,
+							row,
+							first_segment + offset,
+							text_width,
+							map_width
+						)
+					then
+						break
+					end
+				end
+				row = row + 1
+			end
+		end
+	end
+
+	local function sync_wrap_margins()
+		local wanted = {}
+		local native = map.current.win_data[vim.api.nvim_get_current_tabpage()]
+		if native and vim.api.nvim_win_is_valid(native) and is_code_window(manager.active_source) then
+			wanted[manager.active_source] = true
+			reserve_wrap_margin(manager.active_source, native)
+		end
+		for _, instance in pairs(manager.mirrors) do
+			if vim.api.nvim_win_is_valid(instance.win) and is_code_window(instance.source_win) then
+				wanted[instance.source_win] = true
+				reserve_wrap_margin(instance.source_win, instance.win)
+			end
+		end
+		for win in pairs(vim.deepcopy(manager.wrap_margins)) do
+			if not wanted[win] then
+				clear_wrap_margin(win)
+			end
+		end
+	end
+
 	local function source_to_map_line(instance, source_line)
 		local data = instance.encode_data
 		if not data or data.source_rows == 0 or data.map_rows == 0 then
@@ -352,6 +521,7 @@ local function setup_code_layout(map)
 
 	function manager.close_all()
 		restore_all_source_margins()
+		clear_all_wrap_margins()
 		for map_win, display in pairs(manager.rendered_maps) do
 			manager.rendered_maps[map_win] = nil
 			manage_windows(function()
@@ -856,6 +1026,9 @@ local function setup_code_layout(map)
 		if parts.display or parts.lines or changes.structure or changes.geometry then
 			render_all_maps()
 		end
+		if parts.wrap or parts.lines or changes.structure or changes.geometry then
+			sync_wrap_margins()
+		end
 		if parts.focus then
 			sync_focused_display()
 		end
@@ -975,6 +1148,62 @@ local function setup_code_layout(map)
 		callback = function()
 			if manager.managing_options == 0 and manager.enabled then
 				manager.schedule({ layout = true })
+			end
+		end,
+	})
+	vim.api.nvim_create_autocmd("OptionSet", {
+		group = group,
+		pattern = {
+			"breakindent",
+			"breakindentopt",
+			"foldcolumn",
+			"linebreak",
+			"list",
+			"listchars",
+			"number",
+			"numberwidth",
+			"relativenumber",
+			"showbreak",
+			"signcolumn",
+			"statuscolumn",
+			"tabstop",
+			"vartabstop",
+			"wrap",
+		},
+		callback = function()
+			if manager.enabled then
+				if vim.wo.linebreak or vim.wo.showbreak ~= "" then
+					-- Clear before OptionSet returns: leaving inline padding installed for
+					-- the first redraw with either option can crash Neovim 0.12.
+					clear_all_wrap_margins()
+				else
+					manager.schedule({ wrap = true })
+				end
+			end
+		end,
+	})
+	vim.api.nvim_create_autocmd("WinScrolled", {
+		group = group,
+		callback = function()
+			if manager.managing_windows == 0 and manager.enabled then
+				manager.schedule({ wrap = true })
+			end
+		end,
+	})
+	vim.api.nvim_create_autocmd("DiagnosticChanged", {
+		group = group,
+		callback = function()
+			if manager.enabled then
+				manager.schedule({ wrap = true })
+			end
+		end,
+	})
+	vim.api.nvim_create_autocmd("User", {
+		group = group,
+		pattern = "GitSignsUpdate",
+		callback = function()
+			if manager.enabled then
+				manager.schedule({ wrap = true })
 			end
 		end,
 	})
