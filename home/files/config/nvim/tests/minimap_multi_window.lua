@@ -91,7 +91,7 @@ local function assert_map_geometry(source_win)
 	assert(vim.wo[map_win].winblend == 0, "stateful minimap windows must remain opaque when focused")
 	assert(
 		vim.wo[map_win].winhighlight:find("EndOfBuffer:MiniMapNormal", 1, true),
-		"native and mirror minimap filler rows must use the minimap background"
+		"hidden state windows must map EndOfBuffer to the minimap background"
 	)
 	local display = assert(manager.rendered_maps[map_win], "minimap has no visible display float")
 	assert(vim.api.nvim_win_is_valid(display.win), "minimap display float is invalid")

@@ -252,6 +252,8 @@ local function setup_code_layout(map)
 		manager.source_buf = nil
 	end
 
+	-- Native and mirror floats own mini.map state and encoding only. They remain
+	-- hidden; visible minimaps are created exclusively by `render_map()` below.
 	local function mirror_geometry(source_win, width)
 		local position = vim.api.nvim_win_get_position(source_win)
 		width = math.min(width, vim.api.nvim_win_get_width(source_win))
@@ -325,6 +327,9 @@ local function setup_code_layout(map)
 		if not is_code_window(source_win) or not vim.api.nvim_win_is_valid(map_win) then
 			return
 		end
+		-- One cropped-height, full-width display float is the sole renderer. Each
+		-- encoded row owns the complete interval from rail through pane edge; rows
+		-- below this buffer's EOF deliberately remain editor-owned.
 		local map_buf = vim.api.nvim_win_get_buf(map_win)
 		local source_position = vim.api.nvim_win_get_position(source_win)
 		local map_width = vim.api.nvim_win_get_width(map_win)
@@ -402,6 +407,9 @@ local function setup_code_layout(map)
 	end
 
 	local function sync_focused_display()
+		-- Keep the full-height state float hidden even while focused: revealing it
+		-- would obscure editor cells below the encoded EOF. Mirror its cursor into
+		-- the visible display instead.
 		local native = map.current.win_data[vim.api.nvim_get_current_tabpage()]
 		local display = native and manager.rendered_maps[native]
 		if not native or not display or not vim.api.nvim_win_is_valid(display.win) then
