@@ -110,8 +110,12 @@ vim.api.nvim_create_user_command("DotfilesQuitAll", function(args)
 		vim.cmd({ cmd = "quitall", bang = true })
 		return
 	end
-	local choice = vim.fn.confirm("Quit all Neovim windows? (Y/n)", "&Yes\n&No", 1)
-	if choice == 1 then
+	local choice = vim.fn.input({
+		prompt = "Quit all Neovim windows? (Y/n): ",
+		cancelreturn = "n",
+	})
+	choice = vim.trim(choice):lower()
+	if choice == "" or choice == "y" or choice == "yes" then
 		vim.cmd({ cmd = "quitall", bang = args.bang })
 	end
 end, { bang = true, desc = "Quit all Neovim windows after confirmation" })

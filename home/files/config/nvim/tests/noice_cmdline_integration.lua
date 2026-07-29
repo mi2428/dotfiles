@@ -1,5 +1,15 @@
 local dotfiles_root = assert(vim.env.DOTFILES_ROOT, "DOTFILES_ROOT is required")
 local nvim_root = vim.fs.joinpath(dotfiles_root, "home/files/config/nvim")
+local lazy_root = vim.fs.joinpath(vim.fn.stdpath("data"), "lazy")
+vim.opt.runtimepath:prepend(nvim_root)
+vim.opt.runtimepath:prepend(vim.fs.joinpath(lazy_root, "nui.nvim"))
+vim.opt.runtimepath:prepend(vim.fs.joinpath(lazy_root, "noice.nvim"))
+package.path = table.concat({
+	vim.fs.joinpath(nvim_root, "lua/?.lua"),
+	vim.fs.joinpath(nvim_root, "lua/?/init.lua"),
+	package.path,
+}, ";")
+
 local specs = dofile(vim.fs.joinpath(nvim_root, "lua/plugins/cmdline.lua"))
 local noice
 
@@ -54,9 +64,19 @@ assert(
 	opts.views.cmdline_popup.position.row == 3 and opts.views.cmdline_popup.position.col == "50%",
 	"Noice command input must stay in the upper popup"
 )
+assert(noice.config == nil, "Noice must use its standard setup path")
+assert(opts.routes == nil, "Noice must not install custom rich-confirmation routes")
+assert(opts.views.confirm == nil, "Noice must not customize the rich-confirmation view")
+
+require("noice.config").setup(opts)
+local Cmdline = require("noice.ui.cmdline")
+local input_prompt = "Quit all Neovim windows? (Y/n): "
+Cmdline.on_show("cmdline_show", { { 0, "" } }, 0, "", input_prompt, 0, 1)
+assert(Cmdline.active:get_format().view == "cmdline_input", "input() prompts must use Noice's standard input dialog")
 assert(
-	opts.views.confirm.position.row == 3 and opts.views.confirm.position.col == "50%",
-	"Noice confirmation prompts must stay in the upper popup"
+	Cmdline.message.title == " Quit all Neovim windows? (Y/n) ",
+	"quit-all input must use its prompt as the dialog title"
 )
+Cmdline.on_hide("cmdline_hide", 1)
 
 print("Noice command-line and message integration regression: ok")

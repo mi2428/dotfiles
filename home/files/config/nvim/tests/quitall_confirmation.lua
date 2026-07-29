@@ -19,18 +19,17 @@ assert(not commands.should_confirm_quit_all(), "an empty Neovim session must ski
 vim.api.nvim_buf_set_name(0, "/tmp/dotfiles-quitall-confirmation.lua")
 assert(commands.should_confirm_quit_all(), "a normal file buffer must retain quit-all confirmation")
 
-local original_confirm = vim.fn.confirm
-local confirmation
-vim.fn.confirm = function(prompt, choices, default)
-	confirmation = { prompt = prompt, choices = choices, default = default }
-	return 2
+local original_input = vim.fn.input
+local input_options
+vim.fn.input = function(options)
+	input_options = options
+	return "n"
 end
 vim.cmd.DotfilesQuitAll()
-vim.fn.confirm = original_confirm
+vim.fn.input = original_input
 
-assert(confirmation.prompt == "Quit all Neovim windows? (Y/n)", "quit-all confirmation prompt changed")
-assert(confirmation.choices == "&Yes\n&No", "quit-all confirmation must offer Y/n")
-assert(confirmation.default == 1, "quit-all confirmation must default to Yes")
+assert(input_options.prompt == "Quit all Neovim windows? (Y/n): ", "quit-all input title changed")
+assert(input_options.cancelreturn == "n", "cancelling quit-all input must decline the operation")
 assert(vim.api.nvim_get_current_win() ~= 0, "declining quit-all still exited Neovim")
 
 vim.api.nvim_buf_set_name(0, "")

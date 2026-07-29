@@ -52,9 +52,6 @@ return {
 				cmdline_popup = {
 					position = { row = 3, col = "50%" },
 				},
-				confirm = {
-					position = { row = 3, col = "50%" },
-				},
 			},
 		},
 	},
