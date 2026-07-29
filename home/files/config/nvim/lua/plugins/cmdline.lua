@@ -53,7 +53,7 @@ return {
 					backend = "dotfiles_search_count",
 				},
 				cmdline_popup = {
-					position = { row = 3, col = "50%" },
+					position = { row = -2, col = 0 },
 				},
 			},
 		},
