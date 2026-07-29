@@ -12,6 +12,7 @@ local parsers = {
 	"markdown_inline",
 	"python",
 	"query",
+	"regex",
 	"ruby",
 	"rust",
 	"terraform",
