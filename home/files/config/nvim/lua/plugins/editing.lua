@@ -1,5 +1,58 @@
 return {
 	{
+		"windwp/nvim-autopairs",
+		event = "InsertEnter",
+		opts = {
+			check_ts = true,
+		},
+	},
+	{
+		"kylechui/nvim-surround",
+		version = "^4.0.0",
+		event = "VeryLazy",
+		init = function()
+			-- Flash owns `S` in Visual mode. Disable only nvim-surround's
+			-- Visual defaults, then expose the same actions under `gs`/`gS`.
+			vim.g.nvim_surround_no_visual_mappings = true
+		end,
+		opts = {},
+		config = function(_, opts)
+			require("nvim-surround").setup(opts)
+			vim.keymap.set("x", "gs", "<Plug>(nvim-surround-visual)", {
+				desc = "Add surround to selection",
+			})
+			vim.keymap.set("x", "gS", "<Plug>(nvim-surround-visual-line)", {
+				desc = "Add linewise surround to selection",
+			})
+		end,
+	},
+	{
+		"nvim-mini/mini.ai",
+		event = "VeryLazy",
+		opts = function()
+			local ai = require("mini.ai")
+			return {
+				custom_textobjects = {
+					-- Treesitter owns `af`/`if`; keep mini.ai's function-call
+					-- object reachable through the otherwise unused `aF`/`iF`.
+					F = ai.gen_spec.function_call(),
+				},
+				mappings = {
+					around = "a",
+					inside = "i",
+					-- Keep Neovim 0.12 incremental selection and the builtin tag
+					-- jumps available instead of claiming `an`/`in` and `g[`/`g]`.
+					around_next = "",
+					inside_next = "",
+					around_last = "al",
+					inside_last = "il",
+					goto_left = "",
+					goto_right = "",
+				},
+			}
+		end,
+	},
+	{
 		"Wansmer/treesj",
 		keys = {
 			{

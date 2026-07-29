@@ -328,7 +328,12 @@ return {
 		"saghen/blink.cmp",
 		version = "1.*",
 		event = { "InsertEnter", "CmdlineEnter" },
-		dependencies = { "rafamadriz/friendly-snippets" },
+		dependencies = {
+			"rafamadriz/friendly-snippets",
+			-- Blink captures the existing Insert-mode mapping as its fallback.
+			-- Load autopairs first so an unaccepted <CR> still expands empty pairs.
+			"windwp/nvim-autopairs",
+		},
 		opts = {
 			keymap = {
 				preset = "default",
