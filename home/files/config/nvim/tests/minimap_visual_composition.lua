@@ -55,8 +55,8 @@ map.open()
 local manager = map._dotfiles_multi_window_manager
 local map_win = map.current.win_data[vim.api.nvim_get_current_tabpage()]
 wait_for(function()
-	return map_win and vim.api.nvim_win_is_valid(map_win) and manager.rendered_rows[map_win]
-end, "cropped minimap renderer did not initialize")
+	return map_win and vim.api.nvim_win_is_valid(map_win) and manager.rendered_maps[map_win]
+end, "minimap display renderer did not initialize")
 
 local map_buf = vim.api.nvim_win_get_buf(map_win)
 vim.api.nvim_buf_clear_namespace(map_buf, -1, 0, -1)
@@ -74,46 +74,38 @@ vim.api.nvim_buf_set_extmark(map_buf, virtual_namespace, 3, 0, {
 manager.schedule({ lines = false, integrations = false, scrollbar = false })
 
 wait_for(function()
-	local rows = manager.rendered_rows[map_win] or {}
-	if vim.tbl_count(rows) ~= 4 then
-		return false
-	end
-	for map_line = 0, 3 do
-		if
-			not rows[map_line]
-			or vim.api.nvim_win_get_width(rows[map_line].win) ~= vim.api.nvim_win_get_width(map_win)
-		then
-			return false
-		end
-	end
-	return true
-end, "encoded rows did not reserve the complete minimap width")
+	local display = manager.rendered_maps[map_win]
+	return display
+		and vim.api.nvim_win_is_valid(display.win)
+		and vim.api.nvim_win_get_buf(display.win) == map_buf
+		and vim.api.nvim_win_get_width(display.win) == vim.api.nvim_win_get_width(map_win)
+		and vim.api.nvim_win_get_height(display.win) == 4
+end, "encoded minimap span did not create one full-width display")
 
 local normal = vim.api.nvim_get_hl(0, { name = "MiniMapNormal", link = false })
 assert(normal.bg ~= nil and (not normal.blend or normal.blend == 0), "occupied interval background must be opaque")
-local rows = manager.rendered_rows[map_win]
+local display = assert(manager.rendered_maps[map_win], "minimap has no display float")
 local source_position = vim.api.nvim_win_get_position(source_win)
 local expected_left = source_position[2] + vim.api.nvim_win_get_width(source_win) - vim.api.nvim_win_get_width(map_win)
-for map_line, row in pairs(rows) do
-	local config = vim.api.nvim_win_get_config(row.win)
-	assert(config.row == source_position[1] + map_line, "cropped row is vertically misplaced")
-	assert(config.col == expected_left, "cropped row is horizontally misplaced")
-	assert(config.width == vim.api.nvim_win_get_width(map_win), "encoded row must cover from rail to pane edge")
-	assert(config.height == 1, "cropped row must occupy exactly one screen row")
-	assert(vim.wo[row.win].winblend == 0, "occupied interval must not blend source cells")
-end
-assert(vim.tbl_count(rows) == 4, "every row inside the encoded minimap span must be opaque")
+local display_config = vim.api.nvim_win_get_config(display.win)
+assert(display_config.row == source_position[1], "display float is vertically misplaced")
+assert(display_config.col == expected_left, "display float is horizontally misplaced")
+assert(display_config.width == vim.api.nvim_win_get_width(map_win), "display must cover from rail to pane edge")
+assert(display_config.height == 4, "display must include every encoded row")
+assert(vim.wo[display.win].winblend == 0, "occupied interval must not blend source cells")
+local display_view = vim.api.nvim_win_call(display.win, vim.fn.winsaveview)
+assert(display_view.topline == 1, "display must start at the first encoded row")
+assert(display_view.leftcol == 0, "display must start at the minimap rail")
 
 vim.api.nvim_buf_set_lines(map_buf, 2, -1, false, {})
 manager.schedule({ lines = false, integrations = false, scrollbar = false })
 wait_for(function()
-	local shortened = manager.rendered_rows[map_win] or {}
-	return shortened[0]
-		and shortened[1]
-		and shortened[2] == nil
-		and shortened[3] == nil
-		and vim.tbl_count(shortened) == 2
-end, "rows below the encoded minimap EOF retained opaque filler")
+	local shortened = manager.rendered_maps[map_win]
+	return shortened
+		and shortened.win == display.win
+		and vim.api.nvim_win_is_valid(shortened.win)
+		and vim.api.nvim_win_get_height(shortened.win) == 2
+end, "display float did not shrink below the encoded minimap EOF")
 
 map.close()
 vim.wait(20, function()

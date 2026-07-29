@@ -157,9 +157,10 @@ local function setup_code_layout(map)
 		active_source = nil,
 		enabled = false,
 		focused = false,
+		managing_windows = 0,
 		mirrors = {},
 		pending = {},
-		rendered_rows = {},
+		rendered_maps = {},
 		scheduled = false,
 		source_buf = nil,
 	}
@@ -181,6 +182,16 @@ local function setup_code_layout(map)
 		return offset + ((opts.window or {}).show_integration_count and 1 or 0)
 	end
 
+	local function manage_windows(callback)
+		manager.managing_windows = manager.managing_windows + 1
+		local ok, result = xpcall(callback, debug.traceback)
+		manager.managing_windows = manager.managing_windows - 1
+		if not ok then
+			error(result, 0)
+		end
+		return result
+	end
+
 	local function source_to_map_line(instance, source_line)
 		local data = instance.encode_data
 		if not data or data.source_rows == 0 or data.map_rows == 0 then
@@ -199,29 +210,29 @@ local function setup_code_layout(map)
 			return
 		end
 		manager.mirrors[source_win] = nil
-		local rows = manager.rendered_rows[instance.win]
-		manager.rendered_rows[instance.win] = nil
-		for _, row in pairs(rows or {}) do
-			if vim.api.nvim_win_is_valid(row.win) then
-				pcall(vim.api.nvim_win_close, row.win, true)
+		local display = manager.rendered_maps[instance.win]
+		manager.rendered_maps[instance.win] = nil
+		manage_windows(function()
+			if display and vim.api.nvim_win_is_valid(display.win) then
+				pcall(vim.api.nvim_win_close, display.win, true)
 			end
-		end
-		if vim.api.nvim_win_is_valid(instance.win) then
-			pcall(vim.api.nvim_win_close, instance.win, true)
-		end
-		if vim.api.nvim_buf_is_valid(instance.buf) then
-			pcall(vim.api.nvim_buf_delete, instance.buf, { force = true })
-		end
+			if vim.api.nvim_win_is_valid(instance.win) then
+				pcall(vim.api.nvim_win_close, instance.win, true)
+			end
+			if vim.api.nvim_buf_is_valid(instance.buf) then
+				pcall(vim.api.nvim_buf_delete, instance.buf, { force = true })
+			end
+		end)
 	end
 
 	function manager.close_all()
-		for map_win, rows in pairs(manager.rendered_rows) do
-			manager.rendered_rows[map_win] = nil
-			for _, row in pairs(rows) do
-				if vim.api.nvim_win_is_valid(row.win) then
-					pcall(vim.api.nvim_win_close, row.win, true)
+		for map_win, display in pairs(manager.rendered_maps) do
+			manager.rendered_maps[map_win] = nil
+			manage_windows(function()
+				if vim.api.nvim_win_is_valid(display.win) then
+					pcall(vim.api.nvim_win_close, display.win, true)
 				end
-			end
+			end)
 		end
 		for source_win in pairs(vim.deepcopy(manager.mirrors)) do
 			close_mirror(source_win)
@@ -257,7 +268,9 @@ local function setup_code_layout(map)
 		vim.bo[buf].filetype = "minimap"
 		vim.bo[buf].swapfile = false
 
-		local win = vim.api.nvim_open_win(buf, false, mirror_geometry(source_win, window_opts.width or 10))
+		local win = manage_windows(function()
+			return vim.api.nvim_open_win(buf, false, mirror_geometry(source_win, window_opts.width or 10))
+		end)
 		vim.wo[win].winblend = window_opts.winblend or 0
 		style_minimap_window(win)
 		vim.wo[win].wrap = false
@@ -285,26 +298,23 @@ local function setup_code_layout(map)
 		return size_changed
 	end
 
-	local function close_rendered_row(rows, map_line)
-		local row = rows[map_line]
-		if not row then
+	local function close_rendered_map(map_win)
+		local display = manager.rendered_maps[map_win]
+		if not display then
 			return
 		end
-		rows[map_line] = nil
-		if vim.api.nvim_win_is_valid(row.win) then
-			pcall(vim.api.nvim_win_close, row.win, true)
-		end
+		manager.rendered_maps[map_win] = nil
+		manage_windows(function()
+			if vim.api.nvim_win_is_valid(display.win) then
+				pcall(vim.api.nvim_win_close, display.win, true)
+			end
+		end)
 	end
 
-	local function render_map_rows(source_win, map_win)
+	local function render_map(source_win, map_win)
 		if not is_code_window(source_win) or not vim.api.nvim_win_is_valid(map_win) then
 			return
 		end
-		-- Reclaim space only below the encoded minimap EOF. Every encoded row
-		-- owns the complete horizontal interval from the rail to the pane edge,
-		-- including blank cells to the right of its last glyph.
-		local rows = manager.rendered_rows[map_win] or {}
-		manager.rendered_rows[map_win] = rows
 		local map_buf = vim.api.nvim_win_get_buf(map_win)
 		local source_position = vim.api.nvim_win_get_position(source_win)
 		local map_width = vim.api.nvim_win_get_width(map_win)
@@ -313,54 +323,52 @@ local function setup_code_layout(map)
 		local native = map.current.win_data[vim.api.nvim_get_current_tabpage()]
 		local focused_line = manager.focused and map_win == native and vim.api.nvim_win_get_cursor(map_win)[1] - 1
 			or nil
-		local line_count = math.min(vim.api.nvim_buf_line_count(map_buf), vim.api.nvim_win_get_height(source_win))
-		local wanted = {}
-		for map_line = 0, line_count - 1 do
-			wanted[map_line] = true
-			local geometry = {
-				relative = "editor",
-				anchor = "NW",
-				row = source_position[1] + map_line,
-				col = map_left,
-				width = map_width,
-				height = 1,
-				focusable = false,
-				style = "minimal",
-				zindex = map_config.zindex,
-			}
-			local row = rows[map_line]
-			if not row or not vim.api.nvim_win_is_valid(row.win) then
-				local win = vim.api.nvim_open_win(map_buf, false, geometry)
-				row = { win = win }
-				rows[map_line] = row
-				vim.w[win].dotfiles_minimap_render_row = true
-				vim.wo[win].winblend = (options().window or {}).winblend or 0
-				vim.wo[win].cursorline = false
-				vim.wo[win].scrolloff = 0
-				vim.wo[win].wrap = false
-				style_minimap_window(win)
-				vim.api.nvim_win_set_cursor(win, { map_line + 1, 0 })
-				vim.api.nvim_win_call(win, function()
-					vim.fn.winrestview({ topline = map_line + 1, leftcol = 0 })
-				end)
-			else
-				local current = vim.api.nvim_win_get_config(row.win)
-				if
-					current.row ~= geometry.row
-					or current.col ~= geometry.col
-					or current.width ~= geometry.width
-					or current.zindex ~= geometry.zindex
-				then
-					vim.api.nvim_win_set_config(row.win, geometry)
-				end
-			end
-			vim.wo[row.win].cursorline = focused_line == map_line
+		local height = math.min(vim.api.nvim_buf_line_count(map_buf), vim.api.nvim_win_get_height(source_win))
+		if height == 0 then
+			close_rendered_map(map_win)
+			return
 		end
-		for map_line in pairs(vim.deepcopy(rows)) do
-			if not wanted[map_line] then
-				close_rendered_row(rows, map_line)
+		local geometry = {
+			relative = "editor",
+			anchor = "NW",
+			row = source_position[1],
+			col = map_left,
+			width = map_width,
+			height = height,
+			focusable = false,
+			style = "minimal",
+			zindex = map_config.zindex,
+		}
+		local display = manager.rendered_maps[map_win]
+		if not display or not vim.api.nvim_win_is_valid(display.win) then
+			local win = manage_windows(function()
+				return vim.api.nvim_open_win(map_buf, false, geometry)
+			end)
+			display = { win = win }
+			manager.rendered_maps[map_win] = display
+			vim.wo[win].winblend = (options().window or {}).winblend or 0
+			vim.wo[win].scrolloff = 0
+			vim.wo[win].wrap = false
+			style_minimap_window(win)
+		else
+			local current = vim.api.nvim_win_get_config(display.win)
+			if
+				current.row ~= geometry.row
+				or current.col ~= geometry.col
+				or current.width ~= geometry.width
+				or current.height ~= geometry.height
+				or current.zindex ~= geometry.zindex
+			then
+				vim.api.nvim_win_set_config(display.win, geometry)
 			end
 		end
+		vim.api.nvim_win_call(display.win, function()
+			vim.fn.winrestview({ topline = 1, leftcol = 0 })
+		end)
+		if focused_line then
+			vim.api.nvim_win_set_cursor(display.win, { focused_line + 1, 0 })
+		end
+		vim.wo[display.win].cursorline = focused_line ~= nil
 	end
 
 	local function render_all_maps()
@@ -368,20 +376,17 @@ local function setup_code_layout(map)
 		local native = map.current.win_data[vim.api.nvim_get_current_tabpage()]
 		if native and vim.api.nvim_win_is_valid(native) and is_code_window(manager.active_source) then
 			wanted[native] = true
-			render_map_rows(manager.active_source, native)
+			render_map(manager.active_source, native)
 		end
 		for _, instance in pairs(manager.mirrors) do
 			if vim.api.nvim_win_is_valid(instance.win) then
 				wanted[instance.win] = true
-				render_map_rows(instance.source_win, instance.win)
+				render_map(instance.source_win, instance.win)
 			end
 		end
-		for map_win, rows in pairs(manager.rendered_rows) do
+		for map_win in pairs(manager.rendered_maps) do
 			if not wanted[map_win] then
-				manager.rendered_rows[map_win] = nil
-				for map_line in pairs(vim.deepcopy(rows)) do
-					close_rendered_row(rows, map_line)
-				end
+				close_rendered_map(map_win)
 			end
 		end
 	end
@@ -729,7 +734,10 @@ local function setup_code_layout(map)
 	local original_open = map.open
 	map.open = function(...)
 		manager.enabled = true
-		return original_open(...)
+		local args = { ... }
+		return manage_windows(function()
+			return original_open(unpack(args))
+		end)
 	end
 
 	if map.toggle_focus then
@@ -753,8 +761,11 @@ local function setup_code_layout(map)
 		local original_close = map.close
 		map.close = function(...)
 			manager.enabled = false
-			manager.close_all()
-			return original_close(...)
+			local args = { ... }
+			return manage_windows(function()
+				manager.close_all()
+				return original_close(unpack(args))
+			end)
 		end
 	end
 
@@ -762,6 +773,9 @@ local function setup_code_layout(map)
 	vim.api.nvim_create_autocmd({ "WinNew", "WinClosed", "WinResized", "VimResized" }, {
 		group = group,
 		callback = function()
+			if manager.managing_windows > 0 then
+				return
+			end
 			manager.schedule({ integrations = true, lines = true, scrollbar = true })
 		end,
 	})
