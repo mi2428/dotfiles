@@ -24,7 +24,7 @@ selected=$(
       --no-multi \
       --prompt='session> ' \
       --preview="\"\$TMUX_BIN\" capture-pane -e -p -t {1}" \
-      --preview-window='right,60%,border-left'
+      --preview-window='down,60%,border-top,wrap'
 ) || exit 0
 
 [ -n "$selected" ] || exit 0
