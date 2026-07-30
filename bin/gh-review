@@ -207,7 +207,7 @@ function select_open_pr --argument-names self_path repo
         | __dotfiles_git_ui_format_fzf_rows prs "$list_width" '' \
         | env FZF_DEFAULT_OPTS= FZF_DEFAULT_OPTS_FILE= fzf \
             --ansi \
-            --no-height \
+            --height=60% \
             --layout=reverse \
             --border=sharp \
             --padding=0 \
