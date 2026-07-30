@@ -1,4 +1,5 @@
 require("config.options")
+require("config.diagnostic_filter").setup()
 require("config.keymaps")
 require("config.autocmds")
 require("config.commands")
