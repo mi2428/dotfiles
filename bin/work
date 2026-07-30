@@ -301,7 +301,7 @@ if test $worktree_mode -eq 1
         set worktree_action (command "$__dotfiles_work_git_b_path" __create-worktree "$branch" "$start_ref"); or exit $status
     else
         test -n "$branch"; or set selected_worktree_interactively 1
-        set worktree_action (command "$__dotfiles_work_git_b_path" __resolve-worktree "$branch"); or exit $status
+        set worktree_action (env DOTFILES_GIT_B_FZF_LAYOUT=vertical "$__dotfiles_work_git_b_path" __resolve-worktree "$branch"); or exit $status
     end
 
     set -l fields (string split \t -- "$worktree_action")

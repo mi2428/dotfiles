@@ -178,12 +178,13 @@ function print_preview --argument-names ref kind worktree_path
     end
 
     printf '\n'
-    git log --max-count=10 --oneline --graph --date=short --color=always \
-        --pretty='format:%C(auto)%cd %h%d %s' "$ref" -- || true
-
-    printf '\n%s\n' '────────────────────────────────────────'
-    printf '%s\n' 'diff vs HEAD'
-    git diff --stat --color=always "HEAD...$ref" || true
+    if git diff --quiet "HEAD...$ref"
+        git log --max-count=10 --oneline --graph --date=short --color=always \
+            --pretty='format:%C(auto)%cd %h%d %s' "$ref" -- || true
+    else
+        printf '%s\n' 'diff vs HEAD'
+        git diff --stat --color=always "HEAD...$ref" || true
+    end
 end
 
 function branch_picker
@@ -211,6 +212,11 @@ function branch_picker
 
     set -l size (__dotfiles_git_ui_current_terminal_size)
     set -l cols $size[1]
+    set -l vertical_layout 0
+
+    if set -q DOTFILES_GIT_B_FZF_LAYOUT; and test "$DOTFILES_GIT_B_FZF_LAYOUT" = vertical
+        set vertical_layout 1
+    end
 
     if not string match -rq '^[0-9]+$' -- "$cols"
         set cols 160
@@ -219,6 +225,9 @@ function branch_picker
     prune_worktrees
 
     set -l list_width (math -s0 "$cols - ($cols * 42 / 100) - 5")
+    if test $vertical_layout -eq 1
+        set list_width (math -s0 "$cols - 2")
+    end
     if test "$list_width" -le 72
         set list_width 72
     end
@@ -248,6 +257,34 @@ function branch_picker
         --preview-window=right,42%,border-left,wrap \
         "--preview=$__dotfiles_git_b_self_path __preview {1} {2} {4}" \
         --bind=ctrl-/:change-preview-window\(right,42%,border-left,wrap\|down,55%,border-top,wrap\)
+
+    if test $vertical_layout -eq 1
+        set -lx FZF_DEFAULT_OPTS ''
+        set -lx FZF_DEFAULT_OPTS_FILE ''
+        set fzf_args \
+            --ansi \
+            --no-sort \
+            --height='~40%' \
+            --layout=reverse \
+            --border=sharp \
+            --padding=0 \
+            --margin=0 \
+            --info=hidden \
+            --no-scrollbar \
+            --highlight-line \
+            --pointer=' ' \
+            --marker=' ' \
+            --gutter=' ' \
+            --cycle \
+            --tiebreak=index \
+            --ellipsis='…' \
+            "--prompt=$prompt" \
+            "--delimiter=$tab" \
+            --with-nth=5 \
+            --color='bg:-1,bg+:#63547e,fg:#cdd6f4,fg+:#f5e0dc,hl:#89b4fa,hl+:#b4befe,border:#89b4fa,separator:#89b4fa,gutter:-1,info:#7f849c,prompt:#cba6f7,pointer:#fab387,marker:#a6e3a1,spinner:#89dceb,header:#94e2d5,label:#89b4fa,query:#cdd6f4'
+            # "--preview=$__dotfiles_git_b_self_path __preview {1} {2} {4}" \
+            # --preview-window=down,40%,border-top,wrap,noinfo
+    end
 
     # Keep ANSI columns visible when the parent terminal exports NO_COLOR.
     set -lx NO_COLOR ''

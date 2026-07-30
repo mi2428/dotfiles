@@ -138,31 +138,23 @@ def format_branches(list_width: int, home: str) -> None:
     if not rows:
         raise SystemExit(0)
 
-    branch_cap = 32
     branch_min = 12
-    age_cap = 12
     age_min = 8
-    author_cap = 14
     author_min = 8
-    worktree_cap = 28
     worktree_min = 3
     subject_min = 16
     fixed_width = 12
 
-    branch_width = min(branch_cap, max(len(row["ref_short"]) for row in rows))
-    branch_width = max(branch_width, branch_min)
-    age_width = min(age_cap, max(len(row["age"]) for row in rows))
-    age_width = max(age_width, age_min)
-    author_width = min(author_cap, max(len(row["author"]) for row in rows))
-    author_width = max(author_width, author_min)
+    branch_width = max(branch_min, max(len(row["ref_short"]) for row in rows))
+    age_width = max(age_min, max(len(row["age"]) for row in rows))
+    author_width = max(author_min, max(len(row["author"]) for row in rows))
 
     for row in rows:
-        row["worktree_display"] = shorten_path(row["worktree"], home, worktree_cap)
+        row["worktree_display"] = shorten_path(row["worktree"], home, list_width)
 
-    worktree_width = min(
-        worktree_cap, max(len(row["worktree_display"]) for row in rows)
+    worktree_width = max(
+        worktree_min, max(len(row["worktree_display"]) for row in rows)
     )
-    worktree_width = max(worktree_width, worktree_min)
 
     subject_width = (
         list_width
