@@ -1,0 +1,5 @@
+git:
+  autoFetch: false
+  log:
+    showGraph: always
+    showWholeGraph: true

@@ -141,6 +141,13 @@ end
 
 local auxiliary_exit_pending = false
 
+local function close_lazygit_panes()
+	local lazygit = package.loaded["config.lazygit"]
+	if type(lazygit) == "table" and type(lazygit.close_all) == "function" then
+		lazygit.close_all()
+	end
+end
+
 local function exit_after_quit()
 	if auxiliary_exit_pending then
 		return
@@ -156,6 +163,7 @@ local function exit_after_quit()
 				return
 			end
 
+			close_lazygit_panes()
 			local ok, err = pcall(vim.cmd, "quitall!")
 			if not ok then
 				auxiliary_exit_pending = false

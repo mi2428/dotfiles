@@ -105,8 +105,16 @@ function M.should_confirm_quit_all()
 	return not view or has_user_buffer_outside_diffview(view)
 end
 
+local function close_lazygit_panes()
+	local lazygit = package.loaded["config.lazygit"]
+	if type(lazygit) == "table" and type(lazygit.close_all) == "function" then
+		lazygit.close_all()
+	end
+end
+
 vim.api.nvim_create_user_command("DotfilesQuitAll", function(args)
 	if not M.should_confirm_quit_all() then
+		close_lazygit_panes()
 		vim.cmd({ cmd = "quitall", bang = true })
 		return
 	end
@@ -116,6 +124,7 @@ vim.api.nvim_create_user_command("DotfilesQuitAll", function(args)
 	})
 	choice = vim.trim(choice):lower()
 	if choice == "" or choice == "y" or choice == "yes" then
+		close_lazygit_panes()
 		vim.cmd({ cmd = "quitall", bang = args.bang })
 	end
 end, { bang = true, desc = "Quit all Neovim windows after confirmation" })
