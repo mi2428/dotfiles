@@ -21,6 +21,7 @@ let
   baseRelativeFiles = [
     "conf.d/01_home_manager_plugins.fish"
     "conf.d/05_catppuccin_theme.fish"
+    "conf.d/06_completion_pager.fish"
     "conf.d/10_general.fish"
     "conf.d/12_general_path.fish"
     "conf.d/13_zoxide.fish"
