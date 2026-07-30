@@ -645,7 +645,33 @@ function ::
     end
 end
 
-function :::
+function ::: --description 'Launch Herdr or create a workspace in the running server'
+    if test (count $argv) -gt 0; and contains -- $argv[1] -n --new-workspace
+        if test (count $argv) -ne 2
+            echo 'Usage: ::: (-n|--new-workspace) PATH' >&2
+            return 2
+        end
+
+        set -l workspace_path (path resolve "$argv[2]" 2>/dev/null)
+        if test $status -ne 0
+            echo "::: directory does not exist: $argv[2]" >&2
+            return 2
+        end
+
+        if not test -e "$workspace_path"
+            echo "::: directory does not exist: $argv[2]" >&2
+            return 2
+        end
+
+        if not test -d "$workspace_path"
+            echo "::: not a directory: $argv[2]" >&2
+            return 2
+        end
+
+        herdr workspace create --cwd "$workspace_path" --focus >/dev/null
+        return $status
+    end
+
     herdr $argv
 end
 

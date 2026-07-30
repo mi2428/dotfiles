@@ -45,3 +45,5 @@ complete --command d --wraps docker
 complete --command k --wraps kubectl
 complete --command ldk --wraps lazydocker
 complete --command tf --wraps terraform
+complete --command ::: --wraps herdr
+complete --command ::: --short-option n --long-option new-workspace --require-parameter --no-files --arguments '(__fish_complete_directories)' --description 'Create and focus a workspace in the running Herdr server'
