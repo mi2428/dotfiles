@@ -175,7 +175,6 @@ function create_worktree_window --argument-names session root user_shell is_new_
 
     if test "$is_new_session" = 1
         set main_pane (tmux new-session -d -P -F '#{pane_id}' -x "$session_width" -y "$session_height" -s "$session" -n "$window_name" -c "$root" "$nvim_cmd"); or return 1
-        tmux resize-window -x "$session_width" -y "$session_height" -t "$main_pane"
     else
         set main_pane (tmux new-window -d -P -F '#{pane_id}' -t "$session:" -n "$window_name" -c "$root" "$nvim_cmd"); or return 1
     end
