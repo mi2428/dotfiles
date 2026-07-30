@@ -859,6 +859,13 @@ return {
 				desc = "Open Git permalink",
 			},
 			{
+				"<leader>gg",
+				function()
+					require("config.lazygit").toggle()
+				end,
+				desc = "Toggle lazygit pane",
+			},
+			{
 				"<C-\\>",
 				function()
 					require("config.terminal").toggle()

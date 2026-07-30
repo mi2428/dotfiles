@@ -283,22 +283,6 @@ local function shell_name(cmd)
 	return vim.fs.basename(vim.o.shell)
 end
 
-local function unified_lazygit_env()
-	local config_home = vim.env.XDG_CONFIG_HOME or vim.fs.joinpath(vim.env.HOME, ".config")
-	local unified_config = vim.fs.joinpath(config_home, "herdr", "lazygit-unified.yml")
-	local config_files = vim.env.LG_CONFIG_FILE or ""
-
-	for config_file in config_files:gmatch("[^,]+") do
-		if config_file == unified_config then
-			return { LG_CONFIG_FILE = config_files }
-		end
-	end
-
-	return {
-		LG_CONFIG_FILE = config_files == "" and unified_config or (config_files .. "," .. unified_config),
-	}
-end
-
 local function tab_title(tab)
 	if valid_tab(tab) then
 		local title = vim.b[tab.terminal.buf].term_title
@@ -819,7 +803,7 @@ local function open_auto_layout(layout)
 	local review_base = layout.review_base
 	local lazygit_tab = M.new({
 		cmd = review_base and { "lazygit", "log" } or { "lazygit" },
-		env = unified_lazygit_env(),
+		env = require("config.lazygit").env(),
 		label = "lazygit",
 	})
 	M.new()
