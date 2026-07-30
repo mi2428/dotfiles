@@ -14,6 +14,9 @@ local calls = {}
 package.loaded["fzf-lua"] = {
 	files = function(opts)
 		calls.fzf = opts
+		vim.cmd("botright vnew")
+		calls.fzf_window = vim.api.nvim_get_current_win()
+		vim.bo.filetype = "fzf"
 	end,
 }
 _G.Snacks = {
@@ -26,9 +29,12 @@ package.loaded["config.sidebar"] = {
 		calls.aerial = opts
 	end,
 }
-package.loaded["config.terminal"] = {
+package.loaded["config.lazygit"] = {
 	toggle = function()
-		calls.terminal = (calls.terminal or 0) + 1
+		calls.lazygit = (calls.lazygit or 0) + 1
+		vim.cmd("botright new")
+		calls.lazygit_window = vim.api.nvim_get_current_win()
+		vim.bo.filetype = "snacks_terminal"
 	end,
 }
 
@@ -40,7 +46,7 @@ dofile(vim.fs.joinpath(nvim_root, "lua/config/autocmds.lua"))
 vim.api.nvim_exec_autocmds("VimEnter", { modeline = false })
 assert(
 	vim.wait(1000, function()
-		return calls.terminal == 1
+		return calls.lazygit == 1
 	end),
 	"workspace startup did not finish"
 )
@@ -54,6 +60,8 @@ assert(calls.explorer and calls.explorer.focus == false, "workspace Explorer mus
 assert(calls.explorer.watch == true, "workspace Explorer must retain filesystem watching")
 assert(calls.aerial, "workspace startup must open Aerial")
 assert(vim.api.nvim_win_is_valid(calls.aerial.source_win), "workspace Aerial must receive a valid editor source")
-assert(calls.aerial.source_win == vim.api.nvim_get_current_win(), "workspace Aerial must attach to the editor")
+assert(calls.aerial.source_win ~= calls.fzf_window, "workspace Aerial must attach to the editor, not fzf")
+assert(vim.api.nvim_get_current_win() == calls.fzf_window, "workspace startup must restore focus to fzf after LazyGit")
+assert(vim.bo[vim.api.nvim_win_get_buf(calls.fzf_window)].filetype == "fzf", "workspace focus must remain in fzf")
 
-print("workspace Explorer and Aerial startup regression: ok")
+print("workspace LazyGit and focused sidebars startup regression: ok")

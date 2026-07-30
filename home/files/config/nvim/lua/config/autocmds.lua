@@ -237,7 +237,7 @@ autocmd("VimEnter", {
 				Snacks.explorer({ focus = false, watch = true })
 				require("config.sidebar").open_aerial({ source_win = editor_window })
 				vim.schedule(function()
-					require("config.terminal").toggle()
+					require("config.lazygit").toggle()
 					if vim.api.nvim_win_is_valid(editor_window) then
 						vim.api.nvim_set_current_win(editor_window)
 					end
