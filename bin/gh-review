@@ -453,7 +453,6 @@ set_tmux_env "$session_name" NVIM_REVIEW_PR "$pr_number"
 set_tmux_env "$session_name" NVIM_REVIEW_REPO_ROOT "$repo_root"
 set_tmux_env "$session_name" NVIM_REVIEW_WORKTREE "$worktree_path"
 set_tmux_env "$session_name" NVIM_REVIEW_SERVER "$nvim_server"
-tmux resize-window -x "$session_width" -y "$session_height" -t "$session_name:$window_name"
 tmux respawn-pane -k -t "$edit_pane" -c "$worktree_path" "$edit_cmd"; or die 'failed to start Neovim review pane'
 tmux select-pane -t "$edit_pane"
 
