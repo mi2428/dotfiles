@@ -70,10 +70,24 @@ assert(calls.open.opts.win.height == 15, "lazygit must use its fixed height")
 assert(calls.open.opts.win.stack == false, "lazygit must remain independent from stacked terminals")
 assert(calls.open.opts.win.wo.winfixheight == true, "lazygit height must remain fixed")
 assert(vim.api.nvim_win_get_height(fake_terminal.win) == 15, "lazygit must enforce its initial text height")
+for direction, name in pairs({ h = "left", j = "lower", k = "upper", l = "right" }) do
+	local mapping = assert(calls.open.opts.win.keys["pane_" .. name], "lazygit pane mapping is missing")
+	assert(mapping[1] == "<C-w>" .. direction, "lazygit pane mapping has the wrong key")
+	assert(type(mapping[2]) == "function", "lazygit pane mapping must use a callback")
+	assert(mapping.mode == "t", "lazygit pane mapping must work directly in terminal mode")
+	assert(mapping.nowait == true, "lazygit pane mapping must not wait after the direction key")
+end
 assert(
 	calls.open.opts.env.LG_CONFIG_FILE == "/tmp/lazygit-base.yml,/tmp/dotfiles-lazygit-test/herdr/lazygit-unified.yml",
 	"lazygit must use the compact unified layout config"
 )
+
+local lazygit_win = fake_terminal.win
+calls.open.opts.win.keys.pane_upper[2]()
+assert(vim.api.nvim_get_current_win() == editor, "<C-w>k must move directly from lazygit to the editor")
+vim.api.nvim_set_current_win(lazygit_win)
+calls.open.opts.win.keys.pane_lower[2]()
+assert(vim.api.nvim_get_current_win() == lazygit_win, "a missing pane must leave lazygit focused")
 
 lazygit.toggle()
 assert(calls.hide == 1, "a visible lazygit pane must be hidden")

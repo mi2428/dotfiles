@@ -27,6 +27,40 @@ local function bottom_terminal_window()
 	end
 end
 
+local function move_to_pane(direction)
+	local current = vim.api.nvim_get_current_win()
+	local target = vim.fn.win_getid(vim.fn.winnr(direction))
+	if target == 0 or target == current then
+		return
+	end
+
+	vim.cmd.stopinsert()
+	vim.api.nvim_set_current_win(target)
+	if vim.bo[vim.api.nvim_win_get_buf(target)].buftype == "terminal" then
+		vim.schedule(function()
+			if vim.api.nvim_win_is_valid(target) and vim.api.nvim_get_current_win() == target then
+				vim.cmd.startinsert()
+			end
+		end)
+	end
+end
+
+local function pane_keys()
+	local keys = {}
+	for direction, name in pairs({ h = "left", j = "lower", k = "upper", l = "right" }) do
+		keys["pane_" .. name] = {
+			"<C-w>" .. direction,
+			function()
+				move_to_pane(direction)
+			end,
+			mode = "t",
+			nowait = true,
+			desc = "Move to " .. name .. " pane",
+		}
+	end
+	return keys
+end
+
 local function window_options()
 	local terminal_win = bottom_terminal_window()
 	return {
@@ -36,6 +70,7 @@ local function window_options()
 		height = height,
 		stack = false,
 		enter = true,
+		keys = pane_keys(),
 		wo = {
 			winbar = "   lazygit",
 			winfixheight = true,
