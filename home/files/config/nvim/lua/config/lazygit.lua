@@ -138,9 +138,52 @@ local function apply_window_options(terminal, opts)
 	end
 end
 
+local function remember_fixed_heights(group)
+	group.fixed_heights = {}
+	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(group.tabpage)) do
+		local buf = vim.api.nvim_win_get_buf(win)
+		if vim.wo[win].winfixheight or vim.bo[buf].filetype == "trouble" or vim.bo[buf].buftype == "quickfix" then
+			group.fixed_heights[win] = vim.api.nvim_win_get_height(win)
+		end
+	end
+end
+
+local function restore_fixed_heights(group)
+	local fixed_windows = {}
+	for win, height in pairs(group.fixed_heights or {}) do
+		if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_tabpage(win) == group.tabpage then
+			fixed_windows[#fixed_windows + 1] = { win = win, height = height }
+		end
+	end
+	table.sort(fixed_windows, function(left, right)
+		local left_row = vim.api.nvim_win_get_position(left.win)[1]
+		local right_row = vim.api.nvim_win_get_position(right.win)[1]
+		if left_row == right_row then
+			return left.win < right.win
+		end
+		return left_row > right_row
+	end)
+	for _, fixed in ipairs(fixed_windows) do
+		if vim.api.nvim_win_is_valid(fixed.win) and vim.api.nvim_win_get_tabpage(fixed.win) == group.tabpage then
+			vim.api.nvim_win_set_height(fixed.win, fixed.height)
+		end
+	end
+end
+
 local function enforce_layout(group)
+	group.layout_generation = (group.layout_generation or 0) + 1
+	local generation = group.layout_generation
+
+	local function current_group()
+		return group.layout_generation == generation
+			and state.groups[group.tabpage] == group
+			and not group.closing
+			and visible(group.files, group.tabpage)
+			and visible(group.commits, group.tabpage)
+	end
+
 	local function resize()
-		if not (visible(group.files, group.tabpage) and visible(group.commits, group.tabpage)) then
+		if not current_group() then
 			return
 		end
 
@@ -157,7 +200,23 @@ local function enforce_layout(group)
 	end
 
 	resize()
-	vim.schedule(resize)
+	vim.schedule(function()
+		if not current_group() then
+			return
+		end
+		resize()
+		if not current_group() then
+			return
+		end
+		restore_fixed_heights(group)
+		if not current_group() then
+			return
+		end
+		local sidebar = package.loaded["config.sidebar"]
+		if sidebar and type(sidebar.sync) == "function" then
+			sidebar.sync(group.tabpage)
+		end
+	end)
 end
 
 local function focus_commits(group)
@@ -199,6 +258,7 @@ close_group = function(group)
 			end)
 		end
 	end
+	restore_fixed_heights(group)
 end
 
 local function setup()
@@ -249,6 +309,7 @@ local function create_group(cwd, return_win)
 		cwd = cwd,
 		return_win = return_win,
 	}
+	remember_fixed_heights(group)
 	state.groups[group.tabpage] = group
 
 	local ok, err = pcall(function()
@@ -270,6 +331,7 @@ end
 
 local function show_group(group, return_win)
 	group.return_win = return_win
+	remember_fixed_heights(group)
 	apply_window_options(group.commits, window_options(views.commits.label, commits_placement()))
 	group.commits:show()
 	apply_window_options(group.files, window_options(views.files.label, files_placement(group.commits.win)))
@@ -291,6 +353,7 @@ local function hide_group(group)
 	if visible(group.commits, group.tabpage) then
 		group.commits:hide()
 	end
+	restore_fixed_heights(group)
 	if
 		group.return_win
 		and vim.api.nvim_win_is_valid(group.return_win)
