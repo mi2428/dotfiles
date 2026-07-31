@@ -17,9 +17,9 @@ palette = "catppuccin_mocha"
 # back to the stock modules without re-checking performance.
 format = """
 $directory\
+$python\
 $git_branch\
 ${custom.git_state}\
-$python\
 $aws\
 $hostname\
 $cmd_duration\
@@ -146,7 +146,7 @@ error_symbol = "[[󰅚](red) ❯](peach)"
 vimcmd_symbol = "[󰄛 ❮](subtext1)"
 
 [python]
-format = "[$symbol $virtualenv]($style)"
+format = "[ $symbol $virtualenv]($style)"
 style = "bold sapphire"
 symbol = ""
 detect_extensions = []
