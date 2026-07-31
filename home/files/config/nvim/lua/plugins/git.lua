@@ -198,11 +198,15 @@ local function replace_winhighlight(win, group, target)
 end
 
 local function style_diff_window(win, ctx)
+	local initialize_folds = diffview_windows[win] == nil and vim.w[win].dotfiles_git_diff_peek_child ~= true
 	diffview_windows[win] = diffview_windows[win] or {}
 	-- The right/main revision is the actionable side in Diffview. Keep its
 	-- minimap, but do not duplicate the same overview over the left/base pane.
 	local minimap_disabled = ctx ~= nil and ctx.symbol == "a"
-	git_diff_peek.apply_editor_chrome(win, { minimap_disabled = minimap_disabled })
+	git_diff_peek.apply_editor_chrome(win, {
+		foldlevel = initialize_folds and 0 or nil,
+		minimap_disabled = minimap_disabled,
+	})
 	local buf = vim.api.nvim_win_get_buf(win)
 	local chunk_namespace = vim.api.nvim_get_namespaces().chunk
 	if chunk_namespace then

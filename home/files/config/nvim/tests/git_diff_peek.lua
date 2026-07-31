@@ -32,15 +32,15 @@ vim.api.nvim_buf_set_lines(source_buf, 0, -1, false, {
 })
 vim.api.nvim_win_set_cursor(source_win, { 3, 0 })
 
+local defer_diff_callback = false
+local pending_diff_callback
 package.loaded.gitsigns = {
 	diffthis = function(_, _, callback)
 		local revision_buf = vim.api.nvim_create_buf(false, true)
 		vim.api.nvim_buf_set_name(revision_buf, "gitsigns:///tmp/.git//:dotfiles-git-diff-peek.lua")
-		vim.api.nvim_buf_set_lines(revision_buf, 0, -1, false, {
-			"local value = 0",
-			"",
-			"return value",
-		})
+		local revision_lines = vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
+		revision_lines[1] = "local value = 0"
+		vim.api.nvim_buf_set_lines(revision_buf, 0, -1, false, revision_lines)
 		vim.bo[revision_buf].bufhidden = "wipe"
 		vim.cmd("aboveleft vsplit")
 		local revision_win = vim.api.nvim_get_current_win()
@@ -48,7 +48,11 @@ package.loaded.gitsigns = {
 		vim.wo[revision_win].diff = true
 		vim.wo[source_win].diff = true
 		vim.api.nvim_set_current_win(source_win)
-		callback()
+		if defer_diff_callback then
+			pending_diff_callback = callback
+		else
+			callback()
+		end
 	end,
 }
 
@@ -349,6 +353,113 @@ assert(
 			and vim.deep_equal(display_config, baseline_display_config)
 	end, 20),
 	"popup cleanup did not restore ordinary minimap ownership and geometry"
+)
+
+local expanded_lines = { "local value = 1" }
+for line = 2, 79 do
+	expanded_lines[line] = ("local unchanged_%d = %d"):format(line, line)
+end
+expanded_lines[80] = "return value"
+vim.api.nvim_buf_set_lines(source_buf, 0, -1, false, expanded_lines)
+vim.api.nvim_win_set_cursor(source_win, { 40, 0 })
+defer_diff_callback = true
+peek.toggle()
+assert(type(pending_diff_callback) == "function", "the fixture must defer Gitsigns popup creation")
+
+local pending_zr = vim.iter(vim.api.nvim_buf_get_keymap(source_buf, "n")):find(function(mapping)
+	return vim.keycode(mapping.lhs) == vim.keycode("zR") and mapping.desc == "Open pending Git diff folds"
+end)
+assert(pending_zr and type(pending_zr.callback) == "function", "pending popup creation must capture an early zR")
+pending_zr.callback()
+pending_diff_callback()
+pending_diff_callback = nil
+
+local expanded_children = {}
+assert(
+	vim.wait(1000, function()
+		expanded_children = vim.tbl_filter(function(win)
+			return vim.w[win].dotfiles_git_diff_peek_child == true
+		end, vim.api.nvim_tabpage_list_wins(0))
+		return #expanded_children == 2
+	end, 20),
+	"the deferred Gitsigns callback must create both popup children"
+)
+
+local function first_closed_fold(win)
+	return vim.api.nvim_win_call(win, function()
+		for line = 1, vim.api.nvim_buf_line_count(0) do
+			if vim.fn.foldclosed(line) > 0 then
+				return line
+			end
+		end
+		return -1
+	end)
+end
+
+for _, win in ipairs(expanded_children) do
+	local zr = vim.iter(vim.api.nvim_buf_get_keymap(vim.api.nvim_win_get_buf(win), "n")):find(function(mapping)
+		return vim.keycode(mapping.lhs) == vim.keycode("zR") and mapping.desc == "Open all Git diff folds"
+	end)
+	assert(zr and type(zr.callback) == "function", "both popup children must expose the explicit zR action")
+	assert(vim.wo[win].foldlevel > 0 and first_closed_fold(win) == -1, "an early zR must open every popup fold")
+end
+
+local expanded_foldlevels = vim.tbl_map(function(win)
+	return vim.wo[win].foldlevel
+end, expanded_children)
+vim.api.nvim_exec_autocmds("WinEnter", { modeline = false })
+vim.api.nvim_exec_autocmds("ModeChanged", { modeline = false, pattern = "n:i" })
+vim.wait(200, function()
+	return false
+end, 20)
+for index, win in ipairs(expanded_children) do
+	assert(
+		vim.wo[win].foldlevel == expanded_foldlevels[index] and first_closed_fold(win) == -1,
+		"reapplying Gitsigns chrome must preserve the user-expanded fold state"
+	)
+end
+
+for _, win in ipairs(expanded_children) do
+	vim.api.nvim_win_call(win, function()
+		vim.cmd.normal({ args = { "zM" }, bang = true })
+	end)
+end
+local revision_child = vim.iter(expanded_children):find(function(win)
+	return vim.w[win].dotfiles_git_diff_peek_role == "revision"
+end)
+assert(revision_child, "the expanded popup must retain its revision child")
+local revision_zr = vim.iter(vim.api.nvim_buf_get_keymap(vim.api.nvim_win_get_buf(revision_child), "n"))
+	:find(function(mapping)
+		return vim.keycode(mapping.lhs) == vim.keycode("zR") and mapping.desc == "Open all Git diff folds"
+	end)
+vim.api.nvim_set_current_win(revision_child)
+revision_zr.callback()
+for _, win in ipairs(expanded_children) do
+	assert(vim.wo[win].foldlevel > 0 and first_closed_fold(win) == -1, "zR from either child must open both panes")
+end
+
+peek.toggle()
+assert(
+	vim.wait(1000, function()
+		return vim.api.nvim_get_current_win() == source_win
+			and vim.iter(vim.api.nvim_buf_get_keymap(source_buf, "n")):all(function(mapping)
+				return mapping.desc ~= "Open pending Git diff folds" and mapping.desc ~= "Open all Git diff folds"
+			end)
+	end, 20),
+	"closing an expanded popup must remove both temporary zR mappings"
+)
+
+local diffthis = package.loaded.gitsigns.diffthis
+package.loaded.gitsigns.diffthis = function()
+	error("synchronous Gitsigns failure")
+end
+peek.toggle()
+package.loaded.gitsigns.diffthis = diffthis
+assert(
+	vim.iter(vim.api.nvim_buf_get_keymap(source_buf, "n")):all(function(mapping)
+		return mapping.desc ~= "Open pending Git diff folds"
+	end),
+	"a synchronous Gitsigns failure must remove the pending zR mapping"
 )
 
 print("Git diff peek popup regression: ok")

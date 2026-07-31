@@ -1,6 +1,7 @@
 local M = {}
 
 local sessions = {}
+local pending_sessions = {}
 local child_flag = "dotfiles_git_diff_peek_child"
 
 local function replace_winhighlight(win, group, target)
@@ -53,7 +54,9 @@ function M.apply_editor_chrome(win, opts)
 
 	local buf = vim.api.nvim_win_get_buf(win)
 	set_local_option(win, "foldcolumn", "1")
-	set_local_option(win, "foldlevel", 0)
+	if opts.foldlevel ~= nil then
+		set_local_option(win, "foldlevel", opts.foldlevel)
+	end
 	set_local_option(win, "foldenable", true)
 	set_local_option(win, "signcolumn", "no")
 	set_local_option(win, "number", true)
@@ -149,6 +152,16 @@ local function focus_pane(session, offset)
 	return true
 end
 
+local function open_all_folds(session)
+	for _, pane in ipairs(session.panes) do
+		if pane:valid() then
+			vim.api.nvim_win_call(pane.win, function()
+				vim.cmd.normal({ args = { "zR" }, bang = true })
+			end)
+		end
+	end
+end
+
 local function has_buffer_map(buf, lhs)
 	local key = vim.keycode(lhs)
 	return vim.iter(vim.api.nvim_buf_get_keymap(buf, "n")):any(function(mapping)
@@ -184,6 +197,13 @@ local function install_buffer_maps(session)
 		local buf = pane.buf
 		if not seen[buf] then
 			seen[buf] = true
+			add_buffer_map(session, buf, "zR", function()
+				if pane_index(session, vim.api.nvim_get_current_win()) then
+					open_all_folds(session)
+				else
+					vim.cmd.normal({ args = { "zR" }, bang = true })
+				end
+			end, "Open all Git diff folds")
 			add_buffer_map(session, buf, "q", function()
 				if pane_index(session, vim.api.nvim_get_current_win()) then
 					session.layout:close()
@@ -223,7 +243,7 @@ local function sorted_diff_windows(tab, source_win, source_buf)
 	return wins
 end
 
-local function open_layout(tab, source_win, source_buf, source_view)
+local function open_layout(tab, source_win, source_buf, source_view, expand_all_folds)
 	if
 		vim.api.nvim_get_current_tabpage() ~= tab
 		or not vim.api.nvim_win_is_valid(source_win)
@@ -265,6 +285,7 @@ local function open_layout(tab, source_win, source_buf, source_view)
 		local chrome = {
 			popup_child = true,
 			role = role,
+			foldlevel = 0,
 			minimap_disabled = role ~= "worktree",
 			statuscolumn = source_chrome.statuscolumn,
 			winbar = source_chrome.winbar ~= "" and source_chrome.winbar or "%{%v:lua.dropbar()%}",
@@ -378,6 +399,9 @@ local function open_layout(tab, source_win, source_buf, source_view)
 	end
 	refresh_minimap()
 	install_buffer_maps(session)
+	if expand_all_folds then
+		open_all_folds(session)
+	end
 end
 
 function M.toggle()
@@ -385,6 +409,14 @@ function M.toggle()
 	local session = session_for_tab(tab)
 	if session then
 		session.layout:close()
+		return
+	end
+	local pending = pending_sessions[tab]
+	if pending then
+		pending.cancelled = true
+		pending.maps = remove_buffer_maps(pending)
+		pending_sessions[tab] = nil
+		close_regular_diff(tab)
 		return
 	end
 	if close_regular_diff(tab) then
@@ -398,13 +430,37 @@ function M.toggle()
 	local source_win = vim.api.nvim_get_current_win()
 	local source_buf = vim.api.nvim_get_current_buf()
 	local source_view = vim.fn.winsaveview()
-	require("gitsigns").diffthis(nil, { vertical = true }, function(err)
+	pending = {
+		cancelled = false,
+		expand_all_folds = false,
+		maps = {},
+		tab = tab,
+	}
+	pending_sessions[tab] = pending
+	add_buffer_map(pending, source_buf, "zR", function()
+		pending.expand_all_folds = true
+		vim.cmd.normal({ args = { "zR" }, bang = true })
+	end, "Open pending Git diff folds")
+	local ok, diff_error = pcall(require("gitsigns").diffthis, nil, { vertical = true }, function(err)
+		pending.maps = remove_buffer_maps(pending)
+		if pending_sessions[tab] ~= pending or pending.cancelled then
+			close_regular_diff(tab)
+			return
+		end
+		pending_sessions[tab] = nil
 		if err then
 			vim.notify(tostring(err), vim.log.levels.ERROR)
 			return
 		end
-		open_layout(tab, source_win, source_buf, source_view)
+		open_layout(tab, source_win, source_buf, source_view, pending.expand_all_folds)
 	end)
+	if not ok then
+		pending.maps = remove_buffer_maps(pending)
+		if pending_sessions[tab] == pending then
+			pending_sessions[tab] = nil
+		end
+		vim.notify(tostring(diff_error), vim.log.levels.ERROR)
+	end
 end
 
 return M
