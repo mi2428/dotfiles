@@ -3,7 +3,7 @@
 Shell environment since 2016. Currently:
 
 - Daily stack: [Ghostty](https://ghostty.org/), fish, [herdr](https://herdr.dev/) (for AI agents), tmux (for humans), and Neovim.
-- Primary font: [Ubuntu Mono](https://fonts.google.com/specimen/Ubuntu+Mono). [Nerd Font](https://www.nerdfonts.com/) glyphs come from Ghostty.
+- Primary font: [Ubuntu Mono](https://fonts.google.com/specimen/Ubuntu+Mono), with [PlemolJP](https://github.com/yuru7/PlemolJP) as the Japanese fallback. [Nerd Font](https://www.nerdfonts.com/) glyphs come from Ghostty.
 - Terminal theme: [Catppuccin](https://github.com/catppuccin/catppuccin), usually [Mocha](https://catppuccin.com/palette/).
 - Managed state is split between [Nix](https://github.com/nix-community/home-manager) and [chezmoi](https://github.com/twpayne/chezmoi): `flake.nix` and `home/` define the steady state, while `chezmoi/` handles bootstrap and encrypted secrets.
 

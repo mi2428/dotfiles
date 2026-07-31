@@ -34,9 +34,13 @@ keybind = resize/l=resize_split:right,10
 keybind = resize/escape=deactivate_key_table
 keybind = resize/catch_all=ignore
 font-family = Ubuntu Mono
+font-family = PlemolJP Console
 font-family-bold = Ubuntu Mono
+font-family-bold = PlemolJP Console
 font-family-italic = Ubuntu Mono
+font-family-italic = PlemolJP Console
 font-family-bold-italic = Ubuntu Mono
+font-family-bold-italic = PlemolJP Console
 font-style = Regular
 font-style-bold = Bold
 font-style-italic = Italic
@@ -46,6 +50,7 @@ font-feature = -calt, -liga, -dlig
 font-size = 14
 alpha-blending = native
 font-thicken = true
+font-thicken-strength = 100
 cursor-style = block
 shell-integration-features = no-cursor,no-sudo,title,no-ssh-env,no-ssh-terminfo,path
 quick-terminal-position = top
