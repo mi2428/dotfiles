@@ -1,6 +1,7 @@
 local catppuccin = require("config.catppuccin")
 local diff_watch = require("config.diff_watch")
 local diffview_panel = require("config.diffview_snacks_panel")
+local git_diff_peek = require("config.git_diff_peek")
 local review = require("config.review")
 local colors = catppuccin.palette()
 local diffview_windows = {}
@@ -200,21 +201,13 @@ local function style_diff_window(win, ctx)
 	diffview_windows[win] = diffview_windows[win] or {}
 	-- The right/main revision is the actionable side in Diffview. Keep its
 	-- minimap, but do not duplicate the same overview over the left/base pane.
-	vim.w[win].dotfiles_disable_minimap = ctx ~= nil and ctx.symbol == "a"
+	local minimap_disabled = ctx ~= nil and ctx.symbol == "a"
+	git_diff_peek.apply_editor_chrome(win, { minimap_disabled = minimap_disabled })
 	local buf = vim.api.nvim_win_get_buf(win)
-	vim.b[buf].dotfiles_disable_hlchunk = true
 	local chunk_namespace = vim.api.nvim_get_namespaces().chunk
 	if chunk_namespace then
 		vim.api.nvim_buf_clear_namespace(buf, chunk_namespace, 0, -1)
 	end
-	vim.api.nvim_win_call(win, function()
-		vim.opt_local.fillchars:append({ diff = " " })
-		vim.wo.cursorline = true
-		-- The redraw namespace below owns the editor-row background. Let core
-		-- CursorLine style only the number column, otherwise diff rendering leaves
-		-- a second horizontal line across the row.
-		vim.wo.cursorlineopt = "number"
-	end)
 	-- Diffview can install its own static cursor-line group while creating a
 	-- layout. Start from the ordinary CursorLine group; the existing
 	-- ModeChanged UI then replaces it with the same mode-specific group used by
@@ -263,6 +256,15 @@ local function save_gitsigns_diff_window(win)
 	local buf = vim.api.nvim_win_get_buf(win)
 	gitsigns_diff_windows[win] = {
 		buf = buf,
+		foldcolumn = vim.wo[win].foldcolumn,
+		foldlevel = vim.wo[win].foldlevel,
+		foldenable = vim.wo[win].foldenable,
+		signcolumn = vim.wo[win].signcolumn,
+		statuscolumn = vim.wo[win].statuscolumn,
+		number = vim.wo[win].number,
+		relativenumber = vim.wo[win].relativenumber,
+		numberwidth = vim.wo[win].numberwidth,
+		winbar = vim.wo[win].winbar,
 		cursorline = vim.wo[win].cursorline,
 		cursorlineopt = vim.wo[win].cursorlineopt,
 		fillchars = vim.wo[win].fillchars,
@@ -275,6 +277,15 @@ end
 local function restore_gitsigns_diff_window(win, state)
 	diffview_windows[win] = nil
 	if vim.api.nvim_win_is_valid(win) then
+		vim.wo[win].foldcolumn = state.foldcolumn
+		vim.wo[win].foldlevel = state.foldlevel
+		vim.wo[win].foldenable = state.foldenable
+		vim.wo[win].signcolumn = state.signcolumn
+		vim.wo[win].statuscolumn = state.statuscolumn
+		vim.wo[win].number = state.number
+		vim.wo[win].relativenumber = state.relativenumber
+		vim.wo[win].numberwidth = state.numberwidth
+		vim.wo[win].winbar = state.winbar
 		vim.wo[win].cursorline = state.cursorline
 		vim.wo[win].cursorlineopt = state.cursorlineopt
 		vim.wo[win].fillchars = state.fillchars

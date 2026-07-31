@@ -6,6 +6,14 @@ package.path = table.concat({
 	vim.fs.joinpath(nvim_root, "lua/?/init.lua"),
 	package.path,
 }, ";")
+package.loaded["config.git_diff_peek"] = nil
+if vim.loader and vim.loader.reset then
+	vim.loader.reset()
+end
+local git_diff_peek = require("config.git_diff_peek")
+local expected_git_diff_peek = vim.fs.joinpath(nvim_root, "lua/config/git_diff_peek.lua")
+local loaded_git_diff_peek = assert(debug.getinfo(git_diff_peek.apply_editor_chrome, "S").source):gsub("^@", "")
+assert(vim.uv.fs_realpath(loaded_git_diff_peek) == vim.uv.fs_realpath(expected_git_diff_peek))
 
 local function upvalue(fn, expected_name)
 	for index = 1, math.huge do
@@ -117,7 +125,18 @@ for source, spec in pairs(cursorline_test_groups) do
 end
 vim.wo.winhighlight = table.concat(winhighlight, ",")
 local win = vim.api.nvim_get_current_win()
+local original_foldlevelstart = vim.o.foldlevelstart
 diffview.opts.hooks.diff_buf_win_enter(0, win, { layout_name = "diff2_horizontal", symbol = "a" })
+assert(vim.o.foldlevelstart == original_foldlevelstart, "Diffview styling must not change global foldlevelstart")
+assert(vim.wo.foldcolumn == "1", "Diffview editor chrome must use one fold column")
+assert(vim.wo.foldlevel == 0 and vim.wo.foldenable, "Diffview editor chrome fold state mismatch")
+assert(vim.wo.signcolumn == "no", "Diffview editor chrome must disable native signcolumn")
+assert(vim.wo.statuscolumn ~= "", "Diffview editor chrome must use the custom statuscolumn")
+assert(vim.wo.number and vim.wo.relativenumber and vim.wo.numberwidth == 3, "Diffview number chrome mismatch")
+assert(
+	vim.wo.winbar == "" or vim.wo.winbar:find("dropbar", 1, true),
+	"Diffview winbar must use Dropbar when configured"
+)
 assert(vim.wo.fillchars:find("diff: ", 1, true), "Diffview addition filler must render as a blank space")
 assert(vim.w[win].dotfiles_disable_minimap == true, "the left Diffview pane must not receive a minimap")
 assert(type(diffview_windows[win]) == "table", "Diffview editor windows must receive cursor-line redraw state")

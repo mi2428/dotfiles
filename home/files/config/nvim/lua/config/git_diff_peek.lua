@@ -1,6 +1,95 @@
 local M = {}
 
 local sessions = {}
+local child_flag = "dotfiles_git_diff_peek_child"
+
+local function replace_winhighlight(win, group, target)
+	local entries = vim.split(vim.wo[win].winhighlight, ",", { plain = true, trimempty = true })
+	local replacement = group .. ":" .. target
+	local replaced = false
+	for index, entry in ipairs(entries) do
+		if vim.startswith(entry, group .. ":") then
+			entries[index] = replacement
+			replaced = true
+			break
+		end
+	end
+	if not replaced then
+		entries[#entries + 1] = replacement
+	end
+	vim.wo[win].winhighlight = table.concat(entries, ",")
+end
+
+local function set_local_option(win, name, value)
+	vim.api.nvim_set_option_value(name, value, { scope = "local", win = win })
+end
+
+local function refresh_minimap()
+	local map = package.loaded["mini.map"]
+	if map and map.refresh then
+		pcall(map.refresh, {}, { layout = true, integrations = true, lines = true, scrollbar = true })
+	end
+end
+
+local function attach_dropbar(win)
+	if not win or not vim.api.nvim_win_is_valid(win) then
+		return
+	end
+	local ok, bar = pcall(require, "dropbar.utils.bar")
+	if ok and type(bar.attach) == "function" then
+		pcall(bar.attach, vim.api.nvim_win_get_buf(win), win)
+	end
+end
+
+function M.apply_editor_chrome(win, opts)
+	opts = opts or {}
+	if not win or not vim.api.nvim_win_is_valid(win) then
+		return
+	end
+	if opts.popup_child then
+		vim.w[win][child_flag] = true
+		vim.w[win].dotfiles_git_diff_peek_role = opts.role
+	end
+
+	local buf = vim.api.nvim_win_get_buf(win)
+	set_local_option(win, "foldcolumn", "1")
+	set_local_option(win, "foldlevel", 0)
+	set_local_option(win, "foldenable", true)
+	set_local_option(win, "signcolumn", "no")
+	set_local_option(win, "number", true)
+	set_local_option(win, "relativenumber", true)
+	set_local_option(win, "numberwidth", 3)
+	set_local_option(
+		win,
+		"statuscolumn",
+		opts.statuscolumn or vim.api.nvim_get_option_value("statuscolumn", { scope = "local", win = win })
+	)
+	if opts.winbar ~= nil then
+		set_local_option(win, "winbar", opts.winbar)
+	end
+
+	vim.api.nvim_win_call(win, function()
+		vim.opt_local.fillchars:append({ diff = " " })
+		vim.wo.cursorline = true
+		vim.wo.cursorlineopt = "number"
+	end)
+	replace_winhighlight(win, "Normal", "Normal")
+	replace_winhighlight(win, "NormalNC", "NormalNC")
+	replace_winhighlight(win, "WinBar", "WinBar")
+	replace_winhighlight(win, "WinBarNC", "WinBarNC")
+	vim.b[buf].dotfiles_disable_hlchunk = true
+
+	if opts.minimap_disabled ~= nil then
+		vim.w[win].dotfiles_disable_minimap = opts.minimap_disabled
+	end
+end
+
+local function snapshot_editor_chrome(win)
+	return {
+		statuscolumn = vim.api.nvim_get_option_value("statuscolumn", { scope = "local", win = win }),
+		winbar = vim.api.nvim_get_option_value("winbar", { scope = "local", win = win }),
+	}
+end
 
 local function is_gitsigns_revision(win)
 	local buf = vim.api.nvim_win_get_buf(win)
@@ -152,9 +241,17 @@ local function open_layout(tab, source_win, source_buf, source_view)
 	end
 
 	local snacks = require("snacks")
+	local source_chrome = snapshot_editor_chrome(source_win)
 	local session = {
 		maps = {},
 		panes = {},
+		underlay = {
+			win = source_win,
+			buf = source_buf,
+			disable_minimap = vim.w[source_win].dotfiles_disable_minimap,
+			disable_hlchunk = vim.b[source_buf].dotfiles_disable_hlchunk,
+			underlay_flag = vim.w[source_win].dotfiles_git_diff_peek_underlay,
+		},
 	}
 	local wins = {}
 	local children = { box = "horizontal" }
@@ -164,6 +261,14 @@ local function open_layout(tab, source_win, source_buf, source_view)
 	for index, win in ipairs(diff_wins) do
 		local name = "pane_" .. index
 		local buf = vim.api.nvim_win_get_buf(win)
+		local role = win == source_win and "worktree" or "revision"
+		local chrome = {
+			popup_child = true,
+			role = role,
+			minimap_disabled = role ~= "worktree",
+			statuscolumn = source_chrome.statuscolumn,
+			winbar = source_chrome.winbar ~= "" and source_chrome.winbar or "%{%v:lua.dropbar()%}",
+		}
 		local pane = snacks.win({
 			show = false,
 			buf = buf,
@@ -171,6 +276,10 @@ local function open_layout(tab, source_win, source_buf, source_view)
 			backdrop = false,
 			enter = false,
 			keys = { q = false },
+			w = {
+				[child_flag] = true,
+				dotfiles_git_diff_peek_role = role,
+			},
 			wo = {
 				cursorbind = true,
 				diff = true,
@@ -178,6 +287,12 @@ local function open_layout(tab, source_win, source_buf, source_view)
 				foldmethod = "diff",
 				scrollbind = true,
 			},
+			on_win = function(child)
+				local child_win = child.win
+				if child_win and vim.api.nvim_win_is_valid(child_win) then
+					M.apply_editor_chrome(child_win, chrome)
+				end
+			end,
 		})
 		wins[name] = pane
 		children[#children + 1] = {
@@ -210,12 +325,22 @@ local function open_layout(tab, source_win, source_buf, source_view)
 			end
 			session.maps = remove_buffer_maps(session)
 			vim.schedule(function()
+				if vim.api.nvim_win_is_valid(session.underlay.win) then
+					vim.w[session.underlay.win].dotfiles_git_diff_peek_underlay = session.underlay.underlay_flag
+				end
+				if vim.api.nvim_win_is_valid(session.underlay.win) then
+					vim.w[session.underlay.win].dotfiles_disable_minimap = session.underlay.disable_minimap
+				end
+				if vim.api.nvim_buf_is_valid(session.underlay.buf) then
+					vim.b[session.underlay.buf].dotfiles_disable_hlchunk = session.underlay.disable_hlchunk
+				end
 				if
 					vim.api.nvim_win_is_valid(source_win)
 					and vim.api.nvim_win_get_tabpage(source_win) == vim.api.nvim_get_current_tabpage()
 				then
 					vim.api.nvim_set_current_win(source_win)
 				end
+				refresh_minimap()
 			end)
 		end,
 	})
@@ -224,6 +349,7 @@ local function open_layout(tab, source_win, source_buf, source_view)
 	-- Floating windows inherit local options from the current window. Take the
 	-- editor out of diff mode before Snacks creates the non-content layout root.
 	vim.wo[source_win].diff = false
+	vim.w[source_win].dotfiles_git_diff_peek_underlay = true
 	layout:show()
 
 	for _, win in ipairs(revision_wins) do
@@ -237,6 +363,20 @@ local function open_layout(tab, source_win, source_buf, source_view)
 			vim.fn.winrestview(source_view)
 		end)
 	end
+	for _, pane in ipairs(session.panes) do
+		if vim.api.nvim_win_is_valid(pane.win) then
+			local chrome = {
+				popup_child = true,
+				role = vim.w[pane.win].dotfiles_git_diff_peek_role,
+				minimap_disabled = vim.w[pane.win].dotfiles_git_diff_peek_role ~= "worktree",
+				statuscolumn = source_chrome.statuscolumn,
+				winbar = source_chrome.winbar ~= "" and source_chrome.winbar or "%{%v:lua.dropbar()%}",
+			}
+			M.apply_editor_chrome(pane.win, chrome)
+			attach_dropbar(pane.win)
+		end
+	end
+	refresh_minimap()
 	install_buffer_maps(session)
 end
 

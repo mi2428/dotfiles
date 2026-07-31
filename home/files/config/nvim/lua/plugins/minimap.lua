@@ -53,7 +53,10 @@ local function is_code_window(win)
 	if not win or not vim.api.nvim_win_is_valid(win) then
 		return false
 	end
-	if vim.api.nvim_win_get_config(win).relative ~= "" then
+	if vim.api.nvim_win_get_config(win).relative ~= "" and vim.w[win].dotfiles_git_diff_peek_child ~= true then
+		return false
+	end
+	if vim.w[win].dotfiles_git_diff_peek_underlay == true then
 		return false
 	end
 
@@ -116,18 +119,24 @@ local function update_minimap_geometry(map)
 	end
 
 	local position = vim.api.nvim_win_get_position(source_win)
+	local source_config = vim.api.nvim_win_get_config(source_win)
 	local row = position[1]
 	local col = position[2] + vim.api.nvim_win_get_width(source_win)
 	local height = vim.api.nvim_win_get_height(source_win)
 	local configured_width = ((map.current.opts or {}).window or {}).width
 		or ((map.config or {}).window or {}).width
 		or config.width
+	local configured_zindex = ((map.current.opts or {}).window or {}).zindex
+		or ((map.config or {}).window or {}).zindex
+		or config.zindex
 	local width = math.min(configured_width, vim.api.nvim_win_get_width(source_win))
+	local zindex = math.max(configured_zindex or 0, (source_config.zindex or 0) + 1)
 	if
 		config.row == row
 		and config.col == col
 		and config.width == width
 		and config.height == height
+		and config.zindex == zindex
 		and config.hide
 	then
 		return false
@@ -142,7 +151,7 @@ local function update_minimap_geometry(map)
 		height = height,
 		hide = true,
 		focusable = config.focusable,
-		zindex = config.zindex,
+		zindex = zindex,
 	})
 	redraw_after_geometry_change(map)
 	return true

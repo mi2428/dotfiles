@@ -33,9 +33,30 @@ end
 
 local function dashboard_square()
 	local rows = {
-		dashboard_square_row({ "▀ █ █ ▀", "▀ █ █ ▀", "▀ █ █ ▀", "▀ █ █ ▀", "▀ █ █ ▀", "▀ █ █ ▀" }),
-		dashboard_square_row({ "██   ██", "██   ██", "██   ██", "██   ██", "██   ██", "██   ██" }),
-		dashboard_square_row({ "▄ █ █ ▄", "▄ █ █ ▄", "▄ █ █ ▄", "▄ █ █ ▄", "▄ █ █ ▄", "▄ █ █ ▄" }),
+		dashboard_square_row({
+			"▀ █ █ ▀",
+			"▀ █ █ ▀",
+			"▀ █ █ ▀",
+			"▀ █ █ ▀",
+			"▀ █ █ ▀",
+			"▀ █ █ ▀",
+		}),
+		dashboard_square_row({
+			"██   ██",
+			"██   ██",
+			"██   ██",
+			"██   ██",
+			"██   ██",
+			"██   ██",
+		}),
+		dashboard_square_row({
+			"▄ █ █ ▄",
+			"▄ █ █ ▄",
+			"▄ █ █ ▄",
+			"▄ █ █ ▄",
+			"▄ █ █ ▄",
+			"▄ █ █ ▄",
+		}),
 	}
 	local text = {}
 
@@ -196,7 +217,7 @@ local function dropbar_enabled(buf, win)
 		return false
 	end
 
-	if vim.api.nvim_win_get_config(win).relative ~= "" then
+	if vim.api.nvim_win_get_config(win).relative ~= "" and vim.w[win].dotfiles_git_diff_peek_child ~= true then
 		return false
 	end
 
