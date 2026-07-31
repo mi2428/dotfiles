@@ -419,6 +419,23 @@ return {
 		cmd = "Glance",
 		config = function()
 			local glance = require("glance")
+			local function focus_preview_at_current_location()
+				local list_bufnr = vim.api.nvim_get_current_buf()
+				local enter_preview = glance.actions.enter_win("preview")
+
+				vim.schedule(function()
+					if vim.api.nvim_buf_is_valid(list_bufnr) then
+						-- Glance creates its preview with the target buffer, but does not
+						-- apply the initial list selection until its CursorMoved handler
+						-- runs. Trigger that handler before focusing the editable preview.
+						vim.api.nvim_exec_autocmds("CursorMoved", {
+							buffer = list_bufnr,
+							modeline = false,
+						})
+					end
+					enter_preview()
+				end)
+			end
 
 			glance.setup({
 				border = {
@@ -427,7 +444,7 @@ return {
 				hooks = {
 					before_open = function(results, open)
 						open(results)
-						vim.schedule(glance.actions.enter_win("preview"))
+						focus_preview_at_current_location()
 					end,
 				},
 			})
