@@ -274,14 +274,13 @@ end
 
 local function restore_gitsigns_diff_window(win, state)
 	diffview_windows[win] = nil
-	if not vim.api.nvim_win_is_valid(win) then
-		return
+	if vim.api.nvim_win_is_valid(win) then
+		vim.wo[win].cursorline = state.cursorline
+		vim.wo[win].cursorlineopt = state.cursorlineopt
+		vim.wo[win].fillchars = state.fillchars
+		vim.wo[win].winhighlight = state.winhighlight
+		vim.w[win].dotfiles_disable_minimap = state.disable_minimap
 	end
-	vim.wo[win].cursorline = state.cursorline
-	vim.wo[win].cursorlineopt = state.cursorlineopt
-	vim.wo[win].fillchars = state.fillchars
-	vim.wo[win].winhighlight = state.winhighlight
-	vim.w[win].dotfiles_disable_minimap = state.disable_minimap
 	if vim.api.nvim_buf_is_valid(state.buf) then
 		vim.b[state.buf].dotfiles_disable_hlchunk = state.disable_hlchunk
 	end

@@ -68,51 +68,6 @@ local function toggle_diffview()
 	end
 end
 
-local function toggle_gitsigns_diff_peek()
-	local tabpage = vim.api.nvim_get_current_tabpage()
-	local current_win = vim.api.nvim_get_current_win()
-	local revision_wins = {}
-	local return_win
-	local current_is_revision = false
-
-	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
-		local buf = vim.api.nvim_win_get_buf(win)
-		if vim.api.nvim_buf_get_name(buf):match("^gitsigns://") then
-			revision_wins[#revision_wins + 1] = win
-			current_is_revision = current_is_revision or win == current_win
-		elseif win ~= current_win and vim.wo[win].diff then
-			return_win = win
-		end
-	end
-
-	if #revision_wins > 0 then
-		local current_is_diff = vim.wo.diff
-		for _, win in ipairs(revision_wins) do
-			if vim.api.nvim_win_is_valid(win) then
-				vim.api.nvim_win_close(win, true)
-			end
-		end
-		if current_is_revision and return_win and vim.api.nvim_win_is_valid(return_win) then
-			vim.api.nvim_set_current_win(return_win)
-		end
-		for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
-			if vim.wo[win].diff then
-				vim.wo[win].diff = false
-			end
-		end
-		if current_is_revision or current_is_diff then
-			return
-		end
-	end
-
-	if vim.wo.diff then
-		vim.notify("Already in a non-Gitsigns diff view", vim.log.levels.INFO)
-		return
-	end
-
-	require("gitsigns").diffthis(nil, { vertical = true })
-end
-
 local function bufferline_group_action()
 	local groups = {}
 	for _, group in ipairs(require("bufferline.groups").get_names(true)) do
@@ -240,7 +195,9 @@ map("n", "<leader>G", function()
 	end
 end, { desc = "Git status / review diff" })
 map("n", "<leader>gd", toggle_diffview, { desc = "Toggle Git diff view" })
-map("n", "<leader>gp", toggle_gitsigns_diff_peek, { desc = "Toggle Git diff peek" })
+map("n", "<leader>gp", function()
+	require("config.git_diff_peek").toggle()
+end, { desc = "Toggle Git diff peek" })
 map("n", "<leader>gh", "<cmd>DiffviewFileHistory %<cr>", { desc = "File history" })
 map("n", "<leader>gH", "<cmd>DiffviewFileHistory<cr>", { desc = "Branch history" })
 map("n", "<leader>b", function()
