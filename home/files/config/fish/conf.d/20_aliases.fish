@@ -235,7 +235,43 @@ function __dotfiles_git_subcommand_dc
     command git diff --cached $argv
 end
 
+function __dotfiles_git_setup_pull_upstream
+    command git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' >/dev/null 2>&1
+    and return 0
+
+    set -l branch (command git symbolic-ref --quiet --short HEAD)
+    or return 0
+
+    # Preserve incomplete or broken explicit tracking configuration rather than
+    # silently replacing it with origin/<current-branch>.
+    command git config --get "branch.$branch.remote" >/dev/null 2>&1
+    and return 0
+    command git config --get "branch.$branch.merge" >/dev/null 2>&1
+    and return 0
+
+    command git remote get-url origin >/dev/null 2>&1
+    or return 0
+
+    command git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null
+    set -l check_status $status
+    if test $check_status -eq 2
+        printf 'g pl: no upstream is configured and origin/%s does not exist\n' "$branch" >&2
+        echo 'g pl: refusing to create it; use `git push -u origin HEAD` if intentional' >&2
+        return 1
+    else if test $check_status -ne 0
+        return $check_status
+    end
+
+    command git fetch origin "+refs/heads/$branch:refs/remotes/origin/$branch"
+    or return $status
+    command git branch --set-upstream-to="origin/$branch" "$branch"
+end
+
 function __dotfiles_git_subcommand_pl
+    if test (count $argv) -eq 0
+        __dotfiles_git_setup_pull_upstream
+        or return $status
+    end
     command git pull $argv
 end
 
