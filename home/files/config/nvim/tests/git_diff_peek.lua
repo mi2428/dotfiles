@@ -1478,4 +1478,260 @@ navigation_focus_redirect = nil
 vim.api.nvim_win_close(redirect_win, true)
 vim.api.nvim_buf_delete(redirect_buf, { force = true })
 
+local function has_normal_buffer_map(buf, lhs)
+	return vim.iter(vim.api.nvim_buf_get_keymap(buf, "n")):any(function(mapping)
+		return vim.keycode(mapping.lhs) == vim.keycode(lhs)
+	end)
+end
+
+assert(not has_normal_buffer_map(source_buf, "gp"), "Git diff peek must not override builtin gp")
+assert(not has_normal_buffer_map(source_buf, "ge"), "Git diff peek must not override builtin ge")
+vim.api.nvim_set_current_win(source_win)
+vim.api.nvim_win_set_buf(source_win, source_buf)
+vim.wo[source_win].diff = false
+peek.toggle()
+assert(
+	vim.wait(1000, function()
+		return popup_child_for(source_buf) ~= nil
+	end, 20),
+	"generic worktree fixture did not open a popup"
+)
+source_float = assert(popup_child_for(source_buf))
+vim.api.nvim_buf_set_lines(source_buf, -1, -1, false, { "-- ordinary worktree edit" })
+assert(
+	vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)[#vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)]
+		== "-- ordinary worktree edit",
+	"ordinary editing in the worktree pane must edit the real source buffer"
+)
+assert(has_normal_buffer_map(source_buf, "gp") == false and has_normal_buffer_map(source_buf, "ge") == false)
+
+vim.api.nvim_win_set_cursor(source_float, { 1, 0 })
+vim.wait(100, function()
+	return false
+end, 20)
+assert(
+	vim.api.nvim_win_is_valid(source_float) and vim.api.nvim_win_get_buf(source_float) == source_buf,
+	"same-file cursor movement must not rebuild the diff session"
+)
+
+local active_child_zindex = assert(peek.child_ui_zindex(), "an active popup must expose a child UI z-index")
+
+local layered_children = {}
+for _, filetype in ipairs({ "glance", "fzf" }) do
+	local buf = vim.api.nvim_create_buf(false, true)
+	vim.bo[buf].filetype = filetype
+	local win = vim.api.nvim_open_win(buf, false, {
+		relative = "editor",
+		row = 2,
+		col = 2,
+		width = 20,
+		height = 2,
+		style = "minimal",
+		zindex = filetype == "fzf" and 50 or 45,
+	})
+	layered_children[#layered_children + 1] = { win = win, buf = buf }
+end
+
+assert(
+	vim.wait(1000, function()
+		if vim.iter(layered_children):any(function(child)
+			return not vim.api.nvim_win_is_valid(child.win)
+		end) then
+			return false
+		end
+		local zindexes = vim.tbl_map(function(child)
+			return vim.api.nvim_win_get_config(child.win).zindex
+		end, layered_children)
+		return zindexes[1] == active_child_zindex and zindexes[2] == active_child_zindex + 5
+	end, 20),
+	"a generic child-float batch must preserve the relative Glance/fzf z-index"
+)
+for _, child in ipairs(layered_children) do
+	vim.api.nvim_win_close(child.win, true)
+	vim.api.nvim_buf_delete(child.buf, { force = true })
+end
+local diagnostic_namespace = vim.api.nvim_create_namespace("dotfiles-git-diff-peek-layering-diagnostic")
+vim.diagnostic.set(diagnostic_namespace, source_buf, {
+	{ lnum = 0, col = 0, message = "layering diagnostic", severity = vim.diagnostic.severity.WARN },
+})
+local diagnostic_buf, diagnostic_win = vim.diagnostic.open_float(source_buf, {
+	close_events = {},
+	focusable = false,
+	scope = "line",
+})
+assert(
+	vim.wait(1000, function()
+		return vim.api.nvim_win_is_valid(diagnostic_win)
+			and vim.api.nvim_win_get_config(diagnostic_win).zindex >= active_child_zindex
+	end, 20),
+	"a real diagnostic float must be raised above Git diff peek"
+)
+vim.api.nvim_win_close(diagnostic_win, true)
+if vim.api.nvim_buf_is_valid(diagnostic_buf) then
+	vim.api.nvim_buf_delete(diagnostic_buf, { force = true })
+end
+local hover_buf, hover_win = vim.lsp.util.open_floating_preview({ "hover" }, "markdown", {
+	close_events = {},
+	focus = true,
+	zindex = 45,
+})
+assert(
+	vim.wait(1000, function()
+		return vim.api.nvim_win_is_valid(hover_win)
+			and vim.api.nvim_win_get_config(hover_win).zindex >= active_child_zindex
+	end, 20),
+	"a real hover float must be raised above Git diff peek"
+)
+vim.api.nvim_win_close(hover_win, true)
+if vim.api.nvim_buf_is_valid(hover_buf) then
+	vim.api.nvim_buf_delete(hover_buf, { force = true })
+end
+assert(popup_child_for(source_buf) == source_float, "cancelling child UI must preserve the worktree session")
+
+local popup_tab = vim.api.nvim_get_current_tabpage()
+local function popup_child_count(tab)
+	return #vim.tbl_filter(function(win)
+		return vim.w[win].dotfiles_git_diff_peek_child == true
+	end, vim.api.nvim_tabpage_list_wins(tab))
+end
+local function reopen_source_popup()
+	local existing = popup_child_for(source_buf)
+	if existing then
+		return existing
+	end
+	vim.api.nvim_set_current_win(source_win)
+	vim.api.nvim_win_set_buf(source_win, source_buf)
+	vim.wo[source_win].diff = false
+	peek.toggle()
+	assert(
+		vim.wait(1000, function()
+			return popup_child_for(source_buf) ~= nil
+		end, 20),
+		"boundary fixture did not reopen the source popup"
+	)
+	return assert(popup_child_for(source_buf))
+end
+local function assert_controlled_boundary(command, tab_boundary)
+	local worktree = reopen_source_popup()
+	vim.api.nvim_set_current_win(worktree)
+	vim.cmd(command)
+	assert(
+		vim.wait(1000, function()
+			return popup_child_count(popup_tab) == 0 and vim.api.nvim_win_get_buf(source_win) == source_buf
+		end, 20),
+		command .. " must close Git Diff Peek before leaving a normal editor boundary"
+	)
+	if tab_boundary then
+		vim.cmd("tabclose!")
+		assert(vim.api.nvim_get_current_tabpage() == popup_tab, "tab boundary must return to the restored source tab")
+	else
+		for _, win in ipairs(vim.api.nvim_tabpage_list_wins(popup_tab)) do
+			if win ~= source_win and vim.api.nvim_win_get_config(win).relative == "" then
+				vim.api.nvim_win_close(win, true)
+			end
+		end
+	end
+end
+
+-- Glance closes to its parent worktree before running split/tab jumps; fzf file
+-- actions likewise execute their standard command after picker close.
+assert_controlled_boundary("split", false)
+assert_controlled_boundary("vsplit", false)
+assert_controlled_boundary("new", false)
+assert_controlled_boundary("tabnew", true)
+source_float = reopen_source_popup()
+
+local intermediate_buf = vim.api.nvim_create_buf(true, false)
+vim.api.nvim_buf_set_name(intermediate_buf, "/tmp/dotfiles-git-diff-peek-intermediate.lua")
+vim.api.nvim_buf_set_lines(intermediate_buf, 0, -1, false, { "local intermediate = true" })
+vim.bo[intermediate_buf].filetype = "lua"
+local cross_file_buf = vim.api.nvim_create_buf(true, false)
+vim.api.nvim_buf_set_name(cross_file_buf, "/tmp/dotfiles-git-diff-peek-cross-file.lua")
+vim.api.nvim_buf_set_lines(cross_file_buf, 0, -1, false, { "local cross_file = true" })
+vim.bo[cross_file_buf].filetype = "lua"
+vim.api.nvim_win_set_buf(source_float, intermediate_buf)
+vim.api.nvim_win_set_buf(source_float, cross_file_buf)
+assert(
+	vim.wait(1000, function()
+		local child = popup_child_for(cross_file_buf)
+		return not vim.api.nvim_win_is_valid(source_float)
+			and child ~= nil
+			and child ~= source_float
+			and vim.api.nvim_get_current_win() == child
+			and popup_child_for(intermediate_buf) == nil
+	end, 20),
+	"same-tick cross-file worktree navigation must reopen only the final target session"
+)
+local cross_file_float = assert(popup_child_for(cross_file_buf))
+assert(vim.wo[cross_file_float].diff, "cross-file worktree pane must remain a diff pane")
+vim.api.nvim_buf_delete(intermediate_buf, { force = true })
+vim.api.nvim_set_current_win(cross_file_float)
+peek.toggle()
+local cross_file_cleanup
+assert(
+	vim.wait(1000, function()
+		cross_file_cleanup = {
+			current = vim.api.nvim_get_current_win(),
+			source_buf = vim.api.nvim_win_get_buf(source_win),
+			children = #vim.tbl_filter(function(win)
+				return vim.w[win].dotfiles_git_diff_peek_child == true
+			end, vim.api.nvim_tabpage_list_wins(0)),
+		}
+		return cross_file_cleanup.current == source_win and cross_file_cleanup.source_buf == cross_file_buf
+	end, 20),
+	("cross-file popup cleanup must restore the selected target editor: %s"):format(vim.inspect(cross_file_cleanup))
+)
+
+local diff_context = require("config.git_diff_context")
+local resolve_base = diff_context.resolve_base
+local non_diffable_buf = vim.api.nvim_create_buf(true, false)
+vim.api.nvim_buf_set_name(non_diffable_buf, "/tmp/dotfiles-git-diff-peek-non-diffable.lua")
+vim.api.nvim_buf_set_lines(non_diffable_buf, 0, -1, false, { "local no_revision = true" })
+vim.bo[non_diffable_buf].filetype = "lua"
+diff_context.resolve_base = function(buf)
+	if buf == non_diffable_buf then
+		return nil, "intentional non-diffable target"
+	end
+	return resolve_base(buf)
+end
+peek.toggle()
+assert(
+	vim.wait(1000, function()
+		return popup_child_for(cross_file_buf) ~= nil
+	end, 20),
+	"non-diffable handoff fixture did not reopen the source popup"
+)
+cross_file_float = assert(popup_child_for(cross_file_buf))
+vim.api.nvim_win_set_buf(cross_file_float, non_diffable_buf)
+assert(
+	vim.wait(1000, function()
+		return vim.api.nvim_get_current_win() == source_win
+			and vim.api.nvim_win_get_buf(source_win) == non_diffable_buf
+			and #vim.tbl_filter(function(win)
+					return vim.w[win].dotfiles_git_diff_peek_child == true
+				end, vim.api.nvim_tabpage_list_wins(0))
+				== 0
+	end, 20),
+	"a non-diffable target must remain a normal editor without stale popup panes"
+)
+diff_context.resolve_base = resolve_base
+assert(not has_normal_buffer_map(non_diffable_buf, "gp") and not has_normal_buffer_map(non_diffable_buf, "ge"))
+assert(
+	vim.iter(vim.api.nvim_buf_get_keymap(cross_file_buf, "n")):all(function(mapping)
+		return mapping.desc ~= "Close Git diff peek"
+	end),
+	"cross-file cleanup must remove temporary popup mappings"
+)
+vim.api.nvim_buf_delete(cross_file_buf, { force = true })
+vim.api.nvim_buf_delete(non_diffable_buf, { force = true })
+assert(
+	vim.iter(vim.api.nvim_get_autocmds({})):all(function(autocmd)
+		return autocmd.desc ~= "Git diff peek worktree buffer handoff"
+			and autocmd.desc ~= "Git diff peek worktree split boundary"
+			and autocmd.desc ~= "Git diff peek child float layering"
+			and autocmd.desc ~= "Git diff peek tab boundary"
+	end),
+	"Git diff peek cleanup must remove its transition autocmds and augroup"
+)
+
 print("Git diff peek popup regression: ok")

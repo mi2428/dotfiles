@@ -2,6 +2,7 @@ local M = {}
 
 local sessions = {}
 local pending_sessions = {}
+local next_session_id = 0
 local child_flag = "dotfiles_git_diff_peek_child"
 local cover_flag = "dotfiles_git_diff_peek_cover"
 local revision_winbar = "%{%v:lua.require('config.git_diff_peek').revision_winbar()%}"
@@ -794,15 +795,114 @@ local function remove_buffer_maps(session)
 	return {}
 end
 
+local function stop_transition_hooks(session)
+	for _, id in ipairs(session.transition_autocmds or {}) do
+		pcall(vim.api.nvim_del_autocmd, id)
+	end
+	session.transition_autocmds = nil
+	if session.transition_group then
+		pcall(vim.api.nvim_del_augroup_by_id, session.transition_group)
+		session.transition_group = nil
+	end
+end
+
+local function session_owns_window(session, win)
+	if not win or not vim.api.nvim_win_is_valid(win) then
+		return false
+	end
+	local layout = session.layout
+	if not layout then
+		return false
+	end
+	if layout.root and layout.root.win == win then
+		return true
+	end
+	if layout.root and layout.root.backdrop and layout.root.backdrop.win == win then
+		return true
+	end
+	for _, pane in ipairs(session.panes or {}) do
+		if pane.win == win then
+			return true
+		end
+	end
+	for _, box in pairs(layout.box_wins or {}) do
+		if box.win == win then
+			return true
+		end
+	end
+	return false
+end
+
+local function session_top_zindex(session)
+	local highest = 52
+	local function consider(win)
+		if win and vim.api.nvim_win_is_valid(win) then
+			highest = math.max(highest, vim.api.nvim_win_get_config(win).zindex or 0)
+		end
+	end
+	local layout = session.layout
+	if layout and layout.root then
+		consider(layout.root.win)
+		consider(layout.root.backdrop and layout.root.backdrop.win)
+	end
+	for _, pane in ipairs(session.panes or {}) do
+		consider(pane.win)
+	end
+	if layout then
+		for _, box in pairs(layout.box_wins or {}) do
+			consider(box.win)
+		end
+	end
+	return highest
+end
+
+function M.child_ui_zindex()
+	local session = session_for_tab(vim.api.nvim_get_current_tabpage())
+	return session and session_top_zindex(session) + 10 or nil
+end
+
+local function raise_child_float_batch(session, wins)
+	local floats = {}
+	local lowest_zindex
+	for _, win in ipairs(wins) do
+		if not session_owns_window(session, win) then
+			local config = vim.api.nvim_win_get_config(win)
+			if config.relative ~= "" then
+				local zindex = config.zindex or 0
+				lowest_zindex = math.min(lowest_zindex or zindex, zindex)
+				floats[#floats + 1] = { win = win, config = config, zindex = zindex }
+			end
+		end
+	end
+	if not lowest_zindex then
+		return
+	end
+	local floor = session_top_zindex(session) + 10
+	for _, item in ipairs(floats) do
+		local zindex = math.max(item.zindex, floor + item.zindex - lowest_zindex)
+		if item.config.zindex ~= zindex then
+			item.config.zindex = zindex
+			pcall(vim.api.nvim_win_set_config, item.win, item.config)
+		end
+	end
+end
+
 local function cleanup_session(tab, session, focus_underlay)
 	if session.cleanup_scheduled then
 		return
 	end
 	session.cleanup_scheduled = true
+	local handoff = session.handoff
+	session.handoff = nil
+	session.pending_handoff = nil
+	if handoff and handoff.kind == "boundary" then
+		focus_underlay = false
+	end
 	local navigate_command = session.navigate_command
 	session.navigate_command = nil
 	stop_background_minimap_monitor(session)
 	stop_snapshot_resize_monitor(session)
+	stop_transition_hooks(session)
 	release_global_statusline(session.statusline_guard)
 	if sessions[tab] == session then
 		sessions[tab] = nil
@@ -820,6 +920,36 @@ local function cleanup_session(tab, session, focus_underlay)
 		end
 		refresh_minimap()
 		discard_minimap_margin_transfer(session.underlay.win)
+		if
+			handoff
+			and handoff.kind == "reopen"
+			and vim.api.nvim_get_current_tabpage() == tab
+			and vim.api.nvim_win_is_valid(session.underlay.win)
+			and vim.api.nvim_buf_is_valid(handoff.buf)
+			and sessions[tab] == nil
+			and pending_sessions[tab] == nil
+		then
+			vim.api.nvim_set_current_win(session.underlay.win)
+			restore_underlay_appearance(session.underlay, restored_source)
+			set_window_buffer_keepalt(session.underlay.win, handoff.buf)
+			if handoff.view then
+				vim.api.nvim_win_call(session.underlay.win, function()
+					vim.fn.winrestview(handoff.view)
+				end)
+			end
+			vim.schedule(function()
+				if
+					sessions[tab] == nil
+					and pending_sessions[tab] == nil
+					and vim.api.nvim_get_current_tabpage() == tab
+					and vim.api.nvim_win_is_valid(session.underlay.win)
+					and vim.api.nvim_win_get_buf(session.underlay.win) == handoff.buf
+					and vim.api.nvim_get_current_win() == session.underlay.win
+				then
+					M.toggle()
+				end
+			end)
+		end
 		if
 			navigate_command
 			and vim.api.nvim_get_current_tabpage() == tab
@@ -867,6 +997,137 @@ local function cleanup_session(tab, session, focus_underlay)
 			restore_underlay_appearance(session.underlay, restored_source)
 		end)
 	end)
+end
+
+local function start_transition_hooks(session, tab)
+	session.known_windows = {}
+	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+		session.known_windows[win] = true
+	end
+	local function inspect_new_windows(opened_from_worktree)
+		session.opened_from_worktree = session.opened_from_worktree or opened_from_worktree
+		if session.layering_scheduled then
+			return
+		end
+		session.layering_scheduled = true
+		vim.schedule(function()
+			session.layering_scheduled = false
+			local opened_from_worktree = session.opened_from_worktree
+			session.opened_from_worktree = false
+			if sessions[tab] ~= session then
+				return
+			end
+			local opened_normal_window = false
+			local new_floats = {}
+			for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+				if not session.known_windows[win] then
+					session.known_windows[win] = true
+					if vim.api.nvim_win_get_config(win).relative == "" then
+						opened_normal_window = true
+					else
+						new_floats[#new_floats + 1] = win
+					end
+				end
+			end
+			raise_child_float_batch(session, new_floats)
+			if opened_from_worktree and opened_normal_window and not session.handoff and session.layout:valid() then
+				session.handoff = { kind = "boundary" }
+				session.layout:close()
+			end
+		end)
+	end
+	local function queue_worktree_handoff(win, buf)
+		if session.handoff then
+			return
+		end
+		if buf == session.underlay.buf then
+			session.pending_handoff = nil
+			return
+		end
+		local view = vim.api.nvim_win_call(win, vim.fn.winsaveview)
+		session.pending_handoff = { win = win, buf = buf, view = view }
+		if session.handoff_scheduled then
+			return
+		end
+		session.handoff_scheduled = true
+		vim.schedule(function()
+			session.handoff_scheduled = false
+			local handoff = session.pending_handoff
+			session.pending_handoff = nil
+			if
+				not handoff
+				or sessions[tab] ~= session
+				or not session.layout
+				or not session.layout:valid()
+				or not vim.api.nvim_win_is_valid(handoff.win)
+				or not vim.api.nvim_buf_is_valid(handoff.buf)
+				or vim.api.nvim_win_get_buf(handoff.win) ~= handoff.buf
+			then
+				return
+			end
+			session.handoff = { kind = "reopen", buf = handoff.buf, view = handoff.view }
+			session.layout:close()
+		end)
+	end
+
+	local group = vim.api.nvim_create_augroup("dotfiles-git-diff-peek-transition-" .. session.id, { clear = true })
+	session.transition_group = group
+	session.transition_autocmds = {
+		vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter" }, {
+			group = group,
+			desc = "Git diff peek worktree buffer handoff",
+			callback = function(args)
+				local win = session.worktree_win
+				if not win or not vim.api.nvim_win_is_valid(win) or vim.api.nvim_win_get_buf(win) ~= args.buf then
+					win = vim.iter(vim.api.nvim_tabpage_list_wins(tab)):find(function(candidate)
+						return vim.w[candidate][child_flag] == true
+							and vim.w[candidate].dotfiles_git_diff_peek_role == "worktree"
+							and vim.api.nvim_win_get_buf(candidate) == args.buf
+					end)
+				end
+				if
+					sessions[tab] == session
+					and win
+					and vim.api.nvim_win_is_valid(win)
+					and vim.api.nvim_win_get_buf(win) == args.buf
+				then
+					session.worktree_win = win
+					queue_worktree_handoff(win, args.buf)
+				end
+				inspect_new_windows(false)
+			end,
+		}),
+		vim.api.nvim_create_autocmd("WinLeave", {
+			group = group,
+			desc = "Git diff peek worktree split boundary",
+			callback = function()
+				if sessions[tab] == session and vim.api.nvim_get_current_win() == session.worktree_win then
+					session.worktree_left = true
+					vim.schedule(function()
+						session.worktree_left = false
+					end)
+				end
+			end,
+		}),
+		vim.api.nvim_create_autocmd("WinNew", {
+			group = group,
+			desc = "Git diff peek child float layering",
+			callback = function(args)
+				local opened_from_worktree = session.worktree_left
+				inspect_new_windows(opened_from_worktree)
+			end,
+		}),
+		vim.api.nvim_create_autocmd("TabNew", {
+			group = group,
+			desc = "Git diff peek tab boundary",
+			callback = function()
+				if sessions[tab] == session and session.worktree_left and not session.handoff then
+					session.handoff = { kind = "boundary" }
+					session.layout:close()
+				end
+			end,
+		}),
+	}
 end
 
 local function cycle_popup_buffer(session, command)
@@ -967,12 +1228,14 @@ local function open_layout(tab, source, expand_all_folds)
 	local snacks = require("snacks")
 	local source_chrome = source.chrome
 	local session = {
+		id = next_session_id,
 		maps = {},
 		panes = {},
 		snapshot = source.snapshot,
 		statusline_guard = source.statusline_guard,
 		underlay = source,
 	}
+	next_session_id = next_session_id + 1
 	local wins = {}
 	local children = { box = "horizontal" }
 	local source_pane
@@ -1023,6 +1286,10 @@ local function open_layout(tab, source, expand_all_folds)
 		local pane = snacks.win({
 			show = false,
 			buf = buf,
+			-- The worktree is a real editor buffer. Let ordinary current-window
+			-- navigation replace it so the session hook can perform a controlled
+			-- cross-file handoff instead of Snacks swapping an unrelated buffer.
+			fixbuf = role ~= "worktree",
 			minimal = false,
 			backdrop = false,
 			enter = false,
@@ -1104,6 +1371,7 @@ local function open_layout(tab, source, expand_all_folds)
 			end
 		end
 		if source_pane and source_pane:valid() then
+			session.worktree_win = source_pane.win
 			source_pane:focus()
 			vim.api.nvim_win_call(source_pane.win, function()
 				vim.fn.winrestview(source.view)
@@ -1128,6 +1396,7 @@ local function open_layout(tab, source, expand_all_folds)
 			refresh_minimap()
 		end)
 		install_buffer_maps(session)
+		start_transition_hooks(session, tab)
 		start_background_minimap_monitor(session, tab)
 		start_snapshot_resize_monitor(session, tab)
 		-- FileType/BufEnter handlers may schedule ordinary buffer-cycle mappings
