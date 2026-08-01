@@ -32,14 +32,19 @@ keybind = resize/k=resize_split:up,10
 keybind = resize/l=resize_split:right,10
 keybind = resize/escape=deactivate_key_table
 keybind = resize/catch_all=ignore
-font-family = Ubuntu Mono
-font-family = PlemolJP Console
-font-family-bold = Ubuntu Mono
-font-family-bold = PlemolJP Console
-font-family-italic = Ubuntu Mono
-font-family-italic = PlemolJP Console
-font-family-bold-italic = Ubuntu Mono
-font-family-bold-italic = PlemolJP Console
+font-family = Summer Ghost
+font-family-bold = Summer Ghost
+font-family-italic = Summer Ghost
+font-family-bold-italic = Summer Ghost
+# Previous font configuration: Ubuntu Mono + PlemolJP Console
+# font-family = Ubuntu Mono
+# font-family = PlemolJP Console
+# font-family-bold = Ubuntu Mono
+# font-family-bold = PlemolJP Console
+# font-family-italic = Ubuntu Mono
+# font-family-italic = PlemolJP Console
+# font-family-bold-italic = Ubuntu Mono
+# font-family-bold-italic = PlemolJP Console
 font-style = Regular
 font-style-bold = Bold
 font-style-italic = Italic
