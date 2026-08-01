@@ -744,6 +744,15 @@ end
 
 assert(vim.wait(2000, popup_minimap_ready, 20), "popup minimap display/native geometry did not stabilize")
 assert(#visible_minimap_windows() == 1, "popup must have exactly one visible minimap")
+local popup_minimap_width = vim.api.nvim_win_get_config(visible_minimap_windows()[1]).width
+assert(
+	vim.api.nvim_win_get_width(revision_float) == vim.api.nvim_win_get_width(source_float) - popup_minimap_width,
+	("popup pane balance mismatch: revision=%d worktree=%d minimap=%d"):format(
+		vim.api.nvim_win_get_width(revision_float),
+		vim.api.nvim_win_get_width(source_float),
+		popup_minimap_width
+	)
+)
 assert(vim.api.nvim_win_get_config(visible_minimap_windows()[1]).zindex > cover_config.zindex)
 assert(vim.api.nvim_win_get_config(mini_map.current.win_data[tab]).zindex > cover_config.zindex)
 

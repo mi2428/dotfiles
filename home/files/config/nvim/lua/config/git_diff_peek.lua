@@ -304,6 +304,23 @@ local function refresh_minimap()
 	end
 end
 
+local function active_minimap_width(tab)
+	local map = package.loaded["mini.map"]
+	local manager = map and map._dotfiles_multi_window_manager
+	if not map or not manager or manager.enabled ~= true then
+		return 0
+	end
+	local map_win = map.current and map.current.win_data and map.current.win_data[tab]
+	if map_win and vim.api.nvim_win_is_valid(map_win) then
+		return vim.api.nvim_win_get_width(map_win)
+	end
+	local options = map.current and map.current.opts
+	if not options or not next(options) then
+		options = map.config
+	end
+	return math.max(0, tonumber(options and options.window and options.window.width) or 0)
+end
+
 local function inherit_minimap_margin(child, parent)
 	local map = package.loaded["mini.map"]
 	local manager = map and map._dotfiles_multi_window_manager
@@ -874,6 +891,14 @@ local function open_layout(tab, source, expand_all_folds)
 	local children = { box = "horizontal" }
 	local source_pane
 	local revision_wins = {}
+	local function revision_pane_width()
+		local root = session.layout and session.layout.root
+		if not root or not root.win or not vim.api.nvim_win_is_valid(root.win) then
+			return 0
+		end
+		local equal_width = math.floor(vim.api.nvim_win_get_width(root.win) / 2)
+		return math.max(1, equal_width - math.floor(active_minimap_width(tab) / 2))
+	end
 	local function apply_pane_chrome(win, role, initialize_folds)
 		if not win or not vim.api.nvim_win_is_valid(win) then
 			return
@@ -935,6 +960,7 @@ local function open_layout(tab, source, expand_all_folds)
 		children[#children + 1] = {
 			win = name,
 			border = index == 1 and "none" or "left",
+			width = role == "revision" and revision_pane_width or nil,
 		}
 		session.panes[#session.panes + 1] = pane
 		if win == source_win then
@@ -950,8 +976,8 @@ local function open_layout(tab, source, expand_all_folds)
 		layout = {
 			box = "vertical",
 			backdrop = cover_backdrop(),
-			width = 0.9,
-			height = 0.9,
+			width = 0.95,
+			height = 0.95,
 			min_width = 160,
 			max_width = 300,
 			border = "rounded",
