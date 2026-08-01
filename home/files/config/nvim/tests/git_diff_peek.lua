@@ -273,7 +273,18 @@ local function background_minimap_monitor_count()
 	return vim.tbl_count(ids)
 end
 
+local function snapshot_resize_monitor_count()
+	local ids = {}
+	for _, autocmd in ipairs(vim.api.nvim_get_autocmds({})) do
+		if autocmd.desc == "Git diff peek frozen background resize" then
+			ids[autocmd.id] = true
+		end
+	end
+	return vim.tbl_count(ids)
+end
+
 local baseline_monitor_count = background_minimap_monitor_count()
+local baseline_snapshot_monitor_count = snapshot_resize_monitor_count()
 local background_win, background_buf = create_background_split("/tmp/dotfiles-git-diff-peek-background.lua", false)
 local disabled_background_win, disabled_background_buf =
 	create_background_split("/tmp/dotfiles-git-diff-peek-disabled-background.lua", true)
@@ -353,7 +364,7 @@ assert(cover_float, "the popup must create one full-editor background cover")
 local cover_buf = vim.api.nvim_win_get_buf(cover_float)
 local cover_config = vim.api.nvim_win_get_config(cover_float)
 assert(cover_config.relative == "editor" and cover_config.row == expected_cover_top and cover_config.col == 0)
-assert(cover_config.width == vim.o.columns and cover_config.height == vim.o.lines - expected_cover_top)
+assert(cover_config.width == vim.o.columns and cover_config.height == vim.o.lines - expected_cover_top - 1)
 assert(cover_config.zindex == vim.api.nvim_win_get_config(root_float).zindex - 1)
 assert(
 	cover_config.zindex > background_float_config_a.zindex and cover_config.zindex > background_float_config_b.zindex
@@ -365,10 +376,15 @@ assert(vim.bo[cover_buf].bufhidden == "wipe" and not vim.bo[cover_buf].swapfile)
 assert(not vim.bo[cover_buf].modifiable and vim.bo[cover_buf].undolevels == -1)
 assert(vim.wo[cover_float].winblend == 0 and vim.wo[cover_float].fillchars:find("eob: ", 1, true))
 local cover_normal = assert(vim.wo[cover_float].winhighlight:match("Normal:([^,]+)"))
-assert(vim.api.nvim_get_hl(0, { name = cover_normal, link = false }).bg == nil)
+assert(cover_normal == "DotfilesGitDiffPeekFrozen")
+assert(vim.api.nvim_get_hl(0, { name = cover_normal, link = false }).fg ~= nil)
+assert(
+	vim.api.nvim_buf_get_lines(cover_buf, 0, 1, false)[1]:find("FLOAT-A-CONTENT", 1, true),
+	"the frozen background did not capture the pre-popup screen"
+)
 vim.api.nvim_win_set_config(cover_float, {
 	width = vim.o.columns - 3,
-	height = vim.o.lines - expected_cover_top - 2,
+	height = vim.o.lines - expected_cover_top - 3,
 })
 vim.api.nvim_exec_autocmds("VimResized", { modeline = false })
 assert(
@@ -376,15 +392,16 @@ assert(
 		local resized = vim.api.nvim_win_get_config(cover_float)
 		return resized.row == expected_cover_top
 			and resized.width == vim.o.columns
-			and resized.height == vim.o.lines - expected_cover_top
+			and resized.height == vim.o.lines - expected_cover_top - 1
+			and vim.api.nvim_buf_line_count(cover_buf) == resized.height
 	end, 20),
 	"the full-editor cover did not re-evaluate its resize functions"
 )
 vim.cmd.redraw({ bang = true })
 assert(screen_row(1):find("dotfiles-git-diff-peek", 1, true), "the full-editor cover obscured the existing bufferline")
 assert(
-	not screen_row(expected_cover_top + 1):find("FLOAT-A-CONTENT", 1, true),
-	"the popup margin still exposes background float content"
+	screen_row(expected_cover_top + 1):find("FLOAT", 1, true),
+	"the popup margin does not show the frozen background"
 )
 assert(
 	vim.api.nvim_win_get_position(revision_float)[2] < vim.api.nvim_win_get_position(source_float)[2],
@@ -427,7 +444,8 @@ for _, group in ipairs({ "Normal", "NormalNC", "EndOfBuffer", "StatusLine", "Win
 	assert(attributes.fg == nil and attributes.bg == nil, group .. " must remain transparent in the underlay")
 end
 assert(vim.o.showtabline == baseline_showtabline, "underlay suppression changed the global bufferline")
-assert(vim.o.laststatus == baseline_laststatus, "underlay suppression changed the global statusline policy")
+assert(vim.o.laststatus == 3, "Git diff peek must expose Heirline as a global statusline")
+assert(snapshot_resize_monitor_count() == baseline_snapshot_monitor_count + 1)
 local source_windows = vim.fn.win_findbuf(source_buf)
 assert(
 	#source_windows == 1 and source_windows[1] == source_float,
@@ -790,6 +808,7 @@ assert(vim.api.nvim_win_get_buf(source_win) == source_buf, "popup cleanup did no
 assert(not vim.api.nvim_buf_is_valid(underlay_scratch), "popup cleanup did not wipe the underlay scratch")
 assert(not vim.api.nvim_win_is_valid(cover_float), "popup cleanup left the full-editor cover visible")
 assert(not vim.api.nvim_buf_is_valid(cover_buf), "popup cleanup leaked the full-editor cover buffer")
+assert(vim.o.laststatus == baseline_laststatus, "popup cleanup did not restore the global statusline policy")
 for _, background in ipairs({
 	{ win = background_float_a, buf = background_float_buf_a, config = background_float_config_a },
 	{ win = background_float_b, buf = background_float_buf_b, config = background_float_config_b },
@@ -826,6 +845,10 @@ assert(
 assert(
 	background_minimap_monitor_count() == baseline_monitor_count,
 	"popup cleanup leaked its session background minimap monitor"
+)
+assert(
+	snapshot_resize_monitor_count() == baseline_snapshot_monitor_count,
+	"popup cleanup leaked its frozen background resize monitor"
 )
 assert(
 	vim.wait(1500, function()
@@ -1154,6 +1177,8 @@ assert(alternate_buffer(source_win) == failure_alternate, "layout failure change
 assert(vim.w[source_win].dotfiles_disable_minimap == original_disable_minimap)
 assert(vim.b[source_buf].dotfiles_disable_hlchunk == original_hlchunk)
 assert(vim.wo[source_win].sidescrolloff == baseline_sidescrolloff, "failure cleanup accumulated minimap margin")
+assert(vim.o.laststatus == baseline_laststatus, "layout failure leaked the global statusline policy")
+assert(snapshot_resize_monitor_count() == baseline_snapshot_monitor_count)
 assert(
 	vim.iter(vim.api.nvim_tabpage_list_wins(0)):all(function(win)
 		return not vim.startswith(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)), "gitsigns://")
@@ -1185,6 +1210,18 @@ assert(
 )
 peek.toggle()
 diff_context.added_file_revision = added_file_revision
+assert(vim.o.laststatus == baseline_laststatus, "closing an added-file popup leaked the global statusline policy")
+
+defer_diff_callback = true
+peek.toggle()
+assert(type(pending_diff_callback) == "function", "the cancellation fixture must leave Gitsigns pending")
+assert(vim.o.laststatus == 3, "a pending popup must already expose the global statusline")
+peek.toggle()
+assert(vim.o.laststatus == baseline_laststatus, "cancelling a pending popup leaked the global statusline policy")
+defer_diff_callback = false
+pending_diff_callback()
+pending_diff_callback = nil
+assert(vim.o.laststatus == baseline_laststatus, "a stale Gitsigns callback changed the restored statusline policy")
 
 local diffthis = package.loaded.gitsigns.diffthis
 package.loaded.gitsigns.diffthis = function()
@@ -1198,5 +1235,6 @@ assert(
 	end),
 	"a synchronous Gitsigns failure must remove the pending zR mapping"
 )
+assert(vim.o.laststatus == baseline_laststatus, "a synchronous Gitsigns failure leaked the statusline policy")
 
 print("Git diff peek popup regression: ok")

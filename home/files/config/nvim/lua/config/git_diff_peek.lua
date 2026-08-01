@@ -6,6 +6,8 @@ local child_flag = "dotfiles_git_diff_peek_child"
 local cover_flag = "dotfiles_git_diff_peek_cover"
 local revision_winbar = "%{%v:lua.require('config.git_diff_peek').revision_winbar()%}"
 local underlay_hl_ns = vim.api.nvim_create_namespace("dotfiles-git-diff-peek-underlay")
+local statusline_owners = 0
+local saved_laststatus
 local underlay_option_names = {
 	"colorcolumn",
 	"cursorcolumn",
@@ -39,6 +41,131 @@ local function visible_tabline_height()
 	return (vim.o.showtabline == 2 or (vim.o.showtabline == 1 and #vim.api.nvim_list_tabpages() > 1)) and 1 or 0
 end
 
+local function acquire_global_statusline()
+	if statusline_owners == 0 then
+		saved_laststatus = vim.o.laststatus
+	end
+	statusline_owners = statusline_owners + 1
+	vim.o.laststatus = 3
+	return { released = false }
+end
+
+local function release_global_statusline(guard)
+	if not guard or guard.released then
+		return
+	end
+	guard.released = true
+	statusline_owners = math.max(0, statusline_owners - 1)
+	if statusline_owners == 0 then
+		if saved_laststatus ~= nil then
+			vim.o.laststatus = saved_laststatus
+		end
+		saved_laststatus = nil
+	end
+end
+
+local function capture_screen_line(row, width)
+	local cells = {}
+	local col = 1
+	while col <= width do
+		local char = vim.fn.screenstring(row, col)
+		if char == "" then
+			char = " "
+		end
+		cells[#cells + 1] = char
+		col = col + math.max(1, vim.fn.strdisplaywidth(char))
+	end
+	return table.concat(cells)
+end
+
+local function capture_frozen_screen()
+	vim.cmd.redraw({ bang = true })
+	local top = visible_tabline_height()
+	local height = math.max(1, vim.o.lines - top - 1)
+	local lines = {}
+	for offset = 1, height do
+		lines[offset] = capture_screen_line(top + offset, vim.o.columns)
+	end
+	return {
+		height = height,
+		lines = lines,
+		top = top,
+		width = vim.o.columns,
+	}
+end
+
+local function fit_screen_line(line, width)
+	local cells = {}
+	local used = 0
+	for index = 0, vim.fn.strchars(line) - 1 do
+		local char = vim.fn.strcharpart(line, index, 1)
+		local char_width = math.max(1, vim.fn.strdisplaywidth(char))
+		if used + char_width > width then
+			break
+		end
+		cells[#cells + 1] = char
+		used = used + char_width
+	end
+	if used < width then
+		cells[#cells + 1] = string.rep(" ", width - used)
+	end
+	return table.concat(cells)
+end
+
+local function frozen_highlights()
+	local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+	local comment = vim.api.nvim_get_hl(0, { name = "Comment", link = false })
+	local normal_nc = vim.api.nvim_get_hl(0, { name = "NormalNC", link = false })
+	local attributes = {
+		bg = normal.bg or normal_nc.bg,
+		fg = comment.fg or normal_nc.fg or normal.fg,
+		nocombine = true,
+	}
+	vim.api.nvim_set_hl(0, "DotfilesGitDiffPeekFrozen", attributes)
+	vim.api.nvim_set_hl(0, "DotfilesGitDiffPeekFrozenEob", attributes)
+end
+
+local function render_frozen_screen(session)
+	local cover = session.layout and session.layout.root and session.layout.root.backdrop
+	if not cover or not cover:valid() then
+		return
+	end
+	local config = vim.api.nvim_win_get_config(cover.win)
+	local lines = {}
+	for index = 1, config.height do
+		lines[index] = fit_screen_line(session.snapshot.lines[index] or "", config.width)
+	end
+	frozen_highlights()
+	vim.bo[cover.buf].modifiable = true
+	vim.api.nvim_buf_set_lines(cover.buf, 0, -1, false, lines)
+	vim.bo[cover.buf].modifiable = false
+	vim.wo[cover.win].winhighlight = table.concat({
+		"Normal:DotfilesGitDiffPeekFrozen",
+		"NormalNC:DotfilesGitDiffPeekFrozen",
+		"EndOfBuffer:DotfilesGitDiffPeekFrozenEob",
+	}, ",")
+end
+
+local function stop_snapshot_resize_monitor(session)
+	if session.snapshot_resize_autocmd then
+		pcall(vim.api.nvim_del_autocmd, session.snapshot_resize_autocmd)
+		session.snapshot_resize_autocmd = nil
+	end
+end
+
+local function start_snapshot_resize_monitor(session, tab)
+	session.snapshot_resize_autocmd = vim.api.nvim_create_autocmd("VimResized", {
+		desc = "Git diff peek frozen background resize",
+		callback = function()
+			vim.schedule(function()
+				if sessions[tab] == session and session.layout and session.layout:valid() then
+					render_frozen_screen(session)
+				end
+			end)
+		end,
+	})
+end
+
 local function cover_backdrop()
 	return {
 		blend = 0,
@@ -50,7 +177,7 @@ local function cover_backdrop()
 				return vim.o.columns
 			end,
 			height = function()
-				return math.max(1, vim.o.lines - visible_tabline_height())
+				return math.max(1, vim.o.lines - visible_tabline_height() - 1)
 			end,
 			focusable = false,
 			noautocmd = true,
@@ -72,7 +199,7 @@ local function cover_backdrop()
 			bo = {
 				bufhidden = "wipe",
 				buftype = "nofile",
-				filetype = "snacks_win_backdrop",
+				filetype = "git_diff_peek_snapshot",
 				modifiable = false,
 				swapfile = false,
 				undolevels = -1,
@@ -624,6 +751,8 @@ local function cleanup_session(tab, session, focus_underlay)
 	end
 	session.cleanup_scheduled = true
 	stop_background_minimap_monitor(session)
+	stop_snapshot_resize_monitor(session)
+	release_global_statusline(session.statusline_guard)
 	if sessions[tab] == session then
 		sessions[tab] = nil
 	end
@@ -720,12 +849,14 @@ local function open_layout(tab, source, expand_all_folds)
 		or vim.api.nvim_win_get_buf(source_win) ~= source_buf
 	then
 		close_regular_diff(tab)
+		release_global_statusline(source.statusline_guard)
 		return
 	end
 
 	local diff_wins = sorted_diff_windows(tab, source_win, source_buf)
 	if #diff_wins < 2 then
 		close_regular_diff(tab)
+		release_global_statusline(source.statusline_guard)
 		vim.notify("No Git revision available for this buffer", vim.log.levels.INFO)
 		return
 	end
@@ -735,6 +866,8 @@ local function open_layout(tab, source, expand_all_folds)
 	local session = {
 		maps = {},
 		panes = {},
+		snapshot = source.snapshot,
+		statusline_guard = source.statusline_guard,
 		underlay = source,
 	}
 	local wins = {}
@@ -850,6 +983,7 @@ local function open_layout(tab, source, expand_all_folds)
 		if not layout.root.backdrop or not layout.root.backdrop:valid() then
 			error("Git diff peek full-editor cover was not created")
 		end
+		render_frozen_screen(session)
 		suppress_underlay(session.underlay)
 
 		for _, win in ipairs(revision_wins) do
@@ -883,6 +1017,7 @@ local function open_layout(tab, source, expand_all_folds)
 		end)
 		install_buffer_maps(session)
 		start_background_minimap_monitor(session, tab)
+		start_snapshot_resize_monitor(session, tab)
 		if expand_all_folds then
 			open_all_folds(session)
 		end
@@ -927,6 +1062,10 @@ function M.toggle()
 	local tab = vim.api.nvim_get_current_tabpage()
 	local session = session_for_tab(tab)
 	if session then
+		-- Snacks may defer on_close until its windows finish closing. Release the
+		-- global statusline ownership synchronously so a rapid close/reopen cycle
+		-- snapshots the real pre-popup policy instead of inheriting laststatus=3.
+		release_global_statusline(session.statusline_guard)
 		session.layout:close()
 		return
 	end
@@ -935,6 +1074,7 @@ function M.toggle()
 		pending.cancelled = true
 		pending.maps = remove_buffer_maps(pending)
 		pending_sessions[tab] = nil
+		release_global_statusline(pending.statusline_guard)
 		close_regular_diff(tab)
 		return
 	end
@@ -963,10 +1103,19 @@ function M.toggle()
 		disable_hlchunk = vim.b[source_buf].dotfiles_disable_hlchunk,
 		underlay_flag = vim.w[source_win].dotfiles_git_diff_peek_underlay,
 	}
+	source.statusline_guard = acquire_global_statusline()
+	local captured, snapshot = pcall(capture_frozen_screen)
+	if not captured then
+		release_global_statusline(source.statusline_guard)
+		vim.notify(("Unable to capture Git diff peek background: %s"):format(snapshot), vim.log.levels.ERROR)
+		return
+	end
+	source.snapshot = snapshot
 	pending = {
 		cancelled = false,
 		expand_all_folds = false,
 		maps = {},
+		statusline_guard = source.statusline_guard,
 		tab = tab,
 	}
 	pending_sessions[tab] = pending
@@ -978,11 +1127,13 @@ function M.toggle()
 		pending.maps = remove_buffer_maps(pending)
 		if pending_sessions[tab] ~= pending or pending.cancelled then
 			close_regular_diff(tab)
+			release_global_statusline(source.statusline_guard)
 			return
 		end
 		pending_sessions[tab] = nil
 		if err then
 			close_regular_diff(tab)
+			release_global_statusline(source.statusline_guard)
 			vim.notify(tostring(err), vim.log.levels.ERROR)
 			return
 		end
@@ -991,6 +1142,7 @@ function M.toggle()
 		end, debug.traceback)
 		if not opened then
 			close_regular_diff(tab)
+			release_global_statusline(source.statusline_guard)
 			vim.notify(tostring(open_error), vim.log.levels.ERROR)
 		end
 	end
@@ -1010,6 +1162,7 @@ function M.toggle()
 			pending_sessions[tab] = nil
 		end
 		close_regular_diff(tab)
+		release_global_statusline(source.statusline_guard)
 		vim.notify(tostring(diff_error), vim.log.levels.ERROR)
 	end
 end
