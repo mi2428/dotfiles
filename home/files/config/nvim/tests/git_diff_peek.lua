@@ -695,15 +695,19 @@ local function popup_minimap_ready()
 	local native_config = vim.api.nvim_win_get_config(native)
 	local child_config = vim.api.nvim_win_get_config(source_float)
 	local child_position = vim.api.nvim_win_get_position(source_float)
+	local root_config = vim.api.nvim_win_get_config(root_float)
+	local child_text_right = child_position[2] + 1 + vim.api.nvim_win_get_width(source_float)
+	local root_text_right = root_config.col + 1 + vim.api.nvim_win_get_width(root_float)
 	return minimap_config.width == 12
 		and minimap_config.zindex > (child_config.zindex or 0)
 		and minimap_config.row == child_position[1]
 		and minimap_config.height > 0
 		and minimap_config.height <= vim.api.nvim_win_get_height(source_float)
-		and minimap_config.col + minimap_config.width == child_position[2] + vim.api.nvim_win_get_width(source_float)
+		and minimap_config.col + minimap_config.width == child_text_right
+		and minimap_config.col + minimap_config.width == root_text_right
 		and native_config.hide == true
 		and native_config.anchor == "NE"
-		and native_config.col == child_position[2] + vim.api.nvim_win_get_width(source_float)
+		and native_config.col == child_text_right
 		and native_config.height == vim.api.nvim_win_get_height(source_float)
 		and native_config.zindex > (child_config.zindex or 0)
 end

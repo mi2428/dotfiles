@@ -164,6 +164,7 @@ vim.api.nvim_win_call(first, function()
 		col = 1,
 		width = 60,
 		height = 10,
+		border = { "", "", "", "", "", "", "", "│" },
 		style = "minimal",
 	})
 end)
@@ -174,6 +175,21 @@ assert(
 	"popup child did not inherit the parent's unreserved margin"
 )
 assert(not manager.inherit_source_margin(-1, first), "invalid popup child margin inheritance succeeded")
+map.refresh({}, { layout = true, integrations = false, lines = true, scrollbar = false })
+local popup_map
+wait_for(function()
+	popup_map = manager.map_window_for_source(popup_child)
+	return popup_map and vim.api.nvim_win_is_valid(popup_map) and manager.rendered_maps[popup_map] ~= nil
+end, "bordered popup child did not receive a minimap")
+local popup_position = vim.api.nvim_win_get_position(popup_child)
+local popup_right = popup_position[2] + 1 + vim.api.nvim_win_get_width(popup_child)
+local popup_map_config = vim.api.nvim_win_get_config(popup_map)
+local popup_display_config = vim.api.nvim_win_get_config(manager.rendered_maps[popup_map].win)
+assert(popup_map_config.col == popup_right, "popup minimap ignored its one-cell left border")
+assert(
+	popup_display_config.col + popup_display_config.width == popup_right,
+	"popup minimap display left a one-cell right margin"
+)
 vim.api.nvim_win_close(popup_child, true)
 wait_for(function()
 	return manager.source_margins[popup_child] == nil

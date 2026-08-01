@@ -101,6 +101,39 @@ local function redraw_after_geometry_change(map)
 	end)
 end
 
+local function window_text_position(win)
+	local position = vim.api.nvim_win_get_position(win)
+	local config = vim.api.nvim_win_get_config(win)
+	local border = config.border
+	if type(border) == "string" then
+		if border ~= "" and border ~= "none" then
+			return { position[1] + 1, position[2] + 1 }
+		end
+		return position
+	end
+	if type(border) ~= "table" then
+		return position
+	end
+
+	local function occupied(...)
+		for _, index in ipairs({ ... }) do
+			local cell = border[index]
+			if type(cell) == "table" then
+				cell = cell[1]
+			end
+			if type(cell) == "string" and vim.fn.strdisplaywidth(cell) > 0 then
+				return 1
+			end
+		end
+		return 0
+	end
+
+	return {
+		position[1] + occupied(1, 2, 3),
+		position[2] + occupied(1, 7, 8),
+	}
+end
+
 local function update_minimap_geometry(map)
 	local map_win = map.current.win_data[vim.api.nvim_get_current_tabpage()]
 	if not map_win or not vim.api.nvim_win_is_valid(map_win) then
@@ -118,7 +151,7 @@ local function update_minimap_geometry(map)
 		return false
 	end
 
-	local position = vim.api.nvim_win_get_position(source_win)
+	local position = window_text_position(source_win)
 	local source_config = vim.api.nvim_win_get_config(source_win)
 	local row = position[1]
 	local col = position[2] + vim.api.nvim_win_get_width(source_win)
@@ -588,7 +621,7 @@ local function setup_code_layout(map)
 	-- Native and mirror floats own mini.map state and encoding only. They remain
 	-- hidden; visible minimaps are created exclusively by `render_map()` below.
 	local function mirror_geometry(source_win, width)
-		local position = vim.api.nvim_win_get_position(source_win)
+		local position = window_text_position(source_win)
 		width = math.min(width, vim.api.nvim_win_get_width(source_win))
 		return {
 			relative = "editor",
@@ -664,7 +697,7 @@ local function setup_code_layout(map)
 		-- encoded row owns the complete interval from rail through pane edge; rows
 		-- below this buffer's EOF deliberately remain editor-owned.
 		local map_buf = vim.api.nvim_win_get_buf(map_win)
-		local source_position = vim.api.nvim_win_get_position(source_win)
+		local source_position = window_text_position(source_win)
 		local map_width = vim.api.nvim_win_get_width(map_win)
 		local map_left = source_position[2] + vim.api.nvim_win_get_width(source_win) - map_width
 		local map_config = vim.api.nvim_win_get_config(map_win)
