@@ -165,6 +165,7 @@ local function setup_code_layout(map)
 
 	local manager = {
 		active_source = nil,
+		detached_source_margins = {},
 		enabled = false,
 		focused = false,
 		managing_options = 0,
@@ -254,22 +255,57 @@ local function setup_code_layout(map)
 		end
 	end
 
-	local function inherit_source_margin(win)
+	local function inherit_source_margin(win, parent)
 		if not manager.enabled or manager.source_margins[win] or not is_code_window(win) then
-			return
+			return false
 		end
-		local parent = vim.fn.win_getid(vim.fn.winnr("#"))
+		parent = parent or vim.fn.win_getid(vim.fn.winnr("#"))
 		local parent_state = manager.source_margins[parent]
-		if not parent_state then
-			return
+		local detached_restore = manager.detached_source_margins[parent]
+		if not parent_state and detached_restore == nil then
+			return false
 		end
 
 		-- Splits copy window-local options. Remember the parent's unreserved value
 		-- before the copied, already-adjusted value can be mistaken for user intent.
 		manager.source_margins[win] = {
 			applied = get_local_sidescrolloff(win),
-			restore_local = parent_state.restore_local,
+			restore_local = parent_state and parent_state.restore_local or detached_restore,
 		}
+		manager.detached_source_margins[parent] = nil
+		return true
+	end
+
+	function manager.inherit_source_margin(child, parent)
+		if not vim.api.nvim_win_is_valid(child) or not vim.api.nvim_win_is_valid(parent) or child == parent then
+			return false
+		end
+		return inherit_source_margin(child, parent)
+	end
+
+	function manager.prepare_source_margin_transfer(parent)
+		if not manager.enabled or not vim.api.nvim_win_is_valid(parent) then
+			return false
+		end
+		local state = manager.source_margins[parent]
+		if not state then
+			return false
+		end
+		local current = get_local_sidescrolloff(parent)
+		if state.applied ~= nil and current ~= state.applied then
+			state.restore_local = current
+		end
+		manager.detached_source_margins[parent] = state.restore_local
+		restore_source_margin(parent)
+		return true
+	end
+
+	function manager.discard_source_margin_transfer(parent)
+		if type(parent) ~= "number" or manager.detached_source_margins[parent] == nil then
+			return false
+		end
+		manager.detached_source_margins[parent] = nil
+		return true
 	end
 
 	local function reserve_source_margin(source_win, map_win)
@@ -288,8 +324,9 @@ local function setup_code_layout(map)
 		local current = get_local_sidescrolloff(source_win)
 		local state = manager.source_margins[source_win]
 		if not state then
-			state = { restore_local = current }
+			state = { restore_local = manager.detached_source_margins[source_win] or current }
 			manager.source_margins[source_win] = state
+			manager.detached_source_margins[source_win] = nil
 		elseif state.applied ~= nil and current ~= state.applied then
 			-- Treat an intervening :setlocal as the new base instead of fighting it.
 			state.restore_local = current
@@ -530,6 +567,7 @@ local function setup_code_layout(map)
 
 	function manager.close_all()
 		restore_all_source_margins()
+		manager.detached_source_margins = {}
 		clear_all_wrap_margins()
 		for map_win, display in pairs(manager.rendered_maps) do
 			manager.rendered_maps[map_win] = nil

@@ -88,6 +88,7 @@ assert(filler.fg == nil and filler.bg == nil, "Diffview setup restored colored a
 
 vim.wo.fillchars = "diff:-"
 vim.wo.cursorline = false
+vim.go.statuscolumn = "%=%l"
 local cursorline_test_groups = {
 	CursorLineNr = { target = "TestDiffCursorLineNr", attributes = { fg = "#ff8800", bg = "#112233", bold = true } },
 	CursorLineSign = { target = "TestDiffCursorLineSign", attributes = { bg = "#112233" } },
@@ -181,10 +182,7 @@ for source, spec in pairs(cursorline_test_groups) do
 end
 assert(vim.b[vim.api.nvim_win_get_buf(win)].dotfiles_disable_hlchunk, "Diffview editors must suppress chunk borders")
 assert(vim.wo.cursorline, "Diffview code windows must enable the ordinary cursor line")
-assert(
-	vim.wo.cursorlineopt == "number",
-	"Diffview must leave editor-row painting to its redraw namespace without a second line decoration"
-)
+assert(vim.wo.cursorlineopt == "both", "Diffview must enable the ordinary editor row and number cursor line")
 assert(
 	vim.wo.winhighlight:find("CursorLine:CursorLine", 1, true),
 	"Diffview must not replace the mode-aware cursor line with a static highlight"
@@ -221,8 +219,10 @@ assert(
 
 for _, scene in ipairs({
 	{ name = "Normal", bg = "#223344", fg = "#ff7700" },
-	{ name = "Command", bg = "#442244", fg = "#ff44aa" },
 	{ name = "Insert", bg = "#224433", fg = "#44ffaa" },
+	{ name = "Visual", bg = "#334466", fg = "#77aaff" },
+	{ name = "Replace", bg = "#553322", fg = "#ffaa44" },
+	{ name = "Command", bg = "#442244", fg = "#ff44aa" },
 }) do
 	local mappings = {
 		"DiffChange:DiffviewDiffChange",
@@ -242,6 +242,11 @@ for _, scene in ipairs({
 		mappings[#mappings + 1] = source .. ":" .. target
 	end
 	vim.wo.winhighlight = table.concat(mappings, ",")
+	style_diff_window(win, { layout_name = "diff2_horizontal", symbol = "a" })
+	assert(
+		vim.wo.winhighlight:find("CursorLine:" .. cursorline_scene_target, 1, true),
+		scene.name .. " recurring style refresh replaced the mode-aware CursorLine target"
+	)
 	refresh_diffview_cursorline_namespaces()
 
 	local scene_cursorline = vim.api.nvim_get_hl(0, { name = cursorline_scene_target, link = false })
@@ -292,7 +297,8 @@ vim.wo[gitsigns_main].diff = true
 vim.wo[gitsigns_revision].diff = true
 assert(
 	vim.wait(1000, function()
-		return vim.wo[gitsigns_main].cursorlineopt == "number"
+		return vim.wo[gitsigns_main].cursorlineopt == "both"
+			and vim.wo[gitsigns_main].winhighlight:find("DiffChange:DiffviewDiffChangeAdd", 1, true) ~= nil
 	end),
 	"Gitsigns diff windows did not receive the shared Diffview style"
 )
@@ -312,7 +318,7 @@ for win, side in pairs({
 	[gitsigns_main] = "Add",
 }) do
 	assert(vim.wo[win].cursorline, side .. " Gitsigns pane must enable the Diffview cursor line")
-	assert(vim.wo[win].cursorlineopt == "number", side .. " Gitsigns pane must suppress the editor-row underline")
+	assert(vim.wo[win].cursorlineopt == "both", side .. " Gitsigns pane must paint the editor row and number")
 	assert(vim.wo[win].fillchars:find("diff: ", 1, true), side .. " Gitsigns pane must use blank diff filler")
 	assert(
 		vim.b[vim.api.nvim_win_get_buf(win)].dotfiles_disable_hlchunk,
@@ -327,6 +333,8 @@ for win, side in pairs({
 		side .. " Gitsigns pane must use the strong inline-change background"
 	)
 end
+assert(vim.bo[gitsigns_revision_buf].modifiable and not vim.bo[gitsigns_revision_buf].readonly)
+assert(vim.bo[gitsigns_main_buf].modifiable and not vim.bo[gitsigns_main_buf].readonly)
 assert(
 	vim.wo[gitsigns_revision].winhighlight:find("DiffAdd:DiffviewDiffAddAsDelete", 1, true),
 	"Gitsigns revision additions must render as Diffview deletions"
@@ -392,6 +400,7 @@ vim.api.nvim_exec_autocmds("WinEnter", { modeline = false })
 assert(
 	vim.wait(1000, function()
 		return vim.wo[gitsigns_main].cursorlineopt == "both"
+			and vim.wo[gitsigns_main].winhighlight == original_main_winhighlight
 	end),
 	"closing a Gitsigns diff did not restore the editor window style"
 )

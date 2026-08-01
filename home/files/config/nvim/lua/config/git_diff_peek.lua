@@ -3,7 +3,86 @@ local M = {}
 local sessions = {}
 local pending_sessions = {}
 local child_flag = "dotfiles_git_diff_peek_child"
+local cover_flag = "dotfiles_git_diff_peek_cover"
 local revision_winbar = "%{%v:lua.require('config.git_diff_peek').revision_winbar()%}"
+local underlay_hl_ns = vim.api.nvim_create_namespace("dotfiles-git-diff-peek-underlay")
+local underlay_option_names = {
+	"colorcolumn",
+	"cursorcolumn",
+	"cursorline",
+	"fillchars",
+	"foldcolumn",
+	"list",
+	"number",
+	"relativenumber",
+	"signcolumn",
+	"statuscolumn",
+	"statusline",
+	"winbar",
+}
+
+for _, group in ipairs({
+	"Normal",
+	"NormalNC",
+	"EndOfBuffer",
+	"StatusLine",
+	"StatusLineNC",
+	"WinBar",
+	"WinBarNC",
+	"WinSeparator",
+	"VertSplit",
+}) do
+	vim.api.nvim_set_hl(underlay_hl_ns, group, { fg = "NONE", bg = "NONE", nocombine = true })
+end
+
+local function visible_tabline_height()
+	return (vim.o.showtabline == 2 or (vim.o.showtabline == 1 and #vim.api.nvim_list_tabpages() > 1)) and 1 or 0
+end
+
+local function cover_backdrop()
+	return {
+		blend = 0,
+		transparent = false,
+		win = {
+			row = visible_tabline_height,
+			col = 0,
+			width = function()
+				return vim.o.columns
+			end,
+			height = function()
+				return math.max(1, vim.o.lines - visible_tabline_height())
+			end,
+			focusable = false,
+			noautocmd = true,
+			wo = {
+				colorcolumn = "",
+				cursorcolumn = false,
+				cursorline = false,
+				fillchars = "eob: ",
+				foldcolumn = "0",
+				list = false,
+				number = false,
+				relativenumber = false,
+				signcolumn = "no",
+				statuscolumn = "",
+				statusline = "",
+				winbar = "",
+				winblend = 0,
+			},
+			bo = {
+				bufhidden = "wipe",
+				buftype = "nofile",
+				filetype = "snacks_win_backdrop",
+				modifiable = false,
+				swapfile = false,
+				undolevels = -1,
+			},
+			w = {
+				[cover_flag] = true,
+			},
+		},
+	}
+end
 
 local function statusline_hl(group, text)
 	return ("%%#%s#%s%%*"):format(group, text:gsub("%%", "%%%%"))
@@ -67,6 +146,30 @@ local function refresh_minimap()
 	end
 end
 
+local function inherit_minimap_margin(child, parent)
+	local map = package.loaded["mini.map"]
+	local manager = map and map._dotfiles_multi_window_manager
+	if manager and type(manager.inherit_source_margin) == "function" then
+		pcall(manager.inherit_source_margin, child, parent)
+	end
+end
+
+local function prepare_minimap_margin_transfer(parent)
+	local map = package.loaded["mini.map"]
+	local manager = map and map._dotfiles_multi_window_manager
+	if manager and type(manager.prepare_source_margin_transfer) == "function" then
+		pcall(manager.prepare_source_margin_transfer, parent)
+	end
+end
+
+local function discard_minimap_margin_transfer(parent)
+	local map = package.loaded["mini.map"]
+	local manager = map and map._dotfiles_multi_window_manager
+	if manager and type(manager.discard_source_margin_transfer) == "function" then
+		pcall(manager.discard_source_margin_transfer, parent)
+	end
+end
+
 local function set_window_buffer_keepalt(win, buf)
 	vim.api.nvim_win_call(win, function()
 		vim.cmd({ cmd = "buffer", args = { tostring(buf) }, mods = { hide = true, keepalt = true } })
@@ -83,13 +186,63 @@ local function create_underlay_scratch()
 	return buf
 end
 
+local function snapshot_underlay_appearance(win)
+	local options = {}
+	for _, name in ipairs(underlay_option_names) do
+		options[name] = vim.api.nvim_get_option_value(name, { scope = "local", win = win })
+	end
+	return {
+		hl_ns = vim.api.nvim_get_hl_ns({ winid = win }),
+		options = options,
+	}
+end
+
+local function suppress_underlay(underlay)
+	local win = underlay.win
+	if not vim.api.nvim_win_is_valid(win) then
+		return
+	end
+	set_local_option(win, "number", false)
+	set_local_option(win, "relativenumber", false)
+	set_local_option(win, "statuscolumn", "")
+	set_local_option(win, "foldcolumn", "0")
+	set_local_option(win, "signcolumn", "no")
+	set_local_option(win, "cursorline", false)
+	set_local_option(win, "cursorcolumn", false)
+	set_local_option(win, "list", false)
+	set_local_option(win, "colorcolumn", "")
+	set_local_option(win, "winbar", " ")
+	set_local_option(win, "statusline", " ")
+	vim.api.nvim_win_call(win, function()
+		vim.opt_local.fillchars:append({ eob = " " })
+	end)
+	vim.api.nvim_win_set_hl_ns(win, underlay_hl_ns)
+end
+
+local function restore_underlay_appearance(underlay, restored_source)
+	local win = underlay.win
+	if not vim.api.nvim_win_is_valid(win) then
+		return
+	end
+	for _, name in ipairs(underlay_option_names) do
+		pcall(set_local_option, win, name, underlay.appearance.options[name])
+	end
+	pcall(vim.api.nvim_win_set_hl_ns, win, underlay.appearance.hl_ns)
+	if restored_source and vim.api.nvim_win_get_buf(win) == underlay.buf then
+		pcall(vim.api.nvim_win_call, win, function()
+			vim.fn.winrestview(underlay.view)
+		end)
+	end
+end
+
 local function restore_underlay(session)
 	local underlay = session.underlay
 	if underlay.restored then
-		return
+		return false
 	end
 	underlay.restored = true
 
+	local restored_source = false
 	if vim.api.nvim_win_is_valid(underlay.win) then
 		if
 			underlay.scratch
@@ -97,12 +250,7 @@ local function restore_underlay(session)
 			and vim.api.nvim_win_get_buf(underlay.win) == underlay.scratch
 			and vim.api.nvim_buf_is_valid(underlay.buf)
 		then
-			local restored = pcall(set_window_buffer_keepalt, underlay.win, underlay.buf)
-			if restored then
-				pcall(vim.api.nvim_win_call, underlay.win, function()
-					vim.fn.winrestview(underlay.view)
-				end)
-			end
+			restored_source = pcall(set_window_buffer_keepalt, underlay.win, underlay.buf)
 		end
 		vim.w[underlay.win].dotfiles_git_diff_peek_underlay = underlay.underlay_flag
 		vim.w[underlay.win].dotfiles_disable_minimap = underlay.disable_minimap
@@ -117,6 +265,7 @@ local function restore_underlay(session)
 	then
 		pcall(vim.api.nvim_buf_delete, underlay.scratch, { force = true })
 	end
+	return restored_source
 end
 
 local function suppress_background_minimaps(session, tab)
@@ -309,7 +458,7 @@ function M.apply_editor_chrome(win, opts)
 	vim.api.nvim_win_call(win, function()
 		vim.opt_local.fillchars:append({ diff = " " })
 		vim.wo.cursorline = true
-		vim.wo.cursorlineopt = "number"
+		vim.wo.cursorlineopt = "both"
 	end)
 	replace_winhighlight(win, "Normal", "Normal")
 	replace_winhighlight(win, "NormalNC", "NormalNC")
@@ -319,6 +468,10 @@ function M.apply_editor_chrome(win, opts)
 
 	if opts.minimap_disabled ~= nil then
 		vim.w[win].dotfiles_disable_minimap = opts.minimap_disabled
+	end
+	if vim.w[win][child_flag] == true and role == "revision" then
+		vim.bo[buf].modifiable = false
+		vim.bo[buf].readonly = true
 	end
 end
 
@@ -438,7 +591,7 @@ local function cleanup_session(tab, session, focus_underlay)
 	end
 	session.maps = remove_buffer_maps(session)
 	vim.schedule(function()
-		restore_underlay(session)
+		local restored_source = restore_underlay(session)
 		restore_background_minimaps(session)
 		if
 			focus_underlay
@@ -448,6 +601,18 @@ local function cleanup_session(tab, session, focus_underlay)
 			vim.api.nvim_set_current_win(session.underlay.win)
 		end
 		refresh_minimap()
+		discard_minimap_margin_transfer(session.underlay.win)
+		-- Buffer restoration and the final focus both fire providers which schedule
+		-- window-local updates. Restore the exact pre-popup sentinel after them, but
+		-- never let an old close callback overwrite a newer session in the same tab.
+		vim.schedule(function()
+			local active = sessions[tab]
+			local pending = pending_sessions[tab]
+			if (active and active ~= session) or (pending and pending ~= session) then
+				return
+			end
+			restore_underlay_appearance(session.underlay, restored_source)
+		end)
 	end)
 end
 
@@ -562,6 +727,9 @@ local function open_layout(tab, source, expand_all_folds)
 			winbar = source_chrome.winbar ~= "" and source_chrome.winbar or "%{%v:lua.dropbar()%}",
 		})
 		if role == "worktree" then
+			-- apply_editor_chrome() establishes the popup child/role metadata used by
+			-- minimap's is_code_window() predicate. Inherit before the first refresh.
+			inherit_minimap_margin(win, source_win)
 			attach_dropbar(win)
 		end
 	end
@@ -610,6 +778,7 @@ local function open_layout(tab, source, expand_all_folds)
 		wins = wins,
 		layout = {
 			box = "vertical",
+			backdrop = cover_backdrop(),
 			width = 0.9,
 			height = 0.9,
 			min_width = 160,
@@ -634,11 +803,16 @@ local function open_layout(tab, source, expand_all_folds)
 		if not vim.api.nvim_win_is_valid(source_win) or vim.api.nvim_win_get_buf(source_win) ~= source_buf then
 			error("Git diff peek source window changed while opening")
 		end
+		prepare_minimap_margin_transfer(source_win)
 		vim.wo[source_win].diff = false
 		session.underlay.scratch = create_underlay_scratch()
 		vim.w[source_win].dotfiles_git_diff_peek_underlay = true
 		set_window_buffer_keepalt(source_win, session.underlay.scratch)
 		layout:show()
+		if not layout.root.backdrop or not layout.root.backdrop:valid() then
+			error("Git diff peek full-editor cover was not created")
+		end
+		suppress_underlay(session.underlay)
 
 		for _, win in ipairs(revision_wins) do
 			if vim.api.nvim_win_is_valid(win) then
@@ -666,6 +840,7 @@ local function open_layout(tab, source, expand_all_folds)
 					apply_pane_chrome(pane.win, vim.w[pane.win].dotfiles_git_diff_peek_role, false)
 				end
 			end
+			suppress_underlay(session.underlay)
 			refresh_minimap()
 		end)
 		install_buffer_maps(session)
@@ -676,13 +851,16 @@ local function open_layout(tab, source, expand_all_folds)
 	end, debug.traceback)
 
 	if not ok then
+		-- Close the temporary diff windows before layout cleanup queues its final
+		-- underlay restore. WinClosed providers may schedule window-local chrome;
+		-- cleanup must run after those callbacks have been enqueued.
+		close_regular_diff(tab)
 		if session.layout then
 			pcall(function()
 				session.layout:close()
 			end)
 		end
 		cleanup_session(tab, session, true)
-		close_regular_diff(tab)
 		vim.notify(tostring(layout_error), vim.log.levels.ERROR)
 	end
 end
@@ -717,6 +895,7 @@ function M.toggle()
 		buf = source_buf,
 		view = vim.fn.winsaveview(),
 		chrome = snapshot_editor_chrome(source_win),
+		appearance = snapshot_underlay_appearance(source_win),
 		disable_minimap = vim.w[source_win].dotfiles_disable_minimap,
 		disable_hlchunk = vim.b[source_buf].dotfiles_disable_hlchunk,
 		underlay_flag = vim.w[source_win].dotfiles_git_diff_peek_underlay,

@@ -30,6 +30,8 @@ local map = require("mini.map")
 
 vim.o.columns = 180
 vim.o.lines = 52
+vim.o.sidescrolloff = 5
+vim.api.nvim_set_option_value("sidescrolloff", -1, { scope = "local", win = 0 })
 local source_lines = {}
 for line = 1, 5000 do
 	source_lines[line] = ("line %04d %s"):format(line, string.rep("x", line % 80))
@@ -76,6 +78,21 @@ local function wait_for(predicate, message)
 	assert(vim.wait(2000, predicate, 10), message)
 end
 
+local first = vim.api.nvim_get_current_win()
+wait_for(function()
+	local state = manager.source_margins[first]
+	return state
+		and state.restore_local == -1
+		and vim.api.nvim_get_option_value("sidescrolloff", { scope = "local", win = first }) == 17
+end, "global sidescrolloff base did not receive exactly one minimap reservation")
+vim.api.nvim_set_option_value("sidescrolloff", 9, { scope = "local", win = first })
+wait_for(function()
+	local state = manager.source_margins[first]
+	return state
+		and state.restore_local == 9
+		and vim.api.nvim_get_option_value("sidescrolloff", { scope = "local", win = first }) == 21
+end, "custom local sidescrolloff did not replace the inherited minimap base")
+
 local function assert_map_geometry(source_win)
 	local map_win = assert(manager.map_window_for_source(source_win), "source window has no minimap")
 	assert(vim.api.nvim_win_is_valid(map_win), "source window minimap is invalid")
@@ -112,12 +129,55 @@ local function assert_map_geometry(source_win)
 	return map_win
 end
 
-local first = vim.api.nvim_get_current_win()
 vim.cmd.vsplit()
 local second = vim.api.nvim_get_current_win()
 wait_for(function()
 	return count_mirrors() == 1
 end, "vertical split did not create a second minimap")
+
+assert(manager.prepare_source_margin_transfer(first), "popup source margin transfer preparation was rejected")
+assert(manager.source_margins[first] == nil and manager.detached_source_margins[first] == 9)
+assert(
+	vim.api.nvim_get_option_value("sidescrolloff", { scope = "local", win = first }) == 9,
+	"popup source retained its reserved margin before buffer detachment"
+)
+assert(manager.discard_source_margin_transfer(first), "popup source margin transfer cancellation was rejected")
+assert(manager.detached_source_margins[first] == nil, "cancelled popup source margin metadata survived")
+assert(not manager.discard_source_margin_transfer(first), "discard reported absent popup margin metadata as present")
+manager.detached_source_margins[-12345] = 7
+assert(manager.discard_source_margin_transfer(-12345), "invalid window id metadata was not discarded")
+assert(manager.detached_source_margins[-12345] == nil, "invalid window id metadata survived discard")
+map.refresh({}, { layout = true, integrations = false, lines = false, scrollbar = false })
+wait_for(function()
+	local state = manager.source_margins[first]
+	return state
+		and state.restore_local == 9
+		and vim.api.nvim_get_option_value("sidescrolloff", { scope = "local", win = first }) == 21
+end, "cancelled popup source margin did not return to ordinary minimap ownership")
+assert(manager.prepare_source_margin_transfer(first), "re-preparing popup source margin transfer was rejected")
+assert(manager.source_margins[first] == nil and manager.detached_source_margins[first] == 9)
+local popup_child
+vim.api.nvim_win_call(first, function()
+	popup_child = vim.api.nvim_open_win(vim.api.nvim_win_get_buf(first), false, {
+		relative = "editor",
+		row = 1,
+		col = 1,
+		width = 60,
+		height = 10,
+		style = "minimal",
+	})
+end)
+vim.w[popup_child].dotfiles_git_diff_peek_child = true
+assert(manager.inherit_source_margin(popup_child, first), "explicit popup margin inheritance was rejected")
+assert(
+	manager.source_margins[popup_child].restore_local == 9,
+	"popup child did not inherit the parent's unreserved margin"
+)
+assert(not manager.inherit_source_margin(-1, first), "invalid popup child margin inheritance succeeded")
+vim.api.nvim_win_close(popup_child, true)
+wait_for(function()
+	return manager.source_margins[popup_child] == nil
+end, "closed popup child leaked inherited margin metadata")
 
 vim.w[first].dotfiles_disable_minimap = true
 map.refresh({}, { layout = true, integrations = false, lines = false, scrollbar = false })

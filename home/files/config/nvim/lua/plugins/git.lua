@@ -198,7 +198,8 @@ local function replace_winhighlight(win, group, target)
 end
 
 local function style_diff_window(win, ctx)
-	local initialize_folds = diffview_windows[win] == nil and vim.w[win].dotfiles_git_diff_peek_child ~= true
+	local newly_registered = diffview_windows[win] == nil
+	local initialize_folds = newly_registered and vim.w[win].dotfiles_git_diff_peek_child ~= true
 	diffview_windows[win] = diffview_windows[win] or {}
 	-- The right/main revision is the actionable side in Diffview. Keep its
 	-- minimap, but do not duplicate the same overview over the left/base pane.
@@ -216,7 +217,9 @@ local function style_diff_window(win, ctx)
 	-- layout. Start from the ordinary CursorLine group; the existing
 	-- ModeChanged UI then replaces it with the same mode-specific group used by
 	-- normal editing windows.
-	replace_winhighlight(win, "CursorLine", "CursorLine")
+	if newly_registered then
+		replace_winhighlight(win, "CursorLine", "CursorLine")
+	end
 
 	local side
 	if ctx and (ctx.layout_name == "diff2_horizontal" or ctx.layout_name == "diff2_vertical") then

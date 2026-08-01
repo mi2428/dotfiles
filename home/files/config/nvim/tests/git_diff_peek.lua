@@ -18,8 +18,10 @@ assert(
 )
 local mini_map = require("mini.map")
 assert(package.loaded["mini.map"] == mini_map, "mini.map must be loaded for popup minimap QA")
-vim.o.columns = 190
-vim.o.lines = 65
+assert(
+	vim.o.columns >= 190 and vim.o.lines >= 65,
+	("Git diff peek QA requires a 190x65 or larger UI, got %dx%d"):format(vim.o.columns, vim.o.lines)
+)
 
 local source_win = vim.api.nvim_get_current_win()
 local source_buf = vim.api.nvim_get_current_buf()
@@ -31,6 +33,32 @@ local function alternate_buffer(win)
 	return vim.api.nvim_win_call(win, function()
 		return vim.fn.bufnr("#")
 	end)
+end
+
+local underlay_option_names = {
+	"colorcolumn",
+	"cursorcolumn",
+	"cursorline",
+	"fillchars",
+	"foldcolumn",
+	"list",
+	"number",
+	"relativenumber",
+	"signcolumn",
+	"statuscolumn",
+	"statusline",
+	"winbar",
+}
+
+local function underlay_appearance(win)
+	local options = {}
+	for _, name in ipairs(underlay_option_names) do
+		options[name] = vim.api.nvim_get_option_value(name, { scope = "local", win = win })
+	end
+	return {
+		hl_ns = vim.api.nvim_get_hl_ns({ winid = win }),
+		options = options,
+	}
 end
 
 vim.api.nvim_buf_set_name(source_buf, "/tmp/dotfiles-git-diff-peek.lua")
@@ -161,12 +189,23 @@ end
 
 mini_map.open()
 local tab = vim.api.nvim_get_current_tabpage()
+mini_map.refresh({}, { layout = true, integrations = false, lines = false, scrollbar = false })
 assert(
 	vim.wait(1500, function()
 		local native = mini_map.current.win_data[tab]
-		return native and vim.api.nvim_win_is_valid(native) and #visible_minimap_windows() == 1
+		local minimaps = visible_minimap_windows()
+		if not native or not vim.api.nvim_win_is_valid(native) or #minimaps ~= 1 then
+			return false
+		end
+		local source_position = vim.api.nvim_win_get_position(source_win)
+		local source_right = source_position[2] + vim.api.nvim_win_get_width(source_win)
+		local native_config = vim.api.nvim_win_get_config(native)
+		local display_config = vim.api.nvim_win_get_config(minimaps[1])
+		return native_config.col == source_right
+			and native_config.height == vim.api.nvim_win_get_height(source_win)
+			and display_config.col + display_config.width == source_right
 	end, 20),
-	"the fixture must expose one ordinary visible minimap before popup open"
+	"the fixture must expose one settled ordinary minimap before popup open"
 )
 local baseline_native = mini_map.current.win_data[tab]
 local baseline_display = visible_minimap_windows()[1]
@@ -194,6 +233,34 @@ local function create_background_split(name, minimap_flag)
 	return win, buf
 end
 
+local function create_background_float(text, row, col, zindex)
+	local buf = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, { text })
+	vim.bo[buf].buftype = "nofile"
+	vim.bo[buf].bufhidden = "hide"
+	vim.bo[buf].swapfile = false
+	local win = vim.api.nvim_open_win(buf, false, {
+		relative = "editor",
+		row = row,
+		col = col,
+		width = 28,
+		height = 2,
+		style = "minimal",
+		focusable = false,
+		noautocmd = true,
+		zindex = zindex,
+	})
+	return win, buf, vim.deepcopy(vim.api.nvim_win_get_config(win))
+end
+
+local function screen_row(row)
+	local cells = {}
+	for col = 1, vim.o.columns do
+		cells[col] = vim.fn.screenstring(row, col)
+	end
+	return table.concat(cells)
+end
+
 local function background_minimap_monitor_count()
 	local ids = {}
 	for _, autocmd in ipairs(vim.api.nvim_get_autocmds({})) do
@@ -208,6 +275,17 @@ local baseline_monitor_count = background_minimap_monitor_count()
 local background_win, background_buf = create_background_split("/tmp/dotfiles-git-diff-peek-background.lua", false)
 local disabled_background_win, disabled_background_buf =
 	create_background_split("/tmp/dotfiles-git-diff-peek-disabled-background.lua", true)
+local expected_cover_top = (vim.o.showtabline == 2 or (vim.o.showtabline == 1 and #vim.api.nvim_list_tabpages() > 1))
+		and 1
+	or 0
+local background_float_a, background_float_buf_a, background_float_config_a =
+	create_background_float("FLOAT-A-CONTENT", expected_cover_top, 0, 35)
+local background_float_b, background_float_buf_b, background_float_config_b = create_background_float(
+	"FLOAT-B-CONTENT",
+	math.max(expected_cover_top, vim.o.lines - 4),
+	math.max(0, vim.o.columns - 30),
+	45
+)
 vim.api.nvim_set_current_win(source_win)
 mini_map.refresh({}, { layout = true, integrations = false, lines = false, scrollbar = false })
 assert(
@@ -216,6 +294,24 @@ assert(
 	end, 20),
 	"the multi-editor fixture must expose a second visible minimap before popup open"
 )
+vim.cmd.redraw({ bang = true })
+local baseline_bufferline_screen = screen_row(1)
+assert(baseline_bufferline_screen:find("dotfiles-git-diff-peek", 1, true))
+assert(
+	screen_row(expected_cover_top + 1):find("FLOAT-A-CONTENT", 1, true),
+	"the background float fixture must be visible before popup open"
+)
+
+local sentinel_hl_ns = vim.api.nvim_create_namespace("dotfiles-git-diff-peek-underlay-sentinel")
+vim.api.nvim_set_hl(sentinel_hl_ns, "Normal", { fg = "#ffffff", bg = "#010203" })
+vim.api.nvim_win_set_hl_ns(source_win, sentinel_hl_ns)
+vim.wo[source_win].cursorline = false
+vim.wo[source_win].cursorcolumn = true
+vim.wo[source_win].foldcolumn = "0"
+local baseline_underlay_appearance = underlay_appearance(source_win)
+local baseline_sidescrolloff = vim.wo[source_win].sidescrolloff
+local baseline_showtabline = vim.o.showtabline
+local baseline_laststatus = vim.o.laststatus
 
 local original_hidden = vim.o.hidden
 assert(vim.bo[source_buf].modified, "the hidden=false fixture requires an unsaved source buffer")
@@ -231,6 +327,7 @@ assert(opened, open_error)
 local source_float
 local revision_float
 local root_float
+local cover_float
 for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
 	local config = vim.api.nvim_win_get_config(win)
 	local buf = vim.api.nvim_win_get_buf(win)
@@ -242,12 +339,51 @@ for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
 		end
 	elseif config.relative == "editor" and vim.bo[buf].filetype == "snacks_layout_box" then
 		root_float = win
+	elseif vim.w[win].dotfiles_git_diff_peek_cover == true then
+		cover_float = win
 	end
 end
 
 assert(source_float, "the worktree diff pane must be a floating window")
 assert(revision_float, "the revision diff pane must be a floating window")
 assert(root_float, "the diff panes must have a shared floating layout root")
+assert(cover_float, "the popup must create one full-editor background cover")
+local cover_buf = vim.api.nvim_win_get_buf(cover_float)
+local cover_config = vim.api.nvim_win_get_config(cover_float)
+assert(cover_config.relative == "editor" and cover_config.row == expected_cover_top and cover_config.col == 0)
+assert(cover_config.width == vim.o.columns and cover_config.height == vim.o.lines - expected_cover_top)
+assert(cover_config.zindex == vim.api.nvim_win_get_config(root_float).zindex - 1)
+assert(
+	cover_config.zindex > background_float_config_a.zindex and cover_config.zindex > background_float_config_b.zindex
+)
+assert(cover_config.zindex < vim.api.nvim_win_get_config(source_float).zindex)
+assert(cover_config.zindex < vim.api.nvim_win_get_config(revision_float).zindex)
+assert(vim.fn.buflisted(cover_buf) == 0 and vim.bo[cover_buf].buftype == "nofile")
+assert(vim.bo[cover_buf].bufhidden == "wipe" and not vim.bo[cover_buf].swapfile)
+assert(not vim.bo[cover_buf].modifiable and vim.bo[cover_buf].undolevels == -1)
+assert(vim.wo[cover_float].winblend == 0 and vim.wo[cover_float].fillchars:find("eob: ", 1, true))
+local cover_normal = assert(vim.wo[cover_float].winhighlight:match("Normal:([^,]+)"))
+assert(vim.api.nvim_get_hl(0, { name = cover_normal, link = false }).bg == nil)
+vim.api.nvim_win_set_config(cover_float, {
+	width = vim.o.columns - 3,
+	height = vim.o.lines - expected_cover_top - 2,
+})
+vim.api.nvim_exec_autocmds("VimResized", { modeline = false })
+assert(
+	vim.wait(1000, function()
+		local resized = vim.api.nvim_win_get_config(cover_float)
+		return resized.row == expected_cover_top
+			and resized.width == vim.o.columns
+			and resized.height == vim.o.lines - expected_cover_top
+	end, 20),
+	"the full-editor cover did not re-evaluate its resize functions"
+)
+vim.cmd.redraw({ bang = true })
+assert(screen_row(1):find("dotfiles-git-diff-peek", 1, true), "the full-editor cover obscured the existing bufferline")
+assert(
+	not screen_row(expected_cover_top + 1):find("FLOAT-A-CONTENT", 1, true),
+	"the popup margin still exposes background float content"
+)
 assert(
 	vim.api.nvim_win_get_position(revision_float)[2] < vim.api.nvim_win_get_position(source_float)[2],
 	"the revision pane must be left of the worktree pane"
@@ -275,6 +411,21 @@ assert(vim.bo[underlay_scratch].bufhidden == "wipe", "the underlay scratch must 
 assert(not vim.bo[underlay_scratch].swapfile, "the underlay scratch must not create swap files")
 assert(not vim.bo[underlay_scratch].modifiable, "the underlay scratch must not accept edits")
 assert(vim.bo[underlay_scratch].undolevels == -1, "the underlay scratch must not retain undo history")
+local underlay_namespace = assert(vim.api.nvim_get_namespaces()["dotfiles-git-diff-peek-underlay"])
+assert(vim.api.nvim_get_hl_ns({ winid = source_win }) == underlay_namespace, "underlay namespace mismatch")
+assert(not vim.wo[source_win].number and not vim.wo[source_win].relativenumber)
+assert(vim.wo[source_win].statuscolumn == "" and vim.wo[source_win].foldcolumn == "0")
+assert(vim.wo[source_win].signcolumn == "no")
+assert(not vim.wo[source_win].cursorline and not vim.wo[source_win].cursorcolumn)
+assert(not vim.wo[source_win].list and vim.wo[source_win].colorcolumn == "")
+assert(vim.wo[source_win].winbar == " " and vim.wo[source_win].statusline == " ")
+assert(vim.wo[source_win].fillchars:find("eob: ", 1, true), "underlay must render blank end-of-buffer cells")
+for _, group in ipairs({ "Normal", "NormalNC", "EndOfBuffer", "StatusLine", "WinBar", "WinSeparator" }) do
+	local attributes = vim.api.nvim_get_hl(underlay_namespace, { name = group, link = false })
+	assert(attributes.fg == nil and attributes.bg == nil, group .. " must remain transparent in the underlay")
+end
+assert(vim.o.showtabline == baseline_showtabline, "underlay suppression changed the global bufferline")
+assert(vim.o.laststatus == baseline_laststatus, "underlay suppression changed the global statusline policy")
 local source_windows = vim.fn.win_findbuf(source_buf)
 assert(
 	#source_windows == 1 and source_windows[1] == source_float,
@@ -288,6 +439,11 @@ assert(
 )
 assert(vim.api.nvim_get_current_win() == source_float, "the popup must focus the editable worktree pane")
 assert(vim.api.nvim_win_get_cursor(source_float)[1] == 3, "the worktree pane must preserve the source cursor")
+assert(vim.bo[source_buf].modifiable and not vim.bo[source_buf].readonly and vim.bo[source_buf].buftype == "")
+local revision_buf = vim.api.nvim_win_get_buf(revision_float)
+assert(not vim.bo[revision_buf].modifiable and vim.bo[revision_buf].readonly)
+local revision_edit_ok = pcall(vim.api.nvim_buf_set_lines, revision_buf, 0, 0, false, { "forbidden revision edit" })
+assert(not revision_edit_ok, "popup revision buffer accepted an edit")
 
 local function option_snapshot(win)
 	return {
@@ -374,7 +530,7 @@ for _, win in ipairs({ source_float, revision_float }) do
 	else
 		assert(style.statuscolumn == "", "popup bigfile worktree must suppress statuscolumn")
 	end
-	assert(style.cursorline and style.cursorlineopt == "number", "popup cursorline options mismatch")
+	assert(style.cursorline and style.cursorlineopt == "both", "popup cursorline options mismatch")
 	assert(winhighlight_target(win, "Normal") == "Normal", "popup Normal must use the editor scene")
 	assert(winhighlight_target(win, "NormalNC") == "NormalNC", "popup NormalNC must use the editor scene")
 	assert(winhighlight_target(win, "WinBar") == "WinBar", "popup WinBar must use the editor scene")
@@ -554,6 +710,8 @@ end
 
 assert(vim.wait(2000, popup_minimap_ready, 20), "popup minimap display/native geometry did not stabilize")
 assert(#visible_minimap_windows() == 1, "popup must have exactly one visible minimap")
+assert(vim.api.nvim_win_get_config(visible_minimap_windows()[1]).zindex > cover_config.zindex)
+assert(vim.api.nvim_win_get_config(mini_map.current.win_data[tab]).zindex > cover_config.zindex)
 
 local immediate_style = common_style_snapshot(source_float)
 vim.wait(1200, function()
@@ -595,6 +753,7 @@ assert(
 			and vim.iter(vim.api.nvim_buf_get_keymap(source_buf, "n")):all(function(mapping)
 				return mapping.desc ~= "Close Git diff peek"
 			end)
+			and vim.deep_equal(underlay_appearance(source_win), baseline_underlay_appearance)
 	end),
 	"closing the popup must restore the source editor"
 )
@@ -612,6 +771,21 @@ assert(vim.w[source_win].dotfiles_disable_minimap == original_disable_minimap, "
 assert(vim.b[source_buf].dotfiles_disable_hlchunk == original_hlchunk, "underlay hlchunk flag was not restored")
 assert(vim.api.nvim_win_get_buf(source_win) == source_buf, "popup cleanup did not restore the source buffer")
 assert(not vim.api.nvim_buf_is_valid(underlay_scratch), "popup cleanup did not wipe the underlay scratch")
+assert(not vim.api.nvim_win_is_valid(cover_float), "popup cleanup left the full-editor cover visible")
+assert(not vim.api.nvim_buf_is_valid(cover_buf), "popup cleanup leaked the full-editor cover buffer")
+for _, background in ipairs({
+	{ win = background_float_a, buf = background_float_buf_a, config = background_float_config_a },
+	{ win = background_float_b, buf = background_float_buf_b, config = background_float_config_b },
+}) do
+	assert(vim.api.nvim_win_is_valid(background.win) and vim.api.nvim_buf_is_valid(background.buf))
+	assert(vim.api.nvim_win_get_buf(background.win) == background.buf)
+	assert(vim.deep_equal(vim.api.nvim_win_get_config(background.win), background.config))
+end
+vim.cmd.redraw({ bang = true })
+assert(
+	screen_row(expected_cover_top + 1):find("FLOAT-A-CONTENT", 1, true),
+	"popup cleanup did not reveal the unchanged background float"
+)
 assert(
 	vim.deep_equal(vim.api.nvim_win_call(source_win, vim.fn.winsaveview), baseline_source_view),
 	"popup cleanup did not restore the source view"
@@ -622,6 +796,7 @@ assert(
 	"popup cleanup changed buffer content"
 )
 assert(vim.api.nvim_win_get_cursor(source_win)[1] == 3, "popup cleanup changed the source cursor")
+assert(vim.wo[source_win].sidescrolloff == baseline_sidescrolloff, "popup cleanup accumulated minimap margin")
 assert(
 	vim.w[background_win].dotfiles_disable_minimap == false,
 	"popup cleanup did not restore the background editor minimap flag exactly"
@@ -645,6 +820,8 @@ for _, window in ipairs({
 	{ win = background_win, buf = background_buf },
 	{ win = disabled_background_win, buf = disabled_background_buf },
 	{ win = during_popup_win, buf = during_popup_buf },
+	{ win = background_float_a, buf = background_float_buf_a },
+	{ win = background_float_b, buf = background_float_buf_b },
 }) do
 	vim.api.nvim_win_close(window.win, true)
 	vim.api.nvim_buf_delete(window.buf, { force = true })
@@ -661,20 +838,125 @@ assert(
 vim.api.nvim_win_close(post_close_win, true)
 vim.api.nvim_buf_delete(post_close_buf, { force = true })
 mini_map.refresh({}, { layout = true, integrations = false, lines = false, scrollbar = false })
+local restored_native_config
+local restored_display_config
+local restored_minimap_count = 0
+local geometry_restored = vim.wait(1500, function()
+	local native = mini_map.current.win_data[tab]
+	local minimaps = visible_minimap_windows()
+	restored_minimap_count = #minimaps
+	if not native or not vim.api.nvim_win_is_valid(native) or #minimaps ~= 1 then
+		return false
+	end
+	restored_native_config = vim.deepcopy(vim.api.nvim_win_get_config(native))
+	restored_display_config = vim.deepcopy(vim.api.nvim_win_get_config(minimaps[1]))
+	return vim.deep_equal(restored_native_config, baseline_native_config)
+		and vim.deep_equal(restored_display_config, baseline_display_config)
+end, 20)
 assert(
-	vim.wait(1500, function()
-		local native = mini_map.current.win_data[tab]
-		local minimaps = visible_minimap_windows()
-		if not native or not vim.api.nvim_win_is_valid(native) or #minimaps ~= 1 then
-			return false
-		end
-		local native_config = vim.api.nvim_win_get_config(native)
-		local display_config = vim.api.nvim_win_get_config(minimaps[1])
-		return vim.deep_equal(native_config, baseline_native_config)
-			and vim.deep_equal(display_config, baseline_display_config)
-	end, 20),
-	"popup cleanup did not restore ordinary minimap ownership and geometry"
+	geometry_restored,
+	("popup cleanup did not restore ordinary minimap ownership and geometry: count=%d native=%s/%s display=%s/%s"):format(
+		restored_minimap_count,
+		vim.inspect(restored_native_config),
+		vim.inspect(baseline_native_config),
+		vim.inspect(restored_display_config),
+		vim.inspect(baseline_display_config)
+	)
 )
+assert(vim.wo[source_win].sidescrolloff == baseline_sidescrolloff, "ordinary minimap margin changed after close")
+
+vim.api.nvim_set_current_win(source_win)
+peek.toggle()
+assert(
+	vim.wait(1000, function()
+		return #vim.tbl_filter(function(win)
+			return vim.w[win].dotfiles_git_diff_peek_child == true
+		end, vim.api.nvim_tabpage_list_wins(0)) == 2
+	end, 20),
+	"the session identity fixture did not open its first popup"
+)
+peek.toggle()
+defer_diff_callback = true
+local reopen_hl_ns = vim.api.nvim_create_namespace("dotfiles-git-diff-peek-reopen-sentinel")
+vim.api.nvim_set_hl(reopen_hl_ns, "Normal", { fg = "#eeeeee", bg = "#112233" })
+local latest_reopen_appearance
+local reopen_finished = false
+local reopen_error
+vim.api.nvim_create_autocmd("BufWinEnter", {
+	buffer = source_buf,
+	once = true,
+	callback = function()
+		vim.schedule(function()
+			local ok, err = xpcall(function()
+				vim.api.nvim_set_current_win(source_win)
+				for name, value in pairs(baseline_underlay_appearance.options) do
+					vim.api.nvim_set_option_value(name, value, { scope = "local", win = source_win })
+				end
+				vim.api.nvim_win_set_hl_ns(source_win, reopen_hl_ns)
+				vim.wo[source_win].colorcolumn = "13"
+				vim.wo[source_win].cursorcolumn = false
+				vim.wo[source_win].foldcolumn = "2"
+				latest_reopen_appearance = underlay_appearance(source_win)
+				peek.toggle()
+			end, debug.traceback)
+			reopen_error = not ok and err or nil
+			reopen_finished = true
+		end)
+	end,
+})
+assert(
+	vim.wait(1000, function()
+		assert(not reopen_error, reopen_error)
+		return reopen_finished and type(pending_diff_callback) == "function"
+	end, 20),
+	"the cleanup interleaving fixture did not create its replacement pending session"
+)
+vim.wait(100, function()
+	return false
+end, 20)
+assert(vim.api.nvim_get_hl_ns({ winid = source_win }) == reopen_hl_ns)
+assert(vim.wo[source_win].colorcolumn == "13" and not vim.wo[source_win].cursorcolumn)
+assert(
+	vim.iter(vim.api.nvim_tabpage_list_wins(0)):all(function(win)
+		return vim.w[win].dotfiles_git_diff_peek_child ~= true and vim.w[win].dotfiles_git_diff_peek_cover ~= true
+	end),
+	"the replacement pending session opened popup children or a cover before its callback"
+)
+defer_diff_callback = false
+pending_diff_callback()
+pending_diff_callback = nil
+assert(
+	vim.wait(1000, function()
+		local children = vim.tbl_filter(function(win)
+			return vim.w[win].dotfiles_git_diff_peek_child == true
+		end, vim.api.nvim_tabpage_list_wins(0))
+		local covers = vim.tbl_filter(function(win)
+			return vim.w[win].dotfiles_git_diff_peek_cover == true
+		end, vim.api.nvim_tabpage_list_wins(0))
+		return #children == 2
+			and #covers == 1
+			and vim.api.nvim_get_hl_ns({ winid = source_win }) == underlay_namespace
+			and vim.api.nvim_win_get_buf(source_win) ~= source_buf
+	end, 20),
+	"the replacement pending session did not become a transparent active popup"
+)
+assert(not vim.wo[source_win].cursorcolumn and vim.wo[source_win].foldcolumn == "0")
+assert(vim.wo[source_win].colorcolumn == "")
+peek.toggle()
+assert(
+	vim.wait(1000, function()
+		return vim.api.nvim_win_get_buf(source_win) == source_buf
+			and vim.deep_equal(underlay_appearance(source_win), latest_reopen_appearance)
+			and vim.iter(vim.api.nvim_tabpage_list_wins(0)):all(function(win)
+				return vim.w[win].dotfiles_git_diff_peek_cover ~= true
+			end)
+	end, 20),
+	"the reopened popup did not restore its latest pre-open appearance snapshot"
+)
+for name, value in pairs(baseline_underlay_appearance.options) do
+	vim.api.nvim_set_option_value(name, value, { scope = "local", win = source_win })
+end
+vim.api.nvim_win_set_hl_ns(source_win, baseline_underlay_appearance.hl_ns)
 
 local expanded_lines = { "local value = 1" }
 for line = 2, 79 do
@@ -766,6 +1048,7 @@ assert(
 			and vim.iter(vim.api.nvim_buf_get_keymap(source_buf, "n")):all(function(mapping)
 				return mapping.desc ~= "Open pending Git diff folds" and mapping.desc ~= "Open all Git diff folds"
 			end)
+			and vim.wo[source_win].sidescrolloff == baseline_sidescrolloff
 	end, 20),
 	"closing an expanded popup must remove both temporary zR mappings"
 )
@@ -777,13 +1060,30 @@ peek.toggle()
 local abandoned_scratch = vim.api.nvim_win_get_buf(source_win)
 assert(abandoned_scratch ~= source_buf, "the overwrite guard fixture must start with a detached underlay")
 vim.api.nvim_win_set_buf(source_win, replacement_buf)
+local replacement_margin_base = vim.wo[source_win].sidescrolloff
 peek.toggle()
+local replacement_observed
 assert(
 	vim.wait(1000, function()
+		local manager = mini_map._dotfiles_multi_window_manager
+		local state = manager.source_margins[source_win]
+		local map_win = manager.map_window_for_source(source_win)
+		replacement_observed = {
+			appearance = underlay_appearance(source_win),
+			buf = vim.api.nvim_win_get_buf(source_win),
+			margin_state = state,
+			map_win = map_win,
+			sidescrolloff = vim.wo[source_win].sidescrolloff,
+			underlay_flag = vim.w[source_win].dotfiles_git_diff_peek_underlay,
+		}
 		return vim.api.nvim_win_get_buf(source_win) == replacement_buf
 			and vim.w[source_win].dotfiles_git_diff_peek_underlay == original_underlay_flag
+			and vim.deep_equal(underlay_appearance(source_win), baseline_underlay_appearance)
+			and state == nil
+			and map_win == nil
+			and vim.wo[source_win].sidescrolloff == replacement_margin_base
 	end, 20),
-	"popup cleanup must not overwrite a buffer selected in the underlay"
+	("popup cleanup must not overwrite a buffer selected in the underlay: %s"):format(vim.inspect(replacement_observed))
 )
 assert(not vim.api.nvim_buf_is_valid(abandoned_scratch), "an abandoned underlay scratch must be wiped")
 assert(vim.w[source_win].dotfiles_disable_minimap == original_disable_minimap)
@@ -793,13 +1093,20 @@ vim.api.nvim_set_current_win(source_win)
 vim.api.nvim_win_set_buf(source_win, source_buf)
 local failure_view = vim.api.nvim_win_call(source_win, vim.fn.winsaveview)
 local failure_alternate = alternate_buffer(source_win)
+local failure_underlay_appearance = underlay_appearance(source_win)
 local snacks = require("snacks")
 local original_layout_new = snacks.layout.new
 local failed_scratch
+local failed_cover_win
+local failed_cover_buf
 snacks.layout.new = function(opts)
 	local layout = original_layout_new(opts)
-	layout.show = function()
+	local original_layout_show = layout.show
+	layout.show = function(self)
+		original_layout_show(self)
 		failed_scratch = vim.api.nvim_win_get_buf(source_win)
+		failed_cover_win = assert(self.root.backdrop and self.root.backdrop.win)
+		failed_cover_buf = vim.api.nvim_win_get_buf(failed_cover_win)
 		error("intentional layout failure")
 	end
 	return layout
@@ -807,18 +1114,29 @@ end
 peek.toggle()
 snacks.layout.new = original_layout_new
 assert(failed_scratch and failed_scratch ~= source_buf, "layout failure must occur after underlay detachment")
+local failure_observed
 assert(
 	vim.wait(1000, function()
+		failure_observed = {
+			appearance = underlay_appearance(source_win),
+			buf = vim.api.nvim_win_get_buf(source_win),
+			sidescrolloff = vim.wo[source_win].sidescrolloff,
+			underlay_flag = vim.w[source_win].dotfiles_git_diff_peek_underlay,
+		}
 		return vim.api.nvim_win_get_buf(source_win) == source_buf
 			and vim.w[source_win].dotfiles_git_diff_peek_underlay == original_underlay_flag
+			and vim.deep_equal(underlay_appearance(source_win), failure_underlay_appearance)
 	end, 20),
-	"layout failure did not restore the source underlay"
+	("layout failure did not restore the source underlay: %s"):format(vim.inspect(failure_observed))
 )
 assert(not vim.api.nvim_buf_is_valid(failed_scratch), "layout failure did not wipe the underlay scratch")
+assert(not vim.api.nvim_win_is_valid(failed_cover_win), "layout failure left the full-editor cover visible")
+assert(not vim.api.nvim_buf_is_valid(failed_cover_buf), "layout failure leaked the full-editor cover buffer")
 assert(vim.deep_equal(vim.api.nvim_win_call(source_win, vim.fn.winsaveview), failure_view))
 assert(alternate_buffer(source_win) == failure_alternate, "layout failure changed the alternate buffer")
 assert(vim.w[source_win].dotfiles_disable_minimap == original_disable_minimap)
 assert(vim.b[source_buf].dotfiles_disable_hlchunk == original_hlchunk)
+assert(vim.wo[source_win].sidescrolloff == baseline_sidescrolloff, "failure cleanup accumulated minimap margin")
 assert(
 	vim.iter(vim.api.nvim_tabpage_list_wins(0)):all(function(win)
 		return not vim.startswith(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)), "gitsigns://")
