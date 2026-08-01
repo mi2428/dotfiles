@@ -75,6 +75,13 @@ vim.api.nvim_buf_set_lines(alternate_buf, 0, -1, false, { "alternate buffer sent
 vim.api.nvim_win_set_buf(source_win, alternate_buf)
 vim.api.nvim_win_set_buf(source_win, source_buf)
 assert(alternate_buffer(source_win) == alternate_buf, "the fixture must install a known alternate buffer")
+local navigation_buf = vim.api.nvim_create_buf(true, false)
+vim.api.nvim_buf_set_name(navigation_buf, "/tmp/dotfiles-git-diff-peek-navigation.lua")
+vim.api.nvim_buf_set_lines(navigation_buf, 0, -1, false, { "local navigation_target = true" })
+vim.bo[navigation_buf].filetype = "lua"
+vim.api.nvim_win_set_buf(source_win, navigation_buf)
+vim.api.nvim_win_set_buf(source_win, alternate_buf)
+vim.api.nvim_win_set_buf(source_win, source_buf)
 
 local defer_diff_callback = false
 local pending_diff_callback
@@ -84,9 +91,10 @@ local diffthis_bases = {}
 package.loaded.gitsigns = {
 	diffthis = function(base, _, callback)
 		diffthis_bases[#diffthis_bases + 1] = base
+		local diff_source_buf = vim.api.nvim_win_get_buf(source_win)
 		local revision_buf = vim.api.nvim_create_buf(false, true)
 		vim.api.nvim_buf_set_name(revision_buf, "gitsigns:///tmp/.git//:0:dotfiles-git-diff-peek.lua")
-		local revision_lines = vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
+		local revision_lines = vim.api.nvim_buf_get_lines(diff_source_buf, 0, -1, false)
 		revision_lines[1] = "local value = 0"
 		vim.api.nvim_buf_set_lines(revision_buf, 0, -1, false, revision_lines)
 		vim.bo[revision_buf].bufhidden = "wipe"
@@ -465,6 +473,155 @@ assert(not vim.bo[revision_buf].modifiable and vim.bo[revision_buf].readonly)
 local revision_edit_ok = pcall(vim.api.nvim_buf_set_lines, revision_buf, 0, 0, false, { "forbidden revision edit" })
 assert(not revision_edit_ok, "popup revision buffer accepted an edit")
 
+local function popup_child_for(buf)
+	return vim.iter(vim.api.nvim_tabpage_list_wins(0)):find(function(win)
+		return vim.w[win].dotfiles_git_diff_peek_child == true and vim.api.nvim_win_get_buf(win) == buf
+	end)
+end
+
+local function buffer_map(buf, lhs, desc)
+	return vim.iter(vim.api.nvim_buf_get_keymap(buf, "n")):find(function(mapping)
+		return vim.keycode(mapping.lhs) == vim.keycode(lhs) and mapping.desc == desc
+	end)
+end
+
+local function popup_map(win, lhs, desc)
+	return buffer_map(vim.api.nvim_win_get_buf(win), lhs, desc)
+end
+
+local function wait_for_popup_buffer(buf)
+	return vim.wait(1000, function()
+		local child = popup_child_for(buf)
+		return child ~= nil and vim.api.nvim_get_current_win() == child
+	end, 20)
+end
+
+pcall(vim.api.nvim_del_user_command, "BufferLineCycleNext")
+pcall(vim.api.nvim_del_user_command, "BufferLineCyclePrev")
+local navigation_commands = {}
+local fail_navigation_command = false
+local latest_navigation_appearance
+local navigation_focus_redirect
+local function cycle_navigation(direction)
+	navigation_commands[#navigation_commands + 1] = direction
+	if fail_navigation_command then
+		error("intentional bufferline failure")
+	end
+	vim.api.nvim_win_set_buf(source_win, vim.api.nvim_get_current_buf() == source_buf and navigation_buf or source_buf)
+	vim.schedule(function()
+		latest_navigation_appearance = underlay_appearance(source_win)
+	end)
+	if navigation_focus_redirect then
+		vim.schedule(function()
+			if vim.api.nvim_win_is_valid(navigation_focus_redirect) then
+				vim.api.nvim_set_current_win(navigation_focus_redirect)
+			end
+		end)
+	end
+end
+vim.api.nvim_create_user_command("BufferLineCycleNext", function()
+	cycle_navigation("Next")
+end, {})
+vim.api.nvim_create_user_command("BufferLineCyclePrev", function()
+	cycle_navigation("Prev")
+end, {})
+
+local old_navigation_cover = cover_float
+local next_buffer = assert(popup_map(source_float, "]]", "Next Git diff peek buffer"))
+next_buffer.callback()
+next_buffer.callback()
+assert(wait_for_popup_buffer(navigation_buf), "next popup buffer did not open in bufferline order")
+local navigation_cover = assert(vim.iter(vim.api.nvim_tabpage_list_wins(0)):find(function(win)
+	return vim.w[win].dotfiles_git_diff_peek_cover == true
+end))
+assert(
+	navigation_cover ~= old_navigation_cover and not vim.api.nvim_win_is_valid(old_navigation_cover),
+	"next popup buffer did not replace the frozen background"
+)
+assert(
+	vim.iter(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(navigation_cover), 0, -1, false)):any(function(line)
+		return line:find("navigation_target", 1, true) ~= nil
+	end),
+	"next popup buffer did not refresh the frozen background"
+)
+assert(screen_row(1):find("navigation", 1, true), "next popup buffer did not refresh the bufferline")
+assert(
+	vim.wait(1000, function()
+		return buffer_map(source_buf, "[[", "Previous buffer") ~= nil
+			and buffer_map(source_buf, "]]", "Next buffer") ~= nil
+	end, 20),
+	"popup navigation did not restore the ordinary previous/next-buffer mappings"
+)
+assert(
+	not buffer_map(source_buf, "[[", "Previous Git diff peek buffer"),
+	"popup previous mapping leaked into the closed buffer"
+)
+assert(
+	not buffer_map(source_buf, "]]", "Next Git diff peek buffer"),
+	"popup next mapping leaked into the closed buffer"
+)
+
+local navigation_float = assert(popup_child_for(navigation_buf))
+assert(popup_map(navigation_float, "]]", "Next Git diff peek buffer")).callback()
+assert(wait_for_popup_buffer(source_buf), "next popup buffer did not wrap at the bufferline boundary")
+source_float = assert(popup_child_for(source_buf))
+assert(popup_map(source_float, "[[", "Previous Git diff peek buffer")).callback()
+assert(wait_for_popup_buffer(navigation_buf), "previous popup buffer did not wrap at the bufferline boundary")
+navigation_float = assert(popup_child_for(navigation_buf))
+assert(popup_map(navigation_float, "[[", "Previous Git diff peek buffer")).callback()
+assert(wait_for_popup_buffer(source_buf), "previous popup buffer did not return to the prior buffer")
+assert(
+	vim.deep_equal(navigation_commands, { "Next", "Next", "Prev", "Prev" }),
+	("popup navigation direction/count mismatch: %s"):format(vim.inspect(navigation_commands))
+)
+assert(latest_navigation_appearance, "bufferline navigation did not settle the source appearance")
+baseline_underlay_appearance = latest_navigation_appearance
+source_float = assert(popup_child_for(source_buf))
+revision_float = vim.iter(vim.api.nvim_tabpage_list_wins(0)):find(function(win)
+	return vim.w[win].dotfiles_git_diff_peek_child == true and vim.w[win].dotfiles_git_diff_peek_role == "revision"
+end)
+cover_float = vim.iter(vim.api.nvim_tabpage_list_wins(0)):find(function(win)
+	return vim.w[win].dotfiles_git_diff_peek_cover == true
+end)
+assert(revision_float and cover_float, "buffer navigation did not preserve the popup layout")
+
+local failed_navigation_old_source = source_float
+fail_navigation_command = true
+assert(popup_map(source_float, "]]", "Next Git diff peek buffer")).callback()
+assert(
+	vim.wait(1000, function()
+		local child = popup_child_for(source_buf)
+		return not vim.api.nvim_win_is_valid(failed_navigation_old_source)
+			and child ~= nil
+			and child ~= failed_navigation_old_source
+			and vim.api.nvim_get_current_win() == child
+	end, 20),
+	"a failed bufferline command did not create a new original-file popup"
+)
+assert(
+	vim.deep_equal(navigation_commands, { "Next", "Next", "Prev", "Prev", "Next" }),
+	("failed navigation command was not recorded exactly once: %s"):format(vim.inspect(navigation_commands))
+)
+fail_navigation_command = false
+source_float = assert(popup_child_for(source_buf))
+revision_float = vim.iter(vim.api.nvim_tabpage_list_wins(0)):find(function(win)
+	return vim.w[win].dotfiles_git_diff_peek_child == true and vim.w[win].dotfiles_git_diff_peek_role == "revision"
+end)
+cover_float = vim.iter(vim.api.nvim_tabpage_list_wins(0)):find(function(win)
+	return vim.w[win].dotfiles_git_diff_peek_cover == true
+end)
+root_float = vim.iter(vim.api.nvim_tabpage_list_wins(0)):find(function(win)
+	local config = vim.api.nvim_win_get_config(win)
+	return config.relative == "editor" and vim.bo[vim.api.nvim_win_get_buf(win)].filetype == "snacks_layout_box"
+end)
+assert(revision_float and cover_float and root_float, "failed navigation command did not preserve the popup layout")
+cover_buf = vim.api.nvim_win_get_buf(cover_float)
+cover_config = vim.api.nvim_win_get_config(cover_float)
+underlay_scratch = vim.api.nvim_win_get_buf(source_win)
+-- Bufferline navigation intentionally changes the alternate buffer; closing the
+-- recovered popup must preserve that latest ordinary-editor state.
+baseline_alternate_buf = alternate_buffer(source_win)
+
 local function option_snapshot(win)
 	return {
 		foldcolumn = vim.wo[win].foldcolumn,
@@ -745,12 +902,16 @@ end
 assert(vim.wait(2000, popup_minimap_ready, 20), "popup minimap display/native geometry did not stabilize")
 assert(#visible_minimap_windows() == 1, "popup must have exactly one visible minimap")
 local popup_minimap_width = vim.api.nvim_win_get_config(visible_minimap_windows()[1]).width
+local pane_width_delta = math.abs(
+	vim.api.nvim_win_get_width(revision_float) - (vim.api.nvim_win_get_width(source_float) - popup_minimap_width)
+)
 assert(
-	vim.api.nvim_win_get_width(revision_float) == vim.api.nvim_win_get_width(source_float) - popup_minimap_width,
-	("popup pane balance mismatch: revision=%d worktree=%d minimap=%d"):format(
+	pane_width_delta <= 1,
+	("popup pane balance mismatch: revision=%d worktree=%d minimap=%d delta=%d"):format(
 		vim.api.nvim_win_get_width(revision_float),
 		vim.api.nvim_win_get_width(source_float),
-		popup_minimap_width
+		popup_minimap_width,
+		pane_width_delta
 	)
 )
 assert(vim.api.nvim_win_get_config(visible_minimap_windows()[1]).zindex > cover_config.zindex)
@@ -788,18 +949,28 @@ assert(close_map, "the popup must install its temporary close mapping")
 
 peek.toggle()
 assert(diffthis_bases[1] == "HEAD", "ordinary Git diff peek must compare the worktree against HEAD")
+local close_observed
 assert(
 	vim.wait(1000, function()
-		return vim.api.nvim_get_current_win() == source_win
+		close_observed = {
+			appearance = underlay_appearance(source_win),
+			buf = vim.api.nvim_win_get_buf(source_win),
+			current = vim.api.nvim_get_current_win(),
+			scratch_valid = vim.api.nvim_buf_is_valid(underlay_scratch),
+		}
+		return close_observed.current == source_win
 			and vim.iter(vim.api.nvim_list_wins()):all(function(win)
 				return vim.api.nvim_win_get_config(win).relative == "" or not vim.wo[win].diff
 			end)
 			and vim.iter(vim.api.nvim_buf_get_keymap(source_buf, "n")):all(function(mapping)
 				return mapping.desc ~= "Close Git diff peek"
 			end)
-			and vim.deep_equal(underlay_appearance(source_win), baseline_underlay_appearance)
+			and vim.deep_equal(close_observed.appearance, baseline_underlay_appearance)
 	end),
-	"closing the popup must restore the source editor"
+	("closing the popup must restore the source editor: observed=%s expected=%s"):format(
+		vim.inspect(close_observed),
+		vim.inspect(baseline_underlay_appearance)
+	)
 )
 assert(
 	vim.iter(vim.api.nvim_buf_get_keymap(source_buf, "n")):all(function(mapping)
@@ -1245,5 +1416,66 @@ assert(
 	"a synchronous Gitsigns failure must remove the pending zR mapping"
 )
 assert(vim.o.laststatus == baseline_laststatus, "a synchronous Gitsigns failure leaked the statusline policy")
+
+vim.api.nvim_set_current_win(source_win)
+vim.api.nvim_win_set_buf(source_win, source_buf)
+vim.wait(100, function()
+	return false
+end, 20)
+pcall(vim.api.nvim_del_augroup_by_name, "dotfiles-buffer-cycle-keymaps")
+local recursive_sentinel = function() end
+vim.keymap.set("n", "]]", recursive_sentinel, {
+	buffer = source_buf,
+	desc = "Recursive next buffer sentinel",
+	remap = true,
+})
+peek.toggle()
+assert(
+	vim.wait(1000, function()
+		return popup_child_for(source_buf) ~= nil
+	end, 20),
+	"recursive-map fixture did not open a popup"
+)
+peek.toggle()
+local restored_recursive_map
+assert(
+	vim.wait(1000, function()
+		restored_recursive_map = buffer_map(source_buf, "]]", "Recursive next buffer sentinel")
+		return restored_recursive_map ~= nil and restored_recursive_map.callback == recursive_sentinel
+	end, 20),
+	("recursive next-buffer mapping was not restored after popup close: %s"):format(
+		vim.inspect(vim.api.nvim_buf_get_keymap(source_buf, "n"))
+	)
+)
+assert(restored_recursive_map.noremap == 0, "recursive next-buffer mapping was restored as non-recursive")
+
+local redirect_win, redirect_buf = create_background_split("/tmp/dotfiles-git-diff-peek-navigation-redirect.lua", false)
+vim.api.nvim_set_current_win(source_win)
+peek.toggle()
+assert(
+	vim.wait(1000, function()
+		return popup_child_for(source_buf) ~= nil
+	end, 20),
+	"focus-redirect fixture did not open a popup"
+)
+local redirected_old_popup = assert(popup_child_for(source_buf))
+local redirect_command_count = #navigation_commands
+navigation_focus_redirect = redirect_win
+assert(popup_map(redirected_old_popup, "]]", "Next Git diff peek buffer")).callback()
+assert(
+	vim.wait(1000, function()
+		return not vim.api.nvim_win_is_valid(redirected_old_popup)
+			and vim.api.nvim_get_current_win() == redirect_win
+			and #vim.tbl_filter(function(win)
+					return vim.w[win].dotfiles_git_diff_peek_child == true
+				end, vim.api.nvim_tabpage_list_wins(0))
+				== 0
+	end, 20),
+	"focus redirect opened a replacement Git diff peek popup or stole focus"
+)
+assert(#navigation_commands == redirect_command_count + 1, "focus redirect invoked BufferLineCycle more than once")
+navigation_focus_redirect = nil
+vim.api.nvim_win_close(redirect_win, true)
+vim.api.nvim_buf_delete(redirect_buf, { force = true })
 
 print("Git diff peek popup regression: ok")

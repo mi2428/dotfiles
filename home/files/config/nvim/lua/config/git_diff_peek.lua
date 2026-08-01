@@ -733,19 +733,49 @@ local function open_all_folds(session)
 	end
 end
 
-local function has_buffer_map(buf, lhs)
-	local key = vim.keycode(lhs)
-	return vim.iter(vim.api.nvim_buf_get_keymap(buf, "n")):any(function(mapping)
-		return vim.keycode(mapping.lhs) == key
+local function add_buffer_map(session, buf, lhs, callback, desc, replace)
+	local key = buf .. "\0" .. lhs
+	local existing = vim.iter(vim.api.nvim_buf_get_keymap(buf, "n")):find(function(mapping)
+		return vim.keycode(mapping.lhs) == vim.keycode(lhs)
 	end)
-end
-
-local function add_buffer_map(session, buf, lhs, callback, desc)
-	if has_buffer_map(buf, lhs) then
+	local owned = session.map_index and session.map_index[key]
+	if owned then
+		if existing and existing.desc == desc then
+			return
+		end
+		vim.keymap.set("n", lhs, callback, { buffer = buf, desc = desc, nowait = true })
+		return
+	end
+	if existing and existing.desc == desc then
+		return
+	end
+	if existing and not replace then
 		return
 	end
 	vim.keymap.set("n", lhs, callback, { buffer = buf, desc = desc, nowait = true })
-	session.maps[#session.maps + 1] = { buf = buf, lhs = lhs, desc = desc }
+	local mapping = { buf = buf, lhs = lhs, desc = desc, replaced = existing }
+	session.maps[#session.maps + 1] = mapping
+	session.map_index = session.map_index or {}
+	session.map_index[key] = mapping
+end
+
+local function restore_buffer_map(buf, mapping)
+	local replaced = mapping.replaced
+	if not replaced then
+		return
+	end
+	local opts = {
+		buffer = buf,
+		desc = replaced.desc,
+		expr = replaced.expr == 1,
+		remap = replaced.noremap == 0,
+		nowait = replaced.nowait == 1,
+		script = replaced.script == 1,
+		silent = replaced.silent == 1,
+		unique = replaced.unique == 1,
+		replace_keycodes = replaced.replace_keycodes == 1,
+	}
+	vim.keymap.set("n", mapping.lhs, replaced.callback or replaced.rhs, opts)
 end
 
 local function remove_buffer_maps(session)
@@ -756,9 +786,11 @@ local function remove_buffer_maps(session)
 			end)
 			if current and current.desc == mapping.desc then
 				pcall(vim.keymap.del, "n", mapping.lhs, { buffer = mapping.buf })
+				restore_buffer_map(mapping.buf, mapping)
 			end
 		end
 	end
+	session.map_index = {}
 	return {}
 end
 
@@ -767,6 +799,8 @@ local function cleanup_session(tab, session, focus_underlay)
 		return
 	end
 	session.cleanup_scheduled = true
+	local navigate_command = session.navigate_command
+	session.navigate_command = nil
 	stop_background_minimap_monitor(session)
 	stop_snapshot_resize_monitor(session)
 	release_global_statusline(session.statusline_guard)
@@ -786,6 +820,41 @@ local function cleanup_session(tab, session, focus_underlay)
 		end
 		refresh_minimap()
 		discard_minimap_margin_transfer(session.underlay.win)
+		if
+			navigate_command
+			and vim.api.nvim_get_current_tabpage() == tab
+			and vim.api.nvim_win_is_valid(session.underlay.win)
+			and sessions[tab] == nil
+			and pending_sessions[tab] == nil
+		then
+			vim.api.nvim_set_current_win(session.underlay.win)
+			-- A recovery navigation opens its replacement session before this
+			-- cleanup's final scheduled appearance restore. Restore now so the new
+			-- session snapshots the real editor instead of the suppressed underlay.
+			restore_underlay_appearance(session.underlay, restored_source)
+			vim.cmd.redrawtabline()
+			local navigated, navigate_error = pcall(vim.cmd, navigate_command)
+			if not navigated then
+				vim.notify(("Unable to navigate Git diff peek buffer: %s"):format(navigate_error), vim.log.levels.ERROR)
+			end
+			local target_win = session.underlay.win
+			local target_buf = vim.api.nvim_win_is_valid(target_win) and vim.api.nvim_win_get_buf(target_win) or nil
+			-- BufferLineCycle can trigger BufEnter providers that establish the
+			-- target's window appearance. Snapshot on the next tick after they run.
+			vim.schedule(function()
+				if
+					sessions[tab] == nil
+					and pending_sessions[tab] == nil
+					and vim.api.nvim_get_current_tabpage() == tab
+					and vim.api.nvim_win_is_valid(target_win)
+					and vim.api.nvim_win_get_tabpage(target_win) == tab
+					and vim.api.nvim_win_get_buf(target_win) == target_buf
+					and vim.api.nvim_get_current_win() == target_win
+				then
+					M.toggle()
+				end
+			end)
+		end
 		-- Buffer restoration and the final focus both fire providers which schedule
 		-- window-local updates. Restore the exact pre-popup sentinel after them, but
 		-- never let an old close callback overwrite a newer session in the same tab.
@@ -798,6 +867,17 @@ local function cleanup_session(tab, session, focus_underlay)
 			restore_underlay_appearance(session.underlay, restored_source)
 		end)
 	end)
+end
+
+local function cycle_popup_buffer(session, command)
+	if pane_index(session, vim.api.nvim_get_current_win()) == nil or not session.layout:valid() then
+		return
+	end
+	if session.navigate_command then
+		return
+	end
+	session.navigate_command = command
+	session.layout:close()
 end
 
 local function install_buffer_maps(session)
@@ -820,6 +900,12 @@ local function install_buffer_maps(session)
 					vim.api.nvim_feedkeys("q", "n", false)
 				end
 			end, "Close Git diff peek")
+			add_buffer_map(session, buf, "[[", function()
+				cycle_popup_buffer(session, "BufferLineCyclePrev")
+			end, "Previous Git diff peek buffer", true)
+			add_buffer_map(session, buf, "]]", function()
+				cycle_popup_buffer(session, "BufferLineCycleNext")
+			end, "Next Git diff peek buffer", true)
 			add_buffer_map(session, buf, "<C-w>h", function()
 				if not focus_pane(session, -1) then
 					vim.cmd.wincmd("h")
@@ -1044,6 +1130,14 @@ local function open_layout(tab, source, expand_all_folds)
 		install_buffer_maps(session)
 		start_background_minimap_monitor(session, tab)
 		start_snapshot_resize_monitor(session, tab)
+		-- FileType/BufEnter handlers may schedule ordinary buffer-cycle mappings
+		-- while the floating panes are created. Reassert popup-local navigation once
+		-- after those handlers without adding a redraw-time or repeating watcher.
+		vim.schedule(function()
+			if sessions[tab] == session and session.layout and session.layout:valid() then
+				install_buffer_maps(session)
+			end
+		end)
 		if expand_all_folds then
 			open_all_folds(session)
 		end
