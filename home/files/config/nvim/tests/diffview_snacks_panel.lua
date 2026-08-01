@@ -115,6 +115,17 @@ local picker_opts = panel._picker_options({ view = view, collapsed = {}, directo
 assert(picker_opts.source == "diffview_files", "the dedicated picker must expose its sidebar source")
 assert(picker_opts.layout.layout.position == "right", "the Diffview tree must open on the right")
 
+local root_win = vim.api.nvim_get_current_win()
+vim.w[root_win].snacks_win = { id = 17, position = "right", relative = "editor" }
+assert(
+	panel._isolate_picker_equalize_group({ layout = { root = { win = root_win } } }),
+	"the Diffview picker root must be isolated from generic right-sidebar equalization"
+)
+local isolated = vim.w[root_win].snacks_win
+assert(isolated.id == 17 and isolated.relative == "editor", "equalize isolation must preserve Snacks root metadata")
+assert(isolated.position == "diffview_files", "the Diffview picker needs a distinct equalize identity")
+vim.w[root_win].snacks_win = nil
+
 local deferred = {}
 local aerial_attempts = 0
 local original_defer_fn = vim.defer_fn

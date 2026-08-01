@@ -203,6 +203,29 @@ local function active_picker(state)
 	return picker and not picker.closed and picker or nil
 end
 
+local function isolate_picker_equalize_group(picker)
+	local root = picker.layout and picker.layout.root
+	local root_win = root and root.win
+	if not (root_win and vim.api.nvim_win_is_valid(root_win)) then
+		return false
+	end
+	local snacks_win = vim.w[root_win].snacks_win
+	if type(snacks_win) ~= "table" then
+		return false
+	end
+
+	-- Snacks groups every editor-relative right split for a delayed horizontal
+	-- equalize. The Diffview tree and Explorer are separate columns, so grouping
+	-- them shrinks the full-height Explorer and gives the released rows to
+	-- 'cmdheight'. Keep the real layout on the right, but give this root a
+	-- distinct equalize identity.
+	snacks_win.position = "diffview_files"
+	vim.w[root_win].snacks_win = snacks_win
+	return true
+end
+
+M._isolate_picker_equalize_group = isolate_picker_equalize_group
+
 local function schedule_aerial(state, picker, editor_win)
 	-- Diffview emits view_opened before its initial file has necessarily replaced
 	-- the null buffer in the main window. Retry until that window is a valid
@@ -520,6 +543,7 @@ local function picker_options(state, editor_win)
 			},
 		},
 		on_show = function(picker)
+			isolate_picker_equalize_group(picker)
 			local list_buf = picker.list.win.buf
 			vim.b[list_buf].dotfiles_diffview_panel = true
 			vim.b[list_buf].miniindentscope_disable = true
