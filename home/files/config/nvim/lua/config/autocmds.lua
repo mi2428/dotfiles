@@ -327,10 +327,44 @@ autocmd("LspAttach", {
 				fallback()
 			end
 		end
+		local function fzf_references(include_declaration, prompt)
+			return function()
+				require("fzf-lua").lsp_references({
+					includeDeclaration = include_declaration,
+					jump1 = false,
+					prompt = prompt,
+				})
+			end
+		end
+		local function fzf_callers()
+			return function()
+				local prepare_call_hierarchy = vim.lsp.protocol.Methods.textDocument_prepareCallHierarchy
+				local supports_call_hierarchy = vim.iter(vim.lsp.get_clients({ bufnr = args.buf }))
+					:any(function(lsp_client)
+						return lsp_client:supports_method(prepare_call_hierarchy, args.buf)
+					end)
+				local fzf = require("fzf-lua")
+
+				if supports_call_hierarchy then
+					fzf.lsp_incoming_calls({
+						jump1 = false,
+						prompt = "Callers> ",
+					})
+					return
+				end
+
+				fzf.lsp_references({
+					includeDeclaration = false,
+					jump1 = false,
+					prompt = "References (caller fallback)> ",
+				})
+			end
+		end
 
 		map("n", "gd", glance_open("definitions", vim.lsp.buf.definition), "Glance definitions")
 		map("n", "gD", glance_open("definitions", vim.lsp.buf.definition), "Glance definitions")
-		map("n", "gr", glance_open("references", vim.lsp.buf.references), "Glance references")
+		map("n", "gr", fzf_callers(), "LSP callers (fzf)")
+		map("n", "gR", fzf_references(true, "References> "), "LSP references (fzf)")
 		map("n", "gI", glance_open("implementations", vim.lsp.buf.implementation), "Glance implementations")
 		map("n", "gY", glance_open("type_definitions", vim.lsp.buf.type_definition), "Glance type definitions")
 		map("n", "K", vim.lsp.buf.hover, "LSP hover")

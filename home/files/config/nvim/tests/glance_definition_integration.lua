@@ -1,6 +1,14 @@
 local dotfiles_root = assert(vim.env.DOTFILES_ROOT, "DOTFILES_ROOT is required")
 local nvim_root = vim.fs.joinpath(dotfiles_root, "home/files/config/nvim")
 
+-- The configured preview is 36 content rows plus its border. Neovim's
+-- headless default is only 24x80, which makes the floating window clamp before
+-- this test can verify the requested size.
+if #vim.api.nvim_list_uis() == 0 then
+	vim.o.lines = math.max(vim.o.lines, 60)
+	vim.o.columns = math.max(vim.o.columns, 160)
+end
+
 local function normalize(path)
 	return vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
 end
@@ -49,49 +57,6 @@ local function definition_at(line, col, label)
 	return definition
 end
 
-local function references_at(line, col, label)
-	vim.api.nvim_win_set_cursor(0, { line, col })
-	local client = assert(vim.lsp.get_clients({ bufnr = 0 })[1], "attached LSP client is required")
-	local references
-	assert(
-		vim.wait(10000, function()
-			local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
-			params.context = { includeDeclaration = true }
-			local responses = vim.lsp.buf_request_sync(0, "textDocument/references", params, 2000) or {}
-			local found = {}
-
-			for _, response in pairs(responses) do
-				for _, result in ipairs(response.result or {}) do
-					local range = assert(result.range, "reference range is required")
-					found[#found + 1] = {
-						path = normalize(vim.uri_to_fname(assert(result.uri, "reference URI is required"))),
-						line = range.start.line + 1,
-						col = range.start.character,
-					}
-				end
-			end
-
-			if #found < 2 then
-				return false
-			end
-			table.sort(found, function(left, right)
-				if left.path ~= right.path then
-					return left.path < right.path
-				end
-				if left.line ~= right.line then
-					return left.line < right.line
-				end
-				return left.col < right.col
-			end)
-			references = found
-			return true
-		end, 100),
-		label .. ": LSP returned fewer than two references"
-	)
-
-	return references
-end
-
 local function mapping(lhs)
 	local found = vim.iter(vim.api.nvim_buf_get_keymap(0, "n")):find(function(item)
 		return item.lhs == lhs
@@ -117,6 +82,7 @@ local function assert_definition_preview(case)
 	local label = ("%s at %s:%d:%d"):format(case.lhs, case.source, line, col)
 	local expected = definition_at(line, col, label)
 	local source_win = vim.api.nvim_get_current_win()
+	local expected_preview_height = math.min(vim.api.nvim_win_get_height(source_win), 36)
 	mapping(case.lhs)()
 
 	assert(
@@ -135,42 +101,12 @@ local function assert_definition_preview(case)
 
 	local preview_win = vim.api.nvim_get_current_win()
 	assert(vim.api.nvim_win_get_config(preview_win).relative ~= "", case.lhs .. " must focus the Glance preview")
+	assert(
+		vim.api.nvim_win_get_height(preview_win) == expected_preview_height,
+		("%s Glance preview height must be %d rows"):format(case.lhs, expected_preview_height)
+	)
 	require("glance").actions.close()
 	assert(vim.api.nvim_get_current_win() == source_win, case.lhs .. " must restore the source window on close")
-end
-
-local function assert_references_preview(path)
-	vim.cmd.edit(vim.fn.fnameescape(path))
-	wait_for_lsp(0)
-	local line, col = source_position(path, "executable(name)")
-	local references = references_at(line, col, "gr reference navigation")
-	local source_win = vim.api.nvim_get_current_win()
-	mapping("gr")()
-
-	local function at_location(location)
-		local win = vim.api.nvim_get_current_win()
-		local cursor = vim.api.nvim_win_get_cursor(win)
-		return normalize(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win))) == location.path
-			and cursor[1] == location.line
-			and cursor[2] == location.col
-	end
-
-	assert(
-		vim.wait(10000, function()
-			return vim.api.nvim_get_current_win() ~= source_win and at_location(references[1])
-		end, 50),
-		"gr did not focus the first LSP reference"
-	)
-	mapping("<Tab>")()
-	assert(
-		vim.wait(1000, function()
-			return at_location(references[2])
-		end, 20),
-		"gr <Tab> did not move to the next caller/reference"
-	)
-
-	require("glance").actions.close()
-	assert(vim.api.nvim_get_current_win() == source_win, "gr must restore the source window on close")
 end
 
 local lsp_config = vim.fs.joinpath(nvim_root, "lua/plugins/lsp.lua")
@@ -184,7 +120,5 @@ for _, case in ipairs({
 }) do
 	assert_definition_preview(case)
 end
-
-assert_references_preview(lsp_config)
 
 print("Glance definition integration: ok")

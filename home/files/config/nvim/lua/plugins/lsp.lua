@@ -438,6 +438,7 @@ return {
 			end
 
 			glance.setup({
+				height = 36,
 				border = {
 					enable = true,
 				},

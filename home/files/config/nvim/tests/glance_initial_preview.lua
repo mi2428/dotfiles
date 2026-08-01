@@ -28,6 +28,7 @@ assert(glance_spec and type(glance_spec.config) == "function", "Glance plugin co
 glance_spec.config()
 
 assert(setup_opts.border.enable == true, "Glance border configuration regressed")
+assert(setup_opts.height == 36, "Glance code preview height must be doubled from 18 to 36 rows")
 local before_open = assert(setup_opts.hooks.before_open, "Glance before_open hook must exist")
 local list_bufnr = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_set_current_buf(list_bufnr)
