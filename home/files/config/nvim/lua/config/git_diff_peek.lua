@@ -611,7 +611,9 @@ local function open_layout(tab, source, expand_all_folds)
 		layout = {
 			box = "vertical",
 			width = 0.9,
-			height = 0.85,
+			height = 0.9,
+			min_width = 160,
+			max_width = 300,
 			border = "rounded",
 			title = " Git Diff Peek ",
 			title_pos = "center",
