@@ -419,6 +419,12 @@ return {
 		cmd = "Glance",
 		config = function()
 			local glance = require("glance")
+			local glance_config = require("glance.config")
+			local default_zindex = 45
+			local function active_popup_zindex()
+				local ok, peek = pcall(require, "config.git_diff_peek")
+				return ok and peek.child_ui_zindex() or nil
+			end
 			local function focus_preview_at_current_location()
 				local list_bufnr = vim.api.nvim_get_current_buf()
 				local enter_preview = glance.actions.enter_win("preview")
@@ -439,13 +445,21 @@ return {
 
 			glance.setup({
 				height = 36,
+				zindex = default_zindex,
 				border = {
 					enable = true,
 				},
 				hooks = {
 					before_open = function(results, open)
+						-- Glance builds both floats synchronously from config.options.
+						-- Scope its elevated z-index to a live Git Diff Peek session;
+						-- after_close restores Glance's ordinary editor default.
+						glance_config.options.zindex = active_popup_zindex() or default_zindex
 						open(results)
 						focus_preview_at_current_location()
+					end,
+					after_close = function()
+						glance_config.options.zindex = default_zindex
 					end,
 				},
 			})

@@ -15,6 +15,11 @@ package.loaded["config.fzf"] = {
 		return ""
 	end,
 }
+package.loaded["config.git_diff_peek"] = {
+	child_ui_zindex = function()
+		return 77
+	end,
+}
 
 local specs = dofile(vim.fs.joinpath(nvim_root, "lua/plugins/core.lua"))
 local fzf
@@ -25,6 +30,17 @@ for _, spec in ipairs(specs) do
 	end
 end
 assert(fzf, "fzf-lua plugin spec was not found")
+
+assert(type(fzf.opts.winopts) == "function", "fzf winopts must be evaluated for each picker")
+local popup_winopts = fzf.opts.winopts()
+assert(popup_winopts.height == 0.9 and popup_winopts.width == 0.8 and popup_winopts.backdrop == false)
+assert(popup_winopts.preview.layout == "vertical" and popup_winopts.preview.vertical == "right:60%")
+assert(popup_winopts.zindex == 77, "fzf main and noautocmd preview must receive the popup z-index")
+package.loaded["config.git_diff_peek"].child_ui_zindex = function()
+	return nil
+end
+local ordinary_winopts = fzf.opts.winopts()
+assert(ordinary_winopts.zindex == nil, "fzf must leave z-index to its normal default outside Git Diff Peek")
 
 local status = assert(fzf.opts.git and fzf.opts.git.status, "git_status picker options are missing")
 assert(status.winopts.border == "none", "git_status must not draw an untitled outer border")

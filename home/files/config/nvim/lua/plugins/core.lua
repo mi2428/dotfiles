@@ -1,5 +1,25 @@
 local fzf_theme = require("config.fzf")
 
+local function fzf_winopts()
+	local winopts = {
+		height = 0.9,
+		width = 0.8,
+		backdrop = false,
+		preview = {
+			layout = "vertical",
+			vertical = "right:60%",
+		},
+	}
+	local ok, peek = pcall(require, "config.git_diff_peek")
+	local zindex = ok and peek.child_ui_zindex()
+	if zindex then
+		-- fzf-lua applies winopts.zindex to both its main and noautocmd preview
+		-- windows, which cannot be fixed reliably from a WinNew autocmd.
+		winopts.zindex = zindex
+	end
+	return winopts
+end
+
 local function refresh_folds_after_fzf()
 	local buf = vim.api.nvim_get_current_buf()
 	-- fzf-lua closes its terminal before Neovim has always completed the
@@ -101,18 +121,18 @@ return {
 			defaults = {
 				headers = false,
 			},
-				actions = {
-					files = {
-						true,
-						["enter"] = fzf_open_file,
-						["ctrl-e"] = fzf_open_in_current_window,
-						["ctrl-v"] = fzf_open_in_vsplit,
-						["ctrl-q"] = function(selected, opts)
-							require("fzf-lua.actions").file_sel_to_qf(selected, opts)
-						end,
-						["alt-q"] = false,
-					},
+			actions = {
+				files = {
+					true,
+					["enter"] = fzf_open_file,
+					["ctrl-e"] = fzf_open_in_current_window,
+					["ctrl-v"] = fzf_open_in_vsplit,
+					["ctrl-q"] = function(selected, opts)
+						require("fzf-lua.actions").file_sel_to_qf(selected, opts)
+					end,
+					["alt-q"] = false,
 				},
+			},
 			fzf_colors = false,
 			fzf_opts = vim.tbl_extend("force", fzf_theme.ui_opts(), {
 				["--color"] = fzf_theme.color_spec({ transparent_background = true }),
@@ -148,15 +168,7 @@ return {
 			buffers = {
 				headers = false,
 			},
-			winopts = {
-				height = 0.9,
-				width = 0.8,
-				backdrop = false,
-				preview = {
-					layout = "vertical",
-					vertical = "right:60%",
-				},
-			},
+			winopts = fzf_winopts,
 		},
 	},
 	{
