@@ -135,6 +135,37 @@ local function replace_winhighlight(win, group, target)
 	vim.wo[win].winhighlight = table.concat(entries, ",")
 end
 
+local default_cursorline_targets = {
+	CursorLine = "DotfilesCursorLineDefault",
+	CursorLineSign = "DotfilesCursorLineSignDefault",
+	CursorLineFold = "DotfilesCursorLineFoldDefault",
+	DotfilesCursorLineFoldOpen = "DotfilesCursorLineFoldOpenDefault",
+	DotfilesCursorLineFoldClosed = "DotfilesCursorLineFoldClosedDefault",
+	DotfilesCursorLineFoldDepth = "DotfilesCursorLineFoldDepthDefault",
+	CursorLineNr = "DotfilesCursorLineNrDefault",
+	DotfilesStatuscolumnMarker = "DotfilesStatuscolumnMarkerDefault",
+	DotfilesCursorLineCodexNr = "DotfilesCursorLineCodexNrDefault",
+}
+
+local function ensure_default_cursorline_targets(win)
+	local targets = {}
+	for entry in vim.wo[win].winhighlight:gmatch("[^,]+") do
+		local source, target = entry:match("^([^:]+):(.+)$")
+		if source then
+			targets[source] = target
+		end
+	end
+
+	for source, target in pairs(default_cursorline_targets) do
+		if targets[source] == nil or targets[source] == source then
+			local attributes = vim.api.nvim_get_hl(0, { name = target, link = false })
+			if next(attributes) ~= nil then
+				replace_winhighlight(win, source, target)
+			end
+		end
+	end
+end
+
 local function set_local_option(win, name, value)
 	vim.api.nvim_set_option_value(name, value, { scope = "local", win = win })
 end
@@ -458,12 +489,19 @@ function M.apply_editor_chrome(win, opts)
 	vim.api.nvim_win_call(win, function()
 		vim.opt_local.fillchars:append({ diff = " " })
 		vim.wo.cursorline = true
-		vim.wo.cursorlineopt = "both"
+		-- Start conservatively until git.lua classifies the current row. Ordinary
+		-- lines switch to "both"; changed lines keep Diffview's background and
+		-- expose the mode only through the number/rail foregrounds.
+		vim.wo.cursorlineopt = "number"
 	end)
 	replace_winhighlight(win, "Normal", "Normal")
 	replace_winhighlight(win, "NormalNC", "NormalNC")
 	replace_winhighlight(win, "WinBar", "WinBar")
 	replace_winhighlight(win, "WinBarNC", "WinBarNC")
+	-- options.lua updates the active editor to the current mode scene. Diff
+	-- siblings may never receive that active-window event, so ensure they still
+	-- target the custom mode-aware groups used by git.lua's adaptive style.
+	ensure_default_cursorline_targets(win)
 	vim.b[buf].dotfiles_disable_hlchunk = true
 
 	if opts.minimap_disabled ~= nil then

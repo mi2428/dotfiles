@@ -6,136 +6,46 @@ local review = require("config.review")
 local colors = catppuccin.palette()
 local diffview_windows = {}
 local gitsigns_diff_windows = {}
-local diffview_cursorline_provider = vim.api.nvim_create_namespace("dotfiles-diffview-cursorline-provider")
-local diffview_cursorline_groups = {
-	"DiffAdd",
-	"DiffDelete",
-	"DiffChange",
-	"DiffText",
-	"DiffviewDiffAdd",
-	"DiffviewDiffAddAsDelete",
-	"DiffviewDiffDelete",
-	"DiffviewDiffDeleteDim",
-	"DiffviewDiffChange",
-	"DiffviewDiffText",
-	"DiffviewDiffChangeAdd",
-	"DiffviewDiffTextAdd",
-	"DiffviewDiffChangeDelete",
-	"DiffviewDiffTextDelete",
-}
-local diffview_cursorline_statuscolumn_groups = {
-	"CursorLineNr",
-	"CursorLineSign",
-	"CursorLineFold",
-	"DotfilesCursorLineFoldOpen",
-	"DotfilesCursorLineFoldClosed",
-	"DotfilesCursorLineFoldDepth",
-	"DotfilesStatuscolumnMarker",
-	"DotfilesCursorLineCodexNr",
-}
 
-local function winhighlight_targets(win)
-	local targets = {}
-	for entry in vim.wo[win].winhighlight:gmatch("[^,]+") do
-		local source, target = entry:match("^([^:]+):(.+)$")
-		if source then
-			targets[source] = target
+local function current_mode_scene()
+	local mode = vim.api.nvim_get_mode().mode
+	if mode:match("^c") then
+		return "command"
+	end
+	if mode:match("^i") then
+		return "insert"
+	end
+	if mode:match("^[Rr]") then
+		return "replace"
+	end
+	if mode:match("^[vV\22]") then
+		return "visual"
+	end
+	if mode:match("^[sS\19]") then
+		return "select"
+	end
+	if mode:match("^no") then
+		local operator = vim.v.operator or ""
+		if operator == "y" then
+			return "copy"
+		end
+		if operator == "d" then
+			return "delete"
+		end
+		if operator == "c" then
+			return "change"
+		end
+		if operator:match("[=!><g]") then
+			return "format"
 		end
 	end
-	return targets
+	return "default"
 end
 
--- Built-in diff highlights win over CursorLine when both define a background.
--- During redraw, switch only the active cursor row to a namespace whose diff
--- groups retain their foreground styling but use the ordinary mode-aware
--- CursorLine background. Matches and extmarks are painted too early to win
--- this conflict reliably.
-local function refresh_diffview_cursorline_namespaces()
-	for win, state in pairs(diffview_windows) do
-		if vim.api.nvim_win_is_valid(win) then
-			local targets = winhighlight_targets(win)
-			local target = targets.CursorLine or "CursorLine"
-			local cursorline = vim.api.nvim_get_hl(0, { name = target, link = false })
-			if cursorline.bg then
-				state.hl_ns = state.hl_ns or vim.api.nvim_create_namespace("dotfiles-diffview-cursorline-" .. win)
-				cursorline.nocombine = true
-				cursorline.underline = false
-				cursorline.undercurl = false
-				cursorline.underdashed = false
-				cursorline.underdotted = false
-				cursorline.underdouble = false
-				cursorline.overline = false
-				vim.api.nvim_set_hl(state.hl_ns, "CursorLine", cursorline)
-				vim.api.nvim_set_hl(state.hl_ns, target, cursorline)
-				for _, group in ipairs(diffview_cursorline_groups) do
-					local attributes = vim.api.nvim_get_hl(0, { name = group, link = false })
-					attributes.bg = cursorline.bg
-					attributes.nocombine = true
-					vim.api.nvim_set_hl(state.hl_ns, group, attributes)
-				end
-				-- nvim_set_hl_ns_fast() also changes the namespace used while the
-				-- statuscolumn is drawn. Define both the source group and its
-				-- window-local target in that namespace; otherwise CursorLineNr and
-				-- the sign/fold cells fall back to their default-scene colors while
-				-- the editor row follows Normal/Command/Insert mode.
-				for _, group in ipairs(diffview_cursorline_statuscolumn_groups) do
-					local statuscolumn_target = targets[group] or group
-					local attributes = vim.api.nvim_get_hl(0, { name = statuscolumn_target, link = false })
-					attributes.bg = cursorline.bg
-					attributes.nocombine = true
-					vim.api.nvim_set_hl(state.hl_ns, group, attributes)
-					vim.api.nvim_set_hl(state.hl_ns, statuscolumn_target, attributes)
-				end
-			end
-		else
-			diffview_windows[win] = nil
-		end
-	end
+local function mode_highlight_group(base, scene)
+	local suffix = (scene or "default"):gsub("^%l", string.upper)
+	return "Dotfiles" .. base .. suffix
 end
-
-vim.api.nvim_set_decoration_provider(diffview_cursorline_provider, {
-	on_win = function(_, win)
-		vim.api.nvim_set_hl_ns_fast(0)
-		local state = diffview_windows[win]
-		return state ~= nil
-			and state.hl_ns ~= nil
-			and win == vim.api.nvim_get_current_win()
-			and vim.wo[win].diff
-			and vim.wo[win].cursorline
-	end,
-	on_line = function(_, win, _, row)
-		local state = diffview_windows[win]
-		local cursor_row = vim.api.nvim_win_get_cursor(win)[1] - 1
-		vim.api.nvim_set_hl_ns_fast(row == cursor_row and state.hl_ns or 0)
-	end,
-	on_end = function()
-		vim.api.nvim_set_hl_ns_fast(0)
-	end,
-})
-
-vim.api.nvim_create_autocmd(
-	{ "BufWinEnter", "CmdlineEnter", "CmdlineLeave", "CursorMoved", "CursorMovedI", "ModeChanged", "WinEnter" },
-	{
-		group = vim.api.nvim_create_augroup("dotfiles-diffview-cursorline", { clear = true }),
-		callback = function(args)
-			if args.event == "CmdlineEnter" then
-				-- Scheduled callbacks do not run while the command line is waiting
-				-- for input. options.lua has already selected the command-mode group.
-				refresh_diffview_cursorline_namespaces()
-				vim.cmd.redraw({ bang = true })
-			else
-				vim.schedule(refresh_diffview_cursorline_namespaces)
-			end
-		end,
-	}
-)
-
-vim.api.nvim_create_autocmd("WinClosed", {
-	group = "dotfiles-diffview-cursorline",
-	callback = function(args)
-		diffview_windows[tonumber(args.match)] = nil
-	end,
-})
 
 local function blend(foreground, background, alpha)
 	local function channel(color, offset)
@@ -197,6 +107,125 @@ local function replace_winhighlight(win, group, target)
 	vim.wo[win].winhighlight = table.concat(entries, ",")
 end
 
+local cursorline_sources = {
+	CursorLine = "CursorLine",
+	CursorLineSign = "CursorLineSign",
+	CursorLineFold = "CursorLineFold",
+	DotfilesCursorLineFoldOpen = "CursorLineFoldOpen",
+	DotfilesCursorLineFoldClosed = "CursorLineFoldClosed",
+	DotfilesCursorLineFoldDepth = "CursorLineFoldDepth",
+	CursorLineNr = "CursorLineNr",
+	DotfilesStatuscolumnMarker = "StatuscolumnMarker",
+	DotfilesCursorLineCodexNr = "CursorLineCodexNr",
+}
+
+local diff_cursorline_sources = {
+	CursorLineSign = "DiffCursorLineSign",
+	CursorLineFold = "DiffCursorLineFold",
+	DotfilesCursorLineFoldOpen = "DiffCursorLineFoldOpen",
+	DotfilesCursorLineFoldClosed = "DiffCursorLineFoldClosed",
+	DotfilesCursorLineFoldDepth = "DiffCursorLineFoldDepth",
+	CursorLineNr = "DiffCursorLineNr",
+	DotfilesCursorLineCodexNr = "DiffCursorLineCodexNr",
+}
+
+local function cursor_line_has_diff(win)
+	return vim.api.nvim_win_call(win, function()
+		local line = vim.api.nvim_win_get_cursor(win)[1]
+		return vim.fn.diff_hlID(line, 1) ~= 0
+	end)
+end
+
+-- On ordinary lines, Diffview behaves like the rest of the editor and paints
+-- the full mode-aware CursorLine. On changed lines, native diff highlighting
+-- owns the body background; only the number and rail foregrounds retain the
+-- mode signal. Changing window options outside redraw avoids the cell-phase
+-- leakage caused by nvim_set_hl_ns_fast() in a decoration provider.
+local function apply_diffview_cursorline_style(win, scene, has_diff)
+	local state = diffview_windows[win]
+	if not state or not vim.api.nvim_win_is_valid(win) then
+		return
+	end
+	local cursorlineopt = has_diff and "number" or "both"
+	if
+		state.cursorline_scene == scene
+		and state.cursorline_has_diff == has_diff
+		and vim.wo[win].cursorlineopt == cursorlineopt
+		and state.cursorline_winhighlight == vim.wo[win].winhighlight
+	then
+		return
+	end
+
+	vim.wo[win].cursorline = true
+	vim.wo[win].cursorlineopt = cursorlineopt
+	for source, base in pairs(cursorline_sources) do
+		local target_base = has_diff and diff_cursorline_sources[source] or nil
+		replace_winhighlight(win, source, mode_highlight_group(target_base or base, scene))
+	end
+	state.cursorline_scene = scene
+	state.cursorline_has_diff = has_diff
+	state.cursorline_winhighlight = vim.wo[win].winhighlight
+end
+
+local function refresh_diffview_cursorline_styles()
+	local scene = current_mode_scene()
+	for win in pairs(diffview_windows) do
+		if vim.api.nvim_win_is_valid(win) and vim.wo[win].diff then
+			apply_diffview_cursorline_style(win, scene, cursor_line_has_diff(win))
+		elseif not vim.api.nvim_win_is_valid(win) then
+			diffview_windows[win] = nil
+		end
+	end
+end
+
+local cursorline_refresh_pending = false
+local function schedule_diffview_cursorline_styles()
+	if cursorline_refresh_pending then
+		return
+	end
+	cursorline_refresh_pending = true
+	vim.schedule(function()
+		cursorline_refresh_pending = false
+		refresh_diffview_cursorline_styles()
+	end)
+end
+
+vim.api.nvim_create_autocmd({
+	"BufWinEnter",
+	"CmdlineEnter",
+	"CmdlineLeave",
+	"CursorMoved",
+	"CursorMovedI",
+	"DiffUpdated",
+	"ModeChanged",
+	"TextChanged",
+	"TextChangedI",
+	"WinEnter",
+}, {
+	group = vim.api.nvim_create_augroup("dotfiles-diffview-cursorline", { clear = true }),
+	callback = function(args)
+		if args.event == "CmdlineEnter" then
+			-- Scheduled callbacks do not run while the command line waits for
+			-- input, so update command-mode foregrounds synchronously.
+			refresh_diffview_cursorline_styles()
+			vim.cmd.redraw({ bang = true })
+		elseif args.event == "CursorMoved" or args.event == "CursorMovedI" then
+			-- CursorMoved is already outside redraw. Classify in the same event so
+			-- ordinary movement does not create a second scheduled redraw cycle.
+			refresh_diffview_cursorline_styles()
+		else
+			schedule_diffview_cursorline_styles()
+		end
+	end,
+})
+
+vim.api.nvim_create_autocmd("WinClosed", {
+	group = "dotfiles-diffview-cursorline",
+	callback = function(args)
+		diffview_windows[tonumber(args.match)] = nil
+	end,
+})
+
 local function style_diff_window(win, ctx)
 	local newly_registered = diffview_windows[win] == nil
 	local initialize_folds = newly_registered and vim.w[win].dotfiles_git_diff_peek_child ~= true
@@ -213,14 +242,6 @@ local function style_diff_window(win, ctx)
 	if chunk_namespace then
 		vim.api.nvim_buf_clear_namespace(buf, chunk_namespace, 0, -1)
 	end
-	-- Diffview can install its own static cursor-line group while creating a
-	-- layout. Start from the ordinary CursorLine group; the existing
-	-- ModeChanged UI then replaces it with the same mode-specific group used by
-	-- normal editing windows.
-	if newly_registered then
-		replace_winhighlight(win, "CursorLine", "CursorLine")
-	end
-
 	local side
 	if ctx and (ctx.layout_name == "diff2_horizontal" or ctx.layout_name == "diff2_vertical") then
 		side = ctx.symbol == "a" and "Delete" or ctx.symbol == "b" and "Add" or nil
@@ -233,7 +254,7 @@ local function style_diff_window(win, ctx)
 	end
 	replace_winhighlight(win, "DiffChange", side and ("DiffviewDiffChange" .. side) or "DiffviewDiffChange")
 	replace_winhighlight(win, "DiffText", side and ("DiffviewDiffText" .. side) or "DiffviewDiffText")
-	vim.schedule(refresh_diffview_cursorline_namespaces)
+	schedule_diffview_cursorline_styles()
 end
 
 local function is_gitsigns_revision(win)

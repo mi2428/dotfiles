@@ -33,7 +33,10 @@ local diffview = specs[2]
 local set_diffview_highlights = upvalue(diffview.init, "set_diffview_highlights")
 local style_diff_window = upvalue(diffview.opts.hooks.diff_buf_win_enter, "style_diff_window")
 local diffview_windows = upvalue(style_diff_window, "diffview_windows")
-local refresh_diffview_cursorline_namespaces = upvalue(style_diff_window, "refresh_diffview_cursorline_namespaces")
+local schedule_diffview_cursorline_styles = upvalue(style_diff_window, "schedule_diffview_cursorline_styles")
+local refresh_diffview_cursorline_styles =
+	upvalue(schedule_diffview_cursorline_styles, "refresh_diffview_cursorline_styles")
+local apply_diffview_cursorline_style = upvalue(refresh_diffview_cursorline_styles, "apply_diffview_cursorline_style")
 
 vim.api.nvim_set_hl(0, "DiffDelete", { fg = "#ff0000", bg = "#440000" })
 set_diffview_highlights()
@@ -89,42 +92,54 @@ assert(filler.fg == nil and filler.bg == nil, "Diffview setup restored colored a
 vim.wo.fillchars = "diff:-"
 vim.wo.cursorline = false
 vim.go.statuscolumn = "%=%l"
-local cursorline_test_groups = {
-	CursorLineNr = { target = "TestDiffCursorLineNr", attributes = { fg = "#ff8800", bg = "#112233", bold = true } },
-	CursorLineSign = { target = "TestDiffCursorLineSign", attributes = { bg = "#112233" } },
-	CursorLineFold = { target = "TestDiffCursorLineFold", attributes = { fg = "#00aaff", bg = "#112233" } },
-	DotfilesCursorLineFoldOpen = {
-		target = "TestDiffCursorLineFoldOpen",
-		attributes = { fg = "#00ffaa", bg = "#112233" },
-	},
-	DotfilesCursorLineFoldClosed = {
-		target = "TestDiffCursorLineFoldClosed",
-		attributes = { fg = "#aa00ff", bg = "#112233" },
-	},
-	DotfilesCursorLineFoldDepth = {
-		target = "TestDiffCursorLineFoldDepth",
-		attributes = { fg = "#777777", bg = "#112233" },
-	},
-	DotfilesStatuscolumnMarker = {
-		target = "TestDiffStatuscolumnMarker",
-		attributes = { fg = "#ff8800", bg = "#112233", bold = true },
-	},
-	DotfilesCursorLineCodexNr = {
-		target = "TestDiffCursorLineCodexNr",
-		attributes = { fg = "#00ffff", bg = "#112233", bold = true },
-	},
+local scenes = {
+	{ name = "default", suffix = "Default", bg = "#223344", fg = "#ff7700" },
+	{ name = "insert", suffix = "Insert", bg = "#224433", fg = "#44ffaa" },
+	{ name = "visual", suffix = "Visual", bg = "#334466", fg = "#77aaff" },
+	{ name = "replace", suffix = "Replace", bg = "#553322", fg = "#ffaa44" },
+	{ name = "command", suffix = "Command", bg = "#442244", fg = "#ff44aa" },
 }
-local winhighlight = {
-	"DiffChange:DiffviewDiffChange",
-	"DiffText:DiffviewDiffText",
-}
-vim.api.nvim_set_hl(0, "CursorLine", { bg = "#112233" })
-for source, spec in pairs(cursorline_test_groups) do
-	vim.api.nvim_set_hl(0, source, spec.attributes)
-	vim.api.nvim_set_hl(0, spec.target, spec.attributes)
-	winhighlight[#winhighlight + 1] = source .. ":" .. spec.target
+for _, scene in ipairs(scenes) do
+	local suffix = scene.suffix
+	for _, base in ipairs({
+		"CursorLine",
+		"CursorLineSign",
+		"CursorLineFold",
+		"CursorLineFoldOpen",
+		"CursorLineFoldClosed",
+		"CursorLineFoldDepth",
+		"CursorLineNr",
+		"CursorLineCodexNr",
+	}) do
+		vim.api.nvim_set_hl(0, "Dotfiles" .. base .. suffix, {
+			fg = base:find("Nr", 1, true) and scene.fg or nil,
+			bg = scene.bg,
+			bold = base:find("Nr", 1, true) ~= nil,
+			force = true,
+		})
+	end
+	vim.api.nvim_set_hl(0, "DotfilesStatuscolumnMarker" .. suffix, {
+		fg = scene.fg,
+		bold = true,
+		force = true,
+	})
+	for _, base in ipairs({
+		"DiffCursorLineSign",
+		"DiffCursorLineFold",
+		"DiffCursorLineFoldOpen",
+		"DiffCursorLineFoldClosed",
+		"DiffCursorLineFoldDepth",
+		"DiffCursorLineNr",
+		"DiffCursorLineCodexNr",
+	}) do
+		vim.api.nvim_set_hl(0, "Dotfiles" .. base .. suffix, {
+			fg = base:find("Nr", 1, true) and scene.fg or "#00aaff",
+			bold = base:find("Nr", 1, true) ~= nil,
+			force = true,
+		})
+	end
 end
-vim.wo.winhighlight = table.concat(winhighlight, ",")
+vim.wo.winhighlight = "DiffChange:DiffviewDiffChange,DiffText:DiffviewDiffText"
 local win = vim.api.nvim_get_current_win()
 local original_foldlevelstart = vim.o.foldlevelstart
 diffview.opts.hooks.diff_buf_win_enter(0, win, { layout_name = "diff2_horizontal", symbol = "a" })
@@ -140,53 +155,10 @@ assert(
 )
 assert(vim.wo.fillchars:find("diff: ", 1, true), "Diffview addition filler must render as a blank space")
 assert(vim.w[win].dotfiles_disable_minimap == true, "the left Diffview pane must not receive a minimap")
-assert(type(diffview_windows[win]) == "table", "Diffview editor windows must receive cursor-line redraw state")
-assert(
-	vim.wait(1000, function()
-		return diffview_windows[win].hl_ns ~= nil
-	end),
-	"Diffview editor windows must receive a cursor-line highlight namespace"
-)
-local cursorline_target = vim.wo.winhighlight:match("CursorLine:([^,]+)") or "CursorLine"
-local cursorline = vim.api.nvim_get_hl(0, { name = cursorline_target, link = false })
-local diff_change_on_cursor = vim.api.nvim_get_hl(diffview_windows[win].hl_ns, {
-	name = "DiffviewDiffChangeDelete",
-	link = false,
-})
-assert(
-	diff_change_on_cursor.bg == cursorline.bg,
-	"the redraw namespace must replace diff backgrounds with the ordinary CursorLine background"
-)
-for source, spec in pairs(cursorline_test_groups) do
-	local expected = vim.api.nvim_get_hl(0, { name = spec.target, link = false })
-	local source_hl = vim.api.nvim_get_hl(diffview_windows[win].hl_ns, { name = source, link = false })
-	local target_hl = vim.api.nvim_get_hl(diffview_windows[win].hl_ns, { name = spec.target, link = false })
-	assert(
-		source_hl.bg == cursorline.bg,
-		("%s must follow the Diffview cursor-row background (expected %s, got %s)"):format(
-			source,
-			vim.inspect(cursorline.bg),
-			vim.inspect(source_hl.bg)
-		)
-	)
-	assert(
-		target_hl.bg == cursorline.bg,
-		("%s must follow the Diffview cursor-row background (expected %s, got %s)"):format(
-			spec.target,
-			vim.inspect(cursorline.bg),
-			vim.inspect(target_hl.bg)
-		)
-	)
-	assert(source_hl.fg == expected.fg, source .. " must preserve its mode-specific foreground")
-	assert(target_hl.fg == expected.fg, spec.target .. " must preserve its mode-specific foreground")
-end
+assert(type(diffview_windows[win]) == "table", "Diffview editor windows must receive adaptive cursor-line state")
+assert(diffview_windows[win].hl_ns == nil, "Diffview must not install a redraw-time highlight namespace")
 assert(vim.b[vim.api.nvim_win_get_buf(win)].dotfiles_disable_hlchunk, "Diffview editors must suppress chunk borders")
 assert(vim.wo.cursorline, "Diffview code windows must enable the ordinary cursor line")
-assert(vim.wo.cursorlineopt == "both", "Diffview must enable the ordinary editor row and number cursor line")
-assert(
-	vim.wo.winhighlight:find("CursorLine:CursorLine", 1, true),
-	"Diffview must not replace the mode-aware cursor line with a static highlight"
-)
 assert(
 	vim.wo.winhighlight:find("DiffChange:DiffviewDiffChangeDelete", 1, true),
 	"left changed lines must use the deletion background"
@@ -217,51 +189,68 @@ assert(
 	"merge layouts must retain their neutral inline-change background"
 )
 
-for _, scene in ipairs({
-	{ name = "Normal", bg = "#223344", fg = "#ff7700" },
-	{ name = "Insert", bg = "#224433", fg = "#44ffaa" },
-	{ name = "Visual", bg = "#334466", fg = "#77aaff" },
-	{ name = "Replace", bg = "#553322", fg = "#ffaa44" },
-	{ name = "Command", bg = "#442244", fg = "#ff44aa" },
-}) do
-	local mappings = {
-		"DiffChange:DiffviewDiffChange",
-		"DiffText:DiffviewDiffText",
-	}
-	local cursorline_scene_target = "TestDiffCursorLine" .. scene.name
-	vim.api.nvim_set_hl(0, cursorline_scene_target, { bg = scene.bg })
-	mappings[#mappings + 1] = "CursorLine:" .. cursorline_scene_target
-	for source, spec in pairs(cursorline_test_groups) do
-		local target = spec.target .. scene.name
-		local attributes = vim.deepcopy(spec.attributes)
-		attributes.bg = scene.bg
-		if source == "CursorLineNr" or source == "DotfilesStatuscolumnMarker" then
-			attributes.fg = scene.fg
-		end
-		vim.api.nvim_set_hl(0, target, attributes)
-		mappings[#mappings + 1] = source .. ":" .. target
-	end
-	vim.wo.winhighlight = table.concat(mappings, ",")
-	style_diff_window(win, { layout_name = "diff2_horizontal", symbol = "a" })
-	assert(
-		vim.wo.winhighlight:find("CursorLine:" .. cursorline_scene_target, 1, true),
-		scene.name .. " recurring style refresh replaced the mode-aware CursorLine target"
-	)
-	refresh_diffview_cursorline_namespaces()
-
-	local scene_cursorline = vim.api.nvim_get_hl(0, { name = cursorline_scene_target, link = false })
-	local cursor_number = vim.api.nvim_get_hl(diffview_windows[win].hl_ns, {
-		name = "CursorLineNr",
-		link = false,
-	})
-	local cursor_row_diff = vim.api.nvim_get_hl(diffview_windows[win].hl_ns, {
-		name = "DiffviewDiffChangeDelete",
-		link = false,
-	})
-	assert(cursor_number.bg == scene_cursorline.bg, scene.name .. " line number must match its editor row")
-	assert(cursor_number.fg == tonumber(scene.fg:sub(2), 16), scene.name .. " line number must use its mode color")
-	assert(cursor_row_diff.bg == scene_cursorline.bg, scene.name .. " diff row must use its mode color")
+local function target_for(source)
+	return vim.wo[win].winhighlight:match(source .. ":([^,]+)")
 end
+
+for _, scene in ipairs(scenes) do
+	apply_diffview_cursorline_style(win, scene.name, false)
+	assert(vim.wo[win].cursorlineopt == "both", scene.name .. " unchanged rows must paint the full cursor line")
+	assert(
+		target_for("CursorLine") == "DotfilesCursorLine" .. scene.suffix,
+		scene.name .. " unchanged row lost its mode-aware body"
+	)
+	local ordinary_number = vim.api.nvim_get_hl(0, { name = target_for("CursorLineNr"), link = false })
+	assert(ordinary_number.bg == tonumber(scene.bg:sub(2), 16), scene.name .. " unchanged number lost its background")
+
+	apply_diffview_cursorline_style(win, scene.name, true)
+	assert(vim.wo[win].cursorlineopt == "number", scene.name .. " changed rows must suppress body CursorLine")
+	assert(
+		target_for("CursorLine") == "DotfilesCursorLine" .. scene.suffix,
+		scene.name .. " changed row must retain the ordinary body target for the next unchanged row"
+	)
+	assert(
+		target_for("CursorLineNr") == "DotfilesDiffCursorLineNr" .. scene.suffix,
+		scene.name .. " changed row lost its mode-aware number foreground"
+	)
+	for _, source in ipairs({
+		"CursorLineNr",
+		"CursorLineSign",
+		"CursorLineFold",
+		"DotfilesCursorLineFoldOpen",
+		"DotfilesCursorLineFoldClosed",
+		"DotfilesCursorLineFoldDepth",
+		"DotfilesCursorLineCodexNr",
+	}) do
+		local attributes = vim.api.nvim_get_hl(0, { name = assert(target_for(source)), link = false })
+		assert(
+			attributes.bg == nil,
+			scene.name .. " changed-row rail leaked a CursorLine background through " .. source
+		)
+	end
+	local diff_number = vim.api.nvim_get_hl(0, { name = target_for("CursorLineNr"), link = false })
+	assert(diff_number.fg == tonumber(scene.fg:sub(2), 16), scene.name .. " changed number lost its mode color")
+	assert(diff_number.bold, scene.name .. " changed number must remain bold")
+	local marker = vim.api.nvim_get_hl(0, { name = target_for("DotfilesStatuscolumnMarker"), link = false })
+	assert(marker.bg == nil, scene.name .. " neighboring relative-number marker retained a background")
+end
+
+apply_diffview_cursorline_style(win, "default", false)
+local stable_winhighlight = vim.wo[win].winhighlight
+for _ = 1, 1000 do
+	apply_diffview_cursorline_style(win, "default", false)
+end
+assert(vim.wo[win].winhighlight == stable_winhighlight, "stable cursor movement must not rewrite winhighlight")
+apply_diffview_cursorline_style(win, "default", true)
+vim.wo[win].winhighlight = vim.wo[win].winhighlight:gsub(
+	"CursorLineNr:DotfilesDiffCursorLineNrDefault",
+	"CursorLineNr:DotfilesCursorLineNrDefault"
+)
+apply_diffview_cursorline_style(win, "default", true)
+assert(
+	target_for("CursorLineNr") == "DotfilesDiffCursorLineNrDefault",
+	"an external mode-UI refresh must not leave a changed row with the ordinary number background"
+)
 assert(diffview.opts.enhanced_diff_hl, "Diffview must separate deletion lines from alignment filler")
 
 vim.cmd.tabnew()
@@ -318,7 +307,10 @@ for win, side in pairs({
 	[gitsigns_main] = "Add",
 }) do
 	assert(vim.wo[win].cursorline, side .. " Gitsigns pane must enable the Diffview cursor line")
-	assert(vim.wo[win].cursorlineopt == "both", side .. " Gitsigns pane must paint the editor row and number")
+	assert(
+		vim.wo[win].cursorlineopt == "both",
+		side .. " Gitsigns pane must use the ordinary full cursor line on unchanged rows"
+	)
 	assert(vim.wo[win].fillchars:find("diff: ", 1, true), side .. " Gitsigns pane must use blank diff filler")
 	assert(
 		vim.b[vim.api.nvim_win_get_buf(win)].dotfiles_disable_hlchunk,
@@ -333,6 +325,28 @@ for win, side in pairs({
 		side .. " Gitsigns pane must use the strong inline-change background"
 	)
 end
+
+vim.api.nvim_win_set_cursor(gitsigns_main, { 3, 0 })
+vim.cmd.diffupdate()
+refresh_diffview_cursorline_styles()
+assert(
+	vim.api.nvim_win_call(gitsigns_main, function()
+		return vim.fn.diff_hlID(3, 1) ~= 0
+	end),
+	"the fixture's added row must expose a native diff highlight"
+)
+assert(vim.wo[gitsigns_main].cursorlineopt == "number", "an added row must suppress the body CursorLine")
+assert(
+	vim.wo[gitsigns_main].winhighlight:find("CursorLineNr:DotfilesDiffCursorLineNrDefault", 1, true),
+	"an added row must use the background-free mode-aware line number"
+)
+vim.api.nvim_win_set_cursor(gitsigns_main, { 6, 0 })
+refresh_diffview_cursorline_styles()
+assert(vim.wo[gitsigns_main].cursorlineopt == "both", "leaving a hunk must restore the full CursorLine")
+assert(
+	vim.wo[gitsigns_main].winhighlight:find("CursorLineNr:DotfilesCursorLineNrDefault", 1, true),
+	"leaving a hunk must restore the ordinary mode-aware line number"
+)
 assert(vim.bo[gitsigns_revision_buf].modifiable and not vim.bo[gitsigns_revision_buf].readonly)
 assert(vim.bo[gitsigns_main_buf].modifiable and not vim.bo[gitsigns_main_buf].readonly)
 assert(

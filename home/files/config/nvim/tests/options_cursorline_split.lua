@@ -73,6 +73,10 @@ assert_match(
 	"DotfilesStatuscolumnMarker:DotfilesStatuscolumnMarkerDefault",
 	"the first window must use default relative-number marker colors"
 )
+assert(
+	vim.api.nvim_get_hl(0, { name = "DotfilesStatuscolumnMarkerDefault", link = false }).bg == nil,
+	"the neighboring relative-number marker must not extend the cursor-line background"
+)
 assert_match(
 	left_default,
 	"DotfilesCursorLineCodexNr:DotfilesCursorLineCodexNrDefault",
@@ -109,6 +113,35 @@ assert(
 	vim.api.nvim_get_hl(0, { name = "DotfilesCursorLineFoldDepthDefault", link = false }).fg == fold_depth.fg,
 	"the current-line fold depth must remain muted"
 )
+for _, scene in ipairs({
+	"Default",
+	"Command",
+	"Copy",
+	"Delete",
+	"Change",
+	"Format",
+	"Insert",
+	"Replace",
+	"Select",
+	"Visual",
+}) do
+	local ordinary_number = vim.api.nvim_get_hl(0, { name = "DotfilesCursorLineNr" .. scene, link = false })
+	local diff_number = vim.api.nvim_get_hl(0, { name = "DotfilesDiffCursorLineNr" .. scene, link = false })
+	assert(diff_number.fg == ordinary_number.fg, scene .. " Diffview number must retain the mode foreground")
+	assert(diff_number.bold == true, scene .. " Diffview number must remain bold")
+	for _, base in ipairs({
+		"DiffCursorLineSign",
+		"DiffCursorLineFold",
+		"DiffCursorLineFoldOpen",
+		"DiffCursorLineFoldClosed",
+		"DiffCursorLineFoldDepth",
+		"DiffCursorLineNr",
+		"DiffCursorLineCodexNr",
+	}) do
+		local attributes = vim.api.nvim_get_hl(0, { name = "Dotfiles" .. base .. scene, link = false })
+		assert(attributes.bg == nil, "Dotfiles" .. base .. scene .. " must not cover native diff backgrounds")
+	end
+end
 
 vim.api.nvim_set_hl(0, "FoldColumn", { fg = "#ff0000" })
 vim.api.nvim_set_hl(0, "DotfilesFoldOpen", { fg = "#ff0000" })
@@ -155,6 +188,10 @@ assert_match(
 	vim.wo[right].winhighlight,
 	"DotfilesStatuscolumnMarker:DotfilesStatuscolumnMarkerCommand",
 	"command mode must update the relative-number marker colors"
+)
+assert(
+	vim.api.nvim_get_hl(0, { name = "DotfilesStatuscolumnMarkerCommand", link = false }).bg == nil,
+	"command mode must not color the neighboring relative-number marker background"
 )
 assert_match(
 	vim.wo[right].winhighlight,

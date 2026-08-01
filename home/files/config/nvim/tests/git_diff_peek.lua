@@ -470,6 +470,9 @@ local function common_style_snapshot(win)
 	style.winhighlight = nil
 	style.statuscolumn = nil
 	style.winbar = nil
+	-- The two synchronized cursors can sit on different native diff classes;
+	-- cursorlineopt is intentionally adaptive per pane rather than shared chrome.
+	style.cursorlineopt = nil
 	return style
 end
 
@@ -530,7 +533,14 @@ for _, win in ipairs({ source_float, revision_float }) do
 	else
 		assert(style.statuscolumn == "", "popup bigfile worktree must suppress statuscolumn")
 	end
-	assert(style.cursorline and style.cursorlineopt == "both", "popup cursorline options mismatch")
+	local cursor_has_diff = vim.api.nvim_win_call(win, function()
+		local line = vim.api.nvim_win_get_cursor(win)[1]
+		return vim.fn.diff_hlID(line, 1) ~= 0
+	end)
+	assert(
+		style.cursorline and style.cursorlineopt == (cursor_has_diff and "number" or "both"),
+		"popup cursorline options mismatch"
+	)
 	assert(winhighlight_target(win, "Normal") == "Normal", "popup Normal must use the editor scene")
 	assert(winhighlight_target(win, "NormalNC") == "NormalNC", "popup NormalNC must use the editor scene")
 	assert(winhighlight_target(win, "WinBar") == "WinBar", "popup WinBar must use the editor scene")

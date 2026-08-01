@@ -245,16 +245,23 @@ local function refresh_statuscolumn_highlights()
 			mode_highlight_group("CursorLineNr", scene),
 			{ fg = style.fg, bg = style.bg, bold = true }
 		)
-		vim.api.nvim_set_hl(
-			0,
-			mode_highlight_group("StatuscolumnMarker", scene),
-			{ fg = style.fg, bg = style.bg, bold = true }
-		)
+		vim.api.nvim_set_hl(0, mode_highlight_group("StatuscolumnMarker", scene), { fg = style.fg, bold = true })
 		vim.api.nvim_set_hl(
 			0,
 			mode_highlight_group("CursorLineCodexNr", scene),
 			{ fg = colors.sky, bg = style.bg, bold = true }
 		)
+		-- Diff rows already own their body background. These variants retain
+		-- mode and rail foregrounds without extending CursorLine into the diff
+		-- paint, which also avoids Neovim's underline fallback for competing
+		-- line-level backgrounds.
+		vim.api.nvim_set_hl(0, mode_highlight_group("DiffCursorLineSign", scene), {})
+		vim.api.nvim_set_hl(0, mode_highlight_group("DiffCursorLineFold", scene), { fg = colors.blue })
+		vim.api.nvim_set_hl(0, mode_highlight_group("DiffCursorLineFoldOpen", scene), { fg = colors.sapphire })
+		vim.api.nvim_set_hl(0, mode_highlight_group("DiffCursorLineFoldClosed", scene), { fg = colors.mauve })
+		vim.api.nvim_set_hl(0, mode_highlight_group("DiffCursorLineFoldDepth", scene), { fg = colors.surface2 })
+		vim.api.nvim_set_hl(0, mode_highlight_group("DiffCursorLineNr", scene), { fg = style.fg, bold = true })
+		vim.api.nvim_set_hl(0, mode_highlight_group("DiffCursorLineCodexNr", scene), { fg = colors.sky, bold = true })
 	end
 
 	local default = mode_styles.default
@@ -265,7 +272,7 @@ local function refresh_statuscolumn_highlights()
 	vim.api.nvim_set_hl(0, "DotfilesCursorLineFoldClosed", { fg = colors.mauve, bg = default.bg })
 	vim.api.nvim_set_hl(0, "DotfilesCursorLineFoldDepth", { fg = colors.surface2, bg = default.bg })
 	vim.api.nvim_set_hl(0, "CursorLineNr", { fg = default.fg, bg = default.bg, bold = true })
-	vim.api.nvim_set_hl(0, "DotfilesStatuscolumnMarker", { fg = default.fg, bg = default.bg, bold = true })
+	vim.api.nvim_set_hl(0, "DotfilesStatuscolumnMarker", { fg = default.fg, bold = true })
 	vim.api.nvim_set_hl(0, "DotfilesCursorLineCodexNr", { fg = colors.sky, bg = default.bg, bold = true })
 end
 
