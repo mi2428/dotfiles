@@ -716,6 +716,18 @@ local function setup_code_layout(map)
 		vim.wo[display.win].cursorline = manager.focused
 	end
 
+	local function is_inactive_mirror_placeholder(win, active_source)
+		if win == active_source or not vim.api.nvim_win_is_valid(win) then
+			return false
+		end
+		local buf = vim.api.nvim_win_get_buf(win)
+		return vim.bo[buf].buftype == ""
+			and vim.api.nvim_buf_get_name(buf) == ""
+			and not vim.bo[buf].modified
+			and vim.api.nvim_buf_line_count(buf) == 1
+			and vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] == ""
+	end
+
 	local function reconcile_mirrors()
 		local changes = { structure = false, geometry = false, size = false }
 		local official_win = map.current.win_data[vim.api.nvim_get_current_tabpage()]
@@ -785,7 +797,11 @@ local function setup_code_layout(map)
 
 		local wanted = {}
 		for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-			if win ~= active_source and is_code_window(win) then
+			if
+				win ~= active_source
+				and is_code_window(win)
+				and not is_inactive_mirror_placeholder(win, active_source)
+			then
 				wanted[win] = true
 			end
 		end

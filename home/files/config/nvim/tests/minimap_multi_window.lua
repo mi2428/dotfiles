@@ -212,6 +212,29 @@ wait_for(function()
 end, "returning focus did not restore native and mirror minimap ownership")
 assert(manager.mirrors[first].buf == reused_mirror_buf, "returning focus unnecessarily recreated the mirror buffer")
 
+vim.cmd("leftabove vnew")
+local placeholder_win = vim.api.nvim_get_current_win()
+local placeholder_buf = vim.api.nvim_get_current_buf()
+assert(vim.api.nvim_buf_get_name(placeholder_buf) == "", "placeholder fixture must be unnamed")
+assert(not vim.bo[placeholder_buf].modified, "placeholder fixture must be unmodified")
+assert(vim.bo[placeholder_buf].buftype == "", "placeholder fixture must retain an empty buftype")
+assert(vim.api.nvim_buf_line_count(placeholder_buf) == 1)
+assert(vim.api.nvim_buf_get_lines(placeholder_buf, 0, 1, false)[1] == "")
+vim.api.nvim_set_current_win(second)
+map.refresh({}, { layout = true, integrations = false, lines = false, scrollbar = false })
+wait_for(function()
+	local native = manager.map_window_for_source(second)
+	return native
+		and vim.api.nvim_win_is_valid(native)
+		and manager.mirrors[placeholder_win] == nil
+		and manager.map_window_for_source(placeholder_win) == nil
+end, "an inactive unnamed placeholder received a mirror minimap")
+vim.api.nvim_win_close(placeholder_win, true)
+vim.api.nvim_buf_delete(placeholder_buf, { force = true })
+wait_for(function()
+	return count_mirrors() == 1
+end, "closing the inactive placeholder changed ordinary mirror ownership")
+
 local focused_native = assert(manager.map_window_for_source(second))
 map.toggle_focus()
 wait_for(function()

@@ -332,8 +332,8 @@ assert(
 	"Gitsigns revision additions must render as Diffview deletions"
 )
 assert(
-	vim.wo[gitsigns_revision].winhighlight:find("DiffDelete:DiffviewDiffAddAsDelete", 1, true),
-	"Gitsigns revision filler must render with the deletion background"
+	vim.wo[gitsigns_revision].winhighlight:find("DiffDelete:DiffviewDiffDeleteDim", 1, true),
+	"Gitsigns revision filler must match Diffview's uncolored alignment filler"
 )
 assert(
 	vim.wo[gitsigns_main].winhighlight:find("DiffAdd:DiffviewDiffAdd", 1, true),

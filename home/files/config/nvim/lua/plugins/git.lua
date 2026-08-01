@@ -224,14 +224,9 @@ local function style_diff_window(win, ctx)
 	end
 	if side then
 		replace_winhighlight(win, "DiffAdd", side == "Delete" and "DiffviewDiffAddAsDelete" or "DiffviewDiffAdd")
-		-- Core diff renders the empty side of an addition with DiffDelete. In a
-		-- Gitsigns revision pane that empty side represents a deletion, while
-		-- Diffview deliberately keeps its alignment filler uncolored.
-		replace_winhighlight(
-			win,
-			"DiffDelete",
-			ctx and ctx.gitsigns and side == "Delete" and "DiffviewDiffAddAsDelete" or "DiffviewDiffDeleteDim"
-		)
+		-- Core diff uses DiffDelete for alignment filler. Keep it uncolored on
+		-- both Diffview and Gitsigns routes so the rendered panes stay identical.
+		replace_winhighlight(win, "DiffDelete", "DiffviewDiffDeleteDim")
 	end
 	replace_winhighlight(win, "DiffChange", side and ("DiffviewDiffChange" .. side) or "DiffviewDiffChange")
 	replace_winhighlight(win, "DiffText", side and ("DiffviewDiffText" .. side) or "DiffviewDiffText")
@@ -241,16 +236,6 @@ end
 local function is_gitsigns_revision(win)
 	local buf = vim.api.nvim_win_get_buf(win)
 	return vim.startswith(vim.api.nvim_buf_get_name(buf), "gitsigns://")
-end
-
-local function start_gitsigns_revision_treesitter(win, filetype)
-	local buf = vim.api.nvim_win_get_buf(win)
-	if filetype and filetype ~= "" and vim.bo[buf].filetype ~= filetype then
-		vim.bo[buf].filetype = filetype
-	end
-	if vim.bo[buf].filetype ~= "" then
-		pcall(vim.treesitter.start, buf)
-	end
 end
 
 local function save_gitsigns_diff_window(win)
@@ -313,20 +298,19 @@ local function refresh_gitsigns_diff_styles()
 			return vim.wo[win].diff and is_gitsigns_revision(win)
 		end)
 		if has_revision then
-			local worktree_filetype = vim.iter(wins):find(function(win)
+			local worktree_win = vim.iter(wins):find(function(win)
 				return vim.wo[win].diff
 					and not is_gitsigns_revision(win)
-					and vim.bo[vim.api.nvim_win_get_buf(win)].filetype ~= ""
+					and vim.bo[vim.api.nvim_win_get_buf(win)].buftype == ""
 			end)
-			worktree_filetype = worktree_filetype and vim.bo[vim.api.nvim_win_get_buf(worktree_filetype)].filetype
-				or nil
+			local worktree_buf = worktree_win and vim.api.nvim_win_get_buf(worktree_win) or nil
 			for _, win in ipairs(wins) do
 				if vim.wo[win].diff then
 					local revision = is_gitsigns_revision(win)
 					active[win] = true
 					save_gitsigns_diff_window(win)
 					if revision then
-						start_gitsigns_revision_treesitter(win, worktree_filetype)
+						git_diff_peek.prepare_revision_buffer(vim.api.nvim_win_get_buf(win), worktree_buf)
 					end
 					style_diff_window(win, {
 						layout_name = "diff2_vertical",
