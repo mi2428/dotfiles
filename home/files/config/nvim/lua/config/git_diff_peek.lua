@@ -903,6 +903,26 @@ local function open_layout(tab, source, expand_all_folds)
 	end
 end
 
+local function open_empty_revision_diff(source_win, source_buf, revision)
+	local revision_buf = vim.api.nvim_create_buf(false, true)
+	local revision_name = ("gitsigns://%s//%s:%s"):format(revision.git_dir, revision.base, revision.relpath)
+	vim.api.nvim_buf_set_name(revision_buf, revision_name)
+	vim.bo[revision_buf].bufhidden = "wipe"
+	vim.bo[revision_buf].buftype = "nowrite"
+	vim.bo[revision_buf].swapfile = false
+	M.prepare_revision_buffer(revision_buf, source_buf)
+	vim.bo[revision_buf].modifiable = false
+	vim.bo[revision_buf].readonly = true
+
+	vim.api.nvim_set_current_win(source_win)
+	vim.cmd("belowright vsplit")
+	local revision_win = vim.api.nvim_get_current_win()
+	vim.api.nvim_win_set_buf(revision_win, revision_buf)
+	vim.wo[revision_win].diff = true
+	vim.wo[source_win].diff = true
+	vim.api.nvim_set_current_win(source_win)
+end
+
 function M.toggle()
 	local tab = vim.api.nvim_get_current_tabpage()
 	local session = session_for_tab(tab)
@@ -928,6 +948,11 @@ function M.toggle()
 
 	local source_win = vim.api.nvim_get_current_win()
 	local source_buf = vim.api.nvim_get_current_buf()
+	local diff_base, base_error = require("config.git_diff_context").resolve_base(source_buf)
+	if not diff_base then
+		vim.notify(("Unable to resolve Git diff base: %s"):format(base_error or "unknown error"), vim.log.levels.ERROR)
+		return
+	end
 	local source = {
 		win = source_win,
 		buf = source_buf,
@@ -949,7 +974,7 @@ function M.toggle()
 		pending.expand_all_folds = true
 		vim.cmd.normal({ args = { "zR" }, bang = true })
 	end, "Open pending Git diff folds")
-	local ok, diff_error = pcall(require("gitsigns").diffthis, nil, { vertical = true }, function(err)
+	local function finish_open(err)
 		pending.maps = remove_buffer_maps(pending)
 		if pending_sessions[tab] ~= pending or pending.cancelled then
 			close_regular_diff(tab)
@@ -968,7 +993,17 @@ function M.toggle()
 			close_regular_diff(tab)
 			vim.notify(tostring(open_error), vim.log.levels.ERROR)
 		end
-	end)
+	end
+	local added_revision = require("config.git_diff_context").added_file_revision(source_buf, diff_base)
+	local ok, diff_error
+	if added_revision then
+		ok, diff_error = pcall(function()
+			open_empty_revision_diff(source_win, source_buf, added_revision)
+			finish_open()
+		end)
+	else
+		ok, diff_error = pcall(require("gitsigns").diffthis, diff_base, { vertical = true }, finish_open)
+	end
 	if not ok then
 		pending.maps = remove_buffer_maps(pending)
 		if pending_sessions[tab] == pending then

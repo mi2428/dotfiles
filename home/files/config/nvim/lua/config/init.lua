@@ -1,5 +1,6 @@
 require("config.options")
 require("config.diagnostic_filter").setup()
+require("config.git_diff_context").setup()
 require("config.keymaps")
 require("config.autocmds")
 require("config.commands")

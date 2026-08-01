@@ -80,8 +80,10 @@ local defer_diff_callback = false
 local pending_diff_callback
 local mutate_source_statuscolumn = false
 local mutate_popup_revision_statuscolumn = false
+local diffthis_bases = {}
 package.loaded.gitsigns = {
-	diffthis = function(_, _, callback)
+	diffthis = function(base, _, callback)
+		diffthis_bases[#diffthis_bases + 1] = base
 		local revision_buf = vim.api.nvim_create_buf(false, true)
 		vim.api.nvim_buf_set_name(revision_buf, "gitsigns:///tmp/.git//:0:dotfiles-git-diff-peek.lua")
 		local revision_lines = vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
@@ -758,6 +760,7 @@ end)
 assert(close_map, "the popup must install its temporary close mapping")
 
 peek.toggle()
+assert(diffthis_bases[1] == "HEAD", "ordinary Git diff peek must compare the worktree against HEAD")
 assert(
 	vim.wait(1000, function()
 		return vim.api.nvim_get_current_win() == source_win
@@ -1157,6 +1160,31 @@ assert(
 	end),
 	"layout failure left a Gitsigns revision window behind"
 )
+
+local diff_context = require("config.git_diff_context")
+local added_file_revision = diff_context.added_file_revision
+diff_context.added_file_revision = function(_, base)
+	return { base = base, git_dir = "/tmp/.git", relpath = "dotfiles-git-diff-peek.lua" }
+end
+peek.toggle()
+assert(
+	vim.wait(1000, function()
+		return #vim.tbl_filter(function(win)
+			return vim.w[win].dotfiles_git_diff_peek_child == true
+		end, vim.api.nvim_tabpage_list_wins(0)) == 2
+	end, 20),
+	"an added file did not open against an empty revision"
+)
+local empty_revision = vim.iter(vim.api.nvim_list_bufs()):find(function(buf)
+	return vim.startswith(vim.api.nvim_buf_get_name(buf), "gitsigns:///tmp/.git//HEAD:")
+end)
+assert(empty_revision, "an added file did not receive a Git revision buffer")
+assert(
+	vim.deep_equal(vim.api.nvim_buf_get_lines(empty_revision, 0, -1, false), { "" }),
+	"an added file must compare against an empty revision"
+)
+peek.toggle()
+diff_context.added_file_revision = added_file_revision
 
 local diffthis = package.loaded.gitsigns.diffthis
 package.loaded.gitsigns.diffthis = function()
