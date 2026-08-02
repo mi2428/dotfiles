@@ -42,6 +42,17 @@ local function visible_tabline_height()
 	return (vim.o.showtabline == 2 or (vim.o.showtabline == 1 and #vim.api.nvim_list_tabpages() > 1)) and 1 or 0
 end
 
+function M.with_underlay(callback)
+	local tab = vim.api.nvim_get_current_tabpage()
+	local session = sessions[tab]
+	if not session or not session.layout or not session.layout:valid() then
+		return false
+	end
+	session.underlay_callback = callback
+	session.layout:close()
+	return true
+end
+
 local function acquire_global_statusline()
 	if statusline_owners == 0 then
 		saved_laststatus = vim.o.laststatus
@@ -116,12 +127,13 @@ end
 local function frozen_highlights()
 	local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
 	local comment = vim.api.nvim_get_hl(0, { name = "Comment", link = false })
-	local normal_nc = vim.api.nvim_get_hl(0, { name = "NormalNC", link = false })
 	local attributes = {
-		bg = normal.bg or normal_nc.bg,
-		fg = comment.fg or normal_nc.fg or normal.fg,
+		fg = comment.fg or normal.fg,
 		nocombine = true,
 	}
+	if normal.bg ~= nil then
+		attributes.bg = normal.bg
+	end
 	vim.api.nvim_set_hl(0, "DotfilesGitDiffPeekFrozen", attributes)
 	vim.api.nvim_set_hl(0, "DotfilesGitDiffPeekFrozenEob", attributes)
 end
@@ -900,6 +912,8 @@ local function cleanup_session(tab, session, focus_underlay)
 	end
 	local navigate_command = session.navigate_command
 	session.navigate_command = nil
+	local underlay_callback = session.underlay_callback
+	session.underlay_callback = nil
 	stop_background_minimap_monitor(session)
 	stop_snapshot_resize_monitor(session)
 	stop_transition_hooks(session)
@@ -920,6 +934,20 @@ local function cleanup_session(tab, session, focus_underlay)
 		end
 		refresh_minimap()
 		discard_minimap_margin_transfer(session.underlay.win)
+		restore_underlay_appearance(session.underlay, restored_source)
+		if underlay_callback then
+			if
+				vim.api.nvim_win_is_valid(session.underlay.win)
+				and vim.api.nvim_win_get_tabpage(session.underlay.win) == tab
+			then
+				vim.api.nvim_set_current_win(session.underlay.win)
+				local ok, err = xpcall(underlay_callback, debug.traceback)
+				if not ok then
+					vim.notify(("Unable to continue Git diff peek action: %s"):format(err), vim.log.levels.ERROR)
+				end
+			end
+			return
+		end
 		if
 			handoff
 			and handoff.kind == "reopen"
@@ -962,7 +990,9 @@ local function cleanup_session(tab, session, focus_underlay)
 			-- cleanup's final scheduled appearance restore. Restore now so the new
 			-- session snapshots the real editor instead of the suppressed underlay.
 			restore_underlay_appearance(session.underlay, restored_source)
-			vim.cmd.redrawtabline()
+			-- Popup navigation always resumes from its ordinary source window. Use
+			-- Bufferline's command directly; the hidden-group fallback belongs only
+			-- to the normal-mode mapping where the current buffer may be hidden.
 			local navigated, navigate_error = pcall(vim.cmd, navigate_command)
 			if not navigated then
 				vim.notify(("Unable to navigate Git diff peek buffer: %s"):format(navigate_error), vim.log.levels.ERROR)
@@ -981,7 +1011,7 @@ local function cleanup_session(tab, session, focus_underlay)
 					and vim.api.nvim_win_get_buf(target_win) == target_buf
 					and vim.api.nvim_get_current_win() == target_win
 				then
-					M.toggle()
+					M.toggle({ snapshot = session.snapshot })
 				end
 			end)
 		end
@@ -1447,7 +1477,8 @@ local function open_empty_revision_diff(source_win, source_buf, revision)
 	vim.api.nvim_set_current_win(source_win)
 end
 
-function M.toggle()
+function M.toggle(opts)
+	opts = opts or {}
 	local tab = vim.api.nvim_get_current_tabpage()
 	local session = session_for_tab(tab)
 	if session then
@@ -1493,7 +1524,10 @@ function M.toggle()
 		underlay_flag = vim.w[source_win].dotfiles_git_diff_peek_underlay,
 	}
 	source.statusline_guard = acquire_global_statusline()
-	local captured, snapshot = pcall(capture_frozen_screen)
+	local captured, snapshot = true, opts.snapshot
+	if not snapshot then
+		captured, snapshot = pcall(capture_frozen_screen)
+	end
 	if not captured then
 		release_global_statusline(source.statusline_guard)
 		vim.notify(("Unable to capture Git diff peek background: %s"):format(snapshot), vim.log.levels.ERROR)

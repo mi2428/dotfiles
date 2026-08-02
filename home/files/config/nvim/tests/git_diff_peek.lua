@@ -527,6 +527,13 @@ vim.api.nvim_create_user_command("BufferLineCyclePrev", function()
 end, {})
 
 local old_navigation_cover = cover_float
+local old_navigation_snapshot = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(old_navigation_cover), 0, -1, false)
+local original_bufferline = package.loaded["config.bufferline"]
+package.loaded["config.bufferline"] = {
+	cycle = function()
+		error("popup navigation must invoke the native BufferLineCycle command")
+	end,
+}
 local next_buffer = assert(popup_map(source_float, "]]", "Next Git diff peek buffer"))
 next_buffer.callback()
 next_buffer.callback()
@@ -540,12 +547,12 @@ assert(
 )
 assert(
 	vim.wait(1000, function()
-		return vim.iter(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(navigation_cover), 0, -1, false))
-			:any(function(line)
-				return line:find("navigation", 1, true) ~= nil
-			end)
+		return vim.deep_equal(
+			vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(navigation_cover), 0, -1, false),
+			old_navigation_snapshot
+		)
 	end, 20),
-	"next popup buffer did not refresh the frozen background"
+	"next popup buffer did not reuse the frozen background"
 )
 assert(screen_row(1):find("navigation", 1, true), "next popup buffer did not refresh the bufferline")
 assert(
@@ -605,6 +612,7 @@ assert(
 	vim.deep_equal(navigation_commands, { "Next", "Next", "Prev", "Prev", "Next" }),
 	("failed navigation command was not recorded exactly once: %s"):format(vim.inspect(navigation_commands))
 )
+package.loaded["config.bufferline"] = original_bufferline
 fail_navigation_command = false
 source_float = assert(popup_child_for(source_buf))
 revision_float = vim.iter(vim.api.nvim_tabpage_list_wins(0)):find(function(win)
@@ -949,6 +957,43 @@ local close_map = vim.iter(vim.api.nvim_buf_get_keymap(source_buf, "n")):find(fu
 	return mapping.desc == "Close Git diff peek"
 end)
 assert(close_map, "the popup must install its temporary close mapping")
+
+local underlay_callback_observed
+local callback_tab_count = #vim.api.nvim_list_tabpages()
+assert(
+	peek.with_underlay(function()
+		underlay_callback_observed = {
+			current = vim.api.nvim_get_current_win(),
+			children = #vim.tbl_filter(function(win)
+				return vim.w[win].dotfiles_git_diff_peek_child == true
+			end, vim.api.nvim_tabpage_list_wins(0)),
+			tabs = #vim.api.nvim_list_tabpages(),
+			appearance = underlay_appearance(source_win),
+		}
+	end),
+	"with_underlay must close an active Git diff peek"
+)
+assert(
+	vim.wait(1000, function()
+		return underlay_callback_observed ~= nil
+	end, 20),
+	"with_underlay callback did not run"
+)
+assert(underlay_callback_observed.current == source_win, "with_underlay callback must focus the source editor")
+assert(underlay_callback_observed.children == 0, "with_underlay callback must run after popup children close")
+assert(underlay_callback_observed.tabs == callback_tab_count, "with_underlay callback must not create a tabpage")
+assert(
+	vim.deep_equal(underlay_callback_observed.appearance, baseline_underlay_appearance),
+	"with_underlay callback must observe the restored underlay appearance"
+)
+peek.toggle()
+assert(
+	vim.wait(1000, function()
+		return popup_child_for(source_buf) ~= nil
+	end, 20),
+	"with_underlay fixture did not reopen the popup"
+)
+source_float = assert(popup_child_for(source_buf))
 
 peek.toggle()
 assert(diffthis_bases[1] == "HEAD", "ordinary Git diff peek must compare the worktree against HEAD")
