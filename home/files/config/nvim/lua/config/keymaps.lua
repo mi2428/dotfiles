@@ -103,11 +103,7 @@ end, { desc = "Open parent directory" })
 -- for a longer mapping. This deliberately replaces Neovim's section motions.
 -- Follow Bufferline's visual order, including buffers moved by the user.
 local function cycle_bufferline(command)
-	-- Bufferline rebuilds its component list while rendering the tabline. A
-	-- picker can enter a newly-created buffer before that render happens, which
-	-- leaves BufferLineCycle* unable to find the current buffer.
-	vim.cmd.redrawtabline()
-	vim.cmd(command)
+	require("config.bufferline").cycle(command)
 end
 
 local function map_buffer_cycles(bufnr)
