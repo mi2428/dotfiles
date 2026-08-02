@@ -53,6 +53,47 @@ return {
 		end,
 	},
 	{
+		"chrisgrieser/nvim-spider",
+		keys = {
+			{
+				"w",
+				"<cmd>lua require('config.word_motion').motion('w')<cr>",
+				mode = { "n", "o", "x" },
+				desc = "Next word (skip punctuation)",
+			},
+			{
+				"e",
+				"<cmd>lua require('config.word_motion').motion('e')<cr>",
+				mode = { "n", "o", "x" },
+				desc = "End of word (skip punctuation)",
+			},
+			{
+				"b",
+				"<cmd>lua require('config.word_motion').motion('b')<cr>",
+				mode = { "n", "o", "x" },
+				desc = "Previous word (skip punctuation)",
+			},
+			{
+				"ge",
+				"<cmd>lua require('config.word_motion').motion('ge')<cr>",
+				mode = { "n", "o", "x" },
+				desc = "Previous word end (skip punctuation)",
+			},
+			-- Spider intentionally makes `cw` follow `w` exactly. Preserve Vim's
+			-- familiar change-to-end behavior while still using Spider's `e` motion.
+			{ "cw", "ce", mode = "n", remap = true, desc = "Change word" },
+		},
+		opts = {
+			-- Skip syntax punctuation such as `.` in `value.method()`, but keep
+			-- whitespace-delimited operators such as `==` as useful stops.
+			skipInsignificantPunctuation = true,
+			-- This change is about punctuation only; do not also alter established
+			-- camelCase, snake_case, or kebab-case movement semantics.
+			subwordMovement = false,
+			consistentOperatorPending = false,
+		},
+	},
+	{
 		"Wansmer/treesj",
 		keys = {
 			{
