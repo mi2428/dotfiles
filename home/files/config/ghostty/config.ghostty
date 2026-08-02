@@ -4,14 +4,12 @@ keybind = super+shift+r=reload_config
 macos-option-as-alt = left
 # Keep plain ctrl-r available for fzf's native history widget. Trigger Atuin
 # with left Option-R, which Ghostty receives as alt+r through macos-option-as-alt.
-# The dedicated binding emits a private CSI sequence; right Option remains
-# available for macOS Unicode input.
-# The shell side binds this private sequence directly to Atuin's published
-# widgets/functions, so the private CSI remains the canonical shell entry point.
+# Do not override alt+r with a fixed byte sequence. Let Ghostty negotiate the
+# keyboard protocol with fish, tmux, Herdr, and Neovim so every application sees
+# a real Alt-R key event. Right Option remains available for macOS Unicode input.
 # References:
 # - https://github.com/atuinsh/atuin/blob/main/crates/atuin/src/shell/atuin.zsh
 # - https://github.com/atuinsh/atuin/blob/main/crates/atuin/src/shell/atuin.fish
-keybind = alt+r=text:\x1b[9001u
 keybind = global:cmd+shift+enter=toggle_quick_terminal
 keybind = cmd+g>d=new_split:right
 keybind = cmd+g>shift+d=new_split:down
