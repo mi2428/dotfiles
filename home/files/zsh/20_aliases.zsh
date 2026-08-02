@@ -547,14 +547,190 @@ io() {
 }
 
 
-::() {
-  local session="$1"
-  if [[ -z ${session} ]]; then
-    tmux
-  elif tmux ls -F "#{session_name}" 2>/dev/null | grep -Fxq -- "$session"; then
-    tmux attach -t "${session}"
+__dotfiles_session_path() {
+  local shortcut="$1"
+  local requested_path="$2"
+  local session_path
+
+  if [[ ! -e "$requested_path" ]]; then
+    print -u2 -- "$shortcut directory does not exist: $requested_path"
+    return 2
+  fi
+
+  if [[ ! -d "$requested_path" ]]; then
+    print -u2 -- "$shortcut not a directory: $requested_path"
+    return 2
+  fi
+
+  session_path="${requested_path:A}"
+  print -r -- "$session_path"
+}
+
+__dotfiles_tmux_session_names() {
+  command tmux list-sessions -F '#{session_name}' 2>/dev/null
+}
+
+__dotfiles_herdr_session_names() {
+  command herdr session list --json 2>/dev/null |
+    jq -r '.sessions[]? | .name // empty' 2>/dev/null
+}
+
+__dotfiles_herdr_is_command() {
+  case "$1" in
+    completion|completions|update|status|config|channel|server|api|workspace|worktree|tab|notification|agent|pane|terminal|session|integration|plugin|client|help)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+__dotfiles_herdr_attach_session() {
+  local session_name="$1"
+  if ! __dotfiles_herdr_session_names | grep -Fxq -- "$session_name"; then
+    print -u2 -- "::: no such session: $session_name (create it with ::: c $session_name)"
+    return 1
+  fi
+
+  command herdr session attach "$session_name"
+}
+
+__dotfiles_tmux_create_session() {
+  local session_name="$1"
+  local session_path="$2"
+  if [[ -n "${TMUX:-}" ]]; then
+    command tmux new-session -d -s "$session_name" -c "$session_path" || return $?
+    command tmux switch-client -t "$session_name"
   else
-    tmux "$@"
+    command tmux new-session -s "$session_name" -c "$session_path"
+  fi
+}
+
+__dotfiles_tmux_new_workspace() {
+  local requested_path="$1"
+  local target_session="$2"
+  local session_path
+
+  session_path="$(__dotfiles_session_path :: "$requested_path")" || return $?
+  if [[ -n "$target_session" ]]; then
+    command tmux new-window -t "$target_session" -c "$session_path"
+  else
+    command tmux new-window -c "$session_path"
+  fi
+}
+
+__dotfiles_herdr_new_workspace() {
+  local requested_path="$1"
+  local target_session="${2:-default}"
+  local workspace_path
+
+  if ! __dotfiles_herdr_session_names | grep -Fxq -- "$target_session"; then
+    print -u2 -- "::: no such session: $target_session"
+    return 1
+  fi
+
+  workspace_path="$(__dotfiles_session_path ::: "$requested_path")" || return $?
+  command herdr --session "$target_session" workspace create --cwd "$workspace_path" --focus >/dev/null
+}
+
+::() {
+  if (( $# > 0 )) && [[ "$1" == c || "$1" == create ]]; then
+    if (( $# != 2 )); then
+      print -u2 -- 'Usage: :: (c|create) NAME'
+      return 2
+    fi
+
+    __dotfiles_tmux_create_session "$2" "$PWD"
+    return $?
+  fi
+
+  if (( $# > 0 )) && [[ "$1" == n || "$1" == new ]]; then
+    if (( $# < 2 || $# > 3 )); then
+      print -u2 -- 'Usage: :: (n|new) PATH [SESSION]'
+      return 2
+    fi
+
+    __dotfiles_tmux_new_workspace "$2" "${3:-}"
+    return $?
+  fi
+
+  if (( $# > 0 )) && [[ "$1" == d || "$1" == delete ]]; then
+    if (( $# != 2 )); then
+      print -u2 -- 'Usage: :: (d|delete) NAME'
+      return 2
+    fi
+
+    command tmux kill-session -t "$2"
+    return $?
+  fi
+
+  if (( $# > 0 )) && [[ "$1" == l || "$1" == list ]]; then
+    shift
+    command tmux list-sessions "$@"
+    return $?
+  fi
+
+  if (( $# == 0 )); then
+    command tmux
+  elif (( $# == 1 )) && __dotfiles_tmux_session_names | grep -Fxq -- "$1"; then
+    command tmux attach -t "$1"
+  else
+    command tmux "$@"
+  fi
+}
+
+:::() {
+
+  if (( $# > 0 )) && [[ "$1" == c || "$1" == create ]]; then
+    if (( $# != 2 )); then
+      print -u2 -- 'Usage: ::: (c|create) NAME'
+      return 2
+    fi
+
+    if __dotfiles_herdr_session_names | grep -Fxq -- "$2"; then
+      print -u2 -- "::: session already exists: $2"
+      return 1
+    fi
+
+    command herdr --session "$2"
+    return $?
+  fi
+
+  if (( $# > 0 )) && [[ "$1" == n || "$1" == new ]]; then
+    if (( $# < 2 || $# > 3 )); then
+      print -u2 -- 'Usage: ::: (n|new) PATH [SESSION]'
+      return 2
+    fi
+
+    __dotfiles_herdr_new_workspace "$2" "${3:-}"
+    return $?
+  fi
+
+  if (( $# > 0 )) && [[ "$1" == l || "$1" == list ]]; then
+    shift
+    command herdr session list "$@"
+    return $?
+  fi
+
+  if (( $# > 0 )) && [[ "$1" == d || "$1" == delete ]]; then
+    if (( $# != 2 )); then
+      print -u2 -- 'Usage: ::: (d|delete) NAME'
+      return 2
+    fi
+
+    command herdr session delete "$2"
+    return $?
+  fi
+
+  if (( $# == 0 )); then
+    command herdr
+  elif (( $# == 1 )) && __dotfiles_herdr_session_names | grep -Fxq -- "$1"; then
+    __dotfiles_herdr_attach_session "$1"
+  elif (( $# == 1 )) && [[ "$1" != -* ]] && ! __dotfiles_herdr_is_command "$1"; then
+    __dotfiles_herdr_attach_session "$1"
+  else
+    command herdr "$@"
   fi
 }
 
@@ -1084,7 +1260,6 @@ alias py='python3'
 alias rc='bundle exec rails c'
 alias tf='terraform'
 
-alias :::='herdr'
 #alias io='cd $HOME/io'
 alias dck='docker compose kill && docker compose rm -f'
 alias dcl='docker compose logs -f'

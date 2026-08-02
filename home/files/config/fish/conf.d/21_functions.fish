@@ -633,46 +633,178 @@ function io
     end
 end
 
-function ::
-    set -l session $argv[1]
+function __dotfiles_session_path --argument-names shortcut requested_path
+    set -l session_path (path resolve "$requested_path" 2>/dev/null)
+    if test $status -ne 0; or not test -e "$session_path"
+        echo "$shortcut directory does not exist: $requested_path" >&2
+        return 2
+    end
 
-    if test -z "$session"
+    if not test -d "$session_path"
+        echo "$shortcut not a directory: $requested_path" >&2
+        return 2
+    end
+
+    printf '%s\n' "$session_path"
+end
+
+function __dotfiles_tmux_session_names
+    tmux list-sessions -F '#{session_name}' 2>/dev/null
+end
+
+function __dotfiles_herdr_session_names
+    herdr session list --json 2>/dev/null |
+        jq -r '.sessions[]? | .name // empty' 2>/dev/null
+end
+
+function __dotfiles_herdr_commands
+    printf '%s\n' \
+        completion completions update status config channel server api \
+        workspace worktree tab notification agent pane terminal session \
+        integration plugin client help
+end
+
+function __dotfiles_herdr_attach_session --argument-names session_name
+    if not contains -- "$session_name" (__dotfiles_herdr_session_names)
+        echo "::: no such session: $session_name (create it with ::: c $session_name)" >&2
+        return 1
+    end
+
+    herdr session attach "$session_name"
+end
+
+function __dotfiles_tmux_create_session --argument-names session_name session_path
+    if set -q TMUX; and test -n "$TMUX"
+        tmux new-session -d -s "$session_name" -c "$session_path"
+        or return $status
+        tmux switch-client -t "$session_name"
+    else
+        tmux new-session -s "$session_name" -c "$session_path"
+    end
+end
+
+function __dotfiles_tmux_new_workspace --argument-names requested_path target_session
+    set -l session_path (__dotfiles_session_path :: "$requested_path")
+    or return $status
+
+    if test -n "$target_session"
+        tmux new-window -t "$target_session" -c "$session_path"
+    else
+        tmux new-window -c "$session_path"
+    end
+end
+
+function __dotfiles_herdr_new_workspace --argument-names requested_path target_session
+    test -n "$target_session"; or set target_session default
+
+    if not contains -- "$target_session" (__dotfiles_herdr_session_names)
+        echo "::: no such session: $target_session" >&2
+        return 1
+    end
+
+    set -l workspace_path (__dotfiles_session_path ::: "$requested_path")
+    or return $status
+
+    herdr --session "$target_session" workspace create --cwd "$workspace_path" --focus >/dev/null
+end
+
+function :: --description 'Manage tmux sessions and windows'
+    if test (count $argv) -gt 0; and contains -- $argv[1] c create
+        if test (count $argv) -ne 2
+            echo 'Usage: :: (c|create) NAME' >&2
+            return 2
+        end
+
+        __dotfiles_tmux_create_session "$argv[2]" "$PWD"
+        return $status
+    end
+
+    if test (count $argv) -gt 0; and contains -- $argv[1] n new
+        if test (count $argv) -lt 2; or test (count $argv) -gt 3
+            echo 'Usage: :: (n|new) PATH [SESSION]' >&2
+            return 2
+        end
+
+        __dotfiles_tmux_new_workspace "$argv[2]" "$argv[3]"
+        return $status
+    end
+
+    if test (count $argv) -gt 0; and contains -- $argv[1] d delete
+        if test (count $argv) -ne 2
+            echo 'Usage: :: (d|delete) NAME' >&2
+            return 2
+        end
+
+        tmux kill-session -t "$argv[2]"
+        return $status
+    end
+
+    if test (count $argv) -gt 0; and contains -- $argv[1] l list
+        tmux list-sessions $argv[2..]
+        return $status
+    end
+
+    if test (count $argv) -eq 0
         tmux
-    else if contains -- $session (tmux ls -F '#{session_name}' 2>/dev/null)
-        tmux attach -t "$session"
+    else if test (count $argv) -eq 1; and contains -- "$argv[1]" (__dotfiles_tmux_session_names)
+        tmux attach -t "$argv[1]"
     else
         tmux $argv
     end
 end
 
-function ::: --description 'Launch Herdr or create a workspace in the running server'
-    if test (count $argv) -gt 0; and contains -- $argv[1] -n --new-workspace
+function ::: --description 'Manage Herdr sessions and workspaces'
+    if test (count $argv) -gt 0; and contains -- $argv[1] c create
         if test (count $argv) -ne 2
-            echo 'Usage: ::: (-n|--new-workspace) PATH' >&2
+            echo 'Usage: ::: (c|create) NAME' >&2
             return 2
         end
 
-        set -l workspace_path (path resolve "$argv[2]" 2>/dev/null)
-        if test $status -ne 0
-            echo "::: directory does not exist: $argv[2]" >&2
-            return 2
+        if contains -- "$argv[2]" (__dotfiles_herdr_session_names)
+            echo "::: session already exists: $argv[2]" >&2
+            return 1
         end
 
-        if not test -e "$workspace_path"
-            echo "::: directory does not exist: $argv[2]" >&2
-            return 2
-        end
-
-        if not test -d "$workspace_path"
-            echo "::: not a directory: $argv[2]" >&2
-            return 2
-        end
-
-        herdr workspace create --cwd "$workspace_path" --focus >/dev/null
+        herdr --session "$argv[2]"
         return $status
     end
 
-    herdr $argv
+    if test (count $argv) -gt 0; and contains -- $argv[1] n new
+        if test (count $argv) -lt 2; or test (count $argv) -gt 3
+            echo 'Usage: ::: (n|new) PATH [SESSION]' >&2
+            return 2
+        end
+
+        __dotfiles_herdr_new_workspace "$argv[2]" "$argv[3]"
+        return $status
+    end
+
+    if test (count $argv) -gt 0; and contains -- $argv[1] l list
+        herdr session list $argv[2..]
+        return $status
+    end
+
+    if test (count $argv) -gt 0; and contains -- $argv[1] d delete
+        if test (count $argv) -ne 2
+            echo 'Usage: ::: (d|delete) NAME' >&2
+            return 2
+        end
+
+        herdr session delete "$argv[2]"
+        return $status
+    end
+
+    if test (count $argv) -eq 0
+        herdr
+    else if test (count $argv) -eq 1; and contains -- "$argv[1]" (__dotfiles_herdr_session_names)
+        __dotfiles_herdr_attach_session "$argv[1]"
+    else if test (count $argv) -eq 1
+        and not string match -q -- '-*' "$argv[1]"
+        and not contains -- "$argv[1]" (__dotfiles_herdr_commands)
+        __dotfiles_herdr_attach_session "$argv[1]"
+    else
+        herdr $argv
+    end
 end
 
 function __dotfiles_herdr_pane_label_for_pane --argument-names pane_id

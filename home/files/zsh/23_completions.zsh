@@ -49,3 +49,86 @@ fi
 (( ${+commands[kubectl]} )) && compdef k=kubectl
 (( ${+functions[_lazydocker]} )) && compdef _lazydocker ldk
 (( ${+commands[terraform]} )) && compdef tf=terraform
+
+_dotfiles_tmux_session_shortcut() {
+  local original_command
+  local -a session_names session_commands
+
+  if (( CURRENT == 3 )) && [[ "$words[2]" == d || "$words[2]" == delete ]]; then
+    session_names=("${(@f)$(__dotfiles_tmux_session_names)}")
+    (( ${#session_names} > 0 )) && compadd -X 'tmux sessions' -- "$session_names[@]"
+    return
+  elif (( CURRENT == 4 )) && [[ "$words[2]" == n || "$words[2]" == new ]]; then
+    session_names=("${(@f)$(__dotfiles_tmux_session_names)}")
+    (( ${#session_names} > 0 )) && compadd -X 'tmux sessions' -- "$session_names[@]"
+    return
+  elif (( CURRENT == 3 )) && [[ "$words[2]" == c || "$words[2]" == create ]]; then
+    _message 'session name'
+    return
+  elif (( CURRENT == 3 )) && [[ "$words[2]" == n || "$words[2]" == new ]]; then
+    _directories
+    return
+  fi
+
+  if (( CURRENT == 2 )); then
+    session_commands=(
+      'l:list sessions'
+      'c:create a named session'
+      'n:add a work area to a session'
+      'd:delete a session'
+    )
+    _describe -t commands 'session commands' session_commands
+    session_names=("${(@f)$(__dotfiles_tmux_session_names)}")
+    (( ${#session_names} > 0 )) && compadd -X 'tmux sessions' -- "$session_names[@]"
+  fi
+
+  if (( ${+functions[_tmux]} )); then
+    original_command="$words[1]"
+    words[1]=tmux
+    _tmux
+    words[1]="$original_command"
+  fi
+}
+
+_dotfiles_herdr_session_shortcut() {
+  local original_command
+  local -a sessions session_commands
+
+  if (( CURRENT == 3 )) && [[ "$words[2]" == d || "$words[2]" == delete ]]; then
+    sessions=("${(@f)$(command herdr session list --json 2>/dev/null | jq -r '.sessions[]? | "\(.name):\(if .running then "running" else "stopped" end)"' 2>/dev/null)}")
+    (( ${#sessions} > 0 )) && _describe -t sessions 'Herdr sessions' sessions
+    return
+  elif (( CURRENT == 4 )) && [[ "$words[2]" == n || "$words[2]" == new ]]; then
+    sessions=("${(@f)$(command herdr session list --json 2>/dev/null | jq -r '.sessions[]? | select(.running) | "\(.name):running"' 2>/dev/null)}")
+    (( ${#sessions} > 0 )) && _describe -t sessions 'running Herdr sessions' sessions
+    return
+  elif (( CURRENT == 3 )) && [[ "$words[2]" == c || "$words[2]" == create ]]; then
+    _message 'session name'
+    return
+  elif (( CURRENT == 3 )) && [[ "$words[2]" == n || "$words[2]" == new ]]; then
+    _directories
+    return
+  fi
+
+  if (( CURRENT == 2 )); then
+    session_commands=(
+      'l:list sessions'
+      'c:create a named session'
+      'n:add a work area to a session'
+      'd:delete a session'
+    )
+    _describe -t commands 'session commands' session_commands
+    sessions=("${(@f)$(command herdr session list --json 2>/dev/null | jq -r '.sessions[]? | "\(.name):\(if .running then "running" else "stopped" end)"' 2>/dev/null)}")
+    (( ${#sessions} > 0 )) && _describe -t sessions 'Herdr sessions' sessions
+  fi
+
+  if (( ${+functions[_herdr]} )); then
+    original_command="$words[1]"
+    words[1]=herdr
+    _herdr
+    words[1]="$original_command"
+  fi
+}
+
+compdef _dotfiles_tmux_session_shortcut ::
+compdef _dotfiles_herdr_session_shortcut :::
