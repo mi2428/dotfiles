@@ -76,9 +76,21 @@ local function fzf_open_in_current_window(selected, opts)
 end
 
 local function fzf_open_in_vsplit(selected, opts)
-	require("fzf-lua.actions").file_vsplit(selected, opts)
-	vim.cmd("wincmd =")
-	refresh_folds_after_fzf()
+	local opened = false
+	local function open()
+		if opened then
+			return
+		end
+		opened = true
+		require("fzf-lua.actions").file_vsplit(selected, opts)
+		vim.cmd("wincmd =")
+		refresh_folds_after_fzf()
+	end
+	local ok, peek = pcall(require, "config.git_diff_peek")
+	if ok and type(peek.with_underlay) == "function" and peek.with_underlay(open) then
+		return
+	end
+	open()
 end
 
 return {
