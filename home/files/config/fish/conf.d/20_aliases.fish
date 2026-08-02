@@ -469,6 +469,10 @@ end
 
 alias sshh='sshuttle'
 
+if command -sq terminal-browser
+    alias tb='terminal-browser'
+end
+
 if command -sq iperf3-rs
     alias iperf3='iperf3-rs'
 end
