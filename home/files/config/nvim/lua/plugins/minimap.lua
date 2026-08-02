@@ -1225,6 +1225,18 @@ local function setup_code_layout(map)
 		end
 	end
 
+	local function is_transient_overlay_float(win)
+		if not win or not vim.api.nvim_win_is_valid(win) or vim.api.nvim_win_get_config(win).relative == "" then
+			return false
+		end
+		local buf = vim.api.nvim_win_get_buf(win)
+		return vim.w[win].dotfiles_glance_preview == true
+			or vim.w[win].dotfiles_glance_aerial_layout ~= nil
+			or vim.bo[buf].filetype == "Glance"
+			or vim.w[win].treesitter_context == true
+			or vim.w[win].treesitter_context_line_number == true
+	end
+
 	local group = vim.api.nvim_create_augroup("dotfiles-mini-map-code-layout", { clear = true })
 	vim.api.nvim_create_autocmd({ "WinNew", "WinClosed", "WinResized", "VimResized" }, {
 		group = group,
@@ -1234,6 +1246,11 @@ local function setup_code_layout(map)
 			end
 			if args.event == "WinNew" then
 				inherit_source_margin(vim.api.nvim_get_current_win())
+			elseif args.event == "WinClosed" and is_transient_overlay_float(tonumber(args.match)) then
+				-- Glance and treesitter-context overlays do not change any source
+				-- window's geometry. Re-encoding every minimap as those transient
+				-- windows close causes a visible full-editor redraw in diff layouts.
+				return
 			end
 			manager.schedule({ layout = true, integrations = true, lines = true, scrollbar = true })
 		end,

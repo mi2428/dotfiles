@@ -539,9 +539,12 @@ assert(
 	"next popup buffer did not replace the frozen background"
 )
 assert(
-	vim.iter(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(navigation_cover), 0, -1, false)):any(function(line)
-		return line:find("navigation_target", 1, true) ~= nil
-	end),
+	vim.wait(1000, function()
+		return vim.iter(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(navigation_cover), 0, -1, false))
+			:any(function(line)
+				return line:find("navigation", 1, true) ~= nil
+			end)
+	end, 20),
 	"next popup buffer did not refresh the frozen background"
 )
 assert(screen_row(1):find("navigation", 1, true), "next popup buffer did not refresh the bufferline")

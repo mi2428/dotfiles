@@ -42,6 +42,37 @@ local function popup_win(role)
 	end)
 end
 
+local function settle_for(milliseconds)
+	local settled = false
+	vim.defer_fn(function()
+		settled = true
+	end, milliseconds)
+	wait_for("event loop did not settle", function()
+		return settled
+	end, milliseconds + 1000)
+end
+
+local function popup_cursor_state()
+	local state = { current = vim.api.nvim_get_current_win() }
+	for _, role in ipairs({ "worktree", "revision" }) do
+		local win = popup_win(role)
+		if win and vim.api.nvim_win_is_valid(win) then
+			local view = vim.api.nvim_win_call(win, vim.fn.winsaveview)
+			state[role] = {
+				cursor = vim.api.nvim_win_get_cursor(win),
+				view = {
+					leftcol = view.leftcol,
+					skipcol = view.skipcol,
+					topfill = view.topfill,
+					topline = view.topline,
+				},
+				win = win,
+			}
+		end
+	end
+	return state
+end
+
 local function wait_for_preview(source_win, expected_path, expected_line, expected_col, label)
 	wait_for(label .. ": Glance preview did not focus the definition", function()
 		local win = vim.api.nvim_get_current_win()
@@ -83,15 +114,56 @@ local function wait_for_preview(source_win, expected_path, expected_line, expect
 	assert(embedded_aerial == nil, label .. ": narrow Git Diff Peek must omit the embedded Aerial outline")
 	assert(hidden_list, label .. ": narrow Git Diff Peek must retain the Glance result state")
 	assert(vim.api.nvim_win_get_config(hidden_list).hide == true, label .. ": narrow Glance list must be hidden")
+	assert(not vim.wo[hidden_list].cursorbind, label .. ": hidden Glance list must not join cursor binding")
+	assert(not vim.wo[hidden_list].scrollbind, label .. ": hidden Glance list must not join scroll binding")
 	popup_state(label)
 end
 
 local function close_glance(source_win, label)
-	require("glance").actions.close()
-	wait_for(label .. ": Glance close did not restore popup focus", function()
-		local win = vim.api.nvim_get_current_win()
-		return win == source_win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_config(win).relative ~= ""
-	end)
+	local map = package.loaded["mini.map"]
+	local manager = map and map._dotfiles_multi_window_manager
+	local original_schedule = manager and manager.schedule
+	local full_minimap_refreshes = 0
+	if manager then
+		manager.schedule = function(parts)
+			if parts and parts.layout and parts.integrations and parts.lines and parts.scrollbar then
+				full_minimap_refreshes = full_minimap_refreshes + 1
+			end
+			return original_schedule(parts)
+		end
+	end
+
+	local close_ok, close_error = xpcall(function()
+		vim.cmd.quit()
+		wait_for(label .. ": Glance close did not restore popup focus", function()
+			local win = vim.api.nvim_get_current_win()
+			return win == source_win
+				and vim.api.nvim_win_is_valid(win)
+				and vim.api.nvim_win_get_config(win).relative ~= ""
+		end)
+		local restored = popup_cursor_state()
+		settle_for(250)
+		local settled = popup_cursor_state()
+		assert(
+			vim.deep_equal(restored, settled),
+			("%s: popup cursor state chattered after :q: %s -> %s"):format(
+				label,
+				vim.inspect(restored),
+				vim.inspect(settled)
+			)
+		)
+	end, debug.traceback)
+	if manager then
+		manager.schedule = original_schedule
+	end
+	assert(close_ok, close_error)
+	assert(
+		full_minimap_refreshes == 0,
+		("%s: closing auxiliary Glance floats scheduled %d full minimap refreshes"):format(
+			label,
+			full_minimap_refreshes
+		)
+	)
 	popup_state(label)
 end
 
@@ -165,7 +237,22 @@ gitsigns.diffthis = function(base, _, callback)
 	local ok, err = xpcall(function()
 		local revision_buf = vim.api.nvim_create_buf(false, true)
 		vim.api.nvim_buf_set_name(revision_buf, "gitsigns:///tmp/.git//:0:lsp.lua")
-		vim.api.nvim_buf_set_lines(revision_buf, 0, -1, false, vim.api.nvim_buf_get_lines(source_buf, 0, -1, false))
+		local revision_lines = vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
+		local removed_start
+		local removed_end
+		for index, line in ipairs(revision_lines) do
+			if line:find("local function apply_glance_layout", 1, true) then
+				removed_start = index
+			elseif removed_start and line:find("local function decorate_glance", 1, true) then
+				removed_end = index - 1
+				break
+			end
+		end
+		assert(removed_start and removed_end, "fixture must create a substantial Glance diff hunk")
+		for line = removed_end, removed_start, -1 do
+			table.remove(revision_lines, line)
+		end
+		vim.api.nvim_buf_set_lines(revision_buf, 0, -1, false, revision_lines)
 		vim.bo[revision_buf].bufhidden = "wipe"
 		vim.bo[revision_buf].buftype = "acwrite"
 		vim.cmd("belowright vsplit")
@@ -215,6 +302,30 @@ local scenario_ok, scenario_error = xpcall(function()
 	wait_for_preview(worktree_win, normalize(source), 2, 6, "same-file other-location definition")
 	cases = cases + 1
 	close_glance(worktree_win, "same-file other-location definition")
+	cases = cases + 1
+
+	local aerial_focus_locations = {}
+	for index, line in ipairs(vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)) do
+		local column = line:find("allow_aerial_list_focus", 1, true)
+		if column then
+			aerial_focus_locations[#aerial_focus_locations + 1] = { line = index, col = column - 1 }
+		end
+	end
+	assert(#aerial_focus_locations == 2, "fixture must contain the Aerial focus definition and call")
+	vim.api.nvim_win_set_cursor(worktree_win, {
+		aerial_focus_locations[2].line,
+		aerial_focus_locations[2].col,
+	})
+	press("gd")
+	wait_for_preview(
+		worktree_win,
+		normalize(source),
+		aerial_focus_locations[1].line,
+		aerial_focus_locations[1].col,
+		"distant same-file definition"
+	)
+	cases = cases + 1
+	close_glance(worktree_win, "distant same-file definition")
 	cases = cases + 1
 
 	local revision_win = assert(popup_win("revision"), "revision pane is required")
