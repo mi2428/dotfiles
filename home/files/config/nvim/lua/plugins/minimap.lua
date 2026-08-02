@@ -18,6 +18,8 @@ local function blend(fg, bg, alpha)
 end
 
 local function set_minimap_highlights()
+	local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+	local normal_bg = normal.bg
 	local function set(name, accent)
 		vim.api.nvim_set_hl(0, name, {
 			fg = accent,
@@ -26,10 +28,16 @@ local function set_minimap_highlights()
 		})
 	end
 
-	vim.api.nvim_set_hl(0, "MiniMapNormal", { fg = colors.text, bg = colors.base })
-	vim.api.nvim_set_hl(0, "MiniMapSymbolLine", { fg = colors.blue, bg = colors.base, bold = true })
-	vim.api.nvim_set_hl(0, "MiniMapSymbolView", { fg = colors.overlay2, bg = colors.base })
-	vim.api.nvim_set_hl(0, "MiniMapSymbolCount", { fg = colors.peach, bg = colors.base })
+	local function normal_attributes(attributes)
+		if normal_bg ~= nil then
+			attributes.bg = normal_bg
+		end
+		return attributes
+	end
+	vim.api.nvim_set_hl(0, "MiniMapNormal", normal_attributes({ fg = colors.text }))
+	vim.api.nvim_set_hl(0, "MiniMapSymbolLine", normal_attributes({ fg = colors.blue, bold = true }))
+	vim.api.nvim_set_hl(0, "MiniMapSymbolView", normal_attributes({ fg = colors.overlay2 }))
+	vim.api.nvim_set_hl(0, "MiniMapSymbolCount", normal_attributes({ fg = colors.peach }))
 	vim.api.nvim_set_hl(0, "MiniMapFocusedLine", { bg = colors.surface1 })
 	vim.api.nvim_set_hl(0, "MiniMapSearch", { fg = colors.base, bg = colors.yellow, bold = true })
 	set("MiniMapDiagnosticError", colors.red)

@@ -138,12 +138,24 @@ assert(opts.window.zindex > 20, "minimap must render above treesitter-context's 
 
 set_minimap_highlights()
 local normal = vim.api.nvim_get_hl(0, { name = "MiniMapNormal", link = false })
-assert(normal.bg ~= nil, "MiniMapNormal must define an opaque occupied-interval background")
+local editor_normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+assert(normal.bg == editor_normal.bg, "MiniMapNormal must match Normal's background")
 assert(not normal.blend or normal.blend == 0, "MiniMapNormal must not blend source cells into occupied intervals")
+for _, group in ipairs({ "MiniMapSymbolLine", "MiniMapSymbolView", "MiniMapSymbolCount" }) do
+	local highlight = vim.api.nvim_get_hl(0, { name = group, link = false })
+	assert(highlight.bg == editor_normal.bg, group .. " must match Normal's background")
+end
 for _, group in ipairs({ "MiniMapDiagnosticError", "MiniMapSearch" }) do
 	local highlight = vim.api.nvim_get_hl(0, { name = group, link = false })
 	assert(highlight.bg ~= nil, group .. " must define its integration background")
 	assert(not highlight.blend or highlight.blend == 0, group .. " must remain opaque")
+end
+
+vim.api.nvim_set_hl(0, "Normal", { fg = editor_normal.fg })
+set_minimap_highlights()
+for _, group in ipairs({ "MiniMapNormal", "MiniMapSymbolLine", "MiniMapSymbolView", "MiniMapSymbolCount" }) do
+	local highlight = vim.api.nvim_get_hl(0, { name = group, link = false })
+	assert(highlight.bg == nil, group .. " must inherit the terminal background when Normal has none")
 end
 
 pcall(vim.api.nvim_del_augroup_by_name, "dotfiles-mini-map-code-layout")

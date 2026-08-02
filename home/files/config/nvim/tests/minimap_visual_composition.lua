@@ -100,7 +100,11 @@ wait_for(function()
 end, "encoded minimap span did not create one full-width display")
 
 local normal = vim.api.nvim_get_hl(0, { name = "MiniMapNormal", link = false })
-assert(normal.bg ~= nil and (not normal.blend or normal.blend == 0), "occupied interval background must be opaque")
+local editor_normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+assert(
+	normal.bg == editor_normal.bg and (not normal.blend or normal.blend == 0),
+	"occupied interval background must match Normal"
+)
 local display = assert(manager.rendered_maps[map_win], "minimap has no display float")
 local source_position = vim.api.nvim_win_get_position(source_win)
 local expected_left = source_position[2] + vim.api.nvim_win_get_width(source_win) - vim.api.nvim_win_get_width(map_win)
