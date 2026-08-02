@@ -1,11 +1,11 @@
 local dotfiles_root = assert(vim.env.DOTFILES_ROOT, "DOTFILES_ROOT is required")
 local nvim_root = vim.fs.joinpath(dotfiles_root, "home/files/config/nvim")
 
--- The configured preview is 36 content rows plus its border. Neovim's
+-- The configured preview is 43 content rows plus its border. Neovim's
 -- headless default is only 24x80, which makes the floating window clamp before
 -- this test can verify the requested size.
 if #vim.api.nvim_list_uis() == 0 then
-	vim.o.lines = math.max(vim.o.lines, 60)
+	vim.o.lines = math.max(vim.o.lines, 70)
 	vim.o.columns = math.max(vim.o.columns, 160)
 end
 
@@ -75,6 +75,12 @@ local function source_position(path, needle)
 	error(("%s was not found in %s"):format(needle, path))
 end
 
+local function filetype_window(filetype)
+	return vim.iter(vim.api.nvim_tabpage_list_wins(0)):find(function(win)
+		return vim.bo[vim.api.nvim_win_get_buf(win)].filetype == filetype
+	end)
+end
+
 local function assert_definition_preview(case)
 	vim.cmd.edit(vim.fn.fnameescape(case.source))
 	wait_for_lsp(0)
@@ -82,7 +88,7 @@ local function assert_definition_preview(case)
 	local label = ("%s at %s:%d:%d"):format(case.lhs, case.source, line, col)
 	local expected = definition_at(line, col, label)
 	local source_win = vim.api.nvim_get_current_win()
-	local expected_preview_height = math.min(vim.api.nvim_win_get_height(source_win), 36)
+	local expected_preview_height = math.min(vim.api.nvim_win_get_height(source_win), 43)
 	mapping(case.lhs)()
 
 	assert(
@@ -101,20 +107,60 @@ local function assert_definition_preview(case)
 
 	local preview_win = vim.api.nvim_get_current_win()
 	assert(vim.api.nvim_win_get_config(preview_win).relative ~= "", case.lhs .. " must focus the Glance preview")
+	assert(vim.w[preview_win].dotfiles_glance_preview == true, case.lhs .. " must mark its preview for Dropbar")
+	assert(
+		vim.wo[preview_win].winbar == "%{%v:lua.dropbar()%}",
+		case.lhs .. " must use Dropbar breadcrumbs in its preview"
+	)
+	local rendered_breadcrumb = ""
+	assert(
+		vim.wait(10000, function()
+			rendered_breadcrumb = vim.api.nvim_eval_statusline(vim.wo[preview_win].winbar, { winid = preview_win }).str
+			return rendered_breadcrumb:find(vim.fs.basename(expected.path), 1, true) ~= nil
+		end, 50),
+		("%s breadcrumb must identify %s (rendered=%q)"):format(
+			case.lhs,
+			vim.fs.basename(expected.path),
+			rendered_breadcrumb
+		)
+	)
 	assert(
 		vim.api.nvim_win_get_height(preview_win) == expected_preview_height,
 		("%s Glance preview height must be %d rows"):format(case.lhs, expected_preview_height)
 	)
+	local aerial_win = assert(filetype_window("aerial"), case.lhs .. " single definition must use an Aerial outline")
+	local preview_position = vim.fn.win_screenpos(preview_win)
+	local aerial_position = vim.fn.win_screenpos(aerial_win)
+	assert(
+		preview_position[1] == aerial_position[1] and preview_position[2] < aerial_position[2],
+		("%s Aerial outline must remain to the right of the preview (preview=%s, aerial=%s)"):format(
+			case.lhs,
+			vim.inspect(preview_position),
+			vim.inspect(aerial_position)
+		)
+	)
+	if case.nested then
+		mapping("gd")()
+		assert(
+			vim.wait(10000, function()
+				return vim.bo.filetype == "Glance"
+			end, 50),
+			case.lhs .. " nested definition must restore the Glance result list"
+		)
+		assert(filetype_window("aerial") == nil, case.lhs .. " nested definition must retire the stale Aerial outline")
+	end
 	require("glance").actions.close()
 	assert(vim.api.nvim_get_current_win() == source_win, case.lhs .. " must restore the source window on close")
+	assert(filetype_window("aerial") == nil, case.lhs .. " must close its Aerial outline with the preview")
 end
 
 local lsp_config = vim.fs.joinpath(nvim_root, "lua/plugins/lsp.lua")
 local keymaps = vim.fs.joinpath(nvim_root, "lua/config/keymaps.lua")
 
 for _, case in ipairs({
-	{ lhs = "gd", source = lsp_config, needle = 'executable("rustup")' },
+	{ lhs = "gd", source = lsp_config, needle = 'executable("rustup")', nested = true },
 	{ lhs = "gD", source = lsp_config, needle = 'executable("rustup")' },
+	{ lhs = "gd", source = lsp_config, needle = "child_ui_zindex()" },
 	{ lhs = "gd", source = keymaps, needle = "select_agent()" },
 	{ lhs = "gD", source = keymaps, needle = "select_agent()" },
 }) do

@@ -31,10 +31,17 @@ local glance_spec = vim.iter(specs):find(function(spec)
 	return spec[1] == "dnlhc/glance.nvim"
 end)
 assert(glance_spec and type(glance_spec.config) == "function", "Glance plugin config must exist")
+local dependencies = {}
+for _, dependency in ipairs(glance_spec.dependencies or {}) do
+	dependencies[dependency] = true
+end
+assert(dependencies["Bekaboo/dropbar.nvim"], "Glance must load Dropbar for preview breadcrumbs")
+assert(dependencies["stevearc/aerial.nvim"], "Glance must load Aerial for its single-result outline")
 glance_spec.config()
 
 assert(setup_opts.border.enable == true, "Glance border configuration regressed")
-assert(setup_opts.height == 36, "Glance code preview height must be doubled from 18 to 36 rows")
+assert(setup_opts.height == 43, "Glance code preview height must be 1.2 times the previous 36 rows")
+assert(setup_opts.winbar.enable == false, "Glance's built-in winbar must yield to Dropbar breadcrumbs")
 assert(setup_opts.zindex == 45, "Glance must keep its ordinary editor z-index by default")
 local before_open = assert(setup_opts.hooks.before_open, "Glance before_open hook must exist")
 local list_bufnr = vim.api.nvim_create_buf(false, true)

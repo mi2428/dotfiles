@@ -48,10 +48,11 @@ local function wait_for_preview(source_win, expected_path, expected_line, expect
 		if win == source_win or not vim.api.nvim_win_is_valid(win) then
 			return false
 		end
-		local has_glance_list = false
+		local has_glance_sidecar = false
 		for _, candidate in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-			if vim.bo[vim.api.nvim_win_get_buf(candidate)].filetype == "Glance" then
-				has_glance_list = true
+			local filetype = vim.bo[vim.api.nvim_win_get_buf(candidate)].filetype
+			if filetype == "Glance" or (filetype == "aerial" and vim.w[candidate].dotfiles_glance_aerial_layout) then
+				has_glance_sidecar = true
 				break
 			end
 		end
@@ -64,7 +65,7 @@ local function wait_for_preview(source_win, expected_path, expected_line, expect
 		return normalize(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win))) == expected_path
 			and cursor[1] == expected_line
 			and cursor[2] == expected_col
-			and has_glance_list
+			and has_glance_sidecar
 			and role ~= "worktree"
 			and role ~= "revision"
 	end)

@@ -217,7 +217,9 @@ local function dropbar_enabled(buf, win)
 		return false
 	end
 
-	if vim.api.nvim_win_get_config(win).relative ~= "" and vim.w[win].dotfiles_git_diff_peek_child ~= true then
+	local supported_float = vim.w[win].dotfiles_git_diff_peek_child == true
+		or vim.w[win].dotfiles_glance_preview == true
+	if vim.api.nvim_win_get_config(win).relative ~= "" and not supported_float then
 		return false
 	end
 
@@ -248,6 +250,18 @@ local function dropbar_enabled(buf, win)
 	}
 
 	return not vim.tbl_contains(disabled_filetypes, filetype) and not vim.tbl_contains(disabled_buftypes, buftype)
+end
+
+local function aerial_float_override(config, source_win)
+	if not source_win or not vim.api.nvim_win_is_valid(source_win) then
+		return config
+	end
+	local ok, aerial_win = pcall(vim.api.nvim_win_get_var, source_win, "aerial_win")
+	if not ok or not vim.api.nvim_win_is_valid(aerial_win) then
+		return config
+	end
+	local layout = vim.w[aerial_win].dotfiles_glance_aerial_layout
+	return type(layout) == "table" and layout or config
 end
 
 local function bufferline_highlights()
@@ -466,6 +480,12 @@ return {
 					right = 1,
 				},
 			},
+			sources = {
+				path = {
+					-- Keep the filename legible when a Glance preview shows a deep path.
+					min_widths = { 24 },
+				},
+			},
 			icons = {
 				ui = {
 					bar = {
@@ -538,6 +558,9 @@ return {
 			attach_mode = "global",
 			filter_kind = false,
 			show_guides = true,
+			float = {
+				override = aerial_float_override,
+			},
 			layout = {
 				default_direction = "right",
 				placement = "edge",

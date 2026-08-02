@@ -45,6 +45,7 @@ assert(aerial.opts.layout.win_opts.cursorline == true, "Aerial must show its nav
 assert(aerial.opts.layout.win_opts.number == false, "Aerial must disable absolute line numbers")
 assert(aerial.opts.layout.win_opts.relativenumber == false, "Aerial must disable relative line numbers")
 assert(aerial.opts.layout.win_opts.statuscolumn == "", "Aerial must disable the custom statuscolumn gutter")
+assert(type(aerial.opts.float.override) == "function", "Aerial must preserve an embedded Glance layout")
 
 local calls = {}
 local original_aerial = package.loaded.aerial

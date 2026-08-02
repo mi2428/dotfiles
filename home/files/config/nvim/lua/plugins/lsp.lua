@@ -417,17 +417,112 @@ return {
 	{
 		"dnlhc/glance.nvim",
 		cmd = "Glance",
+		dependencies = {
+			"Bekaboo/dropbar.nvim",
+			"stevearc/aerial.nvim",
+		},
 		config = function()
 			local glance = require("glance")
 			local glance_config = require("glance.config")
 			local default_zindex = 45
+			local dropbar_winbar = "%{%v:lua.dropbar()%}"
+			local method_labels = {
+				definitions = "Definitions",
+				implementations = "Implementations",
+				type_definitions = "Type definitions",
+			}
 			local function active_popup_zindex()
 				local ok, peek = pcall(require, "config.git_diff_peek")
 				return ok and peek.child_ui_zindex() or nil
 			end
-			local function focus_preview_at_current_location()
+			local function created_glance_windows(previous_windows)
+				local list_win, preview_win
+				for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+					if not previous_windows[win] and vim.api.nvim_win_get_config(win).relative ~= "" then
+						local filetype = vim.bo[vim.api.nvim_win_get_buf(win)].filetype
+						if filetype == "Glance" then
+							list_win = win
+						else
+							preview_win = win
+						end
+					end
+				end
+				return list_win, preview_win
+			end
+			local function allow_aerial_list_focus(list_win, preview_win)
+				if glance.cleanup and glance.cleanup > 0 then
+					pcall(vim.api.nvim_del_autocmd, glance.cleanup)
+				end
+				glance.cleanup = vim.api.nvim_create_autocmd({ "WinEnter", "BufEnter" }, {
+					group = "Glance",
+					callback = function()
+						local current_win = vim.api.nvim_get_current_win()
+						if current_win == list_win or current_win == preview_win then
+							return
+						end
+						if glance.cleanup and glance.cleanup > 0 then
+							vim.api.nvim_del_autocmd(glance.cleanup)
+							glance.cleanup = 0
+						end
+						glance.actions.close()
+					end,
+				})
+			end
+			local function decorate_glance(list_win, preview_win, method, result_count)
+				if not preview_win or not vim.api.nvim_win_is_valid(preview_win) then
+					return
+				end
+
+				vim.w[preview_win].dotfiles_glance_preview = true
+				local ok, dropbar = pcall(require, "dropbar.utils.bar")
+				if ok then
+					dropbar.attach(vim.api.nvim_win_get_buf(preview_win), preview_win)
+					vim.wo[preview_win].winbar = dropbar_winbar
+				end
+
+				if not list_win or not vim.api.nvim_win_is_valid(list_win) then
+					return
+				end
+
+				if result_count == 1 then
+					local aerial_ok, aerial = pcall(require, "aerial")
+					if aerial_ok then
+						allow_aerial_list_focus(list_win, preview_win)
+						local list_bufnr = vim.api.nvim_win_get_buf(list_win)
+						vim.bo[list_bufnr].bufhidden = "hide"
+						vim.w[list_win].dotfiles_glance_list_bufnr = list_bufnr
+						vim.w[list_win].dotfiles_glance_aerial_layout = vim.api.nvim_win_get_config(list_win)
+						vim.w[list_win].aerial_set_width = true
+						aerial.open_in_win(list_win, preview_win)
+						vim.wo[list_win].winbar = ""
+						return
+					end
+				end
+
+				local label = method_labels[method]
+					or (type(method) == "string" and method:gsub("_", " "))
+					or "Locations"
+				vim.wo[list_win].winbar = ("%%#GlanceWinBarTitle# %s (%d)%%*"):format(label, result_count)
+			end
+			local function restore_glance_list(method)
+				for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+					local list_bufnr = vim.w[win].dotfiles_glance_list_bufnr
+					if list_bufnr and vim.api.nvim_buf_is_valid(list_bufnr) then
+						vim.api.nvim_win_set_buf(win, list_bufnr)
+						vim.bo[list_bufnr].bufhidden = "wipe"
+						vim.w[win].dotfiles_glance_list_bufnr = nil
+						vim.w[win].dotfiles_glance_aerial_layout = nil
+						local label = method_labels[method]
+							or (type(method) == "string" and method:gsub("_", " "))
+							or "Locations"
+						vim.wo[win].winbar = ("%%#GlanceWinBarTitle# %s%%*"):format(label)
+					end
+				end
+			end
+			local function focus_preview_at_current_location(previous_windows, method, result_count)
 				local list_bufnr = vim.api.nvim_get_current_buf()
 				local enter_preview = glance.actions.enter_win("preview")
+				local list_win, preview_win = created_glance_windows(previous_windows)
 
 				vim.schedule(function()
 					if vim.api.nvim_buf_is_valid(list_bufnr) then
@@ -439,30 +534,47 @@ return {
 							modeline = false,
 						})
 					end
+					decorate_glance(list_win, preview_win, method, result_count)
 					enter_preview()
 				end)
 			end
 
 			glance.setup({
-				height = 36,
+				height = math.floor(36 * 1.2 + 0.5),
 				zindex = default_zindex,
 				border = {
 					enable = true,
 				},
+				winbar = {
+					enable = false,
+				},
 				hooks = {
-					before_open = function(results, open)
+					before_open = function(results, open, _, method)
 						-- Glance builds both floats synchronously from config.options.
 						-- Scope its elevated z-index to a live Git Diff Peek session;
 						-- after_close restores Glance's ordinary editor default.
 						glance_config.options.zindex = active_popup_zindex() or default_zindex
+						local previous_windows = {}
+						for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+							previous_windows[win] = true
+						end
 						open(results)
-						focus_preview_at_current_location()
+						focus_preview_at_current_location(previous_windows, method, #results)
 					end,
 					after_close = function()
 						glance_config.options.zindex = default_zindex
 					end,
 				},
 			})
+
+			-- Glance reuses its list window for a nested lookup started inside the
+			-- preview. Put the original list buffer back first so that workflow stays
+			-- functional after the single-result view has shown Aerial in its place.
+			local original_open = glance.actions.open
+			glance.actions.open = function(method, opts)
+				restore_glance_list(method)
+				return original_open(method, opts)
+			end
 		end,
 	},
 	{
