@@ -69,6 +69,20 @@ local function wait_for_preview(source_win, expected_path, expected_line, expect
 			and role ~= "worktree"
 			and role ~= "revision"
 	end)
+	local hidden_list
+	local embedded_aerial
+	for _, candidate in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+		local filetype = vim.bo[vim.api.nvim_win_get_buf(candidate)].filetype
+		if filetype == "Glance" then
+			hidden_list = candidate
+		elseif filetype == "aerial" and vim.w[candidate].dotfiles_glance_aerial_layout then
+			embedded_aerial = candidate
+		end
+	end
+	assert(vim.api.nvim_win_get_width(source_win) < 120, label .. ": test source must exercise the narrow layout")
+	assert(embedded_aerial == nil, label .. ": narrow Git Diff Peek must omit the embedded Aerial outline")
+	assert(hidden_list, label .. ": narrow Git Diff Peek must retain the Glance result state")
+	assert(vim.api.nvim_win_get_config(hidden_list).hide == true, label .. ": narrow Glance list must be hidden")
 	popup_state(label)
 end
 

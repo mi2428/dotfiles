@@ -426,6 +426,8 @@ return {
 			local glance_config = require("glance.config")
 			local default_zindex = 45
 			local dropbar_winbar = "%{%v:lua.dropbar()%}"
+			local aerial_max_width = require("config.sidebar").width
+			local min_code_preview_width = 80
 			local method_labels = {
 				definitions = "Definitions",
 				implementations = "Implementations",
@@ -449,6 +451,60 @@ return {
 				end
 				return list_win, preview_win
 			end
+			local function apply_glance_layout(list_win, preview_win, remember_original)
+				if not vim.api.nvim_win_is_valid(list_win) or not vim.api.nvim_win_is_valid(preview_win) then
+					return
+				end
+				local policy = vim.w[list_win].dotfiles_glance_layout_policy
+				if type(policy) ~= "table" then
+					return
+				end
+
+				local list_layout = vim.api.nvim_win_get_config(list_win)
+				local preview_layout = vim.api.nvim_win_get_config(preview_win)
+				if remember_original then
+					local original_list_layout = vim.deepcopy(list_layout)
+					original_list_layout.hide = false
+					vim.w[list_win].dotfiles_glance_original_list_layout = original_list_layout
+					vim.w[list_win].dotfiles_glance_original_preview_layout = vim.deepcopy(preview_layout)
+				end
+
+				local total_width = list_layout.width + preview_layout.width
+				local list_on_right = list_layout.col >= preview_layout.col
+				if policy.mode == "hidden" then
+					list_layout.hide = true
+					if list_on_right then
+						preview_layout.width = total_width
+					else
+						preview_layout.col = list_layout.col
+						preview_layout.width = total_width
+					end
+				else
+					local list_width = math.min(policy.max_width, list_layout.width)
+					list_layout.hide = false
+					list_layout.width = list_width
+					preview_layout.width = total_width - list_width
+					if list_on_right then
+						list_layout.col = preview_layout.col + preview_layout.width
+					else
+						preview_layout.col = list_layout.col + list_width
+					end
+				end
+
+				vim.api.nvim_win_set_config(list_win, list_layout)
+				vim.api.nvim_win_set_config(preview_win, preview_layout)
+				if policy.mode == "aerial" then
+					vim.w[list_win].dotfiles_glance_aerial_layout = vim.api.nvim_win_get_config(list_win)
+				end
+			end
+			local function set_glance_layout_policy(list_win, preview_win, mode)
+				vim.w[list_win].dotfiles_glance_layout_policy = {
+					mode = mode,
+					max_width = aerial_max_width,
+				}
+				vim.w[list_win].dotfiles_glance_preview_win = preview_win
+				apply_glance_layout(list_win, preview_win, true)
+			end
 			local function allow_aerial_list_focus(list_win, preview_win)
 				if glance.cleanup and glance.cleanup > 0 then
 					pcall(vim.api.nvim_del_autocmd, glance.cleanup)
@@ -468,7 +524,7 @@ return {
 					end,
 				})
 			end
-			local function decorate_glance(list_win, preview_win, method, result_count)
+			local function decorate_glance(list_win, preview_win, method, result_count, source_width)
 				if not preview_win or not vim.api.nvim_win_is_valid(preview_win) then
 					return
 				end
@@ -485,13 +541,20 @@ return {
 				end
 
 				if result_count == 1 then
+					if source_width < aerial_max_width + min_code_preview_width then
+						set_glance_layout_policy(list_win, preview_win, "hidden")
+						vim.w[list_win].dotfiles_glance_hidden_list = true
+						vim.wo[list_win].winbar = ""
+						return
+					end
+
 					local aerial_ok, aerial = pcall(require, "aerial")
 					if aerial_ok then
+						set_glance_layout_policy(list_win, preview_win, "aerial")
 						allow_aerial_list_focus(list_win, preview_win)
 						local list_bufnr = vim.api.nvim_win_get_buf(list_win)
 						vim.bo[list_bufnr].bufhidden = "hide"
 						vim.w[list_win].dotfiles_glance_list_bufnr = list_bufnr
-						vim.w[list_win].dotfiles_glance_aerial_layout = vim.api.nvim_win_get_config(list_win)
 						vim.w[list_win].aerial_set_width = true
 						aerial.open_in_win(list_win, preview_win)
 						vim.wo[list_win].winbar = ""
@@ -507,11 +570,33 @@ return {
 			local function restore_glance_list(method)
 				for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
 					local list_bufnr = vim.w[win].dotfiles_glance_list_bufnr
-					if list_bufnr and vim.api.nvim_buf_is_valid(list_bufnr) then
-						vim.api.nvim_win_set_buf(win, list_bufnr)
-						vim.bo[list_bufnr].bufhidden = "wipe"
-						vim.w[win].dotfiles_glance_list_bufnr = nil
+					local hidden_list = vim.w[win].dotfiles_glance_hidden_list == true
+					if hidden_list or (list_bufnr and vim.api.nvim_buf_is_valid(list_bufnr)) then
+						local preview_win = vim.w[win].dotfiles_glance_preview_win
+						local list_layout = vim.w[win].dotfiles_glance_original_list_layout
+						local preview_layout = vim.w[win].dotfiles_glance_original_preview_layout
+						vim.w[win].dotfiles_glance_layout_policy = nil
 						vim.w[win].dotfiles_glance_aerial_layout = nil
+						if list_bufnr and vim.api.nvim_buf_is_valid(list_bufnr) then
+							vim.api.nvim_win_set_buf(win, list_bufnr)
+							vim.bo[list_bufnr].bufhidden = "wipe"
+						end
+						if type(list_layout) == "table" then
+							list_layout.hide = false
+							vim.api.nvim_win_set_config(win, list_layout)
+						end
+						if
+							type(preview_layout) == "table"
+							and preview_win
+							and vim.api.nvim_win_is_valid(preview_win)
+						then
+							vim.api.nvim_win_set_config(preview_win, preview_layout)
+						end
+						vim.w[win].dotfiles_glance_list_bufnr = nil
+						vim.w[win].dotfiles_glance_hidden_list = nil
+						vim.w[win].dotfiles_glance_preview_win = nil
+						vim.w[win].dotfiles_glance_original_list_layout = nil
+						vim.w[win].dotfiles_glance_original_preview_layout = nil
 						local label = method_labels[method]
 							or (type(method) == "string" and method:gsub("_", " "))
 							or "Locations"
@@ -519,7 +604,7 @@ return {
 					end
 				end
 			end
-			local function focus_preview_at_current_location(previous_windows, method, result_count)
+			local function focus_preview_at_current_location(previous_windows, method, result_count, source_width)
 				local list_bufnr = vim.api.nvim_get_current_buf()
 				local enter_preview = glance.actions.enter_win("preview")
 				local list_win, preview_win = created_glance_windows(previous_windows)
@@ -534,7 +619,7 @@ return {
 							modeline = false,
 						})
 					end
-					decorate_glance(list_win, preview_win, method, result_count)
+					decorate_glance(list_win, preview_win, method, result_count, source_width)
 					enter_preview()
 				end)
 			end
@@ -558,14 +643,24 @@ return {
 						for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
 							previous_windows[win] = true
 						end
+						local source_width = vim.api.nvim_win_get_width(0)
 						open(results)
-						focus_preview_at_current_location(previous_windows, method, #results)
+						focus_preview_at_current_location(previous_windows, method, #results, source_width)
 					end,
 					after_close = function()
 						glance_config.options.zindex = default_zindex
 					end,
 				},
 			})
+
+			local original_on_resize = glance.on_resize
+			glance.on_resize = function(self, ...)
+				local result = original_on_resize(self, ...)
+				if self.list and self.preview then
+					apply_glance_layout(self.list.winnr, self.preview.winnr, true)
+				end
+				return result
+			end
 
 			-- Glance reuses its list window for a nested lookup started inside the
 			-- preview. Put the original list buffer back first so that workflow stays

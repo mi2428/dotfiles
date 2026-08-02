@@ -1,6 +1,7 @@
 local M = {}
 
 local sidebar_width = 40
+M.width = sidebar_width
 local source_windows = {}
 local sync_generation = 0
 local picker_sources = { "explorer", "diffview_files" }
@@ -15,7 +16,7 @@ end
 
 local function find_window(tab, filetype)
 	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
-		if window_filetype(win) == filetype then
+		if vim.api.nvim_win_get_config(win).relative == "" and window_filetype(win) == filetype then
 			return win
 		end
 	end

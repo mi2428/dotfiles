@@ -81,6 +81,7 @@ package.loaded.snacks = {
 }
 package.loaded["config.sidebar"] = nil
 local sidebar = require("config.sidebar")
+assert(sidebar.width == 40, "Aerial sidebar width must remain the shared 40-column layout cap")
 sidebar.sync()
 assert(
 	picker_sources[1] == "explorer" and picker_sources[2] == "diffview_files",
@@ -130,6 +131,23 @@ assert(aerial_open.source == editor, "startup Aerial must attach to the requeste
 assert(aerial_open.opts.focus == false, "startup Aerial must not steal focus")
 assert(vim.api.nvim_get_current_win() == explorer, "startup Aerial must restore the previously focused window")
 package.loaded.aerial = real_aerial
+
+local floating_aerial_buf = vim.api.nvim_create_buf(false, true)
+local floating_aerial = vim.api.nvim_open_win(floating_aerial_buf, false, {
+	relative = "editor",
+	row = 1,
+	col = 1,
+	width = 55,
+	height = 10,
+	style = "minimal",
+})
+vim.bo[floating_aerial_buf].filetype = "aerial"
+sidebar.sync()
+assert(
+	vim.api.nvim_win_get_width(floating_aerial) == 55,
+	"sidebar sync must not resize an Aerial embedded in a floating layout"
+)
+vim.api.nvim_win_close(floating_aerial, true)
 
 package.loaded.snacks = real_snacks
 package.loaded["config.sidebar"] = real_sidebar

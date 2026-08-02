@@ -1,5 +1,6 @@
 local dotfiles_root = assert(vim.env.DOTFILES_ROOT, "DOTFILES_ROOT is required")
 local nvim_root = vim.fs.joinpath(dotfiles_root, "home/files/config/nvim")
+local aerial_max_width = require("config.sidebar").width
 
 -- The configured preview is 43 content rows plus its border. Neovim's
 -- headless default is only 24x80, which makes the floating window clamp before
@@ -88,6 +89,14 @@ local function assert_definition_preview(case)
 	local label = ("%s at %s:%d:%d"):format(case.lhs, case.source, line, col)
 	local expected = definition_at(line, col, label)
 	local source_win = vim.api.nvim_get_current_win()
+	local sibling_win
+	if case.source_width then
+		vim.cmd("rightbelow vnew")
+		sibling_win = vim.api.nvim_get_current_win()
+		vim.api.nvim_set_current_win(source_win)
+		vim.api.nvim_win_set_width(source_win, case.source_width)
+	end
+	local source_width = vim.api.nvim_win_get_width(source_win)
 	local expected_preview_height = math.min(vim.api.nvim_win_get_height(source_win), 43)
 	mapping(case.lhs)()
 
@@ -128,11 +137,89 @@ local function assert_definition_preview(case)
 		vim.api.nvim_win_get_height(preview_win) == expected_preview_height,
 		("%s Glance preview height must be %d rows"):format(case.lhs, expected_preview_height)
 	)
+	if case.omit_aerial then
+		assert(filetype_window("aerial") == nil, case.lhs .. " narrow preview must omit Aerial")
+		local hidden_list = assert(filetype_window("Glance"), case.lhs .. " must retain its hidden result state")
+		assert(vim.api.nvim_win_get_config(hidden_list).hide == true, case.lhs .. " narrow result list must be hidden")
+		assert(
+			vim.api.nvim_win_get_config(preview_win).width == source_width,
+			case.lhs .. " narrow code preview must reclaim the hidden list width"
+		)
+		if case.nested then
+			mapping("gd")()
+			assert(
+				vim.wait(10000, function()
+					return vim.bo.filetype == "Glance" and vim.api.nvim_win_get_config(0).hide == false
+				end, 50),
+				case.lhs .. " nested definition must restore the hidden result list"
+			)
+		end
+		require("glance").actions.close()
+		assert(vim.api.nvim_get_current_win() == source_win, case.lhs .. " must restore the narrow source window")
+		if sibling_win and vim.api.nvim_win_is_valid(sibling_win) then
+			vim.api.nvim_win_close(sibling_win, true)
+		end
+		return
+	end
 	local aerial_win = assert(filetype_window("aerial"), case.lhs .. " single definition must use an Aerial outline")
+	local embedded_layout = assert(
+		vim.w[aerial_win].dotfiles_glance_aerial_layout,
+		case.lhs .. " Aerial outline must retain its allocated Glance layout"
+	)
+	local sidebar_sync_settled = false
+	vim.defer_fn(function()
+		sidebar_sync_settled = true
+	end, 100)
+	assert(
+		vim.wait(1000, function()
+			return sidebar_sync_settled
+		end),
+		case.lhs .. " sidebar layout did not settle"
+	)
+	local settled_layout = vim.api.nvim_win_get_config(aerial_win)
+	assert(
+		settled_layout.width == embedded_layout.width,
+		("%s Aerial outline width changed after sidebar sync (expected=%d, actual=%d)"):format(
+			case.lhs,
+			embedded_layout.width,
+			settled_layout.width
+		)
+	)
+	assert(
+		settled_layout.width == aerial_max_width,
+		("%s Aerial outline must be capped at %d columns (actual=%d)"):format(
+			case.lhs,
+			aerial_max_width,
+			settled_layout.width
+		)
+	)
+	assert(
+		vim.api.nvim_win_get_config(preview_win).width + settled_layout.width == source_width,
+		case.lhs .. " must return capped Aerial width to the code preview"
+	)
+	if case.resize_width then
+		vim.api.nvim_win_set_width(source_win, case.resize_width)
+		local upvalue_name, session = debug.getupvalue(require("glance").actions.next, 1)
+		assert(upvalue_name == "glance" and type(session) == "table", "active Glance session must be inspectable")
+		session:on_resize()
+		local resized_aerial_layout = vim.api.nvim_win_get_config(aerial_win)
+		local resized_preview_layout = vim.api.nvim_win_get_config(preview_win)
+		assert(
+			resized_aerial_layout.width == aerial_max_width,
+			case.lhs .. " resize must preserve the Aerial width cap"
+		)
+		assert(
+			resized_preview_layout.width + resized_aerial_layout.width == vim.api.nvim_win_get_width(source_win),
+			case.lhs .. " resize must continue to use the full source width"
+		)
+	end
 	local preview_position = vim.fn.win_screenpos(preview_win)
 	local aerial_position = vim.fn.win_screenpos(aerial_win)
+	local preview_layout = vim.api.nvim_win_get_config(preview_win)
+	local current_aerial_layout = vim.api.nvim_win_get_config(aerial_win)
 	assert(
-		preview_position[1] == aerial_position[1] and preview_position[2] < aerial_position[2],
+		preview_position[2] < aerial_position[2]
+			and preview_layout.col + preview_layout.width == current_aerial_layout.col,
 		("%s Aerial outline must remain to the right of the preview (preview=%s, aerial=%s)"):format(
 			case.lhs,
 			vim.inspect(preview_position),
@@ -152,6 +239,9 @@ local function assert_definition_preview(case)
 	require("glance").actions.close()
 	assert(vim.api.nvim_get_current_win() == source_win, case.lhs .. " must restore the source window on close")
 	assert(filetype_window("aerial") == nil, case.lhs .. " must close its Aerial outline with the preview")
+	if sibling_win and vim.api.nvim_win_is_valid(sibling_win) then
+		vim.api.nvim_win_close(sibling_win, true)
+	end
 end
 
 local lsp_config = vim.fs.joinpath(nvim_root, "lua/plugins/lsp.lua")
@@ -163,6 +253,21 @@ for _, case in ipairs({
 	{ lhs = "gd", source = lsp_config, needle = "child_ui_zindex()" },
 	{ lhs = "gd", source = keymaps, needle = "select_agent()" },
 	{ lhs = "gD", source = keymaps, needle = "select_agent()" },
+	{
+		lhs = "gd",
+		source = keymaps,
+		needle = "select_agent()",
+		source_width = 140,
+		resize_width = 150,
+	},
+	{
+		lhs = "gd",
+		source = lsp_config,
+		needle = 'executable("rustup")',
+		source_width = 100,
+		omit_aerial = true,
+		nested = true,
+	},
 }) do
 	assert_definition_preview(case)
 end
