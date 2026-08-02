@@ -473,6 +473,11 @@ if command -sq terminal-browser
     alias tb='terminal-browser'
 end
 
+if command -sq codex
+    alias codexx='codex --dangerously-bypass-hook-trust'
+    alias codexxx='codex --dangerously-bypass-approvals-and-sandbox'
+end
+
 if command -sq iperf3-rs
     alias iperf3='iperf3-rs'
 end
