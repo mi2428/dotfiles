@@ -4,6 +4,10 @@ onboarding = false
 default_shell = ""
 shell_mode = "login"
 
+[experimental]
+# terminal-browser renders through the Kitty graphics protocol inside panes.
+kitty_graphics = true
+
 [keys]
 prefix = "ctrl+t"
 
