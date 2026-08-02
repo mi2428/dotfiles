@@ -34,6 +34,7 @@ font-family = Summer Ghost
 font-family-bold = Summer Ghost
 font-family-italic = Summer Ghost
 font-family-bold-italic = Summer Ghost
+font-codepoint-map = U+2500-U+259F=Summer Ghost
 # Previous font configuration: Ubuntu Mono + PlemolJP Console
 # font-family = Ubuntu Mono
 # font-family = PlemolJP Console
