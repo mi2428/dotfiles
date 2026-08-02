@@ -665,8 +665,51 @@ return {
 			-- Glance reuses its list window for a nested lookup started inside the
 			-- preview. Put the original list buffer back first so that workflow stays
 			-- functional after the single-result view has shown Aerial in its place.
+			local nested_focus_group = vim.api.nvim_create_augroup("DotfilesGlanceNestedFocus", { clear = false })
+			local function active_glance_windows()
+				if type(glance.is_open) ~= "function" or not glance.is_open() then
+					return nil, nil
+				end
+				local list_win, preview_win
+				for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+					if vim.api.nvim_win_is_valid(win) then
+						if
+							vim.bo[vim.api.nvim_win_get_buf(win)].filetype == "Glance"
+							or vim.w[win].dotfiles_glance_list_bufnr ~= nil
+						then
+							list_win = win
+						end
+						if vim.w[win].dotfiles_glance_preview == true then
+							preview_win = win
+						end
+					end
+				end
+				return list_win, preview_win
+			end
 			local original_open = glance.actions.open
 			glance.actions.open = function(method, opts)
+				local list_win, preview_win = active_glance_windows()
+				if list_win and preview_win then
+					local wait_id
+					wait_id = vim.api.nvim_create_autocmd("WinEnter", {
+						group = nested_focus_group,
+						callback = function()
+							if vim.api.nvim_get_current_win() ~= list_win then
+								return
+							end
+							pcall(vim.api.nvim_del_autocmd, wait_id)
+							vim.schedule(function()
+								if vim.api.nvim_win_is_valid(preview_win) then
+									glance.actions.enter_win("preview")()
+									vim.cmd.stopinsert()
+								end
+							end)
+						end,
+					})
+					vim.defer_fn(function()
+						pcall(vim.api.nvim_del_autocmd, wait_id)
+					end, 5000)
+				end
 				restore_glance_list(method)
 				return original_open(method, opts)
 			end
