@@ -65,6 +65,9 @@ in {
     "k9s" = mkLink ../../files/config/k9s;
     "lazydocker/config.yml" = mkLink ../../files/config/lazydocker/config.yml;
     "lazygit" = mkLink ../../files/config/lazygit;
+    # Official Catppuccin OpenCode theme, vendored from catppuccin/opencode.
+    "opencode/themes/catppuccin-mocha-mauve.json" =
+      mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode/tui.json" = mkLink ../../files/config/opencode/tui.json;
     "starship" = mkLink ../../files/config/starship;
     "yazi" = mkLink yaziConfig;
