@@ -5,6 +5,7 @@
 # NOTE: Cross-platform shell-stack basics remain in Nix. Everything else that
 # is macOS-specific, GUI-oriented, or fast-moving belongs here.
 
+tap "anomalyco/tap"
 tap "aws/tap"
 tap "common-fate/granted"
 tap "fujiwara/tap"
@@ -122,6 +123,7 @@ brew "nmap"
 brew "node"
 brew "numbat"
 brew "ollama"
+brew "opencode"
 brew "pinentry-mac"
 brew "pipenv"
 brew "pipx"
