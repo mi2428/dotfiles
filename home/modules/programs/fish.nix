@@ -33,6 +33,7 @@ let
     "conf.d/21_functions.fish"
     "conf.d/23_completions.fish"
     "conf.d/40_grc.fish"
+    "completions/oc.fish"
     "lib/dotfiles_git_fzf_format.py"
     "lib/fzf_rows.py"
     "lib/dotfiles_git_ui_helpers.fish"
