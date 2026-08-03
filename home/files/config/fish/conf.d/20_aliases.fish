@@ -478,6 +478,10 @@ if command -sq codex
     alias codexxx='codex --dangerously-bypass-approvals-and-sandbox'
 end
 
+if command -sq opencode
+    alias oc='opencode'
+end
+
 if command -sq iperf3-rs
     alias iperf3='iperf3-rs'
 end
