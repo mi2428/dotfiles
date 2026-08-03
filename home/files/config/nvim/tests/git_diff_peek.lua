@@ -151,7 +151,7 @@ local bigfile_win = vim.api.nvim_open_win(bigfile_buf, false, {
 })
 local explicit_statuscolumn = "%=%l"
 peek.apply_editor_chrome(bigfile_win, { role = "worktree", statuscolumn = explicit_statuscolumn })
-assert(vim.wo[bigfile_win].statuscolumn == "", "bigfile worktree chrome must suppress statuscolumn")
+assert(vim.wo[bigfile_win].statuscolumn == explicit_statuscolumn, "bigfile worktree chrome must retain statuscolumn")
 assert(vim.wo[bigfile_win].foldcolumn == "1", "bigfile chrome must retain the fold rail")
 assert(vim.wo[bigfile_win].signcolumn == "no", "bigfile chrome must retain the sign rail contract")
 assert(vim.wo[bigfile_win].numberwidth == 3, "bigfile chrome must retain the number width")
@@ -716,11 +716,7 @@ for _, win in ipairs({ source_float, revision_float }) do
 	assert(style.wrap, "popup children must match direct Diffview wrapping")
 	assert(style.signcolumn == "no", "popup children must use the custom statuscolumn without signcolumn")
 	assert(style.number and style.relativenumber and style.numberwidth == 3, "popup number options mismatch")
-	if vim.w[win].dotfiles_git_diff_peek_role == "revision" then
-		assert(style.statuscolumn == baseline_statuscolumn, "popup revision must retain the dashboard statuscolumn")
-	else
-		assert(style.statuscolumn == "", "popup bigfile worktree must suppress statuscolumn")
-	end
+	assert(style.statuscolumn == baseline_statuscolumn, "popup panes must retain the dashboard statuscolumn")
 	local cursor_has_diff = vim.api.nvim_win_call(win, function()
 		local line = vim.api.nvim_win_get_cursor(win)[1]
 		return vim.fn.diff_hlID(line, 1) ~= 0

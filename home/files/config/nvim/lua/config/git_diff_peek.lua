@@ -635,8 +635,7 @@ function M.apply_editor_chrome(win, opts)
 			statuscolumn = vim.go.statuscolumn
 		end
 	end
-	local suppress_statuscolumn = vim.bo[buf].filetype == "bigfile" and role ~= "revision"
-	set_local_option(win, "statuscolumn", suppress_statuscolumn and "" or statuscolumn)
+	set_local_option(win, "statuscolumn", statuscolumn)
 	if role == "revision" and vim.w[win].dotfiles_git_diff_peek_breadcrumb then
 		set_local_option(win, "winbar", revision_winbar)
 	elseif opts.winbar ~= nil then

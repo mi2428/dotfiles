@@ -2,6 +2,27 @@ local M = {}
 
 local markdown_threshold = 64 * 1024
 
+local function original_filetype(buf)
+	local filetype = vim.b[buf].dotfiles_bigfile_original_filetype
+	return type(filetype) == "string" and filetype ~= "" and filetype ~= "bigfile" and filetype or nil
+end
+
+local function start_highlighting(buf)
+	local filetype = original_filetype(buf)
+	if not filetype then
+		return
+	end
+	local active = vim.treesitter.highlighter and vim.treesitter.highlighter.active
+	if active and active[buf] then
+		return
+	end
+	local lang_ok, lang = pcall(vim.treesitter.language.get_lang, filetype)
+	if lang_ok and lang and pcall(vim.treesitter.start, buf, lang) then
+		return
+	end
+	vim.bo[buf].syntax = filetype
+end
+
 local function markdown_path(path)
 	if type(path) ~= "string" then
 		return false
@@ -40,10 +61,10 @@ local function configure_window(win)
 	end
 	vim.wo[win].foldmethod = "manual"
 	vim.wo[win].foldcolumn = "0"
-	vim.wo[win].statuscolumn = ""
+	vim.wo[win].statuscolumn = vim.go.statuscolumn
 	vim.wo[win].conceallevel = 0
-	vim.wo[win].cursorline = false
-	vim.wo[win].relativenumber = false
+	vim.wo[win].cursorline = true
+	vim.wo[win].relativenumber = true
 	vim.wo[win].list = false
 	vim.wo[win].wrap = false
 	vim.wo[win].spell = false
@@ -60,11 +81,16 @@ function M.configure(ctx)
 	vim.b[buf].minihipatterns_disable = true
 	vim.b[buf].miniindentscope_disable = true
 	vim.b[buf].dotfiles_disable_hlchunk = true
-	if ctx and ctx.ft and ctx.ft ~= "" then
-		vim.b[buf].dotfiles_bigfile_original_filetype = ctx.ft
+	local detected_filetype = ctx and ctx.ft or nil
+	if not detected_filetype or detected_filetype == "" or detected_filetype == "bigfile" then
+		detected_filetype = original_filetype(buf) or vim.filetype.match({ buf = buf })
+	end
+	if detected_filetype and detected_filetype ~= "" and detected_filetype ~= "bigfile" then
+		vim.b[buf].dotfiles_bigfile_original_filetype = detected_filetype
 	end
 	vim.bo[buf].swapfile = false
 	vim.bo[buf].syntax = ""
+	start_highlighting(buf)
 	vim.api.nvim_buf_call(buf, function()
 		if vim.fn.exists(":NoMatchParen") ~= 0 then
 			vim.cmd([[NoMatchParen]])

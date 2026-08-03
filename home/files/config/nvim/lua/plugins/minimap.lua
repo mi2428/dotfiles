@@ -69,9 +69,7 @@ local function is_code_window(win)
 	end
 
 	local buf = vim.api.nvim_win_get_buf(win)
-	return vim.bo[buf].buftype == ""
-		and vim.bo[buf].filetype ~= "bigfile"
-		and vim.w[win].dotfiles_disable_minimap ~= true
+	return vim.bo[buf].buftype == "" and vim.w[win].dotfiles_disable_minimap ~= true
 end
 
 local function source_window(map)

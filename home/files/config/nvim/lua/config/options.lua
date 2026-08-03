@@ -158,7 +158,7 @@ local function cursorline_enabled(buf)
 
 	local filetype = vim.bo[buf].filetype
 	if filetype == "bigfile" then
-		return false
+		return true
 	end
 	return cursorline_filetypes[filetype] == true or (vim.bo[buf].buftype == "" and ignored_filetypes[filetype] ~= true)
 end
@@ -348,8 +348,7 @@ end
 local function set_relative_number(enabled)
 	-- Respect windows (Aerial, terminals, etc.) that intentionally disable the
 	-- number column instead of re-enabling a partial gutter on InsertLeave.
-	local buf = vim.api.nvim_get_current_buf()
-	vim.opt_local.relativenumber = enabled and vim.wo.number and vim.bo[buf].filetype ~= "bigfile"
+	vim.opt_local.relativenumber = enabled and vim.wo.number
 end
 
 local fold_symbols = {
