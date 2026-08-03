@@ -25,6 +25,7 @@
     "macSurface2": "#585b70",
     "macSurface1": "#45475a",
     "macSurface0": "#313244",
+    "macSurfaceSubtle": "#242436",
     "macBase": "#1e1e2e",
     "macMantle": "#181825",
     "macCrust": "#11111b"
@@ -71,8 +72,8 @@
       "light": "none"
     },
     "backgroundPanel": {
-      "dark": "none",
-      "light": "none"
+      "dark": "macSurfaceSubtle",
+      "light": "macSurfaceSubtle"
     },
     "backgroundElement": {
       "dark": "none",
@@ -115,12 +116,12 @@
       "light": "macRed"
     },
     "diffAddedBg": {
-      "dark": "#a6e3a180",
-      "light": "#a6e3a180"
+      "dark": "#a6e3a133",
+      "light": "#a6e3a133"
     },
     "diffRemovedBg": {
-      "dark": "#f38ba880",
-      "light": "#f38ba880"
+      "dark": "#f38ba833",
+      "light": "#f38ba833"
     },
     "diffContextBg": {
       "dark": "none",
@@ -131,12 +132,12 @@
       "light": "macSurface1"
     },
     "diffAddedLineNumberBg": {
-      "dark": "#a6e3a140",
-      "light": "#a6e3a140"
+      "dark": "#a6e3a126",
+      "light": "#a6e3a126"
     },
     "diffRemovedLineNumberBg": {
-      "dark": "#f38ba840",
-      "light": "#f38ba840"
+      "dark": "#f38ba826",
+      "light": "#f38ba826"
     },
     "markdownText": {
       "dark": "macText",
