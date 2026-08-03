@@ -1,4 +1,16 @@
 {
   "$schema": "https://opencode.ai/tui.json",
-  "theme": "catppuccin-mocha-mauve"
+  "theme": "catppuccin-mocha-mauve",
+  "diff_style": "auto",
+  "scroll_acceleration": {
+    "enabled": true
+  },
+  "attention": {
+    "enabled": true,
+    "notifications": true,
+    "sound": false
+  },
+  "keybinds": {
+    "variant_cycle": "<leader>v"
+  }
 }

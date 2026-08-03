@@ -3,6 +3,7 @@ local M = {}
 local agent_names = {
 	claude = "Claude Code",
 	codex = "Codex",
+	opencode = "OpenCode",
 }
 local selected_agents = {}
 
@@ -208,7 +209,7 @@ local function choose_agent(agents, root, force, callback)
 	end, agents)
 	local candidates = #matching > 0 and matching or agents
 	if #candidates == 0 then
-		notify("No Codex or Claude Code agent is running in Herdr", vim.log.levels.ERROR)
+		notify("No supported AI agent is running in Herdr", vim.log.levels.ERROR)
 		return
 	end
 
