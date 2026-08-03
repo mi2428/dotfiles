@@ -69,7 +69,9 @@ local function is_code_window(win)
 	end
 
 	local buf = vim.api.nvim_win_get_buf(win)
-	return vim.bo[buf].buftype == "" and vim.w[win].dotfiles_disable_minimap ~= true
+	return vim.bo[buf].buftype == ""
+		and vim.bo[buf].filetype ~= "bigfile"
+		and vim.w[win].dotfiles_disable_minimap ~= true
 end
 
 local function source_window(map)
@@ -200,12 +202,13 @@ end
 
 local function setup_code_layout(map)
 	if map._dotfiles_code_layout then
-		return
+		return map._dotfiles_resolve_filetype_source
 	end
 	map._dotfiles_code_layout = true
 
 	local manager = {
 		active_source = nil,
+		auto_enabled = true,
 		detached_source_margins = {},
 		enabled = false,
 		focused = false,
@@ -1197,6 +1200,7 @@ local function setup_code_layout(map)
 
 	local original_open = map.open
 	map.open = function(...)
+		manager.auto_enabled = true
 		manager.enabled = true
 		local args = { ... }
 		return manage_windows(function()
@@ -1224,6 +1228,9 @@ local function setup_code_layout(map)
 	if map.close then
 		local original_close = map.close
 		map.close = function(...)
+			if not manager.suppressing_close then
+				manager.auto_enabled = false
+			end
 			manager.enabled = false
 			local args = { ... }
 			return manage_windows(function()
@@ -1246,6 +1253,85 @@ local function setup_code_layout(map)
 	end
 
 	local group = vim.api.nvim_create_augroup("dotfiles-mini-map-code-layout", { clear = true })
+	local function eligible_source_in_tab(tabpage)
+		for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+			if is_code_window(win) then
+				return win
+			end
+		end
+	end
+	local function finish_source_resolution(previous, source)
+		local function finish()
+			manager.resolving_source = false
+			if manager.resolve_pending then
+				manager.resolve_pending = false
+				vim.schedule(map._dotfiles_resolve_filetype_source)
+			end
+		end
+		if previous == source then
+			finish()
+			return
+		end
+		vim.schedule(function()
+			vim.schedule(function()
+				if vim.api.nvim_win_is_valid(previous) then
+					manager.switching_source = true
+					vim.api.nvim_set_current_win(previous)
+					manager.switching_source = false
+				end
+				finish()
+			end)
+		end)
+	end
+	local function resolve_filetype_source()
+		if manager.resolving_source then
+			return
+		end
+		manager.resolving_source = true
+		local tabpage = vim.api.nvim_get_current_tabpage()
+		local native = map.current.win_data[tabpage]
+		local source = eligible_source_in_tab(tabpage)
+		if not source then
+			if native and vim.api.nvim_win_is_valid(native) then
+				manager.suppressing_close = true
+				map.close()
+				manager.suppressing_close = false
+			else
+				manager.close_all()
+			end
+			manager.resolving_source = false
+			return
+		end
+
+		local previous = vim.api.nvim_get_current_win()
+		if previous ~= source then
+			manager.switching_source = true
+			vim.api.nvim_set_current_win(source)
+			manager.switching_source = false
+		end
+		map._dotfiles_source_win = source
+		if native and vim.api.nvim_win_is_valid(native) then
+			map.refresh({}, { integrations = true, lines = true, layout = true })
+		elseif manager.auto_enabled then
+			map.open()
+		end
+		finish_source_resolution(previous, source)
+	end
+	map._dotfiles_resolve_filetype_source = resolve_filetype_source
+	vim.api.nvim_create_autocmd({ "FileType", "BufEnter" }, {
+		group = group,
+		pattern = "*",
+		callback = function(args)
+			if vim.bo[args.buf].buftype ~= "" or manager.switching_source then
+				return
+			end
+			if manager.resolving_source then
+				manager.resolve_pending = true
+			else
+				vim.schedule(resolve_filetype_source)
+			end
+		end,
+	})
 	vim.api.nvim_create_autocmd({ "WinNew", "WinClosed", "WinResized", "VimResized" }, {
 		group = group,
 		callback = function(args)
@@ -1365,6 +1451,7 @@ local function setup_code_layout(map)
 		end,
 	})
 	manager.schedule({ layout = true, integrations = true, lines = true, scrollbar = true })
+	return resolve_filetype_source
 end
 
 local function toggle_all_minimaps(map)
@@ -1465,9 +1552,8 @@ return {
 			set_minimap_highlights()
 
 			map.setup(opts)
-			setup_code_layout(map)
-			map.open()
-			style_minimap_window(map.current.win_data[vim.api.nvim_get_current_tabpage()])
+			local resolve_filetype_source = setup_code_layout(map)
+			vim.schedule(resolve_filetype_source)
 		end,
 	},
 }

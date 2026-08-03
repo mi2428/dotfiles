@@ -14,6 +14,9 @@ return {
 				return virt_text
 			end,
 			provider_selector = function(_, filetype, _)
+				if filetype == "bigfile" then
+					return ""
+				end
 				local language = vim.treesitter.language.get_lang(filetype) or filetype
 				local ok, query = pcall(vim.treesitter.query.get, language, "folds")
 				if ok and query then

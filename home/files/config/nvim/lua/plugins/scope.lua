@@ -25,6 +25,7 @@ local disabled_filetypes = {
 	snacks_terminal = true,
 	terminal = true,
 	Trouble = true,
+	bigfile = true,
 }
 
 local function scope_enabled(buf)

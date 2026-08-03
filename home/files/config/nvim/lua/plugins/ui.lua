@@ -249,7 +249,9 @@ local function dropbar_enabled(buf, win)
 		"terminal",
 	}
 
-	return not vim.tbl_contains(disabled_filetypes, filetype) and not vim.tbl_contains(disabled_buftypes, buftype)
+	return filetype ~= "bigfile"
+		and not vim.tbl_contains(disabled_filetypes, filetype)
+		and not vim.tbl_contains(disabled_buftypes, buftype)
 end
 
 local function aerial_float_override(config, source_win)
@@ -585,7 +587,7 @@ return {
 			-- Avoid treating every unloaded quickfix source buffer as a one-line
 			-- "bigfile". Keep the size-based guard, but do not use the average-line
 			-- heuristic until a buffer has been read.
-			bigfile = { enabled = true, line_length = math.huge },
+			bigfile = { enabled = true, line_length = math.huge, setup = require("config.bigfile").configure },
 			gh = {},
 			gitbrowse = { what = "permalink" },
 			image = {
