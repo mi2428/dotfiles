@@ -65,6 +65,7 @@ in {
     "k9s" = mkLink ../../files/config/k9s;
     "lazydocker/config.yml" = mkLink ../../files/config/lazydocker/config.yml;
     "lazygit" = mkLink ../../files/config/lazygit;
+    "opencode/tui.json" = mkLink ../../files/config/opencode/tui.json;
     "starship" = mkLink ../../files/config/starship;
     "yazi" = mkLink yaziConfig;
   };
