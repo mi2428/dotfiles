@@ -100,7 +100,7 @@ brew "jq"
 brew "k9s"
 brew "kind"
 brew "kn"
-brew "knative-extensions/kn-plugins/quickstart"
+brew "knative-extensions/kn-plugins/quickstart", trusted: true
 brew "kubeconform"
 brew "kubectl"
 brew "kubectx"
