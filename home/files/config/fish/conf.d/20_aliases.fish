@@ -474,19 +474,22 @@ if command -sq terminal-browser
 end
 
 if command -sq codex
-    alias codexx='codex --dangerously-bypass-hook-trust'
-    alias codexxx='codex --dangerously-bypass-approvals-and-sandbox'
+    #alias codex+='codex --dangerously-bypass-hook-trust'
+    alias codex++='codex --dangerously-bypass-approvals-and-sandbox'
 end
 
 if command -sq opencode
     # The default XDG root stays framework-plugin-free. `oc-omo` and `oc-slim`
     # select isolated framework roots while all three keep the shared Todo HUD.
     alias oc='opencode'
+    alias oc++='opencode --auto'
     if command -sq oc-omo
         alias ocomo='oc-omo'
+        alias ocomo++='oc-omo --auto'
     end
     if command -sq oc-slim
         alias ocslim='oc-slim'
+        alias ocslim++='oc-slim --auto'
     end
 end
 
