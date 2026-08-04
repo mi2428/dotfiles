@@ -31,6 +31,8 @@ let
     (lib.filterAttrs (_: type: type == "regular") (builtins.readDir binRoot));
   codexNvimEditEvent = ../../files/libexec/dotfiles/codex-nvim-edit-event;
   ghReviewPreview = ../../files/libexec/dotfiles/gh-review-preview;
+  herdrOpenCodeIntegration = config.lib.file.mkOutOfStoreSymlink
+    "${config.home.homeDirectory}/.config/opencode/plugins/herdr-agent-state.js";
   slimOpenCodePluginConfig = ../../files/config/opencode/profiles/slim/oh-my-opencode-slim.jsonc;
   macCompatibilityFiles = lib.optionalAttrs pkgs.stdenv.isDarwin {
     "Library/Application Support/com.mitchellh.ghostty/themes" =
@@ -80,6 +82,10 @@ in {
     "opencode-profiles/omo/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode-profiles/omo/opencode/tui.json" = mkLink ../../files/config/opencode/tui.json;
+    "opencode-profiles/omo/opencode/plugins/herdr-agent-state.js" = {
+      force = true;
+      source = herdrOpenCodeIntegration;
+    };
     "opencode-profiles/slim/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
     "opencode-profiles/slim/opencode/opencode.jsonc" =
       mkLink ../../files/config/opencode/profiles/slim/opencode.jsonc;
@@ -87,6 +93,10 @@ in {
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode-profiles/slim/opencode/tui.json" =
       mkLink ../../files/config/opencode/profiles/slim/tui.json;
+    "opencode-profiles/slim/opencode/plugins/herdr-agent-state.js" = {
+      force = true;
+      source = herdrOpenCodeIntegration;
+    };
     "starship" = mkLink ../../files/config/starship;
     "yazi" = mkLink yaziConfig;
   };
@@ -102,10 +112,36 @@ in {
     ".wgetrc" = mkLink ../../files/wget/wgetrc;
   };
 
+  # Herdr's installers are idempotent and keep each harness hook at the
+  # integration version shipped by the installed Herdr binary. Run this after
+  # links exist so the generated OpenCode plugin can also feed isolated roots.
+  home.activation.installHerdrAgentIntegrations = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+    herdr_bin="$(command -v herdr || true)"
+    if [ -z "$herdr_bin" ]; then
+      for candidate in /opt/homebrew/bin/herdr /usr/local/bin/herdr /home/linuxbrew/.linuxbrew/bin/herdr; do
+        if [ -x "$candidate" ]; then
+          herdr_bin="$candidate"
+          break
+        fi
+      done
+    fi
+
+    if [ -n "$herdr_bin" ]; then
+      for target in claude codex opencode; do
+        if command -v "$target" >/dev/null 2>&1 \
+          || [ -x "/opt/homebrew/bin/$target" ] \
+          || [ -x "/usr/local/bin/$target" ] \
+          || [ -x "/home/linuxbrew/.linuxbrew/bin/$target" ]; then
+          "$herdr_bin" integration install "$target" >/dev/null
+        fi
+      done
+    fi
+  '';
+
   # Herdr owns its SessionStart hook but preserves other entries in
   # ~/.codex/hooks.json. Merge the private Neovim edit bridge from its
   # immutable source; linkGeneration then projects the matching libexec path.
-  home.activation.installCodexNvimEditHooks = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  home.activation.installCodexNvimEditHooks = lib.hm.dag.entryAfter [ "installHerdrAgentIntegrations" ] ''
     if [ -d "${config.home.homeDirectory}/.codex" ]; then
       ${pkgs.python3}/bin/python3 \
         "${codexNvimEditEvent}" \

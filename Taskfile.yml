@@ -21,6 +21,12 @@ includes:
     vars:
       REPO_ROOT:
         ref: .REPO_ROOT
+  ai:
+    taskfile: ./taskfiles/ai.yml
+    flatten: true
+    vars:
+      REPO_ROOT:
+        ref: .REPO_ROOT
   secrets:
     taskfile: ./taskfiles/secrets.yml
     flatten: true
@@ -59,6 +65,8 @@ tasks:
         printf "$task_fmt" "$green" 'hm.gc' "$reset" 'Delete old generations and collect Nix garbage (run without sudo)'
         printf "$task_fmt" "$green" 'brew.check' "$reset" 'Check the repo-managed Brewfile against the local Homebrew state'
         printf "$task_fmt" "$green" 'brew.sync' "$reset" 'Update and upgrade Homebrew, then apply the repo-managed Brewfile'
+        printf "$task_fmt" "$green" 'ai.check' "$reset" 'Check AI harness versions, Herdr integrations, and pinned OpenCode config'
+        printf "$task_fmt" "$green" 'ai.upgrade' "$reset" 'Upgrade AI harnesses and refresh the exact OmO plugin/schema pin'
         printf "$task_fmt" "$green" 'secrets.encrypt' "$reset" 'Encrypt ssh and/or gnupg into chezmoi source state'
         printf "$task_fmt" "$green" 'secrets.decrypt' "$reset" 'Decrypt ssh and/or gnupg into a target directory'
         printf "$task_fmt" "$green" 'secrets.backup' "$reset" 'Backup ssh and gnupg into encrypted chezmoi source state'
@@ -79,6 +87,8 @@ tasks:
         printf '  %btask hm.update HOST=macos%b\n' "$green" "$reset"
         printf '  %btask hm.switch HOST=docker%b\n' "$green" "$reset"
         printf '  %btask hm.gc%b\n' "$green" "$reset"
+        printf '  %btask ai.check%b\n' "$green" "$reset"
+        printf '  %btask ai.upgrade OMO_VERSION=4.19.4%b\n' "$green" "$reset"
         printf '  %btask secrets.encrypt%b\n' "$green" "$reset"
         printf '  %btask secrets.encrypt BUNDLE=ssh%b\n' "$green" "$reset"
         printf "  %btask secrets.encrypt BUNDLE=gnupg GPG_KEY_IDS='E8D3009C6341BDEAF038009685AB6867E2147DDA'%b\n" "$green" "$reset"

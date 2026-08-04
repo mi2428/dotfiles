@@ -13,5 +13,5 @@
   "keybinds": {
     "variant_cycle": "<leader>v"
   },
-  "plugin": ["oh-my-openagent"]
+  "plugin": ["oh-my-openagent@4.19.4"]
 }

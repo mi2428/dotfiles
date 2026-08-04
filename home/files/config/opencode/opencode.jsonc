@@ -8,9 +8,9 @@
   // OpenCode can publish a share link.
   "share": "disabled",
 
-  // OpenCode resolves bare npm plugin names to the latest release. OmO's
-  // duplicate updater stays disabled so resolution remains OpenCode-owned.
-  "plugin": ["oh-my-openagent"],
+  // Keep the in-process plugin reproducible. `task ai.upgrade` updates this
+  // exact pin together with tui.json and the matching OmO schema URL.
+  "plugin": ["oh-my-openagent@4.19.4"],
 
   // Keep OpenAI as the default and GPT-native backend while making Bedrock's
   // Claude Opus 5 available to OmO's Claude-oriented agents.
