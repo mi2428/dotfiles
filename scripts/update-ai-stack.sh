@@ -3,8 +3,14 @@ set -eu
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH='' cd -- "$script_dir/.." && pwd)
+plugin_versions="$repo_root/home/files/config/opencode/plugin-versions.json"
 omo_version=${1:-}
 slim_version=${2:-}
+
+if ! command -v jq >/dev/null 2>&1; then
+    printf '%s\n' 'update-ai-stack: jq is required' >&2
+    exit 1
+fi
 
 if [ -z "$omo_version" ] || [ -z "$slim_version" ]; then
     if ! command -v npm >/dev/null 2>&1; then
@@ -59,20 +65,14 @@ replace_to_file() {
     mv "$temporary_file" "$source_file"
 }
 
-replace_to_file \
-    "$repo_root/home/files/config/opencode/profiles/omo/opencode.jsonc" \
-    "s/oh-my-openagent(@[0-9A-Za-z.+-]+)?/oh-my-openagent@${omo_version}/g"
-replace_to_file \
-    "$repo_root/home/files/config/opencode/profiles/omo/tui.json" \
-    "s/oh-my-openagent(@[0-9A-Za-z.+-]+)?/oh-my-openagent@${omo_version}/g"
+versions_temporary=$(mktemp "${plugin_versions}.XXXXXX")
+jq --arg omo "$omo_version" --arg slim "$slim_version" \
+    '.omo = $omo | .slim = $slim' \
+    "$plugin_versions" > "$versions_temporary"
+chmod --reference="$plugin_versions" "$versions_temporary" 2>/dev/null || chmod 0644 "$versions_temporary"
+mv "$versions_temporary" "$plugin_versions"
+
 replace_to_file \
     "$repo_root/home/files/omo/omo.jsonc" \
     "s#https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/[^\"]+/assets/omo.schema.json#${schema_url}#g"
-replace_to_file \
-    "$repo_root/home/files/config/opencode/profiles/slim/opencode.jsonc" \
-    "s/oh-my-opencode-slim(@[0-9A-Za-z.+-]+)?/oh-my-opencode-slim@${slim_version}/g"
-replace_to_file \
-    "$repo_root/home/files/config/opencode/profiles/slim/tui.json" \
-    "s/oh-my-opencode-slim(@[0-9A-Za-z.+-]+)?/oh-my-opencode-slim@${slim_version}/g"
-
 printf 'Pinned oh-my-openagent to %s and oh-my-opencode-slim to %s.\n' "$omo_version" "$slim_version"

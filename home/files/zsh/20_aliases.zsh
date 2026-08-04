@@ -1286,8 +1286,8 @@ alias sshh='sshuttle'
 
 
 if whence -p opencode 1> /dev/null; then
-  # The default XDG root is deliberately plugin-free. `oc-omo` and `oc-slim`
-  # select a framework profile through their own isolated config root.
+  # The default XDG root stays framework-plugin-free. `oc-omo` and `oc-slim`
+  # select isolated framework roots while all three keep the shared Todo HUD.
   alias oc='opencode'
   if whence -p oc-omo 1> /dev/null; then
     alias ocomo='oc-omo'

@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 
 silent: true
 
@@ -87,8 +87,6 @@ tasks:
         printf '  %btask hm.update HOST=macos%b\n' "$green" "$reset"
         printf '  %btask hm.switch HOST=docker%b\n' "$green" "$reset"
         printf '  %btask hm.gc%b\n' "$green" "$reset"
-        printf '  %btask ai.check%b\n' "$green" "$reset"
-        printf '  %btask ai.upgrade OMO_VERSION=4.19.4 SLIM_VERSION=2.2.9%b\n' "$green" "$reset"
         printf '  %btask secrets.encrypt%b\n' "$green" "$reset"
         printf '  %btask secrets.encrypt BUNDLE=ssh%b\n' "$green" "$reset"
         printf "  %btask secrets.encrypt BUNDLE=gnupg GPG_KEY_IDS='E8D3009C6341BDEAF038009685AB6867E2147DDA'%b\n" "$green" "$reset"

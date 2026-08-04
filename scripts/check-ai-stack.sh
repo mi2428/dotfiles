@@ -14,6 +14,10 @@ fail() {
     failures=$((failures + 1))
 }
 
+warn() {
+    printf 'warning: %s\n' "$1" >&2
+}
+
 require_command() {
     label=$1
     command_name=$2
@@ -61,59 +65,26 @@ if command -v herdr >/dev/null 2>&1; then
     ok "Herdr $(herdr --version)"
 fi
 
-omo_plugin_config="$repo_root/home/files/config/opencode/profiles/omo/opencode.jsonc"
-omo_tui_config="$repo_root/home/files/config/opencode/profiles/omo/tui.json"
-slim_plugin_config="$repo_root/home/files/config/opencode/profiles/slim/opencode.jsonc"
-slim_tui_config="$repo_root/home/files/config/opencode/profiles/slim/tui.json"
-default_plugin_config="$repo_root/home/files/config/opencode/opencode.jsonc"
-default_tui_config="$repo_root/home/files/config/opencode/tui.json"
+plugin_versions="$repo_root/home/files/config/opencode/plugin-versions.json"
+omo_version=$(jq -er '.omo' "$plugin_versions")
+slim_version=$(jq -er '.slim' "$plugin_versions")
+omo_plugin_spec="oh-my-openagent@$omo_version"
+slim_plugin_spec="oh-my-opencode-slim@$slim_version"
+default_plugin_config="$HOME/.config/opencode/opencode.jsonc"
+default_tui_config="$HOME/.config/opencode/tui.json"
 omo_config="$repo_root/home/files/omo/omo.jsonc"
 
-omo_plugin_spec=$(sed -n 's/.*"\(oh-my-openagent@[^"]*\)".*/\1/p' "$omo_plugin_config" | head -n 1)
-omo_tui_plugin_spec=$(sed -n 's/.*"\(oh-my-openagent@[^"]*\)".*/\1/p' "$omo_tui_config" | head -n 1)
-case "$omo_plugin_spec" in
-    oh-my-openagent@*)
-        omo_version=${omo_plugin_spec#oh-my-openagent@}
-        if printf '%s\n' "$omo_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)*$'; then
-            ok "OpenCode pins $omo_plugin_spec"
-        else
-            fail "OpenCode OmO plugin pin is not an exact version: $omo_plugin_spec"
-        fi
-        ;;
-    *)
-        omo_version=
-        fail 'OpenCode does not use an exact oh-my-openagent pin'
-        ;;
-esac
-
-if [ -n "$omo_plugin_spec" ] && [ "$omo_tui_plugin_spec" = "$omo_plugin_spec" ]; then
-    ok "OmO profile tui.json uses the same $omo_plugin_spec pin"
-else
-    fail "OmO profile tui.json pin does not match OmO profile opencode.jsonc ($omo_tui_plugin_spec != $omo_plugin_spec)"
-fi
-
-slim_plugin_spec=$(sed -n 's/.*"\(oh-my-opencode-slim@[^"]*\)".*/\1/p' "$slim_plugin_config" | head -n 1)
-slim_tui_plugin_spec=$(sed -n 's/.*"\(oh-my-opencode-slim@[^"]*\)".*/\1/p' "$slim_tui_config" | head -n 1)
-case "$slim_plugin_spec" in
-    oh-my-opencode-slim@*)
-        slim_version=${slim_plugin_spec#oh-my-opencode-slim@}
-        if printf '%s\n' "$slim_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)*$'; then
-            ok "OpenCode pins $slim_plugin_spec"
-        else
-            fail "OpenCode Slim plugin pin is not an exact version: $slim_plugin_spec"
-        fi
-        ;;
-    *)
-        slim_version=
-        fail 'OpenCode does not use an exact oh-my-opencode-slim pin'
-        ;;
-esac
-
-if [ -n "$slim_plugin_spec" ] && [ "$slim_tui_plugin_spec" = "$slim_plugin_spec" ]; then
-    ok "Slim profile tui.json uses the same $slim_plugin_spec pin"
-else
-    fail "Slim profile tui.json pin does not match Slim profile opencode.jsonc ($slim_tui_plugin_spec != $slim_plugin_spec)"
-fi
+for pin in "OmO:$omo_plugin_spec:$omo_version" "Slim:$slim_plugin_spec:$slim_version"; do
+    label=${pin%%:*}
+    remainder=${pin#*:}
+    plugin_spec=${remainder%%:*}
+    version=${remainder#*:}
+    if printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)*$'; then
+        ok "OpenCode pins $plugin_spec"
+    else
+        fail "OpenCode $label plugin pin is not an exact version: $plugin_spec"
+    fi
+done
 
 check_npm_plugin_version() {
     package=$1
@@ -133,6 +104,11 @@ check_npm_plugin_version oh-my-opencode-slim "$slim_version"
 
 default_root_clean=true
 for config in "$default_plugin_config" "$default_tui_config"; do
+    if [ ! -f "$config" ]; then
+        fail "the default OpenCode config is missing: $config"
+        default_root_clean=false
+        continue
+    fi
     if grep -Fq 'oh-my-openagent' "$config" || grep -Fq 'oh-my-opencode-slim' "$config"; then
         default_root_clean=false
     fi
@@ -141,6 +117,12 @@ if [ "$default_root_clean" = true ]; then
     ok "the default OpenCode config root stays framework-plugin-free"
 else
     fail "the default OpenCode config root contains a framework plugin reference"
+fi
+if [ -f "$default_tui_config" ] \
+    && jq -e '.plugin | index("./plugins/tui") != null' "$default_tui_config" >/dev/null; then
+    ok 'the default OpenCode TUI loads the shared Todo plugin'
+else
+    fail 'the default OpenCode TUI does not load the shared Todo plugin'
 fi
 
 schema_url=$(awk -F'"' '/"[$]schema"/ { print $4; exit }' "$omo_config")
@@ -161,9 +143,11 @@ fi
 
 check_resolved_plugin_config() {
     profile_name=$1
-    config_file=$2
+    profile_id=$2
     plugin_spec=$3
-    if resolved_config=$(OPENCODE_CONFIG="$config_file" opencode debug config --pure 2>/dev/null); then
+    profile_config_home="$HOME/.config/opencode-profiles/$profile_id"
+    profile_root="$profile_config_home/opencode"
+    if resolved_config=$(XDG_CONFIG_HOME="$profile_config_home" opencode debug config --pure 2>/dev/null); then
         resolved_plugin=$(printf '%s\n' "$resolved_config" | jq -r --arg spec "$plugin_spec" '.plugin[]? | select(. == $spec)' | head -n 1)
         if [ "$resolved_plugin" = "$plugin_spec" ]; then
             ok "OpenCode resolves the pinned $profile_name plugin config"
@@ -171,13 +155,27 @@ check_resolved_plugin_config() {
             fail "OpenCode resolved $profile_name config does not contain $plugin_spec"
         fi
     else
-        fail "OpenCode could not resolve $config_file"
+        fail "OpenCode could not resolve the installed $profile_name profile"
+    fi
+
+    if jq -e --arg spec "$plugin_spec" \
+        '.plugin | index($spec) != null and index("./plugins/tui") != null' \
+        "$profile_root/tui.json" >/dev/null; then
+        ok "OpenCode $profile_name TUI loads its framework and shared Todo plugin"
+    else
+        fail "OpenCode $profile_name TUI plugin registry is incomplete"
+    fi
+
+    if [ -f "$profile_root/plugins/profile-shell-env.js" ]; then
+        ok "OpenCode $profile_name restores the caller XDG root for shell tools"
+    else
+        fail "OpenCode $profile_name profile shell environment plugin is missing"
     fi
 }
 
 if command -v opencode >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-    check_resolved_plugin_config OmO "$omo_plugin_config" "$omo_plugin_spec"
-    check_resolved_plugin_config Slim "$slim_plugin_config" "$slim_plugin_spec"
+    check_resolved_plugin_config OmO omo "$omo_plugin_spec"
+    check_resolved_plugin_config Slim slim "$slim_plugin_spec"
 fi
 
 if command -v herdr >/dev/null 2>&1; then
@@ -204,6 +202,39 @@ if [ -f "$integration_source" ]; then
     done
 else
     fail "Herdr OpenCode integration is missing: $integration_source"
+    for profile in omo slim; do
+        profile_integration="$HOME/.config/opencode-profiles/$profile/opencode/plugins/herdr-agent-state.js"
+        if [ -L "$profile_integration" ] && [ ! -e "$profile_integration" ]; then
+            fail "OpenCode $profile profile contains a dangling Herdr integration"
+        fi
+    done
+fi
+
+for skill_path in \
+    "$HOME/.agents/skills/herdr-agent-layout" \
+    "$HOME/.claude/skills/herdr-agent-layout"; do
+    if [ -f "$skill_path/SKILL.md" ]; then
+        ok "Herdr agent-layout skill is installed at $skill_path"
+    else
+        fail "Herdr agent-layout skill is missing: $skill_path"
+    fi
+done
+if command -v opencode >/dev/null 2>&1 \
+    && opencode debug skill 2>/dev/null \
+        | jq -e '[.[] | select(.name == "herdr-agent-layout")] | length == 1' >/dev/null; then
+    ok 'OpenCode discovers exactly one managed Herdr agent-layout skill'
+else
+    fail 'OpenCode does not discover exactly one Herdr agent-layout skill'
+fi
+
+slim_seed="$HOME/.config/opencode-profiles/slim/opencode/oh-my-opencode-slim.seed.jsonc"
+slim_runtime="$HOME/.config/opencode-profiles/slim/opencode/oh-my-opencode-slim.jsonc"
+if [ ! -f "$slim_seed" ] || [ ! -f "$slim_runtime" ]; then
+    fail 'OpenCode Slim managed seed or writable runtime config is missing'
+elif cmp -s "$slim_seed" "$slim_runtime"; then
+    ok 'OpenCode Slim runtime config matches its managed seed'
+else
+    warn "OpenCode Slim runtime config has local /preset drift; run 'oc-slim-config status' to inspect"
 fi
 
 if [ "$failures" -ne 0 ]; then

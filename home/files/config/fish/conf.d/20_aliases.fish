@@ -479,8 +479,8 @@ if command -sq codex
 end
 
 if command -sq opencode
-    # The default XDG root is deliberately plugin-free. `oc-omo` and `oc-slim`
-    # select a framework profile through their own isolated config root.
+    # The default XDG root stays framework-plugin-free. `oc-omo` and `oc-slim`
+    # select isolated framework roots while all three keep the shared Todo HUD.
     alias oc='opencode'
     if command -sq oc-omo
         alias ocomo='oc-omo'
