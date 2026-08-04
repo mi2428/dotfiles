@@ -17,6 +17,7 @@ case "$profile" in
         ;;
 esac
 
+caller_config_home=${XDG_CONFIG_HOME:-"${HOME:?}/.config"}
 profile_config_home=${OPENCODE_PROFILE_CONFIG_HOME:-"${HOME:?}/.config/opencode-profiles/$profile"}
 profile_config="$profile_config_home/opencode"
 if [ ! -f "$profile_config/opencode.jsonc" ]; then
@@ -25,6 +26,7 @@ if [ ! -f "$profile_config/opencode.jsonc" ]; then
     exit 78
 fi
 
+export OPENCODE_CHILD_XDG_CONFIG_HOME="$caller_config_home"
 export XDG_CONFIG_HOME="$profile_config_home"
 # Do not let an externally supplied OpenCode config override the selected
 # profile (the profile switch itself is the source of truth).

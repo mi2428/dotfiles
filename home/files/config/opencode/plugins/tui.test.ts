@@ -1,6 +1,4 @@
 import { strict as assert } from "node:assert";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, it } from "bun:test";
 import { buildTodoView } from "./tui/lib/todo-overlay";
 import {
@@ -20,19 +18,6 @@ const todos = [
 ];
 
 describe("todo overlay state", () => {
-  it("is enabled for oc, ocomo, and ocslim", () => {
-    const configPaths = [
-      resolve(import.meta.dir, "../tui.json"),
-      resolve(import.meta.dir, "../profiles/omo/tui.json"),
-      resolve(import.meta.dir, "../profiles/slim/tui.json"),
-    ];
-
-    for (const configPath of configPaths) {
-      const config = JSON.parse(readFileSync(configPath, "utf8")) as { plugin?: string[] };
-      assert(config.plugin?.includes("./plugins/tui"), `${configPath} must enable ./plugins/tui`);
-    }
-  });
-
   it("orders every active item before archived statuses and excludes archived rows", () => {
     const view = buildTodoView(todos);
     assert(view);

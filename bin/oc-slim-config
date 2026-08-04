@@ -1,0 +1,43 @@
+#!/bin/sh
+set -eu
+
+config_root=${OPENCODE_SLIM_CONFIG_ROOT:-"${HOME:?}/.config/opencode-profiles/slim/opencode"}
+seed="$config_root/oh-my-opencode-slim.seed.jsonc"
+runtime="$config_root/oh-my-opencode-slim.jsonc"
+
+usage() {
+    printf '%s\n' 'usage: oc-slim-config {status|reset --force}' >&2
+    exit 64
+}
+
+if [ ! -f "$seed" ]; then
+    printf 'oc-slim-config: managed seed is missing: %s\n' "$seed" >&2
+    printf '%s\n' 'run Home Manager activation, then retry' >&2
+    exit 78
+fi
+
+case ${1:-} in
+    status)
+        if [ ! -e "$runtime" ]; then
+            printf '%s\n' 'missing: runtime config has not been initialized'
+            exit 1
+        fi
+        if cmp -s "$seed" "$runtime"; then
+            printf '%s\n' 'synchronized: runtime config matches the managed seed'
+        else
+            printf '%s\n' 'drifted: runtime config contains local /preset changes'
+            exit 1
+        fi
+        ;;
+    reset)
+        [ "${2:-}" = "--force" ] || usage
+        temporary=$(mktemp "$config_root/.oh-my-opencode-slim.jsonc.XXXXXX")
+        cp "$seed" "$temporary"
+        chmod 0644 "$temporary"
+        mv "$temporary" "$runtime"
+        printf '%s\n' 'reset: runtime config now matches the managed seed'
+        ;;
+    *)
+        usage
+        ;;
+esac
