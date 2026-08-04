@@ -76,8 +76,10 @@ in {
   };
 
   home.file = binFiles // macCompatibilityFiles // {
+    ".omo/omo.jsonc" = mkLink ../../files/omo/omo.jsonc;
     ".local/libexec/dotfiles/codex-nvim-edit-event" = mkLink codexNvimEditEvent;
     ".local/libexec/dotfiles/gh-review-preview" = mkLink ghReviewPreview;
+    ".gitignore" = mkLink ../../files/git/gitignore;
     ".curlrc" = mkLink ../../files/curl/curlrc;
     ".lesskey" = mkLink ../../files/less/lesskey;
     ".screenrc" = mkLink ../../files/screen/screenrc;

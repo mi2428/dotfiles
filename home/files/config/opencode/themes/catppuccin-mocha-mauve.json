@@ -76,8 +76,8 @@
       "light": "macSurfaceSubtle"
     },
     "backgroundElement": {
-      "dark": "none",
-      "light": "none"
+      "dark": "macSurfaceSubtle",
+      "light": "macSurfaceSubtle"
     },
     "border": {
       "dark": "macSurface0",

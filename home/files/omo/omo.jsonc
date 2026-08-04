@@ -1,0 +1,156 @@
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/omo.schema.json",
+
+  // The unified schema requires a profile map even when no profile is active.
+  "profiles": {},
+
+  "[opencode]": {
+    // Keep OmO's duplicate updater disabled; OpenCode owns plugin resolution
+    // while preserving the privacy posture of the surrounding configuration.
+    "auto_update": false,
+    "telemetry": false,
+
+    // Metis is tuned for Claude/Kimi. Prometheus and Momus cover planning and
+    // review with the OpenAI models already available through ChatGPT auth.
+    "disabled_agents": ["metis"],
+
+    // Neovim owns LSP diagnostics, terminal-browser owns browser automation,
+    // and external search services remain opt-in.
+    "disabled_mcps": ["websearch", "context7", "grep_app", "lsp"],
+    "disabled_skills": [
+      "playwright",
+      "playwright-cli",
+      "agent-browser",
+      "dev-browser",
+      "git-master",
+    ],
+
+    // OpenCode already owns notifications and compaction for Herdr's
+    // long-running sessions. CodeGraph is also disabled below.
+    "disabled_hooks": [
+      "auto-update-checker",
+      "session-notification",
+      "preemptive-compaction",
+      "tool-output-truncator",
+      "codegraph-bootstrap",
+    ],
+
+    // Avoid inheriting the global xhigh setting for every delegated task.
+    "agents": {
+      "sisyphus": {
+        "model": "openai/gpt-5.6-sol",
+        "reasoning": "medium",
+      },
+      "hephaestus": {
+        "model": "openai/gpt-5.6-sol",
+        "reasoning": "medium",
+      },
+      "prometheus": {
+        "model": "openai/gpt-5.6-sol",
+        "reasoning": "xhigh",
+      },
+      "oracle": {
+        "model": "openai/gpt-5.6-sol",
+        "reasoning": "xhigh",
+      },
+      "momus": {
+        "model": "openai/gpt-5.6-terra",
+        "reasoning": "high",
+      },
+      "atlas": {
+        "model": "openai/gpt-5.6-sol",
+        "reasoning": "medium",
+      },
+      "sisyphus-junior": {
+        "model": "openai/gpt-5.6-sol",
+        "reasoning": "medium",
+      },
+      "explore": {
+        "model": "openai/gpt-5.6-luna-fast",
+        "reasoning": "low",
+      },
+      "librarian": {
+        "model": "openai/gpt-5.6-luna-fast",
+        "reasoning": "low",
+      },
+      "multimodal-looker": {
+        "model": "openai/gpt-5.6-sol",
+        "reasoning": "low",
+      },
+    },
+
+    "categories": {
+      "visual-engineering": {
+        "model": "openai/gpt-5.6-sol",
+        "reasoning": "medium",
+      },
+      "ultrabrain": {
+        "model": "openai/gpt-5.6-sol",
+        "reasoning": "xhigh",
+      },
+      "deep": {
+        "model": "openai/gpt-5.6-sol",
+        "reasoning": "medium",
+      },
+      "artistry": {
+        "model": "openai/gpt-5.6-terra",
+        "reasoning": "high",
+      },
+      "quick": {
+        "model": "openai/gpt-5.6-luna-fast",
+        "reasoning": "low",
+      },
+      "unspecified-low": {
+        "model": "openai/gpt-5.6-luna",
+        "reasoning": "medium",
+      },
+      "unspecified-high": {
+        "model": "openai/gpt-5.6-sol",
+        "reasoning": "high",
+      },
+      "writing": {
+        "model": "openai/gpt-5.6-terra",
+        "reasoning": "low",
+      },
+    },
+
+    "background_task": {
+      "defaultConcurrency": 3,
+      "providerConcurrency": {
+        "openai": 3,
+      },
+      "modelConcurrency": {
+        "openai/gpt-5.6-sol": 2,
+        "openai/gpt-5.6-luna-fast": 3,
+      },
+    },
+
+    // Do not provision project indexes or leave a background daemon running.
+    "codegraph": {
+      "auto_init": false,
+      "auto_provision": false,
+      "daemon": false,
+      "enabled": false,
+      "telemetry": false,
+    },
+
+    // Preserve OpenCode's native todo and context-management behavior. OmO's
+    // persistent task files can be enabled later on a per-project basis.
+    "experimental": {
+      "aggressive_truncation": false,
+      "preemptive_compaction": false,
+      "truncate_all_tool_outputs": false,
+      "task_system": false,
+    },
+
+    "hashline_edit": false,
+    "runtime_fallback": false,
+
+    // Required by the current schema; the skill itself is disabled above.
+    "git_master": {
+      "commit_footer": false,
+      "include_co_authored_by": false,
+      "git_env_prefix": "GIT_MASTER=1",
+    },
+  },
+}

@@ -1,7 +1,7 @@
 [core]
   autocrlf     = input
   editor       = nvim
-  excludesfile = $HOME/.gitignore
+  excludesfile = ~/.gitignore
   pager        = less -r
   quotepath    = false
 
