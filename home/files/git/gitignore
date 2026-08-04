@@ -1,2 +1,78 @@
+# Personal global Git excludes (core.excludesFile).
+# Keep project-specific or team-shared rules in the repository's .gitignore.
+#
+# Sources:
+# - macOS + Vim templates: https://www.toptal.com/developers/gitignore/api/macos,vim
+# - Claude Code settings: https://code.claude.com/docs/en/settings
+# - Claude Code memory: https://code.claude.com/docs/en/memory
+# - Codex config: https://developers.openai.com/codex/config-basic/
+# - Codex instructions: https://developers.openai.com/codex/guides/agents-md/
+
+### macOS ###
+# Generated metadata and resource forks.
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# macOS volume icon (gitignore.io emits this with a CR suffix).
+Icon
+
+# Thumbnails / resource forks.
+._*
+
+# Files that might appear in the root of a volume.
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP shares.
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+### macOS Patch ###
+# iCloud generated files.
+*.icloud
+
+### Neovim / Vim ###
+# Swap files.
+[._]*.s[a-v][a-z]
+!*.svg
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+
+# Sessions and editor temporary files.
+Session.vim
+Sessionx.vim
+.netrwhist
+*~
+
+# Auto-generated tag files.
+tags
+
+# Persistent undo files.
+[._]*.un~
+
+### Claude Code (Anthropic) ###
+# Personal per-project files. Claude Code documents these as gitignored local state.
+**/.claude/settings.local.json
+**/CLAUDE.local.md
+
+### Codex (OpenAI) ###
+# Personal project-level overrides. Force-add if a repository deliberately shares one.
+**/AGENTS.override.md
+
+# Optional local Codex TUI logs (the official docs use this path in an example).
+.codex-log/
+
+### Local tooling ###
 # Oh My OpenAgent per-session coordination state.
 .omo/run-continuation/
