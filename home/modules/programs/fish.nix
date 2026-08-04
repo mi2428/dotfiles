@@ -29,7 +29,7 @@ let
     "conf.d/15_fzf_theme.fish"
     "conf.d/16_starship.fish"
     "conf.d/17_atuin.fish"
-    "conf.d/direnv.fish"
+    "conf.d/18_direnv.fish"
     "conf.d/20_aliases.fish"
     "conf.d/21_functions.fish"
     "conf.d/23_completions.fish"
@@ -74,6 +74,10 @@ in
   };
 
   xdg.configFile = fishFiles // {
+    # Fish loads only the first conf.d file with a given basename. Keep this
+    # empty user file to mask direnv's vendor hook, which embeds a
+    # generation-specific Nix store path in long-lived shell functions.
+    "fish/conf.d/direnv.fish".text = "";
     "fish/config.fish" = lib.mkForce {
       source = ../../../home/files/config/fish/config.fish;
     };
