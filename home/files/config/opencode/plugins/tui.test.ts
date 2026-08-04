@@ -45,6 +45,13 @@ describe("todo overlay state", () => {
     assert.equal(completed.total, 1);
     assert.equal(completed.windowStart, 0);
     assert.equal(completed.windowEnd, 0);
+
+    const completedHistory = buildTodoView(
+      Array.from({ length: 6 }, (_, index) => ({ content: `done ${index}`, status: "completed" })),
+    );
+    assert(completedHistory);
+    assert.equal(completedHistory.windowStart, 1);
+    assert.equal(completedHistory.windowEnd, 5);
   });
 
   it("keeps the overlay session-only and styles it as a responsive top-right toast", () => {
@@ -89,10 +96,12 @@ describe("todo overlay state", () => {
     assert.equal(nodes.children?.[1]?.children?.[0]?.props.fg, "warning");
     assert.equal(nodes.children?.[1]?.children?.[0]?.props.wrapMode, "char");
     assert.equal(nodes.children?.[1]?.children?.[0]?.text, "▸ work");
-    assert.equal(popupWidth(80), 36);
-    assert.equal(popupWidth(200), 84);
+    assert.equal(popupWidth(80), 68);
+    assert.equal(popupWidth(120), MAX_PANEL_WIDTH);
+    assert.equal(popupWidth(200), MAX_PANEL_WIDTH);
     assert.equal(popupWidth(240), MAX_PANEL_WIDTH);
     assert.equal(MAX_PANEL_WIDTH, 94);
+    assert.equal(MAX_BODY_HEIGHT, 12);
   });
 
   it("keeps every task scrollable and centers the initial window around the current task", () => {

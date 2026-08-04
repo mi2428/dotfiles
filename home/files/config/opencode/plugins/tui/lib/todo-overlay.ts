@@ -22,6 +22,8 @@ export type TodoView = {
 };
 
 const MAX_IN_PROGRESS = 1;
+const TODO_WINDOW_SIZE = 5;
+const TODO_WINDOW_RADIUS = Math.floor(TODO_WINDOW_SIZE / 2);
 const BULLET = "▸";
 
 function compactContent(content: string): string {
@@ -65,11 +67,11 @@ export function buildTodoView(input: readonly TodoItem[] | null | undefined): To
   const windowStart = currentIndex === undefined
     ? pending.length > 0
       ? 0
-      : Math.max(0, lines.length - 2)
-    : Math.max(0, currentIndex - 2);
+      : Math.max(0, lines.length - TODO_WINDOW_SIZE)
+    : Math.max(0, currentIndex - TODO_WINDOW_RADIUS);
   const windowEnd = currentIndex === undefined
-    ? Math.min(lines.length - 1, windowStart + (pending.length > 0 ? 4 : 1))
-    : Math.min(lines.length - 1, currentIndex + 2);
+    ? Math.min(lines.length - 1, windowStart + TODO_WINDOW_SIZE - 1)
+    : Math.min(lines.length - 1, currentIndex + TODO_WINDOW_RADIUS);
 
   return {
     total: completed + inProgress.length + pending.length,
