@@ -51,9 +51,9 @@ Tasks
   hm.gc              Delete old generations and collect Nix garbage (run without sudo)
   brew.check         Check the repo-managed Brewfile against the local Homebrew state
   brew.sync          Update and upgrade Homebrew, then apply the repo-managed Brewfile
-  secrets.encrypt    Encrypt ssh and/or gnupg into chezmoi source state
-  secrets.decrypt    Decrypt ssh and/or gnupg into a target directory
-  secrets.backup     Backup ssh and gnupg into encrypted chezmoi source state
+  secrets.encrypt    Encrypt ssh, gnupg, and/or Hermes context into source state
+  secrets.decrypt    Decrypt ssh, gnupg, and/or Hermes context into a target directory
+  secrets.backup     Backup ssh, gnupg, and Hermes context into encrypted source state
   secrets.clear      Remove local staging and decrypted secret work directories
   docker.build       Build Dockerfile locally as ghcr.io/OWNER/IMAGE:TAG
   docker.login       Login to ghcr.io with GHCR_TOKEN, GITHUB_TOKEN, or gh auth token
@@ -76,6 +76,8 @@ Examples
   task secrets.encrypt
   task secrets.encrypt BUNDLE=ssh
   task secrets.encrypt BUNDLE=gnupg GPG_KEY_IDS='E8D3009C6341BDEAF038009685AB6867E2147DDA'
+  task secrets.encrypt BUNDLE=hermes
+  task secrets.decrypt BUNDLE=hermes DECRYPT_HOME=$HOME
   task secrets.decrypt IMPORT_GPG=1 DECRYPT_HOME=$HOME
   task secrets.backup
   task docker.build TAG=latest
