@@ -16,18 +16,34 @@ type RenderNode = {
   props: Record<string, unknown>;
   text?: string;
   children?: RenderNode[];
+  scrollWindow?: {
+    startID: string;
+    endID: string;
+    key: string;
+  };
+};
+
+type RenderableAdapter = {
+  y: number;
+  height: number;
 };
 
 type ScrollBoxAdapter = {
   scrollTop: number;
+  height: number;
   isDestroyed?: boolean;
+  content?: RenderableAdapter & {
+    findDescendantById: (id: string) => RenderableAdapter | undefined;
+  };
 };
 
-export const MAX_PANEL_WIDTH = 72;
+export const MAX_PANEL_WIDTH = 94;
 export const MIN_PANEL_WIDTH = 36;
 export const MAX_BODY_HEIGHT = 8;
+const BOLD_TEXT_ATTRIBUTES = 1;
 const PANEL_WIDTH_RATIO = 0.42;
 const PANEL_MARGIN = 2;
+const TODO_LINE_ID_PREFIX = "opencode-todo-line";
 
 const SPLIT_BORDER_CHARS = {
   topLeft: "",
@@ -64,7 +80,7 @@ function scrollbox(props: Record<string, unknown>, children: RenderNode[] = []):
 function lineColor(line: TodoLine, theme: Theme): unknown {
   if (line.kind === "in_progress") return theme.success;
   if (line.kind === "pending") return theme.warning;
-  return theme.text;
+  return theme.textMuted;
 }
 
 export function popupWidth(terminalWidth: number): number {
@@ -82,7 +98,39 @@ export function buildTodoOverlayNodes(
   const view = buildTodoView(todos);
   if (!view) return null;
 
-  const header = `Todo · ${view.active} active`;
+  const header = `Todo · ${view.completed} of ${view.total}`;
+  const startID = `${TODO_LINE_ID_PREFIX}-${view.windowStart}`;
+  const endID = `${TODO_LINE_ID_PREFIX}-${view.windowEnd}`;
+  const body = scrollbox(
+    {
+      width: "100%",
+      // Give wrapped task text room without letting the HUD grow indefinitely.
+      // The ScrollBox still handles unusually long content and larger lists.
+      height: Math.min(MAX_BODY_HEIGHT, Math.max(1, view.lines.length * 2)),
+      scrollX: false,
+      scrollY: true,
+      viewportCulling: true,
+      verticalScrollbarOptions: { visible: false, showArrows: false },
+      contentOptions: { flexDirection: "column" },
+    },
+    view.lines.map((line, index) =>
+      text(
+        {
+          id: `${TODO_LINE_ID_PREFIX}-${index}`,
+          fg: lineColor(line, theme),
+          width: "100%",
+          wrapMode: "char",
+        },
+        line.text,
+      ),
+    ),
+  );
+  body.scrollWindow = {
+    startID,
+    endID,
+    key: `${view.completed}:${view.active}:${startID}:${endID}`,
+  };
+
   return box(
     {
       position: "absolute",
@@ -101,33 +149,42 @@ export function buildTodoOverlayNodes(
       paddingBottom: 1,
     },
     [
-      text({ fg: theme.info, wrapMode: "none", truncate: true, marginBottom: 1 }, header),
-      scrollbox(
+      box(
         {
-          width: "100%",
-          // Give wrapped task text room without letting the HUD grow indefinitely.
-          // The ScrollBox still handles unusually long content and larger lists.
-          height: Math.min(MAX_BODY_HEIGHT, Math.max(1, view.lines.length * 2)),
-          scrollX: false,
-          scrollY: true,
-          viewportCulling: true,
-          verticalScrollbarOptions: { showArrows: false },
-          contentOptions: { flexDirection: "column" },
+          alignSelf: "flex-start",
+          flexDirection: "row",
+          backgroundColor: theme.info,
+          paddingLeft: 1,
+          paddingRight: 1,
+          marginBottom: 1,
         },
-        view.lines.map((line) =>
-          text({ fg: lineColor(line, theme), width: "100%", wrapMode: "word" }, line.text),
-        ),
+        [
+          text(
+            {
+              fg: theme.backgroundPanel,
+              attributes: BOLD_TEXT_ATTRIBUTES,
+              wrapMode: "none",
+              truncate: true,
+            },
+            header,
+          ),
+        ],
       ),
+      body,
     ],
   );
 }
 
-function materialize(node: RenderNode, solid: SolidAdapter, onScrollBox?: (node: ScrollBoxAdapter) => void) {
+function materialize(
+  node: RenderNode,
+  solid: SolidAdapter,
+  onScrollBox?: (node: ScrollBoxAdapter, window: RenderNode["scrollWindow"]) => void,
+) {
   const element = solid.createElement(node.kind);
   for (const [name, value] of Object.entries(node.props)) solid.setProp(element, name, value);
   if (node.kind === "text") solid.insert(element, node.text ?? "");
   for (const child of node.children ?? []) solid.insert(element, materialize(child, solid, onScrollBox));
-  if (node.kind === "scrollbox") onScrollBox?.(element as ScrollBoxAdapter);
+  if (node.kind === "scrollbox") onScrollBox?.(element as ScrollBoxAdapter, node.scrollWindow);
   return element;
 }
 
@@ -140,13 +197,16 @@ export function sessionIDFromRoute(route: TuiRouteCurrent): string | undefined {
 }
 
 export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidAdapter): void {
-  const scrollOffsets = new Map<string, number>();
-  let mounted: { sessionID: string; scrollbox: ScrollBoxAdapter } | undefined;
+  const scrollOffsets = new Map<string, { scrollTop: number; windowKey: string }>();
+  let mounted: { sessionID: string; scrollbox: ScrollBoxAdapter; windowKey: string } | undefined;
 
   const rememberScroll = () => {
     if (!mounted || mounted.scrollbox.isDestroyed) return;
     if (Number.isFinite(mounted.scrollbox.scrollTop)) {
-      scrollOffsets.set(mounted.sessionID, mounted.scrollbox.scrollTop);
+      scrollOffsets.set(mounted.sessionID, {
+        scrollTop: mounted.scrollbox.scrollTop,
+        windowKey: mounted.windowKey,
+      });
     }
   };
 
@@ -182,20 +242,36 @@ export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidA
         }
 
         let nextScrollBox: ScrollBoxAdapter | undefined;
-        const result = materialize(nodes, solid, (node) => {
+        let nextScrollWindow: RenderNode["scrollWindow"];
+        const result = materialize(nodes, solid, (node, window) => {
           nextScrollBox = node;
+          nextScrollWindow = window;
         });
-        if (nextScrollBox) {
-          const offset = scrollOffsets.get(sessionID) ?? 0;
-          if (offset > 0) {
-            let restored = false;
-            solid.setProp(nextScrollBox, "onSizeChange", function (this: ScrollBoxAdapter) {
-              if (restored || this.isDestroyed) return;
-              restored = true;
+        if (nextScrollBox && nextScrollWindow) {
+          const remembered = scrollOffsets.get(sessionID);
+          const offset = remembered?.windowKey === nextScrollWindow.key ? remembered.scrollTop : undefined;
+          const window = nextScrollWindow;
+          let initialized = false;
+          solid.setProp(nextScrollBox, "onSizeChange", function (this: ScrollBoxAdapter) {
+            if (initialized || this.isDestroyed) return;
+
+            const start = this.content?.findDescendantById(window.startID);
+            const end = this.content?.findDescendantById(window.endID);
+            if (start && end) {
+              const windowHeight = Math.min(MAX_BODY_HEIGHT, Math.max(1, end.y + end.height - start.y));
+              if (this.height !== windowHeight) {
+                this.height = windowHeight;
+                return;
+              }
+            }
+            initialized = true;
+            if (offset !== undefined) {
               this.scrollTop = offset;
-            });
-          }
-          mounted = { sessionID, scrollbox: nextScrollBox };
+            } else if (start && this.content) {
+              this.scrollTop = Math.max(0, start.y - this.content.y);
+            }
+          });
+          mounted = { sessionID, scrollbox: nextScrollBox, windowKey: nextScrollWindow.key };
         }
         return result;
       },

@@ -4,7 +4,7 @@ export type TodoItem = {
   priority?: string;
 };
 
-export type TodoLineKind = "in_progress" | "pending" | "other";
+export type TodoLineKind = "completed" | "in_progress" | "pending";
 
 export type TodoLine = {
   kind: TodoLineKind;
@@ -17,16 +17,12 @@ export type TodoView = {
   completed: number;
   cancelled: number;
   lines: TodoLine[];
+  windowStart: number;
+  windowEnd: number;
 };
 
-const STATUS_ORDER: Readonly<Record<string, number>> = {
-  in_progress: 0,
-  pending: 1,
-};
-
-function statusRank(status: string): number {
-  return STATUS_ORDER[status] ?? 2;
-}
+const MAX_IN_PROGRESS = 1;
+const BULLET = "▸";
 
 function compactContent(content: string): string {
   return content.replace(/\s+/g, " ").trim();
@@ -36,34 +32,52 @@ export function normalizeTodos(input: readonly TodoItem[] | null | undefined): T
   if (!input) return [];
   return input
     .filter((todo): todo is TodoItem => Boolean(todo) && typeof todo.content === "string")
-    .map((todo) => ({ ...todo, status: typeof todo.status === "string" ? todo.status : "pending" }))
-    .sort((left, right) => statusRank(left.status) - statusRank(right.status));
+    .map((todo) => ({ ...todo, status: typeof todo.status === "string" ? todo.status : "pending" }));
 }
 
 export function buildTodoView(input: readonly TodoItem[] | null | undefined): TodoView | null {
   const todos = normalizeTodos(input);
   if (todos.length === 0) return null;
 
+  const completedTodos = todos.filter((todo) => todo.status === "completed");
   const inProgress = todos.filter((todo) => todo.status === "in_progress");
   const pending = todos.filter((todo) => todo.status === "pending");
-  const other = todos.filter(
-    (todo) => !["in_progress", "pending", "completed", "cancelled"].includes(todo.status),
-  );
-  const completed = todos.filter((todo) => todo.status === "completed").length;
+  const completed = completedTodos.length;
   const cancelled = todos.filter((todo) => todo.status === "cancelled").length;
-  const activeTodos = [...inProgress, ...pending, ...other];
-  if (activeTodos.length === 0) return null;
+  const currentTodos = inProgress.slice(0, MAX_IN_PROGRESS);
+  const lines: TodoLine[] = [
+    ...completedTodos.map((todo): TodoLine => ({
+      kind: "completed",
+      text: `${BULLET} ${compactContent(todo.content)}`,
+    })),
+    ...currentTodos.map((todo): TodoLine => ({
+      kind: "in_progress",
+      text: `${BULLET} ${compactContent(todo.content)}`,
+    })),
+    ...pending.map((todo): TodoLine => ({
+      kind: "pending",
+      text: `${BULLET} ${compactContent(todo.content)}`,
+    })),
+  ];
+  if (lines.length === 0) return null;
 
-  const lines: TodoLine[] = activeTodos.map((todo) => ({
-    kind: todo.status === "in_progress" ? "in_progress" : todo.status === "pending" ? "pending" : "other",
-    text: `${todo.status === "in_progress" ? "▶" : todo.status === "pending" ? "·" : "?"} ${compactContent(todo.content)}`,
-  }));
+  const currentIndex = currentTodos.length > 0 ? completedTodos.length : undefined;
+  const windowStart = currentIndex === undefined
+    ? pending.length > 0
+      ? 0
+      : Math.max(0, lines.length - 2)
+    : Math.max(0, currentIndex - 2);
+  const windowEnd = currentIndex === undefined
+    ? Math.min(lines.length - 1, windowStart + (pending.length > 0 ? 4 : 1))
+    : Math.min(lines.length - 1, currentIndex + 2);
 
   return {
-    total: todos.length,
-    active: activeTodos.length,
+    total: completed + inProgress.length + pending.length,
+    active: inProgress.length + pending.length,
     completed,
     cancelled,
     lines,
+    windowStart,
+    windowEnd,
   };
 }
