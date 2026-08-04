@@ -87,6 +87,20 @@ Do not request full transcripts or file dumps.
 
 ## Supervise and verify
 
+- After loading the Herdr Skill, use its documented commands directly.
+  Do not rediscover routine syntax with `herdr agent ... --help`, `herdr pane ... --help`, or `herdr --skill`, and do not probe alternate pane commands when a documented command fails.
+- Prompt workers only with `herdr agent prompt`; never use pane key injection for worker prompts or permission responses.
+- Monitor each worker with bounded, compact commands:
+
+  ```sh
+  herdr agent wait "$WORKER_NAME" --until blocked --until done --until idle --timeout 120000
+  herdr agent get "$WORKER_NAME"
+  herdr agent read "$WORKER_NAME" --source recent-unwrapped --lines 80 --format text
+  ```
+
+- Treat `blocked` as a decision point, not permission to automate approval.
+  If the worker requested unnecessary access outside its assignment, reject the prompt with `herdr agent send-keys "$WORKER_NAME" escape`, narrow the same worker's brief, and resume it with `herdr agent prompt`.
+  If the access is necessary, pause and ask the user to decide in the visible worker pane.
 - Monitor workers with compact status snapshots rather than repeatedly reading complete histories.
 - Review actual diffs, tests, lint, type checks, logs, or live behavior as appropriate; do not accept a worker's success claim without evidence.
 - If work is wrong or incomplete, send a concrete correction to the same compatible worker and review it again.
@@ -98,10 +112,13 @@ Do not request full transcripts or file dumps.
 - Do not return control to the user while delegated work remains unreviewed or while required Herdr cleanup is incomplete.
 - Summarize the final result and include a delegation ledger with one line per worker: worker name, actual model or profile when known, measured token usage when available (otherwise `unavailable`), and contribution.
   Never fabricate token estimates.
-- When all work is complete and you are about to return control to the user, run:
+- Worker completion does not play a sound.
+- When all work and cleanup are complete and you are about to return control to the user, play the parent-completion sound exactly once as this three-strike sequence:
 
   ```sh
-  if command -v say >/dev/null 2>&1; then
-    say -v Kyoko "[[ rate 300 ]]作業完了"
+  if command -v afplay >/dev/null 2>&1 && test -r /System/Library/Sounds/Glass.aiff; then
+    for _ in 1 2 3; do
+      afplay -t 0.52 /System/Library/Sounds/Glass.aiff
+    done
   fi
   ```

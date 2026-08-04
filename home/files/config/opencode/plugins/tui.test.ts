@@ -181,8 +181,18 @@ describe("todo overlay state", () => {
     assert.equal(many?.children?.[1]?.scrollWindow?.endID, "opencode-todo-line-4");
   });
 
-  it("redraws and recenters the list as tasks progress sequentially", () => {
-    let eventHandler: (() => void) | undefined;
+  it("redraws progress and hides stale tasks until a new request gets new todos", () => {
+    type TodoEvent = {
+      properties: { sessionID: string; todos: Array<{ content: string; status: string }> };
+    };
+    type MessageEvent = {
+      properties: {
+        sessionID: string;
+        info: { id: string; role: string; time: { created: number } };
+      };
+    };
+    let todoEventHandler: ((event: TodoEvent) => void) | undefined;
+    let messageEventHandler: ((event: MessageEvent) => void) | undefined;
     let dispose: (() => void) | undefined;
     let appSlot: (() => unknown) | undefined;
     let reads = 0;
@@ -208,9 +218,14 @@ describe("todo overlay state", () => {
         },
       },
       event: {
-        on: (name: string, handler: () => void) => {
-          assert.equal(name, "todo.updated");
-          eventHandler = handler;
+        on: (name: string, handler: (event: never) => void) => {
+          if (name === "todo.updated") {
+            todoEventHandler = handler as (event: TodoEvent) => void;
+          } else if (name === "message.updated") {
+            messageEventHandler = handler as (event: MessageEvent) => void;
+          } else {
+            assert.fail(`unexpected event subscription: ${name}`);
+          }
           return () => {
             unsubscribes += 1;
           };
@@ -296,7 +311,8 @@ describe("todo overlay state", () => {
     };
 
     registerTodoOverlay(api as never, solid);
-    assert(eventHandler);
+    assert(todoEventHandler);
+    assert(messageEventHandler);
     assert(dispose);
     assert(appSlot);
     const first = appSlot() as FakeNode;
@@ -335,7 +351,7 @@ describe("todo overlay state", () => {
       if (index === 3) return { ...todo, status: "in_progress" };
       return todo;
     });
-    eventHandler();
+    todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
     assert.equal(renders, 1);
     const third = appSlot() as FakeNode;
     const thirdScrollBox = scrollBoxFrom(third);
@@ -350,7 +366,7 @@ describe("todo overlay state", () => {
       if (index === 4) return { ...todo, status: "in_progress" };
       return todo;
     });
-    eventHandler();
+    todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
     assert.equal(renders, 2);
     const fourth = appSlot() as FakeNode;
     const fourthScrollBox = scrollBoxFrom(fourth);
@@ -362,7 +378,44 @@ describe("todo overlay state", () => {
     assert.equal(lineNodesFrom(fourthScrollBox)[4]?.props.fg, "success");
     assert.equal(reads, 4);
 
+    messageEventHandler({
+      properties: {
+        sessionID: "ses_1",
+        info: { id: "old-user-message", role: "user", time: { created: 0 } },
+      },
+    });
+    assert.equal(renders, 2);
+    assert(appSlot());
+    assert.equal(reads, 5);
+
+    const nextRequest = {
+      properties: {
+        sessionID: "ses_1",
+        info: { id: "new-user-message", role: "user", time: { created: Number.MAX_SAFE_INTEGER } },
+      },
+    };
+    messageEventHandler(nextRequest);
+    assert.equal(renders, 3);
+    assert.equal(appSlot(), null);
+    assert.equal(reads, 6);
+
+    messageEventHandler(nextRequest);
+    assert.equal(renders, 3);
+    todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
+    assert.equal(renders, 4);
+    assert.equal(appSlot(), null);
+
+    liveTodos = [
+      { content: "inspect new request", status: "in_progress" },
+      { content: "implement new request", status: "pending" },
+    ];
+    todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
+    assert.equal(renders, 5);
+    const next = appSlot() as FakeNode;
+    assert.equal(headerFrom(next).children[0], "Todo · 0 of 2");
+    assert.deepEqual(lineTextsFrom(scrollBoxFrom(next)), ["▸ inspect new request", "▸ implement new request"]);
+
     dispose();
-    assert.equal(unsubscribes, 1);
+    assert.equal(unsubscribes, 2);
   });
 });
