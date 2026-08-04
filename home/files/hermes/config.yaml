@@ -1,0 +1,23 @@
+model:
+  default: global.anthropic.claude-opus-5
+  provider: bedrock
+
+agent:
+  reasoning_effort: medium
+
+web:
+  backend: ddgs
+
+display:
+  show_reasoning: false
+  streaming: true
+
+approvals:
+  mode: manual
+  timeout: 60
+
+plugins:
+  enabled:
+    - orca-status
+
+_config_version: 33

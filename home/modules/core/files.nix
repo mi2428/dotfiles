@@ -31,6 +31,8 @@ let
     (lib.filterAttrs (_: type: type == "regular") (builtins.readDir binRoot));
   codexNvimEditEvent = ../../files/libexec/dotfiles/codex-nvim-edit-event;
   ghReviewPreview = ../../files/libexec/dotfiles/gh-review-preview;
+  hermesConfig = config.lib.file.mkOutOfStoreSymlink
+    "${config.home.homeDirectory}/dotfiles/home/files/hermes/config.yaml";
   macCompatibilityFiles = lib.optionalAttrs pkgs.stdenv.isDarwin {
     "Library/Application Support/com.mitchellh.ghostty/themes" =
       mkLink ../../files/config/ghostty/themes;
@@ -77,6 +79,7 @@ in {
     ".lesskey" = mkLink ../../files/less/lesskey;
     ".screenrc" = mkLink ../../files/screen/screenrc;
     ".wgetrc" = mkLink ../../files/wget/wgetrc;
+    ".hermes/config.yaml" = mkLink hermesConfig;
   };
 
   # Herdr's installers are idempotent and keep each harness hook at the
