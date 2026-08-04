@@ -1,4 +1,48 @@
 local M = {}
+local ghostty_browser_pane
+local ghostty_browser_generation = 0
+
+-- Ghostty can deliver `initial input` before its macOS login shell is ready and discard the command.
+-- Launch terminal-browser as the split's process instead, so no shell input timing is involved.
+local ghostty_split_script = [[
+on run argv
+  set marker to item 1 of argv
+  set cmdText to item 2 of argv
+  set workingDirectory to item 3 of argv
+  tell application "Ghostty"
+    repeat with w in windows
+      repeat with tb in tabs of w
+        repeat with term in terminals of tb
+          if (name of term) contains marker then
+            set childTerm to split term direction right with configuration {command:cmdText, initial working directory:workingDirectory, wait after command:false}
+            return id of childTerm
+          end if
+        end repeat
+      end repeat
+    end repeat
+    error "could not find the marked Neovim pane"
+  end tell
+end run
+]]
+
+local ghostty_close_script = [[
+on run argv
+  set targetId to item 1 of argv
+  tell application "Ghostty"
+    repeat with w in windows
+      repeat with tb in tabs of w
+        repeat with term in terminals of tb
+          if (id of term) as text is targetId then
+            close term
+            return "ok"
+          end if
+        end repeat
+      end repeat
+    end repeat
+  end tell
+  return "not-found"
+end run
+]]
 
 local function notify_error(message)
 	vim.schedule(function()
@@ -53,6 +97,145 @@ local function open_in_herdr(url)
 	return true
 end
 
+local function current_tty()
+	local pid = vim.fn.getpid()
+	for _ = 1, 30 do
+		local result = vim.system({ "ps", "-o", "ppid=,tty=", "-p", tostring(pid) }, { text = true }):wait()
+		if result.code ~= 0 then
+			return nil
+		end
+
+		local parent, tty = vim.trim(result.stdout):match("^(%d+)%s+(%S+)$")
+		if not parent or not tty then
+			return nil
+		end
+		if tty ~= "??" then
+			return vim.startswith(tty, "/") and tty or "/dev/" .. tty
+		end
+
+		pid = tonumber(parent)
+		if not pid or pid <= 1 then
+			return nil
+		end
+	end
+	return nil
+end
+
+local function set_pane_title(tty, title)
+	local fd = vim.uv.fs_open(tty, "w", 0)
+	if not fd then
+		return false
+	end
+
+	local written = vim.uv.fs_write(fd, ("\27]2;%s\7"):format(title), -1)
+	vim.uv.fs_close(fd)
+	return written ~= nil
+end
+
+local function shell_command(argv)
+	return table.concat(
+		vim.tbl_map(function(arg)
+			return vim.fn.shellescape(arg)
+		end, argv),
+		" "
+	)
+end
+
+local function close_ghostty_pane(pane)
+	if not pane or pane == "" then
+		return
+	end
+	vim.system({ "osascript", "-", pane }, { text = true, stdin = ghostty_close_script }, function(result)
+		if result.code ~= 0 then
+			notify_error("Failed to close the Markdown preview pane in Ghostty: " .. vim.trim(result.stderr))
+		end
+	end)
+end
+
+local function close_ghostty_browser()
+	ghostty_browser_generation = ghostty_browser_generation + 1
+	local pane = ghostty_browser_pane
+	ghostty_browser_pane = nil
+	close_ghostty_pane(pane)
+end
+
+local function open_in_ghostty(url)
+	if
+		vim.env.TERM_PROGRAM ~= "ghostty"
+		or (vim.env.TMUX and vim.env.TMUX ~= "")
+		or vim.env.HERDR_ENV == "1"
+		or vim.env.CMUX_BUNDLE_ID
+		or vim.fn.executable("osascript") ~= 1
+	then
+		return false
+	end
+
+	local tty = current_tty()
+	if not tty then
+		notify_error("Failed to identify the Ghostty pane TTY")
+		return true
+	end
+
+	local browser = vim.fn.exepath("terminal-browser")
+	local command = shell_command({
+		browser,
+		"open",
+		url,
+		"--split-dir=right",
+		"--parent-tty=" .. tty,
+	})
+	local marker = ("markdown-preview-%d-%d"):format(vim.fn.getpid(), math.random(100000000, 999999999))
+	local attempts = 0
+	ghostty_browser_generation = ghostty_browser_generation + 1
+	local generation = ghostty_browser_generation
+	if ghostty_browser_pane then
+		close_ghostty_pane(ghostty_browser_pane)
+		ghostty_browser_pane = nil
+	end
+
+	local function split()
+		attempts = attempts + 1
+		if not set_pane_title(tty, marker) then
+			notify_error("Failed to mark the Ghostty pane at " .. tty)
+			return
+		end
+
+		vim.defer_fn(function()
+			vim.system(
+				{ "osascript", "-", marker, command, vim.fn.getcwd() },
+				{ text = true, stdin = ghostty_split_script },
+				function(result)
+					if result.code == 0 then
+						local pane = vim.trim(result.stdout)
+						if pane == "" then
+							notify_error("Ghostty did not return the Markdown preview pane ID")
+						elseif generation == ghostty_browser_generation then
+							ghostty_browser_pane = pane
+						else
+							close_ghostty_pane(pane)
+						end
+						return
+					end
+					vim.schedule(function()
+						if attempts < 6 then
+							split()
+							return
+						end
+						local message = vim.trim(result.stderr)
+						notify_error(
+							"Failed to start terminal-browser in Ghostty: "
+								.. (message ~= "" and message or ("exit code %d"):format(result.code))
+						)
+					end)
+				end
+			)
+		end, 150)
+	end
+
+	split()
+	return true
+end
+
 function M.is_markdown_buffer(bufnr)
 	bufnr = current_buffer(bufnr)
 	if not vim.api.nvim_buf_is_valid(bufnr) then
@@ -71,6 +254,9 @@ function M.open_browser(url)
 	end
 	if type(url) ~= "string" or url == "" then
 		vim.notify("Markdown preview returned an invalid URL", vim.log.levels.ERROR)
+		return
+	end
+	if open_in_ghostty(url) then
 		return
 	end
 
@@ -107,6 +293,9 @@ function M.toggle()
 		return
 	end
 
+	if vim.b.MarkdownPreviewToggleBool == 1 then
+		close_ghostty_browser()
+	end
 	vim.fn["mkdp#util#toggle_preview"]()
 end
 

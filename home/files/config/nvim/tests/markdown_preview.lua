@@ -10,6 +10,15 @@ package.path = table.concat({
 local preview = require("config.markdown_preview")
 preview.setup()
 
+local function shell_command(argv)
+	return table.concat(
+		vim.tbl_map(function(arg)
+			return vim.fn.shellescape(arg)
+		end, argv),
+		" "
+	)
+end
+
 assert(vim.g.mkdp_open_to_the_world == 0, "Markdown preview must not listen on the public interface")
 assert(vim.g.mkdp_open_ip == "127.0.0.1", "Markdown preview must bind to localhost")
 assert(vim.g.mkdp_auto_start == 0 and vim.g.mkdp_auto_close == 0, "Markdown preview must not manage its own lifecycle")
@@ -61,8 +70,14 @@ vim.fn.writefile({
 vim.fn.setfperm(fake_browser, "rwx------")
 
 local original_path = vim.env.PATH
+local original_term_program = vim.env.TERM_PROGRAM
+local original_tmux = vim.env.TMUX
+local original_herdr_env = vim.env.HERDR_ENV
 local ok, err = xpcall(function()
 	vim.env.PATH = fake_dir .. ":" .. original_path
+	vim.env.TERM_PROGRAM = "ghostty"
+	vim.env.TMUX = "/tmp/tmux-test/default,1,0"
+	vim.env.HERDR_ENV = nil
 	_G.DotfilesMarkdownPreviewBrowser("http://localhost:8123/page/7")
 	assert(
 		vim.wait(1000, function()
@@ -83,8 +98,118 @@ local ok, err = xpcall(function()
 	)
 end, debug.traceback)
 vim.env.PATH = original_path
+vim.env.TERM_PROGRAM = original_term_program
+vim.env.TMUX = original_tmux
+vim.env.HERDR_ENV = original_herdr_env
 vim.fn.delete(fake_dir, "rf")
 assert(ok, err)
+
+local ghostty_dir = vim.fn.tempname()
+local ghostty_argv_file = vim.fs.joinpath(ghostty_dir, "osascript-argv")
+local ghostty_script_file = vim.fs.joinpath(ghostty_dir, "osascript-stdin")
+local ghostty_close_argv_file = vim.fs.joinpath(ghostty_dir, "close-argv")
+local ghostty_close_script_file = vim.fs.joinpath(ghostty_dir, "close-stdin")
+local ghostty_tty = vim.fs.joinpath(ghostty_dir, "tty")
+local ghostty_browser = vim.fs.joinpath(ghostty_dir, "terminal-browser")
+local fake_ps = vim.fs.joinpath(ghostty_dir, "ps")
+local fake_osascript = vim.fs.joinpath(ghostty_dir, "osascript")
+local fake_mkdp_autoload = vim.fs.joinpath(ghostty_dir, "autoload/mkdp/util.vim")
+vim.fn.mkdir(ghostty_dir, "p")
+vim.fn.mkdir(vim.fs.dirname(fake_mkdp_autoload), "p")
+vim.fn.writefile({}, ghostty_tty)
+vim.fn.writefile({ "#!/bin/sh", "exit 0" }, ghostty_browser)
+vim.fn.writefile({
+	"function! mkdp#util#toggle_preview() abort",
+	"  let b:MarkdownPreviewToggleBool = 0",
+	"endfunction",
+}, fake_mkdp_autoload)
+vim.fn.writefile({
+	"#!/bin/sh",
+	'if [ "$4" = ' .. vim.fn.shellescape(tostring(vim.fn.getpid())) .. " ]; then",
+	"  printf '%s\\n' '4242 ??'",
+	"else",
+	"  printf '%s\\n' " .. vim.fn.shellescape("1 " .. ghostty_tty),
+	"fi",
+}, fake_ps)
+vim.fn.writefile({
+	"#!/bin/sh",
+	"if [ \"$2\" = 'ghostty-test-pane' ]; then",
+	"  /bin/cat > " .. vim.fn.shellescape(ghostty_close_script_file),
+	"  printf '%s\\n' \"$@\" > " .. vim.fn.shellescape(ghostty_close_argv_file),
+	"else",
+	"  /bin/cat > " .. vim.fn.shellescape(ghostty_script_file),
+	"  printf '%s\\n' \"$@\" > " .. vim.fn.shellescape(ghostty_argv_file),
+	"  printf '%s\\n' 'ghostty-test-pane'",
+	"fi",
+}, fake_osascript)
+vim.fn.setfperm(ghostty_browser, "rwx------")
+vim.fn.setfperm(fake_ps, "rwx------")
+vim.fn.setfperm(fake_osascript, "rwx------")
+
+local original_cmux_bundle_id = vim.env.CMUX_BUNDLE_ID
+local original_buf = vim.api.nvim_get_current_buf()
+local ghostty_ok, ghostty_err = xpcall(function()
+	vim.env.PATH = ghostty_dir .. ":" .. original_path
+	vim.opt.runtimepath:prepend(ghostty_dir)
+	vim.env.TERM_PROGRAM = "ghostty"
+	vim.env.TMUX = nil
+	vim.env.HERDR_ENV = nil
+	vim.env.CMUX_BUNDLE_ID = nil
+	_G.DotfilesMarkdownPreviewBrowser("http://localhost:8123/page/8")
+	assert(
+		vim.wait(2000, function()
+			return vim.fn.filereadable(ghostty_argv_file) == 1
+		end, 10),
+		"timed out waiting for the Ghostty split"
+	)
+
+	local argv = vim.fn.readfile(ghostty_argv_file)
+	assert(argv[1] == "-", "osascript must read the Ghostty split script from stdin")
+	assert(argv[2]:match("^markdown%-preview%-%d+%-%d+$"), "Ghostty pane marker is invalid")
+	assert(argv[3] == shell_command({
+		ghostty_browser,
+		"open",
+		"http://localhost:8123/page/8",
+		"--split-dir=right",
+		"--parent-tty=" .. ghostty_tty,
+	}), "Ghostty must launch terminal-browser as the split command")
+	assert(argv[4] == vim.fn.getcwd(), "Ghostty split must preserve Neovim's working directory")
+
+	local script = table.concat(vim.fn.readfile(ghostty_script_file), "\n")
+	assert(script:find("configuration {command:cmdText", 1, true), "Ghostty split must use the command API")
+	assert(not script:find("initial input", 1, true), "Ghostty split must not race the login shell with initial input")
+	local tty_contents = table.concat(vim.fn.readfile(ghostty_tty, "b"), "\n")
+	assert(tty_contents:find(argv[2], 1, true), "Ghostty pane marker must be written to the parent TTY")
+
+	vim.wait(100)
+	vim.api.nvim_set_current_buf(markdown_buf)
+	vim.b[markdown_buf].MarkdownPreviewToggleBool = 1
+	preview.toggle()
+	assert(
+		vim.wait(2000, function()
+			return vim.fn.filereadable(ghostty_close_argv_file) == 1
+		end, 10),
+		"timed out waiting for the Ghostty preview pane to close"
+	)
+	assert(
+		vim.deep_equal(vim.fn.readfile(ghostty_close_argv_file), { "-", "ghostty-test-pane" }),
+		"Markdown preview toggle must close its Ghostty pane"
+	)
+	assert(
+		table.concat(vim.fn.readfile(ghostty_close_script_file), "\n"):find("close term", 1, true),
+		"Ghostty close script must close the matched terminal"
+	)
+end, debug.traceback)
+vim.env.PATH = original_path
+vim.env.TERM_PROGRAM = original_term_program
+vim.env.TMUX = original_tmux
+vim.env.HERDR_ENV = original_herdr_env
+vim.env.CMUX_BUNDLE_ID = original_cmux_bundle_id
+vim.api.nvim_set_current_buf(original_buf)
+vim.opt.runtimepath:remove(ghostty_dir)
+pcall(vim.cmd, "delfunction mkdp#util#toggle_preview")
+vim.fn.delete(ghostty_dir, "rf")
+assert(ghostty_ok, ghostty_err)
 
 local lazy = package.loaded["lazy"]
 if not lazy then
