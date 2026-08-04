@@ -478,7 +478,14 @@ if command -sq codex
     alias codexxx='codex --dangerously-bypass-approvals-and-sandbox'
 end
 
-if command -sq opencode
+if command -sq oc-omo
+    # OmO remains the default, while each wrapper gives OpenCode an isolated
+    # plugin registry. Use `oc-slim` (or `ocslim`) for the Slim profile.
+    alias oc='oc-omo'
+    if command -sq oc-slim
+        alias ocslim='oc-slim'
+    end
+else if command -sq opencode
     alias oc='opencode'
 end
 

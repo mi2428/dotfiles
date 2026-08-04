@@ -31,6 +31,7 @@ let
     (lib.filterAttrs (_: type: type == "regular") (builtins.readDir binRoot));
   codexNvimEditEvent = ../../files/libexec/dotfiles/codex-nvim-edit-event;
   ghReviewPreview = ../../files/libexec/dotfiles/gh-review-preview;
+  slimOpenCodePluginConfig = ../../files/config/opencode/profiles/slim/oh-my-opencode-slim.jsonc;
   macCompatibilityFiles = lib.optionalAttrs pkgs.stdenv.isDarwin {
     "Library/Application Support/com.mitchellh.ghostty/themes" =
       mkLink ../../files/config/ghostty/themes;
@@ -71,6 +72,21 @@ in {
     "opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode/tui.json" = mkLink ../../files/config/opencode/tui.json;
+    # Keep OmO and Slim in separate XDG config roots. The wrappers in bin/
+    # select one root at process start, so their plugin registries never mix.
+    "opencode-profiles/omo/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
+    "opencode-profiles/omo/opencode/opencode.jsonc" =
+      mkLink ../../files/config/opencode/opencode.jsonc;
+    "opencode-profiles/omo/opencode/themes/catppuccin-mocha-mauve.json" =
+      mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
+    "opencode-profiles/omo/opencode/tui.json" = mkLink ../../files/config/opencode/tui.json;
+    "opencode-profiles/slim/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
+    "opencode-profiles/slim/opencode/opencode.jsonc" =
+      mkLink ../../files/config/opencode/profiles/slim/opencode.jsonc;
+    "opencode-profiles/slim/opencode/themes/catppuccin-mocha-mauve.json" =
+      mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
+    "opencode-profiles/slim/opencode/tui.json" =
+      mkLink ../../files/config/opencode/profiles/slim/tui.json;
     "starship" = mkLink ../../files/config/starship;
     "yazi" = mkLink yaziConfig;
   };
@@ -94,6 +110,22 @@ in {
       ${pkgs.python3}/bin/python3 \
         "${codexNvimEditEvent}" \
         install --quiet
+    fi
+  '';
+
+  # Unlike the immutable core/profile files, Slim's plugin config must remain
+  # writable because its /preset manager persists changes there. Seed it once
+  # and preserve later interactive edits across Home Manager activations.
+  home.activation.ensureOpenCodeSlimPluginConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    slim_config="${config.home.homeDirectory}/.config/opencode-profiles/slim/opencode/oh-my-opencode-slim.jsonc"
+    if [ -L "$slim_config" ]; then
+      # Remove only a stale managed link from an earlier generation.
+      rm -f "$slim_config"
+    fi
+    if [ ! -e "$slim_config" ]; then
+      mkdir -p "$(dirname "$slim_config")"
+      cp "${slimOpenCodePluginConfig}" "$slim_config"
+      chmod 0644 "$slim_config"
     fi
   '';
 }

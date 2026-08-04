@@ -1285,6 +1285,17 @@ alias myip='curl -s https://ipinfo.io | jq'
 alias sshh='sshuttle'
 
 
+if whence -p oc-omo 1> /dev/null; then
+  # OmO remains the default. `oc-slim` switches to the isolated Slim profile.
+  alias oc='oc-omo'
+  if whence -p oc-slim 1> /dev/null; then
+    alias ocslim='oc-slim'
+  fi
+elif whence -p opencode 1> /dev/null; then
+  alias oc='opencode'
+fi
+
+
 tig() {
   if whence -p lazygit 1> /dev/null; then
     lazygit "$@"

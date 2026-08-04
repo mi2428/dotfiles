@@ -1,0 +1,37 @@
+#!/bin/sh
+set -eu
+
+profile=${1:-}
+if [ -z "$profile" ]; then
+    printf '%s\n' 'usage: opencode-profile {omo|slim} [opencode options...]' >&2
+    exit 64
+fi
+shift
+
+case "$profile" in
+    omo|slim)
+        ;;
+    *)
+        printf 'opencode-profile: unknown profile: %s\n' "$profile" >&2
+        exit 64
+        ;;
+esac
+
+profile_config_home=${OPENCODE_PROFILE_CONFIG_HOME:-"${HOME:?}/.config/opencode-profiles/$profile"}
+profile_config="$profile_config_home/opencode"
+if [ ! -f "$profile_config/opencode.jsonc" ]; then
+    printf 'opencode-profile: profile is not installed: %s\n' "$profile_config_home" >&2
+    printf '%s\n' 'run the Home Manager activation, then retry' >&2
+    exit 78
+fi
+
+export XDG_CONFIG_HOME="$profile_config_home"
+# Do not let an externally supplied OpenCode config override the selected
+# profile (the profile switch itself is the source of truth).
+unset OPENCODE_CONFIG OPENCODE_CONFIG_CONTENT OPENCODE_CONFIG_DIR
+if [ "$profile" = slim ]; then
+    # Slim's background orchestration is an OpenCode experimental feature.
+    export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
+fi
+
+exec opencode "$@"
