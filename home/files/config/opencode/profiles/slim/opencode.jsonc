@@ -39,14 +39,6 @@
           }
         }
       }
-    },
-    "amazon-bedrock": {
-      // Tokyo has the global Opus 5 inference profile available. The global
-      // route is used because the account does not expose the JP catalog ID.
-      "options": {
-        "profile": "soracom-dev",
-        "region": "ap-northeast-1"
-      }
     }
   },
   "lsp": false,

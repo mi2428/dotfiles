@@ -32,14 +32,6 @@
           }
         }
       }
-    },
-    "amazon-bedrock": {
-      // Opus 5 is invoked through its active global inference profile; the
-      // similarly named JP catalog entry is not valid for this account.
-      "options": {
-        "profile": "soracom-dev",
-        "region": "ap-northeast-1"
-      }
     }
   },
 
