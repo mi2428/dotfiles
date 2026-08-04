@@ -10,9 +10,9 @@
     "auto_update": false,
     "telemetry": false,
 
-    // Metis is tuned for Claude/Kimi. Prometheus and Momus cover planning and
-    // review with the OpenAI models already available through ChatGPT auth.
-    "disabled_agents": ["metis"],
+    // Bedrock Opus 5 is now available for Claude-oriented planning and
+    // orchestration. GPT-native agents remain on the OpenAI family.
+    "disabled_agents": [],
 
     // Neovim owns LSP diagnostics, terminal-browser owns browser automation,
     // and external search services remain opt-in.
@@ -38,8 +38,12 @@
     // Avoid inheriting the global xhigh setting for every delegated task.
     "agents": {
       "sisyphus": {
-        "model": "openai/gpt-5.6-sol",
-        "reasoning": "medium",
+        "model": "amazon-bedrock/global.anthropic.claude-opus-5",
+        "reasoning": "max",
+      },
+      "metis": {
+        "model": "amazon-bedrock/global.anthropic.claude-opus-5",
+        "reasoning": "high",
       },
       "hephaestus": {
         "model": "openai/gpt-5.6-sol",
@@ -81,8 +85,8 @@
 
     "categories": {
       "visual-engineering": {
-        "model": "openai/gpt-5.6-sol",
-        "reasoning": "medium",
+        "model": "amazon-bedrock/global.anthropic.claude-opus-5",
+        "reasoning": "max",
       },
       "ultrabrain": {
         "model": "openai/gpt-5.6-sol",
@@ -93,7 +97,7 @@
         "reasoning": "medium",
       },
       "artistry": {
-        "model": "openai/gpt-5.6-terra",
+        "model": "amazon-bedrock/global.anthropic.claude-opus-5",
         "reasoning": "high",
       },
       "quick": {
@@ -101,11 +105,11 @@
         "reasoning": "low",
       },
       "unspecified-low": {
-        "model": "openai/gpt-5.6-luna",
-        "reasoning": "medium",
+        "model": "openai/gpt-5.6-terra",
+        "reasoning": "high",
       },
       "unspecified-high": {
-        "model": "openai/gpt-5.6-sol",
+        "model": "amazon-bedrock/global.anthropic.claude-opus-5",
         "reasoning": "high",
       },
       "writing": {
@@ -118,10 +122,12 @@
       "defaultConcurrency": 3,
       "providerConcurrency": {
         "openai": 3,
+        "amazon-bedrock": 2,
       },
       "modelConcurrency": {
         "openai/gpt-5.6-sol": 2,
         "openai/gpt-5.6-luna-fast": 3,
+        "amazon-bedrock/global.anthropic.claude-opus-5": 2,
       },
     },
 

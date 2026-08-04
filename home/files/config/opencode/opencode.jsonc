@@ -12,8 +12,8 @@
   // duplicate updater stays disabled so resolution remains OpenCode-owned.
   "plugin": ["oh-my-openagent"],
 
-  // Use the ChatGPT-authenticated OpenAI provider for both the main coding
-  // model and lightweight background tasks such as session title generation.
+  // Keep OpenAI as the default and GPT-native backend while making Bedrock's
+  // Claude Opus 5 available to OmO's Claude-oriented agents.
   "model": "openai/gpt-5.6-sol",
   "small_model": "openai/gpt-5.3-codex-spark",
   "provider": {
@@ -23,7 +23,20 @@
           "options": {
             "reasoningEffort": "xhigh"
           }
+        },
+        "gpt-5.3-codex-spark": {
+          "options": {
+            "reasoningEffort": "low"
+          }
         }
+      }
+    },
+    "amazon-bedrock": {
+      // Opus 5 is invoked through its active global inference profile; the
+      // similarly named JP catalog entry is not valid for this account.
+      "options": {
+        "profile": "soracom-dev",
+        "region": "ap-northeast-1"
       }
     }
   },
