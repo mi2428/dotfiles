@@ -4,7 +4,7 @@ export type TodoItem = {
   priority?: string;
 };
 
-export type TodoLineKind = "in_progress" | "pending" | "other" | "summary";
+export type TodoLineKind = "in_progress" | "pending" | "other";
 
 export type TodoLine = {
   kind: TodoLineKind;
@@ -17,11 +17,7 @@ export type TodoView = {
   completed: number;
   cancelled: number;
   lines: TodoLine[];
-  hiddenActive: number;
 };
-
-export const MAX_VISIBLE_ACTIVE = 3;
-export const MAX_CONTENT_LENGTH = 88;
 
 const STATUS_ORDER: Readonly<Record<string, number>> = {
   in_progress: 0,
@@ -32,10 +28,8 @@ function statusRank(status: string): number {
   return STATUS_ORDER[status] ?? 2;
 }
 
-function truncateContent(content: string): string {
-  const compact = content.replace(/\s+/g, " ").trim();
-  if (compact.length <= MAX_CONTENT_LENGTH) return compact;
-  return `${compact.slice(0, MAX_CONTENT_LENGTH - 1)}…`;
+function compactContent(content: string): string {
+  return content.replace(/\s+/g, " ").trim();
 }
 
 export function normalizeTodos(input: readonly TodoItem[] | null | undefined): TodoItem[] {
@@ -58,22 +52,12 @@ export function buildTodoView(input: readonly TodoItem[] | null | undefined): To
   const completed = todos.filter((todo) => todo.status === "completed").length;
   const cancelled = todos.filter((todo) => todo.status === "cancelled").length;
   const activeTodos = [...inProgress, ...pending, ...other];
-  const visibleTodos = activeTodos.slice(0, MAX_VISIBLE_ACTIVE);
-  const lines: TodoLine[] = visibleTodos.map((todo) => ({
-    kind: todo.status === "in_progress" ? "in_progress" : todo.status === "pending" ? "pending" : "other",
-    text: `${todo.status === "in_progress" ? "▶" : todo.status === "pending" ? "·" : "?"} ${truncateContent(todo.content)}`,
-  }));
+  if (activeTodos.length === 0) return null;
 
-  const hiddenActive = Math.max(0, activeTodos.length - visibleTodos.length);
-  if (hiddenActive > 0) {
-    lines.push({ kind: "summary", text: `… ${hiddenActive} more active` });
-  }
-  if (completed > 0 || cancelled > 0) {
-    const summary = [completed > 0 ? `✓ ${completed} completed` : "", cancelled > 0 ? `× ${cancelled} cancelled` : ""]
-      .filter(Boolean)
-      .join("  ·  ");
-    lines.push({ kind: "summary", text: summary });
-  }
+  const lines: TodoLine[] = activeTodos.map((todo) => ({
+    kind: todo.status === "in_progress" ? "in_progress" : todo.status === "pending" ? "pending" : "other",
+    text: `${todo.status === "in_progress" ? "▶" : todo.status === "pending" ? "·" : "?"} ${compactContent(todo.content)}`,
+  }));
 
   return {
     total: todos.length,
@@ -81,6 +65,5 @@ export function buildTodoView(input: readonly TodoItem[] | null | undefined): To
     completed,
     cancelled,
     lines,
-    hiddenActive,
   };
 }

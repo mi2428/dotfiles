@@ -1,7 +1,16 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it } from "bun:test";
-import { buildTodoView, MAX_CONTENT_LENGTH } from "./tui/lib/todo-overlay";
-import { buildTodoOverlayNodes, registerTodoOverlay, sessionIDFromRoute } from "./tui/tui";
+import { buildTodoView } from "./tui/lib/todo-overlay";
+import {
+  buildTodoOverlayNodes,
+  MAX_BODY_HEIGHT,
+  MAX_PANEL_WIDTH,
+  popupWidth,
+  registerTodoOverlay,
+  sessionIDFromRoute,
+} from "./tui/tui";
 
 const todos = [
   { content: "finish report", status: "completed" },
@@ -11,10 +20,23 @@ const todos = [
 ];
 
 describe("todo overlay state", () => {
-  it("orders in-progress before pending and compresses archived statuses", () => {
+  it("is enabled for oc, ocomo, and ocslim", () => {
+    const configPaths = [
+      resolve(import.meta.dir, "../tui.json"),
+      resolve(import.meta.dir, "../profiles/omo/tui.json"),
+      resolve(import.meta.dir, "../profiles/slim/tui.json"),
+    ];
+
+    for (const configPath of configPaths) {
+      const config = JSON.parse(readFileSync(configPath, "utf8")) as { plugin?: string[] };
+      assert(config.plugin?.includes("./plugins/tui"), `${configPath} must enable ./plugins/tui`);
+    }
+  });
+
+  it("orders every active item before archived statuses and excludes archived rows", () => {
     const view = buildTodoView(todos);
     assert(view);
-    assert.deepEqual(view.lines.map((line) => line.text), ["▶ run tests", "· wire overlay", "✓ 1 completed  ·  × 1 cancelled"]);
+    assert.deepEqual(view.lines.map((line) => line.text), ["▶ run tests", "· wire overlay"]);
     assert.equal(view.active, 2);
     assert.equal(view.completed, 1);
     assert.equal(view.cancelled, 1);
@@ -22,9 +44,10 @@ describe("todo overlay state", () => {
 
   it("returns no overlay data for an empty todo list", () => {
     assert.equal(buildTodoView([]), null);
+    assert.equal(buildTodoView([{ content: "done", status: "completed" }]), null);
   });
 
-  it("keeps the overlay session-only and positions it as a non-focusable top panel", () => {
+  it("keeps the overlay session-only and styles it as a responsive top-right toast", () => {
     assert.equal(sessionIDFromRoute({ name: "home" }), undefined);
     assert.equal(sessionIDFromRoute({ name: "session", params: { sessionID: "ses_1" } }), "ses_1");
     assert.equal(sessionIDFromRoute({ name: "session", params: {} }), undefined);
@@ -32,35 +55,64 @@ describe("todo overlay state", () => {
     assert.equal(sessionIDFromRoute({ name: "other", params: { sessionID: "ses_1" } }), undefined);
     assert.equal(buildTodoOverlayNodes([], {} as never), null);
 
-    const nodes = buildTodoOverlayNodes([{ content: "work", status: "pending" }], {
-      backgroundPanel: "panel",
-      borderSubtle: "border",
-      info: "info",
-      success: "success",
-      warning: "warning",
-      text: "text",
-      textMuted: "muted",
-    });
+    const nodes = buildTodoOverlayNodes(
+      [{ content: "work", status: "pending" }],
+      {
+        backgroundPanel: "panel",
+        borderSubtle: "border",
+        info: "info",
+        success: "success",
+        warning: "warning",
+        text: "text",
+        textMuted: "muted",
+      },
+      200,
+    );
     assert(nodes);
     assert.equal(nodes.props.position, "absolute");
-    assert.equal(nodes.props.top, 0);
+    assert.equal(nodes.props.top, 2);
+    assert.equal(nodes.props.right, 2);
+    assert.equal(nodes.props.width, MAX_PANEL_WIDTH);
+    assert.deepEqual(nodes.props.border, ["left", "right"]);
+    assert.equal(nodes.props.borderStyle, undefined);
     assert.equal("focusable" in nodes.props, false);
+    assert.equal(nodes.children?.[1]?.kind, "scrollbox");
+    assert.equal(popupWidth(80), 36);
+    assert.equal(popupWidth(200), MAX_PANEL_WIDTH);
   });
 
-  it("caps visible active items and truncates long content", () => {
+  it("keeps all active items in the scrollbox without truncating their content", () => {
+    const longContent = "x".repeat(140);
     const view = buildTodoView([
-      { content: "x".repeat(MAX_CONTENT_LENGTH + 20), status: "in_progress" },
+      { content: longContent, status: "in_progress" },
       { content: "second", status: "pending" },
       { content: "third", status: "pending" },
       { content: "fourth", status: "pending" },
+      { content: "fifth", status: "pending" },
+      { content: "archived", status: "completed" },
     ]);
 
     assert(view);
-    assert.equal(view.lines.length, 4);
-    assert.equal(view.hiddenActive, 1);
-    assert.equal(view.lines[0]?.text.length, MAX_CONTENT_LENGTH + 2);
-    assert.equal(view.lines[0]?.text.endsWith("…"), true);
-    assert.equal(view.lines[3]?.text, "… 1 more active");
+    assert.equal(view.lines.length, 5);
+    assert.equal(view.lines[0]?.text, `▶ ${longContent}`);
+    assert.equal(view.lines.some((line) => line.text.includes("more active")), false);
+
+    const nodes = buildTodoOverlayNodes(view.lines.map((line, index) => ({
+      content: line.text.slice(2),
+      status: index === 0 ? "in_progress" : "pending",
+    })), {} as never);
+    const body = nodes?.children?.[1];
+    assert(body);
+    assert.equal(body.kind, "scrollbox");
+    assert.equal(body.props.height, MAX_BODY_HEIGHT);
+    assert.equal(body.children?.length, 5);
+    assert.equal(body.children?.[0]?.props.wrapMode, "word");
+
+    const many = buildTodoOverlayNodes(
+      Array.from({ length: 12 }, (_, index) => ({ content: `task ${index}`, status: "pending" })),
+      {} as never,
+    );
+    assert.equal(many?.children?.[1]?.props.height, MAX_BODY_HEIGHT);
   });
 
   it("reads authoritative state on every render and cleans up its event subscription", () => {
@@ -90,7 +142,7 @@ describe("todo overlay state", () => {
           };
         },
       },
-      renderer: { requestRender: () => (renders += 1) },
+      renderer: { width: 120, requestRender: () => (renders += 1) },
       lifecycle: { onDispose: (handler: () => void) => (dispose = handler) },
       slots: {
         register: (registration: { slots: { app: () => unknown } }) => {
@@ -110,12 +162,27 @@ describe("todo overlay state", () => {
         },
       },
     };
+    type FakeNode = {
+      kind: string;
+      props: Record<string, unknown>;
+      children: unknown[];
+      scrollTop: number;
+      isDestroyed: boolean;
+      [key: string]: unknown;
+    };
     const solid = {
-      createElement: (kind: string) => ({ kind, props: {}, children: [] as unknown[] }),
-      setProp: (node: { props: Record<string, unknown> }, name: string, value: unknown) => {
+      createElement: (kind: string): FakeNode => ({
+        kind,
+        props: {},
+        children: [],
+        scrollTop: 0,
+        isDestroyed: false,
+      }),
+      setProp: (node: FakeNode, name: string, value: unknown) => {
         node.props[name] = value;
+        node[name] = value;
       },
-      insert: (node: { children: unknown[] }, child: unknown) => {
+      insert: (node: FakeNode, child: unknown) => {
         node.children.push(child);
       },
     };
@@ -124,9 +191,19 @@ describe("todo overlay state", () => {
     assert(eventHandler);
     assert(dispose);
     assert(appSlot);
-    assert(appSlot());
-    assert(appSlot());
+    const first = appSlot() as FakeNode;
+    const firstScrollBox = first.children.find((child) => (child as FakeNode).kind === "scrollbox") as FakeNode;
+    assert(firstScrollBox);
+    firstScrollBox.scrollTop = 3;
+
+    const second = appSlot() as FakeNode;
+    const secondScrollBox = second.children.find((child) => (child as FakeNode).kind === "scrollbox") as FakeNode;
+    assert(secondScrollBox);
     assert.equal(reads, 2);
+    const restore = secondScrollBox.props.onSizeChange as ((this: FakeNode) => void) | undefined;
+    assert(restore);
+    restore.call(secondScrollBox);
+    assert.equal(secondScrollBox.scrollTop, 3);
     eventHandler();
     assert.equal(renders, 1);
     dispose();
