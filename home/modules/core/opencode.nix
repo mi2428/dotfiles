@@ -112,13 +112,15 @@ let
   herdrAgentLayout = pkgs.fetchFromGitHub {
     owner = "mi2428";
     repo = "herdr-agent-layout";
-    rev = "4a472b5714d868b2c668a7a2e45bd80ff546be93";
-    hash = "sha256-nWeaR8joO+SK2yc8AJirr8ktPdO8XKK/JV3mCi1haEg=";
+    rev = "b5475d4851aa776e2dbe404db8e6d2f75a96e1c2";
+    hash = "sha256-PUO5hOywrHo4CztfoG5YeasmOf81WjbprKdSYwNhzjo=";
   };
   herdrAgentLayoutSkill = "${herdrAgentLayout}/skills/herdr-agent-layout";
 in {
   xdg.configFile = {
     "opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
+    "opencode/agents/herdr-supervisor.md" =
+      mkLink ../../files/config/opencode/agents/herdr-supervisor.md;
     "opencode/opencode.jsonc" = mkLink generated.defaultConfig;
     "opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
@@ -127,6 +129,8 @@ in {
     # These are config-only profiles: sessions, auth, cache, and state remain
     # shared, while framework plugin registries stay isolated.
     "opencode-profiles/omo/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
+    "opencode-profiles/omo/opencode/agents/herdr-supervisor.md" =
+      mkLink ../../files/config/opencode/agents/herdr-supervisor.md;
     "opencode-profiles/omo/opencode/opencode.jsonc" = mkLink generated.omoConfig;
     "opencode-profiles/omo/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
@@ -139,6 +143,8 @@ in {
       mkLink profileShellEnvPlugin;
 
     "opencode-profiles/slim/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
+    "opencode-profiles/slim/opencode/agents/herdr-supervisor.md" =
+      mkLink ../../files/config/opencode/agents/herdr-supervisor.md;
     "opencode-profiles/slim/opencode/opencode.jsonc" = mkLink generated.slimConfig;
     "opencode-profiles/slim/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;

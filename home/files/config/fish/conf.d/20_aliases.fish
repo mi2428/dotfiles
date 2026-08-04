@@ -481,15 +481,44 @@ end
 if command -sq opencode
     # The default XDG root stays framework-plugin-free. `oc-omo` and `oc-slim`
     # select isolated framework roots while all three keep the shared Todo HUD.
-    alias oc='opencode'
-    alias oc++='opencode --auto'
+    function __dotfiles_run_opencode --argument-names executable
+        set -e argv[1]
+        set -l agent_args
+
+        if set -q HERDR_ENV; and test "$HERDR_ENV" = 1; and command -sq herdr
+            if not contains -- --agent $argv; and not string match -q -- '--agent=*' $argv
+                set agent_args --agent 'Herdr Supervisor'
+            end
+        end
+
+        command $executable $agent_args $argv
+    end
+
+    function oc --wraps opencode
+        __dotfiles_run_opencode opencode $argv
+    end
+
+    function oc++ --wraps opencode
+        __dotfiles_run_opencode opencode --auto $argv
+    end
+
     if command -sq oc-omo
-        alias ocomo='oc-omo'
-        alias ocomo++='oc-omo --auto'
+        function ocomo --wraps oc-omo
+            __dotfiles_run_opencode oc-omo $argv
+        end
+
+        function ocomo++ --wraps oc-omo
+            __dotfiles_run_opencode oc-omo --auto $argv
+        end
     end
     if command -sq oc-slim
-        alias ocslim='oc-slim'
-        alias ocslim++='oc-slim --auto'
+        function ocslim --wraps oc-slim
+            __dotfiles_run_opencode oc-slim $argv
+        end
+
+        function ocslim++ --wraps oc-slim
+            __dotfiles_run_opencode oc-slim --auto $argv
+        end
     end
 end
 
