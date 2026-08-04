@@ -6,6 +6,7 @@
     "macFlamingo": "#f2cdcd",
     "macPink": "#f5c2e7",
     "macMauve": "#cba6f7",
+    "macMauveBalanced": "#8064a2",
     "macRed": "#f38ba8",
     "macMaroon": "#eba0ac",
     "macPeach": "#fab387",
@@ -36,8 +37,8 @@
       "light": "macAccent"
     },
     "secondary": {
-      "dark": "macAccent",
-      "light": "macAccent"
+      "dark": "macMauveBalanced",
+      "light": "macMauveBalanced"
     },
     "accent": {
       "dark": "macPink",
