@@ -71,6 +71,7 @@ mauve = "#cba6f7"
 
 [ui]
 host_cursor = "native"
+tab_bar_position = "bottom"
 sidebar_collapsed_mode = "hidden"
 sidebar_start_collapsed = false
 hide_tab_bar_when_single_tab = true
