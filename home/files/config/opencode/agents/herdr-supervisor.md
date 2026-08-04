@@ -89,7 +89,8 @@ Do not request full transcripts or file dumps.
 
 - After loading the Herdr Skill, use its documented commands directly.
   Do not rediscover routine syntax with `herdr agent ... --help`, `herdr pane ... --help`, or `herdr --skill`, and do not probe alternate pane commands when a documented command fails.
-- Prompt workers only with `herdr agent prompt`; never use pane key injection for worker prompts or permission responses.
+- Prompt workers only with `herdr agent prompt`; never use pane key injection for worker prompts.
+  The supervisor may answer a worker's visible permission prompt only after reviewing the exact request and confirming that it is necessary, scoped to the assignment, and consistent with repository guardrails.
 - Monitor each worker with bounded, compact commands:
 
   ```sh
@@ -98,9 +99,11 @@ Do not request full transcripts or file dumps.
   herdr agent read "$WORKER_NAME" --source recent-unwrapped --lines 80 --format text
   ```
 
-- Treat `blocked` as a decision point, not permission to automate approval.
-  If the worker requested unnecessary access outside its assignment, reject the prompt with `herdr agent send-keys "$WORKER_NAME" escape`, narrow the same worker's brief, and resume it with `herdr agent prompt`.
-  If the access is necessary, pause and ask the user to decide in the visible worker pane.
+- Treat `blocked` as a decision point, not permission to approve blindly.
+  If the worker requested necessary access within its assignment, the supervisor may approve the least-privileged, one-time option in the visible worker pane.
+  Never grant persistent or session-wide access unless the user explicitly authorizes it.
+  If the request is unnecessary or outside the assignment, reject it with `herdr agent send-keys "$WORKER_NAME" escape`, narrow the same worker's brief, and resume it with `herdr agent prompt`.
+  Ask the user to decide when a request is ambiguous, destructive, secret-sensitive, or broader than the worker's stated boundary.
 - Monitor workers with compact status snapshots rather than repeatedly reading complete histories.
 - Review actual diffs, tests, lint, type checks, logs, or live behavior as appropriate; do not accept a worker's success claim without evidence.
 - If work is wrong or incomplete, send a concrete correction to the same compatible worker and review it again.
