@@ -32,7 +32,7 @@ on run
         set workspaceWindow to new window with configuration herdrConfiguration
         set herdrPane to terminal 1 of selected tab of workspaceWindow
         set tmuxPane to split herdrPane direction right with configuration tmuxConfiguration
-        perform action "decrease_font_size:2" on herdrPane
+        -- perform action "decrease_font_size:2" on herdrPane
         activate window workspaceWindow
         focus herdrPane
 
