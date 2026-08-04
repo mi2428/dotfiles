@@ -1,0 +1,157 @@
+.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 0;
+  background: transparent;
+  color: #cdd6f4;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #6c7086;
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-section,
+.hljs-link {
+  color: #cba6f7;
+}
+
+.hljs-string,
+.hljs-title,
+.hljs-name,
+.hljs-type,
+.hljs-attribute,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition,
+.hljs-template-tag,
+.hljs-template-variable {
+  color: #a6e3a1;
+}
+
+.hljs-number,
+.hljs-regexp,
+.hljs-variable,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: #fab387;
+}
+
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-class .hljs-title,
+.hljs-title.class_ {
+  color: #89b4fa;
+}
+
+.hljs-function .hljs-title,
+.hljs-title.function_ {
+  color: #74c7ec;
+}
+
+.hljs-params,
+.hljs-meta,
+.hljs-subst {
+  color: #bac2de;
+}
+
+.hljs-tag,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: #f38ba8;
+}
+
+.hljs-attr,
+.hljs-property,
+.hljs-variable.language_ {
+  color: #89dceb;
+}
+
+.hljs-deletion {
+  color: #f38ba8;
+  background: rgb(243 139 168 / 0.12);
+}
+
+.hljs-addition {
+  background: rgb(166 227 161 / 0.1);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 700;
+}
+
+main[data-theme='light'] .hljs {
+  color: #302b3b;
+}
+
+main[data-theme='light'] .hljs-comment,
+main[data-theme='light'] .hljs-quote {
+  color: #81778f;
+}
+
+main[data-theme='light'] .hljs-keyword,
+main[data-theme='light'] .hljs-selector-tag,
+main[data-theme='light'] .hljs-literal,
+main[data-theme='light'] .hljs-section,
+main[data-theme='light'] .hljs-link {
+  color: #7849a9;
+}
+
+main[data-theme='light'] .hljs-string,
+main[data-theme='light'] .hljs-title,
+main[data-theme='light'] .hljs-name,
+main[data-theme='light'] .hljs-type,
+main[data-theme='light'] .hljs-attribute,
+main[data-theme='light'] .hljs-symbol,
+main[data-theme='light'] .hljs-bullet,
+main[data-theme='light'] .hljs-addition,
+main[data-theme='light'] .hljs-template-tag,
+main[data-theme='light'] .hljs-template-variable {
+  color: #28783b;
+}
+
+main[data-theme='light'] .hljs-number,
+main[data-theme='light'] .hljs-regexp,
+main[data-theme='light'] .hljs-variable,
+main[data-theme='light'] .hljs-selector-attr,
+main[data-theme='light'] .hljs-selector-pseudo {
+  color: #a34d18;
+}
+
+main[data-theme='light'] .hljs-built_in,
+main[data-theme='light'] .hljs-builtin-name,
+main[data-theme='light'] .hljs-class .hljs-title,
+main[data-theme='light'] .hljs-title.class_ {
+  color: #2765b3;
+}
+
+main[data-theme='light'] .hljs-function .hljs-title,
+main[data-theme='light'] .hljs-title.function_ {
+  color: #16718a;
+}
+
+main[data-theme='light'] .hljs-params,
+main[data-theme='light'] .hljs-meta,
+main[data-theme='light'] .hljs-subst {
+  color: #50485d;
+}
+
+main[data-theme='light'] .hljs-tag,
+main[data-theme='light'] .hljs-selector-id,
+main[data-theme='light'] .hljs-selector-class {
+  color: #b03a56;
+}
+
+main[data-theme='light'] .hljs-attr,
+main[data-theme='light'] .hljs-property,
+main[data-theme='light'] .hljs-variable.language_ {
+  color: #16796e;
+}

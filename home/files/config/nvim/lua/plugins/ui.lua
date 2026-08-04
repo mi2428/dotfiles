@@ -1176,6 +1176,27 @@ return {
 		},
 	},
 	{
+		"iamcco/markdown-preview.nvim",
+		cmd = { "MarkdownPreview", "MarkdownPreviewStop", "MarkdownPreviewToggle" },
+		ft = { "markdown" },
+		build = function(plugin)
+			vim.opt.runtimepath:prepend(plugin.dir)
+			vim.fn["mkdp#util#install_sync"](true)
+		end,
+		init = function()
+			require("config.markdown_preview").setup()
+		end,
+		keys = {
+			{
+				"<leader>mp",
+				function()
+					require("config.markdown_preview").toggle()
+				end,
+				desc = "Toggle Markdown preview",
+			},
+		},
+	},
+	{
 		"akinsho/bufferline.nvim",
 		version = "*",
 		event = "VeryLazy",
