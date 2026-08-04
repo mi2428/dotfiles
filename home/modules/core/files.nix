@@ -77,14 +77,15 @@ in {
     "opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode/tui.json" = mkLink ../../files/config/opencode/tui.json;
-    # Keep OmO and Slim in separate XDG config roots. The wrappers in bin/
-    # select one root at process start, so their plugin registries never mix.
+    # The default OpenCode root stays framework-free. OmO and Slim use separate
+    # XDG roots selected by wrappers, so their plugin registries never mix.
     "opencode-profiles/omo/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
     "opencode-profiles/omo/opencode/opencode.jsonc" =
-      mkLink ../../files/config/opencode/opencode.jsonc;
+      mkLink ../../files/config/opencode/profiles/omo/opencode.jsonc;
     "opencode-profiles/omo/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
-    "opencode-profiles/omo/opencode/tui.json" = mkLink ../../files/config/opencode/tui.json;
+    "opencode-profiles/omo/opencode/tui.json" =
+      mkLink ../../files/config/opencode/profiles/omo/tui.json;
     "opencode-profiles/omo/opencode/plugins/tui" = {
       force = true;
       source = todoOverlayOpenCodePackage;

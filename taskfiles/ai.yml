@@ -7,7 +7,7 @@ tasks:
       - '{{.REPO_ROOT}}/scripts/check-ai-stack.sh'
 
   ai.upgrade:
-    desc: Upgrade AI harnesses and refresh the exact OmO plugin/schema pin
+    desc: Upgrade AI harnesses and refresh the exact OmO and Slim plugin pins
     cmds:
       - |
         set -eu
@@ -18,5 +18,5 @@ tasks:
         for target in claude codex opencode; do
           herdr integration install "$target" >/dev/null
         done
-      - '{{.REPO_ROOT}}/scripts/update-ai-stack.sh {{default "" .OMO_VERSION}}'
+      - '{{.REPO_ROOT}}/scripts/update-ai-stack.sh ''{{default "" .OMO_VERSION}}'' ''{{default "" .SLIM_VERSION}}'''
       - task: ai.check

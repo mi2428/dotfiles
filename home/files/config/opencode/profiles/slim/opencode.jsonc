@@ -7,7 +7,9 @@
 
   // This profile is intentionally isolated from OmO. The wrapper selects it
   // through XDG_CONFIG_HOME, so both plugins can remain installed safely.
-  "plugin": ["oh-my-opencode-slim"],
+  // `task ai.upgrade` updates this exact pin together with this profile's
+  // tui.json.
+  "plugin": ["oh-my-opencode-slim@2.2.9"],
 
   // Slim's performance preset uses Opus 5 for the orchestration path. The
   // smaller OpenAI model handles OpenCode's incidental background work.

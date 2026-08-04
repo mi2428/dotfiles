@@ -1,9 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
 
-  // This root intentionally has no framework plugin. `oc-omo` and `oc-slim`
-  // select frameworks through their own isolated config roots.
-
   // Homebrew owns the OpenCode upgrade lifecycle on macOS.
   "autoupdate": false,
 
@@ -11,8 +8,14 @@
   // OpenCode can publish a share link.
   "share": "disabled",
 
-  // Keep OpenAI as the default GPT-native backend while making Bedrock's
-  // Claude Opus 5 available for explicit use.
+  // This config root is dedicated to OmO. The wrapper selects it through
+  // XDG_CONFIG_HOME, keeping its framework plugin isolated from other roots.
+  // `task ai.upgrade` updates this exact pin together with this profile's
+  // tui.json and the matching OmO schema URL.
+  "plugin": ["oh-my-openagent@4.19.4"],
+
+  // Keep OpenAI as the default and GPT-native backend while making Bedrock's
+  // Claude Opus 5 available to OmO's Claude-oriented agents.
   "model": "openai/gpt-5.6-sol",
   "small_model": "openai/gpt-5.3-codex-spark",
   "provider": {

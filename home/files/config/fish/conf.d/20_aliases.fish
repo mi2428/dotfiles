@@ -479,6 +479,8 @@ if command -sq codex
 end
 
 if command -sq opencode
+    # The default XDG root is deliberately plugin-free. `oc-omo` and `oc-slim`
+    # select a framework profile through their own isolated config root.
     alias oc='opencode'
     if command -sq oc-omo
         alias ocomo='oc-omo'
