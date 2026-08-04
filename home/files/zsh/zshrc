@@ -1,41 +1,67 @@
-# Fig pre block. Keep at the top of this file.
-[[ -f "$HOME/.fig/shell/zshrc.pre.zsh" ]] && . "$HOME/.fig/shell/zshrc.pre.zsh"
+export CARGO_HOME="$HOME/.cargo"
+export DENO_INSTALL="$HOME/.deno"
+export GOPATH="$HOME/io/gocode"
 
-if [[ -d "$HOME/.zsh" ]]; then
-  while IFS= read -r conf; do
-    source "$conf"
-  done < <(find "$HOME/.zsh" -type l | sort)
+typeset volta_home="$HOME/.volta"
+if [[ "$OSTYPE" == darwin* && "$MACHTYPE" == x86_64-* ]]; then
+  volta_home="$HOME/.volta_x64"
+fi
+export VOLTA_HOME="$volta_home"
+
+typeset -U path PATH
+path=(
+  "$HOME/bin"
+  "$HOME/dotfiles/bin"
+  "$HOME/io/bin"
+  "$HOME/.local/bin"
+  "$HOME/.nix-profile/bin"
+  /run/current-system/sw/bin
+  /nix/var/nix/profiles/default/bin
+  "$DENO_INSTALL/bin"
+  "$CARGO_HOME/bin"
+  "$GOPATH/bin"
+  "$VOLTA_HOME/bin"
+  /opt/homebrew/bin
+  /opt/homebrew/sbin
+  /usr/local/bin
+  /usr/local/sbin
+  /usr/bin
+  /usr/sbin
+  /bin
+  /sbin
+  /snap/bin
+  /Library/Apple/usr/bin
+  $path
+)
+unset volta_home
+
+HISTFILE="$HOME/.zhistory"
+HISTSIZE=10000
+SAVEHIST=10000
+setopt APPEND_HISTORY
+setopt HIST_IGNORE_ALL_DUPS
+setopt HIST_IGNORE_SPACE
+setopt HIST_REDUCE_BLANKS
+setopt INC_APPEND_HISTORY
+setopt NO_BEEP
+
+bindkey -e
+autoload -Uz compinit
+compinit
+
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ll='ls -la'
+alias la='ls -A'
+
+if (( $+commands[mise] )); then
+  eval "$(mise activate zsh)"
 fi
 
-if ! command -v granted >/dev/null 2>&1 && [ -f "$HOME/.zshrc_functions/assume-role" ]; then
-  export SORACOM_AWS_LOGIN_ITEM_ID=jggxzohgplnedvzyftmxinlgdu  # not a secret!!
-  source "$HOME/.zshrc_functions/assume-role"
+if (( $+commands[direnv] )); then
+  eval "$(direnv hook zsh)"
 fi
 
-# Fig post block. Keep at the bottom of this file.
-[[ -f "$HOME/.fig/shell/zshrc.post.zsh" ]] && . "$HOME/.fig/shell/zshrc.post.zsh"
-
-#THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
-export SDKMAN_DIR="$HOME/.sdkman"
-[[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
-
-### MANAGED BY RANCHER DESKTOP START (DO NOT EDIT)
-#export PATH="$HOME/.rd/bin:$PATH"
-### MANAGED BY RANCHER DESKTOP END (DO NOT EDIT)
-
-# added by Snowflake SnowSQL installer v1.2
-export PATH=/Applications/SnowSQL.app/Contents/MacOS:$PATH
-
-if [[ "$TERM_PROGRAM" == "kiro" ]] && command -v kiro >/dev/null 2>&1; then
-  kiro_shell_integration_path="$(kiro --locate-shell-integration-path zsh 2>/dev/null)"
-  [[ -n "$kiro_shell_integration_path" && -f "$kiro_shell_integration_path" ]] && . "$kiro_shell_integration_path"
-fi
-
-# Added by Antigravity
-export PATH="$HOME/.antigravity/antigravity/bin:$PATH"
-
-# Added by Antigravity
-export PATH="$HOME/.antigravity/antigravity/bin:$PATH"
-
-# OpenClaw Completion
-[[ -f "$HOME/.openclaw/completions/openclaw.zsh" ]] && source "$HOME/.openclaw/completions/openclaw.zsh"
+# Match Fish's bold Catppuccin Mocha lavender directory style.
+PROMPT='%B%F{#b4befe}%~%f%b%# '
+unset RPROMPT

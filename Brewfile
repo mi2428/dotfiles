@@ -191,7 +191,6 @@ brew "yq"
 brew "yt-dlp"
 brew "zig"
 brew "zoxide"
-brew "zsh-git-prompt"
 
 cask "1password-cli"
 cask "android-platform-tools"

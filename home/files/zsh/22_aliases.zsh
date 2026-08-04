@@ -1,1 +1,0 @@
-export TRASHBIN=$HOME/.trash

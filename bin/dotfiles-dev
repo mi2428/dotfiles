@@ -272,46 +272,12 @@ run_wget() {
 
 prepare_zsh_home() {
     dev_home=$(prepare_dev_home zsh)
-    zsh_home=$dev_home/.zsh
-
-    ensure_dir "$zsh_home"
     ensure_link "$dev_home/.zshrc" "$repo_root/home/files/zsh/zshrc"
-    ensure_link "$dev_home/.zlogin" "$repo_root/home/files/zsh/zlogin"
 
-    for source_path in "$repo_root"/home/files/zsh/*; do
-        file_name=$(basename "$source_path")
-
-        case "$file_name" in
-            zshrc|zlogin)
-                continue
-                ;;
-        esac
-
-        if [ -f "$source_path" ]; then
-            ensure_link "$zsh_home/$file_name" "$source_path"
-        fi
-    done
-
-    case "$(uname -s)" in
-        Darwin)
-            ensure_link \
-                "$zsh_home/12_general_path.zsh" \
-                "$repo_root/home/files/zsh/12_general_path.macos.zsh"
-            ensure_link \
-                "$zsh_home/14_general_fzf.zsh" \
-                "$repo_root/home/files/zsh/14_general_fzf.macos.zsh"
-            ensure_link \
-                "$zsh_home/22_aliases.zsh" \
-                "$repo_root/home/files/zsh/22_aliases.macos.zsh"
-            ;;
-    esac
-
-    for extra_name in .antigravity .fig .nix-profile .openclaw .sdkman .zshrc_functions; do
-        extra_source=$real_home/$extra_name
-        if [ -e "$extra_source" ] || [ -L "$extra_source" ]; then
-            ensure_link "$dev_home/$extra_name" "$extra_source"
-        fi
-    done
+    nix_profile_source=$real_home/.nix-profile
+    if [ -e "$nix_profile_source" ] || [ -L "$nix_profile_source" ]; then
+        ensure_link "$dev_home/.nix-profile" "$nix_profile_source"
+    fi
 
     printf '%s\n' "$dev_home"
 }

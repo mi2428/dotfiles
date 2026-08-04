@@ -52,21 +52,5 @@ in {
         description = "Host-specific tmux memory status script.";
       };
     };
-
-    zsh.overrides = mkOption {
-      type = types.attrsOf types.path;
-      default =
-        if pkgs.stdenv.isDarwin then
-          {
-            "12_general_path.zsh" = ../../files/zsh/12_general_path.macos.zsh;
-            "14_general_fzf.zsh" = ../../files/zsh/14_general_fzf.macos.zsh;
-            "22_aliases.zsh" = ../../files/zsh/22_aliases.macos.zsh;
-          }
-        else
-          {
-            "22_aliases.zsh" = ../../files/zsh/22_aliases.zsh;
-          };
-      description = "Host-specific Zsh fragment overrides keyed by filename.";
-    };
   };
 }
