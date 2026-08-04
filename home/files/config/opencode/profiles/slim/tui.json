@@ -13,5 +13,5 @@
   "keybinds": {
     "variant_cycle": "<leader>v"
   },
-  "plugin": ["oh-my-opencode-slim"]
+  "plugin": ["oh-my-opencode-slim", "./plugins/tui"]
 }

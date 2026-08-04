@@ -33,6 +33,9 @@ let
   ghReviewPreview = ../../files/libexec/dotfiles/gh-review-preview;
   herdrOpenCodeIntegration = config.lib.file.mkOutOfStoreSymlink
     "${config.home.homeDirectory}/.config/opencode/plugins/herdr-agent-state.js";
+  todoOverlayPackageRoot = ../../files/config/opencode/plugins/tui;
+  todoOverlayOpenCodePackage = config.lib.file.mkOutOfStoreSymlink
+    "${config.home.homeDirectory}/.config/opencode/plugins/tui";
   slimOpenCodePluginConfig = ../../files/config/opencode/profiles/slim/oh-my-opencode-slim.jsonc;
   macCompatibilityFiles = lib.optionalAttrs pkgs.stdenv.isDarwin {
     "Library/Application Support/com.mitchellh.ghostty/themes" =
@@ -82,6 +85,10 @@ in {
     "opencode-profiles/omo/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode-profiles/omo/opencode/tui.json" = mkLink ../../files/config/opencode/tui.json;
+    "opencode-profiles/omo/opencode/plugins/tui" = {
+      force = true;
+      source = todoOverlayOpenCodePackage;
+    };
     "opencode-profiles/omo/opencode/plugins/herdr-agent-state.js" = {
       force = true;
       source = herdrOpenCodeIntegration;
@@ -93,6 +100,10 @@ in {
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode-profiles/slim/opencode/tui.json" =
       mkLink ../../files/config/opencode/profiles/slim/tui.json;
+    "opencode-profiles/slim/opencode/plugins/tui" = {
+      force = true;
+      source = todoOverlayOpenCodePackage;
+    };
     "opencode-profiles/slim/opencode/plugins/herdr-agent-state.js" = {
       force = true;
       source = herdrOpenCodeIntegration;
@@ -136,6 +147,40 @@ in {
         fi
       done
     fi
+  '';
+
+  # The default package owns the single dependency install. OmO and Slim link
+  # their plugin package to this directory, so their isolated XDG roots do not
+  # install incompatible duplicate OpenTUI trees.
+  home.activation.installOpenCodeTodoOverlayDeps = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+    todo_overlay_source="${todoOverlayPackageRoot}"
+    todo_overlay_package="${config.home.homeDirectory}/.config/opencode/plugins/tui"
+    todo_overlay_files=(
+      package.json
+      bun.lock
+      tui.ts
+      lib/todo-overlay.ts
+    )
+
+    for todo_overlay_file in "''${todo_overlay_files[@]}"; do
+      if [ ! -f "$todo_overlay_source/$todo_overlay_file" ]; then
+        echo "OpenCode Todo overlay source file is missing: $todo_overlay_source/$todo_overlay_file" >&2
+        exit 1
+      fi
+    done
+
+    mkdir -p "$todo_overlay_package/lib"
+    for todo_overlay_file in "''${todo_overlay_files[@]}"; do
+      todo_overlay_destination="$todo_overlay_package/$todo_overlay_file"
+      rm -f "$todo_overlay_destination"
+      mkdir -p "$(dirname "$todo_overlay_destination")"
+      cp "$todo_overlay_source/$todo_overlay_file" "$todo_overlay_destination"
+    done
+
+    (
+      cd "$todo_overlay_package"
+      ${pkgs.bun}/bin/bun install --frozen-lockfile --production
+    )
   '';
 
   # Herdr owns its SessionStart hook but preserves other entries in

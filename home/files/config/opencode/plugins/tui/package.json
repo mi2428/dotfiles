@@ -1,0 +1,15 @@
+{
+  "name": "opencode-todo-overlay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tui": "./tui.ts"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "1.18.10",
+    "@opentui/core": "0.4.5",
+    "@opentui/keymap": "0.4.5",
+    "@opentui/solid": "0.4.5"
+  }
+}
