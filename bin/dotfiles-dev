@@ -272,6 +272,7 @@ run_wget() {
 
 prepare_zsh_home() {
     dev_home=$(prepare_dev_home zsh)
+    ensure_link "$dev_home/.zshenv" "$repo_root/home/files/zsh/zshenv"
     ensure_link "$dev_home/.zshrc" "$repo_root/home/files/zsh/zshrc"
 
     nix_profile_source=$real_home/.nix-profile
