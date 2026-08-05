@@ -69,8 +69,8 @@
       "light": "macSubtext1"
     },
     "selectedListItemText": {
-      "dark": "macSubtext0",
-      "light": "macSubtext0"
+      "dark": "macBase",
+      "light": "macBase"
     },
     "background": {
       "dark": "none",

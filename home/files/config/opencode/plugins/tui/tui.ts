@@ -5,6 +5,7 @@ type Theme = {
   backgroundPanel: unknown;
   borderSubtle: unknown;
   info: unknown;
+  primary: unknown;
   selectedListItemText: unknown;
   success: unknown;
   warning: unknown;
@@ -40,6 +41,7 @@ type ScrollBoxAdapter = {
 
 type TextNodeAdapter = {
   children?: Array<string | TextNodeAdapter>;
+  bg?: unknown;
   fg?: unknown;
 };
 
@@ -105,9 +107,12 @@ function sameColor(current: unknown, target: unknown): boolean {
   return typeof equals === "function" && equals.call(current, target);
 }
 
-function recolorAttachmentLabels(root: RenderTreeAdapter, color: unknown): void {
+function recolorAttachmentLabels(root: RenderTreeAdapter, foreground: unknown, background: unknown): void {
   const visitTextNode = (node: TextNodeAdapter) => {
-    if ([" File ", " Directory "].includes(nodeText(node)) && !sameColor(node.fg, color)) node.fg = color;
+    if ([" File ", " Directory "].includes(nodeText(node))) {
+      if (!sameColor(node.fg, foreground)) node.fg = foreground;
+      if (!sameColor(node.bg, background)) node.bg = background;
+    }
     for (const child of node.children ?? []) {
       if (typeof child !== "string") visitTextNode(child);
     }
@@ -123,7 +128,7 @@ export function registerMessageLabelColors(api: Parameters<TuiPlugin>[0]): void 
   let timer: ReturnType<typeof setTimeout> | undefined;
   const recolor = () => {
     timer = undefined;
-    recolorAttachmentLabels(api.renderer.root, api.theme.current.selectedListItemText);
+    recolorAttachmentLabels(api.renderer.root, api.theme.current.selectedListItemText, api.theme.current.primary);
   };
   const schedule = () => {
     if (timer !== undefined) return;
