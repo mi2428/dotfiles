@@ -1,0 +1,312 @@
+#!/usr/bin/env python3
+"""Display the official CursorBench leaderboard in the terminal."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import sys
+from collections.abc import Sequence
+from dataclasses import dataclass
+from html.parser import HTMLParser
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+URL = "https://cursor.com/cursorbench"
+TIMEOUT = 10
+COLUMN_COUNT = 6
+MAX_SCORE = 100
+SCORE_RE = re.compile(r"^(\d+(?:\.\d+)?)%$")
+COST_RE = re.compile(r"^\$(\d+(?:\.\d+)?)$")
+INTEGER_RE = re.compile(r"^\d[\d,]*$")
+MODEL_ALIASES = {"claude": ("opus", "sonnet", "haiku", "fable")}
+LEADERBOARD_HEADERS = ("model", "score", "cost", "tokens", "steps")
+RESET = "\033[0m"
+RGB = tuple[int, int, int]
+MOCHA: dict[str, RGB] = {
+    "text": (205, 214, 244),
+    "subtext0": (166, 173, 200),
+    "mauve": (203, 166, 247),
+    "pink": (245, 194, 231),
+    "red": (243, 139, 168),
+    "peach": (250, 179, 135),
+    "yellow": (249, 226, 175),
+    "green": (166, 227, 161),
+    "teal": (148, 226, 213),
+    "sky": (137, 220, 235),
+    "sapphire": (116, 199, 236),
+    "blue": (137, 180, 250),
+    "lavender": (180, 190, 254),
+    "base": (30, 30, 46),
+    "mantle": (24, 24, 37),
+    "surface2": (88, 91, 112),
+}
+MODEL_COLORS: tuple[tuple[str, str], ...] = (
+    ("fable", "peach"),
+    ("opus", "mauve"),
+    ("sonnet", "pink"),
+    ("luna", "green"),
+    ("terra", "teal"),
+    ("sol", "blue"),
+    ("gpt", "sky"),
+    ("gemini", "sapphire"),
+    ("grok", "red"),
+    ("kimi", "yellow"),
+    ("glm", "green"),
+    ("composer", "lavender"),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Result:
+    source_rank: int
+    model: str
+    score: float
+    cost: float
+    tokens: int
+    steps: int
+
+
+class TableParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.tables: list[list[list[str]]] = []
+        self._depth = 0
+        self._rows: list[list[str]] | None = None
+        self._row: list[str] | None = None
+        self._cell: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        if tag == "table":
+            self._depth += 1
+            if self._depth == 1:
+                self._rows = []
+        elif self._depth == 1 and tag == "tr":
+            self._row = []
+        elif self._depth == 1 and tag in {"th", "td"} and self._row is not None:
+            self._cell = []
+
+    def handle_data(self, data: str) -> None:
+        if self._cell is not None:
+            self._cell.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._depth == 1 and tag in {"th", "td"} and self._cell is not None:
+            if self._row is not None:
+                self._row.append(" ".join("".join(self._cell).split()))
+            self._cell = None
+        elif self._depth == 1 and tag == "tr" and self._row is not None:
+            if self._rows is not None:
+                self._rows.append(self._row)
+            self._row = None
+        elif tag == "table" and self._depth:
+            if self._depth == 1:
+                if self._rows is not None:
+                    self.tables.append(self._rows)
+                self._rows = None
+            self._depth -= 1
+
+
+def parse_row(cells: list[str]) -> Result | None:
+    if len(cells) != COLUMN_COUNT or not cells[0].isdigit():
+        return None
+
+    score = SCORE_RE.fullmatch(cells[2])
+    cost = COST_RE.fullmatch(cells[3])
+    if (
+        not score
+        or not cost
+        or not INTEGER_RE.fullmatch(cells[4])
+        or not INTEGER_RE.fullmatch(cells[5])
+    ):
+        return None
+
+    result = Result(
+        source_rank=int(cells[0]),
+        model=cells[1],
+        score=float(score.group(1)),
+        cost=float(cost.group(1)),
+        tokens=int(cells[4].replace(",", "")),
+        steps=int(cells[5].replace(",", "")),
+    )
+    if not result.model or not 0 <= result.score <= MAX_SCORE or result.cost < 0:
+        raise ValueError("CursorBench returned an invalid leaderboard row")
+    return result
+
+
+def parse_leaderboard(html: str) -> list[Result]:
+    parser = TableParser()
+    parser.feed(html)
+    parser.close()
+
+    leaderboards: list[list[Result]] = []
+    for table in parser.tables:
+        header = " ".join(table[0]).casefold() if table else ""
+        if not all(label in header for label in LEADERBOARD_HEADERS):
+            continue
+
+        results: list[Result] = []
+        for row in table[1:]:
+            if not row or not row[0].isdigit():
+                continue
+            result = parse_row(row)
+            if result is None:
+                raise ValueError("CursorBench returned an invalid leaderboard row")
+            results.append(result)
+        if results:
+            leaderboards.append(results)
+
+    if not leaderboards:
+        raise ValueError("CursorBench leaderboard table was not found")
+    if any(results != leaderboards[0] for results in leaderboards[1:]):
+        raise ValueError("CursorBench returned conflicting leaderboard tables")
+
+    results = leaderboards[0]
+    ranks = [result.source_rank for result in results]
+    if ranks != list(range(1, len(results) + 1)) or len(
+        {result.model for result in results}
+    ) != len(results):
+        raise ValueError("CursorBench returned an invalid leaderboard ranking")
+    return results
+
+
+def fetch_leaderboard() -> list[Result]:
+    request = Request(URL, headers={"User-Agent": "cursorbench/1.0"})
+    with urlopen(request, timeout=TIMEOUT) as response:
+        encoding = response.headers.get_content_charset() or "utf-8"
+        return parse_leaderboard(response.read().decode(encoding))
+
+
+def model_filter(value: str) -> tuple[str, ...]:
+    filters = tuple(
+        part.strip().casefold() for part in value.split(",") if part.strip()
+    )
+    if not filters:
+        raise argparse.ArgumentTypeError("expected a comma-separated model list")
+    return filters
+
+
+def matches_model(result: Result, filters: tuple[str, ...]) -> bool:
+    name = result.model.casefold()
+    return any(
+        query in name or any(alias in name for alias in MODEL_ALIASES.get(query, ()))
+        for query in filters
+    )
+
+
+def foreground(rgb: RGB, *, bold: bool = False) -> str:
+    weight = "1;" if bold else ""
+    return f"\033[{weight}38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
+
+
+def background(rgb: RGB) -> str:
+    return f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
+
+
+def model_color(model: str) -> RGB:
+    name = model.casefold()
+    return next(
+        (MOCHA[color] for family, color in MODEL_COLORS if family in name),
+        MOCHA["lavender"],
+    )
+
+
+def render(results: list[Result], *, ansi: bool = False) -> str:
+    headers = ("Rank", "Model", "Score", "Cost / Task", "Tokens / Task", "Steps / Task")
+    rows = [
+        (
+            str(result.source_rank),
+            f"● {result.model}",
+            f"{result.score:.1f}%",
+            f"${result.cost:.2f}",
+            f"{result.tokens:,}",
+            f"{result.steps:,}",
+        )
+        for result in results
+    ]
+    widths = [
+        max(len(header), *(len(row[index]) for row in rows))
+        for index, header in enumerate(headers)
+    ]
+    right_aligned = {0, 2, 3, 4, 5}
+
+    def format_row(row: Sequence[str]) -> str:
+        cells = (
+            value.rjust(widths[index])
+            if index in right_aligned
+            else value.ljust(widths[index])
+            for index, value in enumerate(row)
+        )
+        return "  ".join(cells)
+
+    table_width = sum(widths) + 2 * (len(widths) - 1)
+    lines = [
+        format_row(headers),
+        "─" * table_width,
+    ]
+
+    for index, (result, row) in enumerate(zip(results, rows, strict=True)):
+        line = format_row(row)
+        if ansi:
+            line = line.replace(
+                "●",
+                foreground(model_color(result.model)) + "●" + foreground(MOCHA["text"]),
+                1,
+            )
+            line = (
+                background(MOCHA["base" if index % 2 == 0 else "mantle"])
+                + foreground(MOCHA["text"])
+                + line
+                + RESET
+            )
+        lines.append(line)
+
+    if not ansi:
+        return "\n" + "\n".join(lines)
+
+    lines[0] = foreground(MOCHA["subtext0"], bold=True) + lines[0] + RESET
+    lines[1] = foreground(MOCHA["surface2"]) + lines[1] + RESET
+    return "\n" + "\n".join(lines)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Display the official CursorBench ranking.",
+    )
+    parser.add_argument(
+        "--models",
+        type=model_filter,
+        metavar="MODEL,...",
+        help=(
+            "include models matching any comma-separated name "
+            "(claude matches Claude families)"
+        ),
+    )
+    parser.add_argument("--no-color", action="store_true", help="disable ANSI colors")
+    args = parser.parse_args(argv)
+
+    try:
+        results = fetch_leaderboard()
+    except HTTPError as error:
+        print(f"cursorbench: Cursor returned HTTP {error.code}", file=sys.stderr)
+        return 1
+    except (URLError, TimeoutError, UnicodeError, ValueError) as error:
+        print(f"cursorbench: {error}", file=sys.stderr)
+        return 1
+
+    if args.models:
+        results = [result for result in results if matches_model(result, args.models)]
+        if not results:
+            print("cursorbench: no models matched --models", file=sys.stderr)
+            return 1
+
+    results.sort(key=lambda result: result.source_rank)
+    ansi = sys.stdout.isatty() and not args.no_color and "NO_COLOR" not in os.environ
+    print(render(results, ansi=ansi))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
