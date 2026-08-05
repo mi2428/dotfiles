@@ -345,6 +345,24 @@ def build_series(results: list[Result]) -> list[Series]:
     ]
 
 
+def pareto_frontier(results: list[Result]) -> list[Result]:
+    frontier = [
+        candidate
+        for candidate in results
+        if not any(
+            other is not candidate
+            and other.cost <= candidate.cost
+            and other.score >= candidate.score
+            and (other.cost < candidate.cost or other.score > candidate.score)
+            for other in results
+        )
+    ]
+    return sorted(
+        frontier,
+        key=lambda result: (result.cost, result.score, result.source_rank),
+    )
+
+
 def render_cells(cells: Sequence[tuple[str, RGB | None]], *, ansi: bool) -> str:
     if not ansi:
         return "".join(character for character, _color in cells)
@@ -421,6 +439,21 @@ def draw_series(
             x, y = scale.position(result)
             canvas.set_glyph(x // 2, y // 4, "●", item.color)
     return draw_order
+
+
+def draw_frontier(
+    canvas: BrailleCanvas, results: list[Result], scale: GraphScale
+) -> None:
+    points = [scale.position(result) for result in pareto_frontier(results)]
+    for start, end in pairwise(points):
+        canvas.draw_line(start, end, MOCHA["yellow"])
+        canvas.draw_line(
+            (start[0], start[1] + 1),
+            (end[0], end[1] + 1),
+            MOCHA["yellow"],
+        )
+    for x, y in points:
+        canvas.set_glyph(x // 2, y // 4, "◆", MOCHA["yellow"])
 
 
 def place_series_labels(
@@ -569,34 +602,34 @@ def render_graph(
     canvas = BrailleCanvas(graph_columns - GRAPH_GUTTER, graph_rows)
     scale, cost_step = make_graph_scale(results, canvas)
     draw_order = draw_series(canvas, build_series(results), scale)
+    draw_frontier(canvas, results, scale)
     legend = place_series_labels(canvas, draw_order, scale)
 
     lines = render_plot_rows(canvas, scale, ansi=ansi)
     lines.extend(render_cost_axis(canvas, scale, cost_step, ansi=ansi))
     if legend:
         lines.extend(render_legend(legend, graph_columns, ansi=ansi))
+    frontier_key: list[tuple[str, RGB | None]] = [(" ", None)] * GRAPH_GUTTER
+    frontier_key.extend(
+        (character, MOCHA["yellow"]) for character in "◆ Pareto frontier"
+    )
+    lines.append(render_cells(frontier_key, ansi=ansi))
 
     return "\n" + "\n".join(lines)
 
 
-def render(results: list[Result], *, ansi: bool = False) -> str:
-    headers = ("Rank", "Model", "Score", "Cost / Task", "Tokens / Task", "Steps / Task")
-    rows = [
-        (
-            str(result.source_rank),
-            f"● {result.model}",
-            f"{result.score:.1f}%",
-            f"${result.cost:.2f}",
-            f"{result.tokens:,}",
-            f"{result.steps:,}",
-        )
-        for result in results
-    ]
+def render_table(
+    headers: tuple[str, ...],
+    rows: list[tuple[str, ...]],
+    models: list[str],
+    right_aligned: set[int],
+    *,
+    ansi: bool,
+) -> str:
     widths = [
         max(len(header), *(len(row[index]) for row in rows))
         for index, header in enumerate(headers)
     ]
-    right_aligned = {0, 2, 3, 4, 5}
 
     def format_row(row: Sequence[str]) -> str:
         cells = (
@@ -613,12 +646,12 @@ def render(results: list[Result], *, ansi: bool = False) -> str:
         "─" * table_width,
     ]
 
-    for index, (result, row) in enumerate(zip(results, rows, strict=True)):
+    for index, (model, row) in enumerate(zip(models, rows, strict=True)):
         line = format_row(row)
         if ansi:
             line = line.replace(
                 "●",
-                foreground(model_color(result.model)) + "●" + foreground(MOCHA["text"]),
+                foreground(model_color(model)) + "●" + foreground(MOCHA["text"]),
                 1,
             )
             line = (
@@ -635,6 +668,72 @@ def render(results: list[Result], *, ansi: bool = False) -> str:
     lines[0] = foreground(MOCHA["subtext0"], bold=True) + lines[0] + RESET
     lines[1] = foreground(MOCHA["surface2"]) + lines[1] + RESET
     return "\n" + "\n".join(lines)
+
+
+def render(results: list[Result], *, ansi: bool = False) -> str:
+    headers = ("Rank", "Model", "Score", "Cost / Task", "Tokens / Task", "Steps / Task")
+    rows = [
+        (
+            str(result.source_rank),
+            f"● {result.model}",
+            f"{result.score:.1f}%",
+            f"${result.cost:.2f}",
+            f"{result.tokens:,}",
+            f"{result.steps:,}",
+        )
+        for result in results
+    ]
+    return render_table(
+        headers,
+        rows,
+        [result.model for result in results],
+        {0, 2, 3, 4, 5},
+        ansi=ansi,
+    )
+
+
+def render_pareto(results: list[Result], *, ansi: bool = False) -> str:
+    frontier = pareto_frontier(results)
+    rows: list[tuple[str, ...]] = []
+    previous: Result | None = None
+    for result in frontier:
+        if previous is None:
+            delta_score = delta_cost = marginal_cost = "—"
+        else:
+            score_gain = result.score - previous.score
+            cost_increase = result.cost - previous.cost
+            delta_score = f"+{score_gain:.1f}pp"
+            delta_cost = f"+${cost_increase:.2f}"
+            marginal_cost = (
+                f"${cost_increase / score_gain:.3f}" if score_gain > 0 else "—"
+            )
+        rows.append(
+            (
+                f"● {result.model}",
+                f"{result.score:.1f}%",
+                f"${result.cost:.2f}",
+                delta_score,
+                delta_cost,
+                marginal_cost,
+            )
+        )
+        previous = result
+
+    headers = (
+        "Model",
+        "Score",
+        "Cost / Task",
+        "ΔScore",
+        "ΔCost",
+        "Cost / +1pp",
+    )
+    return render_table(
+        headers,
+        rows,
+        [result.model for result in frontier],
+        {1, 2, 3, 4, 5},
+        ansi=ansi,
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -655,6 +754,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--graph",
         action="store_true",
         help="render a Braille cost/score graph before the table",
+    )
+    parser.add_argument(
+        "--pareto",
+        action="store_true",
+        help="show the Pareto frontier with marginal cost metrics",
     )
     args = parser.parse_args(argv)
 
@@ -677,7 +781,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ansi = sys.stdout.isatty() and not args.no_color and "NO_COLOR" not in os.environ
     if args.graph:
         print(render_graph(results, ansi=ansi))
-    print(render(results, ansi=ansi))
+    print(
+        render_pareto(results, ansi=ansi) if args.pareto else render(results, ansi=ansi)
+    )
     return 0
 
 
