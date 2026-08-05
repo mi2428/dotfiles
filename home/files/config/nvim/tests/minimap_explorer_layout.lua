@@ -158,7 +158,41 @@ for _, group in ipairs({ "MiniMapNormal", "MiniMapSymbolLine", "MiniMapSymbolVie
 	assert(highlight.bg == nil, group .. " must inherit the terminal background when Normal has none")
 end
 
+local preview_win = vim.api.nvim_open_win(source_buf, true, {
+	relative = "editor",
+	row = 2,
+	col = 2,
+	width = 60,
+	height = 20,
+	style = "minimal",
+})
+vim.w[preview_win].dotfiles_glance_preview = true
+local source_focus_count = 0
+local focus_group = vim.api.nvim_create_augroup("dotfiles-minimap-transient-overlay-test", { clear = true })
+vim.api.nvim_create_autocmd("WinEnter", {
+	group = focus_group,
+	callback = function()
+		if vim.api.nvim_get_current_win() == source_win then
+			source_focus_count = source_focus_count + 1
+		end
+	end,
+})
+map._dotfiles_resolve_filetype_source()
+assert(vim.api.nvim_get_current_win() == preview_win, "source resolution left the Glance preview")
+assert(source_focus_count == 0, "source resolution briefly focused the editor behind the Glance preview")
+local overlay_events_settled = false
+vim.schedule(function()
+	overlay_events_settled = true
+end)
+assert(
+	vim.wait(1000, function()
+		return overlay_events_settled
+	end),
+	"transient overlay events did not settle"
+)
+vim.api.nvim_del_augroup_by_id(focus_group)
 pcall(vim.api.nvim_del_augroup_by_name, "dotfiles-mini-map-code-layout")
+vim.api.nvim_win_close(preview_win, true)
 vim.api.nvim_win_close(map_win, true)
 vim.api.nvim_buf_delete(map_buf, { force = true })
 vim.wait(20, function()

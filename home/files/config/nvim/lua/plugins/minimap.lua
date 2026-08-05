@@ -1282,6 +1282,9 @@ local function setup_code_layout(map)
 		end)
 	end
 	local function resolve_filetype_source()
+		if is_transient_overlay_float(vim.api.nvim_get_current_win()) then
+			return
+		end
 		if manager.resolving_source then
 			return
 		end
