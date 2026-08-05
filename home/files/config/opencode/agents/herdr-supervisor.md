@@ -116,13 +116,13 @@ Do not request full transcripts or file dumps.
 - Summarize the final result and include a delegation ledger with one line per worker: worker name, actual model or profile when known, measured token usage when available (otherwise `unavailable`), and contribution.
   Never fabricate token estimates.
 - Worker completion does not play a sound or speak a message.
-- When all work and cleanup are complete and you are about to return control to the user, formulate one privacy-safe Japanese completion phrase and speak it exactly once with Kyoko at rate 300.
+- When all work and cleanup are complete and you are about to return control to the user, formulate one privacy-safe Japanese completion phrase and speak it exactly once with Kyoko at rate 250.
   The phrase must be 4–16 Japanese characters, describe only the highest-level completed outcome, and contain no paths, filenames, branch names, identifiers, secrets, user-provided text, punctuation, or multiple sentences.
   Never use the generic phrase `作業完了`; prefer a specific phrase such as `コミット完了`, `実装完了`, `テストとデプロイ完了`, or `履歴修正完了`.
   Put the selected phrase directly in the quoted command argument; never interpolate external or user-controlled text.
 
   ```sh
   if command -v say >/dev/null 2>&1; then
-    say -v Kyoko -r 300 "実装完了"
+    say -v Kyoko -r 250 "実装完了"
   fi
   ```
