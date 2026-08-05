@@ -932,16 +932,20 @@ function gk
     end
 end
 
-function gadd
+function __dotfiles_git_select_changed_files --argument-names prompt
     set -l config_home "$HOME/.config"
     set -q XDG_CONFIG_HOME; and set config_home "$XDG_CONFIG_HOME"
     set -l fzf_rows "$config_home/fish/lib/fzf_rows.py"
     set -l fish_shell (command -s fish)
     set -l preview (string join '' -- 'set -l file (printf "%s\n" {1} | command python3 ' (string escape -- "$fzf_rows") ' decode); git diff --color -- "$file"')
-    set -l files (command git status --porcelain=v1 -z |
+    command git status --porcelain=v1 -z |
         command python3 "$fzf_rows" git-status |
-        command env NO_COLOR= SHELL="$fish_shell" fzf --ansi --with-nth=2.. --nth=2.. --accept-nth=1 --multi --bind=tab:toggle+down,btab:toggle+up --preview="$preview" |
-        command python3 "$fzf_rows" decode)
+        command env NO_COLOR= SHELL="$fish_shell" fzf --ansi --with-nth=2.. --nth=2.. --accept-nth=1 --multi --bind=tab:toggle+down,btab:toggle+up --prompt="$prompt" --preview="$preview" |
+        command python3 "$fzf_rows" decode
+end
+
+function gadd
+    set -l files (__dotfiles_git_select_changed_files 'add> ')
     if test (count $files) -gt 0
         git add -- $files
         echo "Completed: git add "(string join ' ' -- $files)

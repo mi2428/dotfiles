@@ -5,6 +5,7 @@ type Theme = {
   backgroundPanel: unknown;
   borderSubtle: unknown;
   info: unknown;
+  selectedListItemText: unknown;
   success: unknown;
   warning: unknown;
   text: unknown;
@@ -35,6 +36,16 @@ type ScrollBoxAdapter = {
   content?: RenderableAdapter & {
     findDescendantById: (id: string) => RenderableAdapter | undefined;
   };
+};
+
+type TextNodeAdapter = {
+  children?: Array<string | TextNodeAdapter>;
+  fg?: unknown;
+};
+
+type RenderTreeAdapter = {
+  getChildren?: () => RenderTreeAdapter[];
+  getTextChildren?: () => TextNodeAdapter[];
 };
 
 export const MAX_PANEL_WIDTH = 94;
@@ -81,6 +92,53 @@ function lineColor(line: TodoLine, theme: Theme): unknown {
   if (line.kind === "in_progress") return theme.success;
   if (line.kind === "pending") return theme.warning;
   return theme.textMuted;
+}
+
+function nodeText(node: TextNodeAdapter): string {
+  return (node.children ?? []).map((child) => (typeof child === "string" ? child : nodeText(child))).join("");
+}
+
+function sameColor(current: unknown, target: unknown): boolean {
+  if (current === target) return true;
+  if (!current || typeof current !== "object" || !("equals" in current)) return false;
+  const equals = (current as { equals?: (color: unknown) => boolean }).equals;
+  return typeof equals === "function" && equals.call(current, target);
+}
+
+function recolorAttachmentLabels(root: RenderTreeAdapter, color: unknown): void {
+  const visitTextNode = (node: TextNodeAdapter) => {
+    if ([" File ", " Directory "].includes(nodeText(node)) && !sameColor(node.fg, color)) node.fg = color;
+    for (const child of node.children ?? []) {
+      if (typeof child !== "string") visitTextNode(child);
+    }
+  };
+  const visitRenderable = (node: RenderTreeAdapter) => {
+    for (const textNode of node.getTextChildren?.() ?? []) visitTextNode(textNode);
+    for (const child of node.getChildren?.() ?? []) visitRenderable(child);
+  };
+  visitRenderable(root);
+}
+
+export function registerMessageLabelColors(api: Parameters<TuiPlugin>[0]): void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const recolor = () => {
+    timer = undefined;
+    recolorAttachmentLabels(api.renderer.root, api.theme.current.selectedListItemText);
+  };
+  const schedule = () => {
+    if (timer !== undefined) return;
+    api.renderer.requestRender();
+    timer = setTimeout(recolor, 0);
+  };
+
+  const unsubscribePart = api.event.on("message.part.updated", schedule);
+  const unsubscribeMessage = api.event.on("message.updated", schedule);
+  api.lifecycle.onDispose(() => {
+    if (timer !== undefined) clearTimeout(timer);
+    unsubscribePart();
+    unsubscribeMessage();
+  });
+  schedule();
 }
 
 export function popupWidth(terminalWidth: number): number {
@@ -323,6 +381,7 @@ export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidA
 
 export const tui: TuiPlugin = async (api) => {
   const solid = await import("@opentui/solid");
+  registerMessageLabelColors(api);
   registerTodoOverlay(api, solid);
 };
 

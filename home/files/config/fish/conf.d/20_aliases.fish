@@ -92,6 +92,11 @@ function __dotfiles_git_subcommand_caa
 end
 
 function __dotfiles_git_subcommand_d
+    if test (count $argv) -eq 0
+        set argv (__dotfiles_git_select_changed_files 'diff> ')
+        test (count $argv) -gt 0; or return 0
+    end
+
     git-delta-input -- $argv | __git_delta_lazygit
     return $pipestatus[1]
 end
