@@ -112,8 +112,8 @@ let
   herdrAgentLayout = pkgs.fetchFromGitHub {
     owner = "mi2428";
     repo = "herdr-agent-layout";
-    rev = "b5475d4851aa776e2dbe404db8e6d2f75a96e1c2";
-    hash = "sha256-PUO5hOywrHo4CztfoG5YeasmOf81WjbprKdSYwNhzjo=";
+    rev = "8498296a84323f53b31229a3bdb3410ce1ba5cdf";
+    hash = "sha256-hSCwYyWEYlurYNn4O0v7XUE5SpuMyEca62aTg5iRBXY=";
   };
   herdrAgentLayoutSkill = "${herdrAgentLayout}/skills/herdr-agent-layout";
 in {

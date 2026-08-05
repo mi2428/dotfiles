@@ -6,6 +6,8 @@ local agent_names = {
 	opencode = "OpenCode",
 }
 
+local worker_token = "agent_layout_worker"
+
 local catppuccin_mocha = {
 	red = "#f38ba8",
 	peach = "#fab387",
@@ -171,6 +173,13 @@ end
 
 local function agent_name(agent)
 	return agent_names[agent.agent] or agent.agent or "AI agent"
+end
+
+local function is_destination_agent(agent)
+	return type(agent) == "table"
+		and agent_names[agent.agent] ~= nil
+		and type(agent.pane_id) == "string"
+		and not (type(agent.tokens) == "table" and agent.tokens[worker_token] == "1")
 end
 
 local function session_key(agent)
@@ -358,7 +367,7 @@ local function load_agents()
 	end
 
 	local supported = vim.tbl_filter(function(agent)
-		return type(agent) == "table" and agent_names[agent.agent] ~= nil and type(agent.pane_id) == "string"
+		return is_destination_agent(agent)
 	end, agents)
 
 	return supported
@@ -565,6 +574,7 @@ local function select_destination(items, opts, on_choice)
 end
 
 local function choose_agent(agents, file_key, file_label, root, metadata, callback)
+	agents = vim.tbl_filter(is_destination_agent, agents)
 	cached_agent(agents, file_key)
 	local remembered = selected_agents[file_key]
 	local matching = vim.tbl_filter(function(agent)
@@ -780,6 +790,7 @@ M._test = {
 	agent_label = agent_label,
 	agent_summary = agent_summary,
 	agent_signature = agent_signature,
+	is_destination_agent = is_destination_agent,
 	buffer_info = buffer_info,
 	cached_agent = cached_agent,
 	choose_agent = choose_agent,
