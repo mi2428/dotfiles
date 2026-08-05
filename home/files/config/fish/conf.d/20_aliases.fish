@@ -80,7 +80,35 @@ function __dotfiles_git_subcommand_ac
 end
 
 function __dotfiles_git_subcommand_c
-    command git commit -s -m $argv
+    set -l amend 0
+    set -l commit_args
+    for arg in $argv
+        if test "$arg" = --amend
+            set amend 1
+        else
+            set -a commit_args "$arg"
+        end
+    end
+
+    if test $amend -eq 0
+        command git diff --cached --quiet
+        set -l staged_status $status
+        if test $staged_status -eq 0
+            g a
+            or return $status
+
+            command git diff --cached --quiet
+            set staged_status $status
+            test $staged_status -ne 0; or return 0
+        end
+        test $staged_status -eq 1; or return $staged_status
+    end
+
+    if test $amend -eq 1
+        command git commit -s --amend -m $commit_args
+    else
+        command git commit -s -m $commit_args
+    end
 end
 
 function __dotfiles_git_subcommand_can
