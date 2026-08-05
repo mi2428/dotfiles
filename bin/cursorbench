@@ -25,8 +25,14 @@ GRAPH_GUTTER = 7
 SCORE_RE = re.compile(r"^(\d+(?:\.\d+)?)%$")
 COST_RE = re.compile(r"^\$(\d+(?:\.\d+)?)$")
 INTEGER_RE = re.compile(r"^\d[\d,]*$")
-EFFORT_RE = re.compile(r" (?:extra high|max|high|medium|low)\*?$", re.IGNORECASE)
+MODEL_ID_SEPARATOR_RE = re.compile(r"[^a-z0-9.]+")
+EFFORT_RE = re.compile(
+    r" (?P<variant>extra high|max|high|medium|low)\*?$",
+    re.IGNORECASE,
+)
 MODEL_ALIASES = {"claude": ("opus", "sonnet", "haiku", "fable")}
+VARIANTS = frozenset(("default", "low", "medium", "high", "extra-high", "max"))
+VARIANT_ALIASES = {"xhigh": "extra-high"}
 LEADERBOARD_HEADERS = ("model", "score", "cost", "tokens", "steps")
 RESET = "\033[0m"
 RGB = tuple[int, int, int]
@@ -307,12 +313,53 @@ def model_filter(value: str) -> tuple[str, ...]:
     return filters
 
 
+def normalize_variant(value: str) -> str:
+    normalized = value.strip().casefold().replace("_", "-").replace(" ", "-")
+    return VARIANT_ALIASES.get(normalized, normalized)
+
+
+def variant_filter(value: str) -> tuple[str, ...]:
+    variants = tuple(
+        normalize_variant(part) for part in value.split(",") if part.strip()
+    )
+    invalid = set(variants) - VARIANTS
+    if not variants or invalid:
+        expected = ", ".join(sorted(VARIANTS))
+        message = f"expected one or more of: {expected}"
+        raise argparse.ArgumentTypeError(message)
+    return variants
+
+
+def normalize_model_id(value: str) -> str:
+    return MODEL_ID_SEPARATOR_RE.sub("-", value.casefold()).strip("-")
+
+
+def exclude_filter(value: str) -> frozenset[str]:
+    identifiers = frozenset(
+        identifier
+        for part in value.split(",")
+        if (identifier := normalize_model_id(part))
+    )
+    if not identifiers:
+        raise argparse.ArgumentTypeError(
+            "expected a comma-separated model variant list"
+        )
+    return identifiers
+
+
 def matches_model(result: Result, filters: tuple[str, ...]) -> bool:
     name = result.model.casefold()
     return any(
         query in name or any(alias in name for alias in MODEL_ALIASES.get(query, ()))
         for query in filters
     )
+
+
+def model_variant(model: str) -> str:
+    match = EFFORT_RE.search(model)
+    if match is None:
+        return "default"
+    return match.group("variant").casefold().replace(" ", "-")
 
 
 def foreground(rgb: RGB, *, bold: bool = False) -> str:
@@ -749,6 +796,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             "(claude matches Claude families)"
         ),
     )
+    parser.add_argument(
+        "--variant",
+        type=variant_filter,
+        metavar="VARIANT,...",
+        help=(
+            "include reasoning variants: low, medium, high, "
+            "extra-high/xhigh, max, default"
+        ),
+    )
+    parser.add_argument(
+        "--exclude",
+        type=exclude_filter,
+        metavar="MODEL-VARIANT,...",
+        help="exclude exact IDs, e.g. gpt-5.6-sol-max (underscores also accepted)",
+    )
     parser.add_argument("--no-color", action="store_true", help="disable ANSI colors")
     parser.add_argument(
         "--graph",
@@ -775,6 +837,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         results = [result for result in results if matches_model(result, args.models)]
         if not results:
             print("cursorbench: no models matched --models", file=sys.stderr)
+            return 1
+    if args.variant:
+        results = [
+            result for result in results if model_variant(result.model) in args.variant
+        ]
+        if not results:
+            print("cursorbench: no models matched --variant", file=sys.stderr)
+            return 1
+    if args.exclude:
+        results = [
+            result
+            for result in results
+            if normalize_model_id(result.model) not in args.exclude
+        ]
+        if not results:
+            print("cursorbench: no models remain after --exclude", file=sys.stderr)
             return 1
 
     results.sort(key=lambda result: result.source_rank)
