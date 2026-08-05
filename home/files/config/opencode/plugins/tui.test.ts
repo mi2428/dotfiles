@@ -185,14 +185,7 @@ describe("todo overlay state", () => {
     type TodoEvent = {
       properties: { sessionID: string; todos: Array<{ content: string; status: string }> };
     };
-    type MessageEvent = {
-      properties: {
-        sessionID: string;
-        info: { id: string; role: string; time: { created: number } };
-      };
-    };
     let todoEventHandler: ((event: TodoEvent) => void) | undefined;
-    let messageEventHandler: ((event: MessageEvent) => void) | undefined;
     let dispose: (() => void) | undefined;
     let appSlot: (() => unknown) | undefined;
     let reads = 0;
@@ -206,6 +199,7 @@ describe("todo overlay state", () => {
       { content: "fifth", status: "pending" },
       { content: "sixth", status: "pending" },
     ];
+    let liveMessages = [{ id: "old-user-message", role: "user" }];
 
     const api = {
       state: {
@@ -215,14 +209,13 @@ describe("todo overlay state", () => {
             reads += 1;
             return liveTodos;
           },
+          messages: () => liveMessages,
         },
       },
       event: {
         on: (name: string, handler: (event: never) => void) => {
           if (name === "todo.updated") {
             todoEventHandler = handler as (event: TodoEvent) => void;
-          } else if (name === "message.updated") {
-            messageEventHandler = handler as (event: MessageEvent) => void;
           } else {
             assert.fail(`unexpected event subscription: ${name}`);
           }
@@ -262,6 +255,15 @@ describe("todo overlay state", () => {
       [key: string]: unknown;
     };
     const solid = {
+      createSignal: <T>(initial: T) => {
+        let value = initial;
+        return [
+          () => value,
+          (next: T | ((previous: T) => T)) => {
+            value = typeof next === "function" ? (next as (previous: T) => T)(value) : next;
+          },
+        ] as const;
+      },
       createElement: (kind: string): FakeNode => ({
         kind,
         props: {},
@@ -276,16 +278,22 @@ describe("todo overlay state", () => {
         node[name] = value;
       },
       insert: (node: FakeNode, child: unknown) => {
-        node.children.push(child);
+        const value = typeof child === "function" ? (child as () => unknown)() : child;
+        if (value !== null && value !== undefined) node.children.push(value);
       },
     };
+    const overlayFrom = (slot: FakeNode): FakeNode => {
+      const overlay = slot.children[0] as FakeNode | undefined;
+      assert(overlay);
+      return overlay;
+    };
     const scrollBoxFrom = (root: FakeNode): FakeNode => {
-      const result = root.children.find((child) => (child as FakeNode).kind === "scrollbox") as FakeNode;
+      const result = overlayFrom(root).children.find((child) => (child as FakeNode).kind === "scrollbox") as FakeNode;
       assert(result);
       return result;
     };
     const headerFrom = (root: FakeNode): FakeNode => {
-      const header = root.children[0] as FakeNode;
+      const header = overlayFrom(root).children[0] as FakeNode;
       const headerText = header.children[0] as FakeNode;
       assert(headerText);
       return headerText;
@@ -312,7 +320,6 @@ describe("todo overlay state", () => {
 
     registerTodoOverlay(api as never, solid);
     assert(todoEventHandler);
-    assert(messageEventHandler);
     assert(dispose);
     assert(appSlot);
     const first = appSlot() as FakeNode;
@@ -378,44 +385,146 @@ describe("todo overlay state", () => {
     assert.equal(lineNodesFrom(fourthScrollBox)[4]?.props.fg, "success");
     assert.equal(reads, 4);
 
-    messageEventHandler({
-      properties: {
-        sessionID: "ses_1",
-        info: { id: "old-user-message", role: "user", time: { created: 0 } },
-      },
-    });
     assert.equal(renders, 2);
     assert(appSlot());
     assert.equal(reads, 5);
 
-    const nextRequest = {
-      properties: {
-        sessionID: "ses_1",
-        info: { id: "new-user-message", role: "user", time: { created: Number.MAX_SAFE_INTEGER } },
-      },
-    };
-    messageEventHandler(nextRequest);
-    assert.equal(renders, 3);
-    assert.equal(appSlot(), null);
+    liveMessages = [...liveMessages, { id: "new-user-message", role: "user" }];
+    assert.equal((appSlot() as FakeNode).children.length, 0);
     assert.equal(reads, 6);
 
-    messageEventHandler(nextRequest);
-    assert.equal(renders, 3);
     todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
-    assert.equal(renders, 4);
-    assert.equal(appSlot(), null);
+    assert.equal(renders, 3);
+    assert.equal((appSlot() as FakeNode).children.length, 0);
 
     liveTodos = [
       { content: "inspect new request", status: "in_progress" },
       { content: "implement new request", status: "pending" },
     ];
     todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
-    assert.equal(renders, 5);
+    assert.equal(renders, 4);
     const next = appSlot() as FakeNode;
     assert.equal(headerFrom(next).children[0], "Todo · 0 of 2");
     assert.deepEqual(lineTextsFrom(scrollBoxFrom(next)), ["▸ inspect new request", "▸ implement new request"]);
 
     dispose();
-    assert.equal(unsubscribes, 2);
+    assert.equal(unsubscribes, 1);
+  });
+
+  it("reactively invalidates the mounted slot as todos and user requests change", () => {
+    type TodoEvent = {
+      properties: { sessionID: string; todos: Array<{ content: string; status: string }> };
+    };
+    type FakeNode = {
+      kind: string;
+      props: Record<string, unknown>;
+      children: unknown[];
+      scrollTop: number;
+      isDestroyed: boolean;
+    };
+
+    let todoEventHandler: ((event: TodoEvent) => void) | undefined;
+    let appSlot: (() => unknown) | undefined;
+    let activeObserver: (() => void) | undefined;
+    let liveTodos = [{ content: "first request", status: "in_progress" }];
+    let liveMessages = [{ id: "first-request", role: "user" }];
+    const messageObservers = new Set<() => void>();
+
+    const api = {
+      state: {
+        session: {
+          todo: () => liveTodos,
+          messages: () => {
+            if (activeObserver) messageObservers.add(activeObserver);
+            return liveMessages;
+          },
+        },
+      },
+      event: {
+        on: (name: string, handler: (event: never) => void) => {
+          if (name === "todo.updated") todoEventHandler = handler as (event: TodoEvent) => void;
+          return () => {};
+        },
+      },
+      renderer: { width: 120, requestRender: () => {} },
+      lifecycle: { onDispose: () => {} },
+      slots: {
+        register: (registration: { slots: { app: () => unknown } }) => {
+          appSlot = registration.slots.app;
+        },
+      },
+      route: { current: { name: "session", params: { sessionID: "ses_1" } } },
+      theme: {
+        current: {
+          backgroundPanel: "panel",
+          borderSubtle: "border",
+          info: "info",
+          success: "success",
+          warning: "warning",
+          text: "text",
+          textMuted: "muted",
+        },
+      },
+    };
+    const solid = {
+      createSignal: <T>(initial: T) => {
+        let value = initial;
+        const observers = new Set<() => void>();
+        return [
+          () => {
+            if (activeObserver) observers.add(activeObserver);
+            return value;
+          },
+          (next: T | ((previous: T) => T)) => {
+            value = typeof next === "function" ? (next as (previous: T) => T)(value) : next;
+            for (const observer of observers) observer();
+          },
+        ] as const;
+      },
+      createElement: (kind: string): FakeNode => ({
+        kind,
+        props: {},
+        children: [],
+        scrollTop: 0,
+        isDestroyed: false,
+      }),
+      setProp: (node: FakeNode, name: string, value: unknown) => {
+        node.props[name] = value;
+      },
+      insert: (node: FakeNode, child: unknown) => {
+        if (typeof child === "function") {
+          const update = () => {
+            activeObserver = update;
+            const value = (child as () => unknown)();
+            activeObserver = undefined;
+            node.children = value === null || value === undefined ? [] : [value];
+          };
+          update();
+          return;
+        }
+        node.children.push(child);
+      },
+    };
+
+    registerTodoOverlay(api as never, solid);
+    assert(todoEventHandler);
+    assert(appSlot);
+
+    const rendered = appSlot() as FakeNode;
+    assert(rendered);
+
+    liveTodos = [{ content: "first request", status: "completed" }];
+    todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
+    const completedOverlay = rendered.children[0] as FakeNode;
+    const completedHeader = (completedOverlay.children[0] as FakeNode).children[0] as FakeNode;
+    assert.equal(completedHeader.children[0], "Todo · 1 of 1");
+
+    liveMessages = [...liveMessages, { id: "next-request", role: "user" }];
+    for (const observer of messageObservers) observer();
+    assert.equal(rendered.children.length, 0);
+
+    liveTodos = [{ content: "second request", status: "in_progress" }];
+    todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
+    assert.equal(rendered.children.length, 1);
   });
 });

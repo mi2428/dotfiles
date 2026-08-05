@@ -10,6 +10,7 @@
     "@opencode-ai/plugin": "1.18.10",
     "@opentui/core": "0.4.5",
     "@opentui/keymap": "0.4.5",
-    "@opentui/solid": "0.4.5"
+    "@opentui/solid": "0.4.5",
+    "solid-js": "1.9.12"
   }
 }

@@ -73,6 +73,10 @@ const SPLIT_BORDER_CHARS = {
 };
 
 type SolidAdapter = {
+  createSignal: <T>(initial: T) => readonly [
+    get: () => T,
+    set: (next: T | ((previous: T) => T)) => unknown,
+  ];
   createElement: (kind: string) => any;
   setProp: (node: any, name: string, value: unknown) => void;
   insert: (parent: any, child: any) => void;
@@ -268,13 +272,25 @@ function todoFingerprint(todos: readonly TodoItem[]): string {
   );
 }
 
+function latestUserMessageID(messages: readonly { id: string; role: string }[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "user") return message.id;
+  }
+  return undefined;
+}
+
 export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidAdapter): void {
   const scrollOffsets = new Map<string, { scrollTop: number; windowKey: string }>();
   const hiddenTodoSnapshots = new Map<string, string>();
-  const handledUserMessages = new Set<string>();
-  // Ignore historical messages replayed while an existing session hydrates.
-  const pluginStartedAt = Date.now();
+  const latestUserMessages = new Map<string, string>();
+  const [overlayRevision, setOverlayRevision] = solid.createSignal(0);
   let mounted: { sessionID: string; scrollbox: ScrollBoxAdapter; windowKey: string } | undefined;
+
+  const invalidateOverlay = () => {
+    setOverlayRevision((revision) => revision + 1);
+    api.renderer.requestRender();
+  };
 
   const rememberScroll = () => {
     if (!mounted || mounted.scrollbox.isDestroyed) return;
@@ -292,102 +308,107 @@ export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidA
     if (staleFingerprint !== undefined && todoFingerprint(event.properties.todos) !== staleFingerprint) {
       hiddenTodoSnapshots.delete(event.properties.sessionID);
     }
-    api.renderer.requestRender();
-  });
-  const unsubscribeMessage = api.event.on("message.updated", (event) => {
-    const message = event.properties.info;
-    if (message.role !== "user" || handledUserMessages.has(message.id)) return;
-    handledUserMessages.add(message.id);
-    if (message.time.created < pluginStartedAt) return;
-
-    const sessionID = event.properties.sessionID;
-    hiddenTodoSnapshots.set(sessionID, todoFingerprint(api.state.session.todo(sessionID)));
-    if (mounted?.sessionID === sessionID) {
-      rememberScroll();
-      mounted = undefined;
-    }
-    scrollOffsets.delete(sessionID);
-    api.renderer.requestRender();
+    invalidateOverlay();
   });
   api.lifecycle.onDispose(() => {
     rememberScroll();
     mounted = undefined;
     scrollOffsets.clear();
     hiddenTodoSnapshots.clear();
-    handledUserMessages.clear();
+    latestUserMessages.clear();
     unsubscribeTodo();
-    unsubscribeMessage();
   });
+
+  const renderOverlay = () => {
+    // Host state getters and requestRender do not invalidate a static slot
+    // result. Keep the changing HUD inside a reactive insertion.
+    overlayRevision();
+    rememberScroll();
+    const sessionID = sessionIDFromRoute(api.route.current);
+    if (!sessionID) {
+      mounted = undefined;
+      return null;
+    }
+    const todos = api.state.session.todo(sessionID);
+    const latestUser = latestUserMessageID(api.state.session.messages(sessionID));
+    const previousUser = latestUserMessages.get(sessionID);
+    if (latestUser !== undefined && previousUser === undefined) {
+      latestUserMessages.set(sessionID, latestUser);
+    } else if (latestUser !== undefined && latestUser !== previousUser) {
+      latestUserMessages.set(sessionID, latestUser);
+      hiddenTodoSnapshots.set(sessionID, todoFingerprint(todos));
+      scrollOffsets.delete(sessionID);
+    }
+    if (hiddenTodoSnapshots.has(sessionID)) {
+      mounted = undefined;
+      return null;
+    }
+    const nodes = buildTodoOverlayNodes(todos, api.theme.current, api.renderer.width);
+    if (!nodes) {
+      mounted = undefined;
+      return null;
+    }
+
+    let nextScrollBox: ScrollBoxAdapter | undefined;
+    let nextScrollWindow: RenderNode["scrollWindow"];
+    const result = materialize(nodes, solid, (node, window) => {
+      nextScrollBox = node;
+      nextScrollWindow = window;
+    });
+    if (nextScrollBox && nextScrollWindow) {
+      const remembered = scrollOffsets.get(sessionID);
+      const offset = remembered?.windowKey === nextScrollWindow.key ? remembered.scrollTop : undefined;
+      const window = nextScrollWindow;
+      let initialized = false;
+      solid.setProp(nextScrollBox, "onSizeChange", function (this: ScrollBoxAdapter) {
+        if (initialized || this.isDestroyed) return;
+
+        const start = this.content?.findDescendantById(window.startID);
+        const end = this.content?.findDescendantById(window.endID);
+        if (start && end) {
+          const windowHeight = Math.min(MAX_BODY_HEIGHT, Math.max(1, end.y + end.height - start.y));
+          if (this.height !== windowHeight) {
+            this.height = windowHeight;
+            return;
+          }
+        }
+        initialized = true;
+        if (offset !== undefined) {
+          this.scrollTop = offset;
+        } else if (start && this.content) {
+          this.scrollTop = Math.max(0, start.y - this.content.y);
+        }
+      });
+      mounted = { sessionID, scrollbox: nextScrollBox, windowKey: nextScrollWindow.key };
+    }
+    return result;
+  };
 
   api.slots.register({
     order: 900,
     slots: {
       app: () => {
-        rememberScroll();
-        const sessionID = sessionIDFromRoute(api.route.current);
-        if (!sessionID) {
-          mounted = undefined;
-          return null;
-        }
-        if (hiddenTodoSnapshots.has(sessionID)) {
-          mounted = undefined;
-          return null;
-        }
-        // OpenCode may hydrate an existing session after the first slot render.
-        // Read its authoritative state every render rather than caching that
-        // potentially empty first snapshot indefinitely.
-        const nodes = buildTodoOverlayNodes(
-          api.state.session.todo(sessionID),
-          api.theme.current,
-          api.renderer.width,
-        );
-        if (!nodes) {
-          mounted = undefined;
-          return null;
-        }
-
-        let nextScrollBox: ScrollBoxAdapter | undefined;
-        let nextScrollWindow: RenderNode["scrollWindow"];
-        const result = materialize(nodes, solid, (node, window) => {
-          nextScrollBox = node;
-          nextScrollWindow = window;
-        });
-        if (nextScrollBox && nextScrollWindow) {
-          const remembered = scrollOffsets.get(sessionID);
-          const offset = remembered?.windowKey === nextScrollWindow.key ? remembered.scrollTop : undefined;
-          const window = nextScrollWindow;
-          let initialized = false;
-          solid.setProp(nextScrollBox, "onSizeChange", function (this: ScrollBoxAdapter) {
-            if (initialized || this.isDestroyed) return;
-
-            const start = this.content?.findDescendantById(window.startID);
-            const end = this.content?.findDescendantById(window.endID);
-            if (start && end) {
-              const windowHeight = Math.min(MAX_BODY_HEIGHT, Math.max(1, end.y + end.height - start.y));
-              if (this.height !== windowHeight) {
-                this.height = windowHeight;
-                return;
-              }
-            }
-            initialized = true;
-            if (offset !== undefined) {
-              this.scrollTop = offset;
-            } else if (start && this.content) {
-              this.scrollTop = Math.max(0, start.y - this.content.y);
-            }
-          });
-          mounted = { sessionID, scrollbox: nextScrollBox, windowKey: nextScrollWindow.key };
-        }
-        return result;
+        const root = solid.createElement("box");
+        solid.setProp(root, "position", "absolute");
+        solid.setProp(root, "top", 0);
+        solid.setProp(root, "right", 0);
+        solid.setProp(root, "bottom", 0);
+        solid.setProp(root, "left", 0);
+        solid.setProp(root, "zIndex", 900);
+        solid.insert(root, renderOverlay);
+        return root;
       },
     },
   });
 }
 
 export const tui: TuiPlugin = async (api) => {
-  const solid = await import("@opentui/solid");
+  const [solid, { createSignal }] = await Promise.all([
+    import("@opentui/solid"),
+    import("solid-js/dist/solid.js"),
+  ]);
   registerMessageLabelColors(api);
-  registerTodoOverlay(api, solid);
+  registerTodoOverlay(api, { ...solid, createSignal });
 };
 
 export default { id: "opencode-todo-overlay:tui", tui };
