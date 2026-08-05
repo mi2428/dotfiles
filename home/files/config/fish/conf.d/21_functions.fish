@@ -940,7 +940,7 @@ function gadd
     set -l preview (string join '' -- 'set -l file (printf "%s\n" {1} | command python3 ' (string escape -- "$fzf_rows") ' decode); git diff --color -- "$file"')
     set -l files (command git status --porcelain=v1 -z |
         command python3 "$fzf_rows" git-status |
-        command env NO_COLOR= SHELL="$fish_shell" fzf --ansi --with-nth=2.. --nth=2.. --accept-nth=1 -m --preview="$preview" |
+        command env NO_COLOR= SHELL="$fish_shell" fzf --ansi --with-nth=2.. --nth=2.. --accept-nth=1 --multi --bind=tab:toggle+down,btab:toggle+up --preview="$preview" |
         command python3 "$fzf_rows" decode)
     if test (count $files) -gt 0
         git add -- $files

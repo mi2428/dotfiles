@@ -62,6 +62,11 @@ function __dotfiles_git_handler_name --argument-names subcmd
 end
 
 function __dotfiles_git_subcommand_a
+    if test (count $argv) -eq 0
+        gadd
+        return $status
+    end
+
     command git add $argv
 end
 
