@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import re
+import shutil
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from html.parser import HTMLParser
+from itertools import pairwise
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -17,13 +20,17 @@ URL = "https://cursor.com/cursorbench"
 TIMEOUT = 10
 COLUMN_COUNT = 6
 MAX_SCORE = 100
+SCORE_TICK = 5
+GRAPH_GUTTER = 7
 SCORE_RE = re.compile(r"^(\d+(?:\.\d+)?)%$")
 COST_RE = re.compile(r"^\$(\d+(?:\.\d+)?)$")
 INTEGER_RE = re.compile(r"^\d[\d,]*$")
+EFFORT_RE = re.compile(r" (?:extra high|max|high|medium|low)\*?$", re.IGNORECASE)
 MODEL_ALIASES = {"claude": ("opus", "sonnet", "haiku", "fable")}
 LEADERBOARD_HEADERS = ("model", "score", "cost", "tokens", "steps")
 RESET = "\033[0m"
 RGB = tuple[int, int, int]
+BRAILLE_BITS = ((1, 8), (2, 16), (4, 32), (64, 128))
 MOCHA: dict[str, RGB] = {
     "text": (205, 214, 244),
     "subtext0": (166, 173, 200),
@@ -66,6 +73,112 @@ class Result:
     cost: float
     tokens: int
     steps: int
+
+
+@dataclass(frozen=True, slots=True)
+class Series:
+    name: str
+    results: tuple[Result, ...]
+    color: RGB
+
+
+@dataclass(frozen=True, slots=True)
+class GraphScale:
+    cost_max: float
+    score_min: float
+    score_max: float
+    pixel_width: int
+    pixel_height: int
+
+    def position(self, result: Result) -> tuple[int, int]:
+        x = round(
+            (self.cost_max - result.cost) / self.cost_max * (self.pixel_width - 1)
+        )
+        y = round(
+            (self.score_max - result.score)
+            / (self.score_max - self.score_min)
+            * (self.pixel_height - 1)
+        )
+        return x, y
+
+
+class BrailleCanvas:
+    def __init__(self, width: int, height: int) -> None:
+        self.width = width
+        self.height = height
+        self.pixel_width = width * 2
+        self.pixel_height = height * 4
+        self._bits = [[0] * width for _ in range(height)]
+        self._colors: list[list[RGB | None]] = [[None] * width for _ in range(height)]
+        self._glyphs: list[list[str | None]] = [[None] * width for _ in range(height)]
+        self._glyph_colors: list[list[RGB | None]] = [
+            [None] * width for _ in range(height)
+        ]
+
+    def set_pixel(self, x: int, y: int, color: RGB) -> None:
+        if not 0 <= x < self.pixel_width or not 0 <= y < self.pixel_height:
+            return
+        cell_x, dot_x = divmod(x, 2)
+        cell_y, dot_y = divmod(y, 4)
+        self._bits[cell_y][cell_x] |= BRAILLE_BITS[dot_y][dot_x]
+        self._colors[cell_y][cell_x] = color
+
+    def draw_line(
+        self,
+        start: tuple[int, int],
+        end: tuple[int, int],
+        color: RGB,
+    ) -> None:
+        x0, y0 = start
+        x1, y1 = end
+        dx = abs(x1 - x0)
+        dy = -abs(y1 - y0)
+        step_x = 1 if x0 < x1 else -1
+        step_y = 1 if y0 < y1 else -1
+        error = dx + dy
+
+        while True:
+            self.set_pixel(x0, y0, color)
+            if x0 == x1 and y0 == y1:
+                break
+            doubled = error * 2
+            if doubled >= dy:
+                error += dy
+                x0 += step_x
+            if doubled <= dx:
+                error += dx
+                y0 += step_y
+
+    def set_glyph(self, x: int, y: int, glyph: str, color: RGB) -> None:
+        if 0 <= x < self.width and 0 <= y < self.height:
+            self._glyphs[y][x] = glyph
+            self._glyph_colors[y][x] = color
+
+    def place_label(self, x: int, y: int, text: str, color: RGB) -> bool:
+        if x < 0 or y < 0 or y >= self.height or x + len(text) > self.width:
+            return False
+        if any(
+            self._glyphs[y][column] is not None or self._bits[y][column]
+            for column in range(x, x + len(text))
+        ):
+            return False
+        for column, character in enumerate(text, x):
+            self._glyphs[y][column] = character
+            self._glyph_colors[y][column] = color
+        return True
+
+    def row(self, index: int, *, grid: bool = False) -> list[tuple[str, RGB | None]]:
+        cells: list[tuple[str, RGB | None]] = []
+        for column in range(self.width):
+            if glyph := self._glyphs[index][column]:
+                cells.append((glyph, self._glyph_colors[index][column]))
+            elif bits := self._bits[index][column]:
+                cells.append((chr(0x2800 | bits), self._colors[index][column]))
+            elif grid:
+                cells.append(("·" if column % 2 == 0 else " ", MOCHA["surface2"]))
+            else:
+                cells.append((" ", None))
+        return cells
 
 
 class TableParser(HTMLParser):
@@ -131,7 +244,13 @@ def parse_row(cells: list[str]) -> Result | None:
         tokens=int(cells[4].replace(",", "")),
         steps=int(cells[5].replace(",", "")),
     )
-    if not result.model or not 0 <= result.score <= MAX_SCORE or result.cost < 0:
+    if (
+        not result.model
+        or not math.isfinite(result.score)
+        or not math.isfinite(result.cost)
+        or not 0 <= result.score <= MAX_SCORE
+        or result.cost < 0
+    ):
         raise ValueError("CursorBench returned an invalid leaderboard row")
     return result
 
@@ -213,6 +332,253 @@ def model_color(model: str) -> RGB:
     )
 
 
+def series_name(model: str) -> str:
+    return EFFORT_RE.sub("", model)
+
+
+def build_series(results: list[Result]) -> list[Series]:
+    groups: dict[str, list[Result]] = {}
+    for result in results:
+        groups.setdefault(series_name(result.model), []).append(result)
+    return [
+        Series(name, tuple(group), model_color(name)) for name, group in groups.items()
+    ]
+
+
+def render_cells(cells: Sequence[tuple[str, RGB | None]], *, ansi: bool) -> str:
+    if not ansi:
+        return "".join(character for character, _color in cells)
+
+    rendered: list[str] = []
+    active_color: RGB | None = None
+    for character, color in cells:
+        if color != active_color:
+            rendered.append(RESET if color is None else foreground(color))
+            active_color = color
+        rendered.append(character)
+    if active_color is not None:
+        rendered.append(RESET)
+    return "".join(rendered)
+
+
+def nice_step(maximum: float, divisions: int = 6) -> float:
+    rough = maximum / divisions
+    magnitude = 10.0 ** math.floor(math.log10(rough)) if rough else 1.0
+    if not math.isfinite(magnitude) or magnitude == 0:
+        return maximum or 1
+    normalized = rough / magnitude
+    multiplier = next(value for value in (1, 2, 3, 5, 10) if normalized <= value)
+    step = multiplier * magnitude
+    return step if math.isfinite(step) and step > 0 else maximum
+
+
+def make_graph_scale(
+    results: list[Result], canvas: BrailleCanvas
+) -> tuple[GraphScale, float]:
+    max_cost = max(result.cost for result in results)
+    cost_step = nice_step(max_cost, max(2, min(6, canvas.width // 10)))
+    rounded_cost = math.ceil(max_cost / cost_step) * cost_step
+    cost_max = (
+        max_cost if not math.isfinite(rounded_cost) else max(cost_step, rounded_cost)
+    )
+    score_min = (
+        math.floor(min(result.score for result in results) / SCORE_TICK) * SCORE_TICK
+    )
+    score_max = (
+        math.ceil(max(result.score for result in results) / SCORE_TICK) * SCORE_TICK
+    )
+    if score_min == score_max:
+        score_min -= SCORE_TICK
+        score_max += SCORE_TICK
+    scale = GraphScale(
+        cost_max,
+        score_min,
+        score_max,
+        canvas.pixel_width,
+        canvas.pixel_height,
+    )
+    return scale, cost_step
+
+
+def draw_series(
+    canvas: BrailleCanvas, series: list[Series], scale: GraphScale
+) -> list[Series]:
+    draw_order = sorted(
+        series,
+        key=lambda item: min(result.source_rank for result in item.results),
+        reverse=True,
+    )
+    for item in draw_order:
+        points = [
+            scale.position(result)
+            for result in sorted(item.results, key=lambda row: row.cost)
+        ]
+        for start, end in pairwise(points):
+            canvas.draw_line(start, end, item.color)
+
+    for item in draw_order:
+        for result in item.results:
+            x, y = scale.position(result)
+            canvas.set_glyph(x // 2, y // 4, "●", item.color)
+    return draw_order
+
+
+def place_series_labels(
+    canvas: BrailleCanvas, draw_order: list[Series], scale: GraphScale
+) -> list[Series]:
+    legend: list[Series] = []
+    for item in reversed(draw_order):
+        anchor = min(item.results, key=lambda result: result.source_rank)
+        pixel_x, pixel_y = scale.position(anchor)
+        cell_x, cell_y = pixel_x // 2, pixel_y // 4
+        candidates = (
+            (cell_x + 2, cell_y - 1),
+            (cell_x + 2, cell_y + 1),
+            (cell_x - len(item.name) - 2, cell_y - 1),
+            (cell_x - len(item.name) - 2, cell_y + 1),
+            (cell_x + 2, cell_y - 2),
+            (cell_x - len(item.name) - 2, cell_y + 2),
+        )
+        if not any(
+            canvas.place_label(x, y, item.name, item.color) for x, y in candidates
+        ):
+            legend.append(item)
+    return legend
+
+
+def score_tick_rows(scale: GraphScale) -> dict[int, float]:
+    score_span = scale.score_max - scale.score_min
+    divisions = max(2, scale.pixel_height // 12)
+    tick_step = max(SCORE_TICK, nice_step(score_span, divisions))
+    scores = [scale.score_min]
+    score = math.ceil(scale.score_min / tick_step) * tick_step
+    while score < scale.score_max:
+        if score > scale.score_min:
+            scores.append(score)
+        score += tick_step
+    scores.append(scale.score_max)
+
+    tick_rows: dict[int, float] = {}
+    for score in scores:
+        pixel = round(
+            (scale.score_max - score)
+            / (scale.score_max - scale.score_min)
+            * (scale.pixel_height - 1)
+        )
+        row = pixel // 4
+        if row not in tick_rows or score in {scale.score_min, scale.score_max}:
+            tick_rows[row] = score
+    return tick_rows
+
+
+def render_plot_rows(
+    canvas: BrailleCanvas, scale: GraphScale, *, ansi: bool
+) -> list[str]:
+    tick_rows = score_tick_rows(scale)
+    lines: list[str] = []
+    for row in range(canvas.height):
+        if row in tick_rows:
+            prefix = f"{tick_rows[row]:>3.0f}% ┤ "
+            grid = True
+        else:
+            prefix = "     │ "
+            grid = False
+        cells: list[tuple[str, RGB | None]] = [
+            (character, MOCHA["surface2"]) for character in prefix
+        ]
+        cells.extend(canvas.row(row, grid=grid))
+        lines.append(render_cells(cells, ansi=ansi).rstrip())
+    return lines
+
+
+def render_cost_axis(
+    canvas: BrailleCanvas,
+    scale: GraphScale,
+    cost_step: float,
+    *,
+    ansi: bool,
+) -> list[str]:
+    axis = list("     └─" + "─" * canvas.width)
+    label_line = [" "] * len(axis)
+    tick_count = max(1, round(scale.cost_max / cost_step))
+    costs = [scale.cost_max * (index / tick_count) for index in range(tick_count + 1)]
+    for cost in costs:
+        cell_x = round((scale.cost_max - cost) / scale.cost_max * (canvas.width - 1))
+        axis[GRAPH_GUTTER + cell_x] = "┬"
+
+    label_costs = [costs[-1], costs[0], *reversed(costs[1:-1])]
+    for cost in label_costs:
+        cell_x = round((scale.cost_max - cost) / scale.cost_max * (canvas.width - 1))
+        label = f"${cost:g}"
+        start = max(
+            GRAPH_GUTTER,
+            min(
+                len(label_line) - len(label),
+                GRAPH_GUTTER + cell_x - len(label) // 2,
+            ),
+        )
+        end = start + len(label)
+        if all(character == " " for character in label_line[start:end]):
+            label_line[start:end] = label
+    lines = [
+        render_cells([(character, MOCHA["surface2"]) for character in axis], ansi=ansi)
+    ]
+    lines.append(
+        render_cells(
+            [(character, MOCHA["subtext0"]) for character in label_line],
+            ansi=ansi,
+        ).rstrip()
+    )
+    axis_title = "Cost / Task"
+    lines.append(" " * max(0, (len(axis) - len(axis_title)) // 2) + axis_title)
+    return lines
+
+
+def render_legend(legend: list[Series], width: int, *, ansi: bool) -> list[str]:
+    lines: list[list[tuple[str, RGB | None]]] = []
+    cells: list[tuple[str, RGB | None]] = [(" ", None)] * GRAPH_GUTTER
+    for item in legend:
+        available = width - GRAPH_GUTTER - 2
+        name = item.name
+        if len(name) > available:
+            name = name[: max(1, available - 1)] + "…"
+        token = [("●", item.color)]
+        token.extend((character, MOCHA["subtext0"]) for character in f" {name}")
+        separator = [(" ", None), (" ", None)] if len(cells) > GRAPH_GUTTER else []
+        if len(cells) + len(separator) + len(token) > width:
+            if len(cells) > GRAPH_GUTTER:
+                lines.append(cells)
+            cells = [(" ", None)] * GRAPH_GUTTER
+            separator = []
+        cells.extend(separator)
+        cells.extend(token)
+    lines.append(cells)
+    return [render_cells(line, ansi=ansi) for line in lines]
+
+
+def render_graph(
+    results: list[Result],
+    *,
+    ansi: bool = False,
+    columns: int | None = None,
+    rows: int | None = None,
+) -> str:
+    terminal = shutil.get_terminal_size((120, 32))
+    graph_columns = max(24, min(columns or terminal.columns, 140))
+    graph_rows = rows or max(14, min(24, terminal.lines - 8))
+    canvas = BrailleCanvas(graph_columns - GRAPH_GUTTER, graph_rows)
+    scale, cost_step = make_graph_scale(results, canvas)
+    draw_order = draw_series(canvas, build_series(results), scale)
+    legend = place_series_labels(canvas, draw_order, scale)
+
+    lines = render_plot_rows(canvas, scale, ansi=ansi)
+    lines.extend(render_cost_axis(canvas, scale, cost_step, ansi=ansi))
+    if legend:
+        lines.extend(render_legend(legend, graph_columns, ansi=ansi))
+
+    return "\n" + "\n".join(lines)
+
+
 def render(results: list[Result], *, ansi: bool = False) -> str:
     headers = ("Rank", "Model", "Score", "Cost / Task", "Tokens / Task", "Steps / Task")
     rows = [
@@ -285,6 +651,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     parser.add_argument("--no-color", action="store_true", help="disable ANSI colors")
+    parser.add_argument(
+        "--graph",
+        action="store_true",
+        help="render a Braille cost/score graph before the table",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -304,6 +675,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     results.sort(key=lambda result: result.source_rank)
     ansi = sys.stdout.isatty() and not args.no_color and "NO_COLOR" not in os.environ
+    if args.graph:
+        print(render_graph(results, ansi=ansi))
     print(render(results, ansi=ansi))
     return 0
 
