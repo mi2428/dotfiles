@@ -162,6 +162,10 @@ in {
   home.file = {
     ".omo/omo.jsonc" = mkLink ../../files/omo/omo.jsonc;
     ".agents/skills/herdr-agent-layout" = mkLink herdrAgentLayoutSkill;
+    ".agents/skills/pr-review" =
+      mkLink ../../files/agents/skills/pr-review;
+    ".agents/skills/repo-qa" =
+      mkLink ../../files/agents/skills/repo-qa;
     ".claude/skills/herdr-agent-layout" = mkLink herdrAgentLayoutSkill;
   };
 

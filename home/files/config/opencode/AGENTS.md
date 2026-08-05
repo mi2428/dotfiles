@@ -1,6 +1,8 @@
 # Global OpenCode instructions
 
-- Respond in Japanese unless the user requests another language.
+- Use Japanese for all visible natural-language communication unless the user explicitly requests another language. This includes progress updates, work reports, task delegation prompts, agent-to-agent messages, worker reports, summaries, questions, and final responses.
+- Preserve code, commands, identifiers, file paths, logs, error messages, and quoted source text in their original language when translating them would reduce accuracy.
+- Do not expose private chain-of-thought. Provide only concise conclusions, evidence, and decision rationale in Japanese.
 - Read the repository's own instructions and conventions before editing files.
 - Preserve unrelated user changes and work safely in a dirty worktree.
 - Prefer `rg` and `rg --files` for searching when available.
