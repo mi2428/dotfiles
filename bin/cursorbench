@@ -22,6 +22,7 @@ COLUMN_COUNT = 6
 MAX_SCORE = 100
 SCORE_TICK = 5
 GRAPH_GUTTER = 7
+MIN_PARETO_OBJECTIVES = 2
 SCORE_RE = re.compile(r"^(\d+(?:\.\d+)?)%$")
 COST_RE = re.compile(r"^\$(\d+(?:\.\d+)?)$")
 INTEGER_RE = re.compile(r"^\d[\d,]*$")
@@ -33,6 +34,9 @@ EFFORT_RE = re.compile(
 MODEL_ALIASES = {"claude": ("opus", "sonnet", "haiku", "fable")}
 VARIANTS = frozenset(("default", "low", "medium", "high", "extra-high", "max"))
 VARIANT_ALIASES = {"xhigh": "extra-high"}
+DEFAULT_PARETO = ("score", "cost")
+PARETO_RESOURCES = frozenset(("cost", "tokens", "steps"))
+PARETO_ALIASES = {"token": "tokens", "step": "steps"}
 LEADERBOARD_HEADERS = ("model", "score", "cost", "tokens", "steps")
 RESET = "\033[0m"
 RGB = tuple[int, int, int]
@@ -90,15 +94,18 @@ class Series:
 
 @dataclass(frozen=True, slots=True)
 class GraphScale:
-    cost_max: float
+    resource_max: float
     score_min: float
     score_max: float
     pixel_width: int
     pixel_height: int
+    resource: str
 
     def position(self, result: Result) -> tuple[int, int]:
         x = round(
-            (self.cost_max - result.cost) / self.cost_max * (self.pixel_width - 1)
+            (self.resource_max - objective_value(result, self.resource))
+            / self.resource_max
+            * (self.pixel_width - 1)
         )
         y = round(
             (self.score_max - result.score)
@@ -347,6 +354,20 @@ def exclude_filter(value: str) -> frozenset[str]:
     return identifiers
 
 
+def pareto_filter(value: str) -> tuple[str, ...]:
+    objectives = tuple(
+        PARETO_ALIASES.get(name, name)
+        for part in value.split(",")
+        if (name := part.strip().casefold())
+    )
+    unique = tuple(dict.fromkeys(objectives))
+    invalid = set(unique) - ({"score"} | PARETO_RESOURCES)
+    if invalid or "score" not in unique or len(unique) < MIN_PARETO_OBJECTIVES:
+        message = "expected score plus one or more of: cost, tokens, steps"
+        raise argparse.ArgumentTypeError(message)
+    return ("score", *(objective for objective in unique if objective != "score"))
+
+
 def matches_model(result: Result, filters: tuple[str, ...]) -> bool:
     name = result.model.casefold()
     return any(
@@ -392,21 +413,57 @@ def build_series(results: list[Result]) -> list[Series]:
     ]
 
 
-def pareto_frontier(results: list[Result]) -> list[Result]:
+def objective_value(result: Result, objective: str) -> float:
+    if objective == "score":
+        return result.score
+    if objective == "cost":
+        return result.cost
+    if objective == "tokens":
+        return result.tokens
+    return result.steps
+
+
+def dominates(candidate: Result, other: Result, objectives: tuple[str, ...]) -> bool:
+    comparisons = [
+        (
+            objective_value(candidate, objective) >= objective_value(other, objective)
+            if objective == "score"
+            else objective_value(candidate, objective)
+            <= objective_value(other, objective)
+        )
+        for objective in objectives
+    ]
+    strict = any(
+        (
+            objective_value(candidate, objective) > objective_value(other, objective)
+            if objective == "score"
+            else objective_value(candidate, objective)
+            < objective_value(other, objective)
+        )
+        for objective in objectives
+    )
+    return all(comparisons) and strict
+
+
+def pareto_frontier(
+    results: list[Result], objectives: tuple[str, ...] = DEFAULT_PARETO
+) -> list[Result]:
     frontier = [
         candidate
         for candidate in results
         if not any(
-            other is not candidate
-            and other.cost <= candidate.cost
-            and other.score >= candidate.score
-            and (other.cost < candidate.cost or other.score > candidate.score)
+            other is not candidate and dominates(other, candidate, objectives)
             for other in results
         )
     ]
+    resource = next(objective for objective in objectives if objective != "score")
     return sorted(
         frontier,
-        key=lambda result: (result.cost, result.score, result.source_rank),
+        key=lambda result: (
+            objective_value(result, resource),
+            result.score,
+            result.source_rank,
+        ),
     )
 
 
@@ -438,13 +495,15 @@ def nice_step(maximum: float, divisions: int = 6) -> float:
 
 
 def make_graph_scale(
-    results: list[Result], canvas: BrailleCanvas
+    results: list[Result], canvas: BrailleCanvas, resource: str
 ) -> tuple[GraphScale, float]:
-    max_cost = max(result.cost for result in results)
-    cost_step = nice_step(max_cost, max(2, min(6, canvas.width // 10)))
-    rounded_cost = math.ceil(max_cost / cost_step) * cost_step
-    cost_max = (
-        max_cost if not math.isfinite(rounded_cost) else max(cost_step, rounded_cost)
+    max_resource = max(objective_value(result, resource) for result in results)
+    resource_step = nice_step(max_resource, max(2, min(6, canvas.width // 10)))
+    rounded_resource = math.ceil(max_resource / resource_step) * resource_step
+    resource_max = (
+        max_resource
+        if not math.isfinite(rounded_resource)
+        else max(resource_step, rounded_resource)
     )
     score_min = (
         math.floor(min(result.score for result in results) / SCORE_TICK) * SCORE_TICK
@@ -456,13 +515,14 @@ def make_graph_scale(
         score_min -= SCORE_TICK
         score_max += SCORE_TICK
     scale = GraphScale(
-        cost_max,
+        resource_max,
         score_min,
         score_max,
         canvas.pixel_width,
         canvas.pixel_height,
+        resource,
     )
-    return scale, cost_step
+    return scale, resource_step
 
 
 def draw_series(
@@ -476,7 +536,10 @@ def draw_series(
     for item in draw_order:
         points = [
             scale.position(result)
-            for result in sorted(item.results, key=lambda row: row.cost)
+            for result in sorted(
+                item.results,
+                key=lambda row: objective_value(row, scale.resource),
+            )
         ]
         for start, end in pairwise(points):
             canvas.draw_line(start, end, item.color)
@@ -489,9 +552,12 @@ def draw_series(
 
 
 def draw_frontier(
-    canvas: BrailleCanvas, results: list[Result], scale: GraphScale
+    canvas: BrailleCanvas,
+    results: list[Result],
+    scale: GraphScale,
+    objectives: tuple[str, ...],
 ) -> None:
-    points = [scale.position(result) for result in pareto_frontier(results)]
+    points = [scale.position(result) for result in pareto_frontier(results, objectives)]
     for start, end in pairwise(points):
         canvas.draw_line(start, end, MOCHA["yellow"])
         canvas.draw_line(
@@ -571,25 +637,31 @@ def render_plot_rows(
     return lines
 
 
-def render_cost_axis(
+def render_resource_axis(
     canvas: BrailleCanvas,
     scale: GraphScale,
-    cost_step: float,
+    resource_step: float,
     *,
     ansi: bool,
 ) -> list[str]:
     axis = list("     └─" + "─" * canvas.width)
     label_line = [" "] * len(axis)
-    tick_count = max(1, round(scale.cost_max / cost_step))
-    costs = [scale.cost_max * (index / tick_count) for index in range(tick_count + 1)]
-    for cost in costs:
-        cell_x = round((scale.cost_max - cost) / scale.cost_max * (canvas.width - 1))
+    tick_count = max(1, round(scale.resource_max / resource_step))
+    values = [
+        scale.resource_max * (index / tick_count) for index in range(tick_count + 1)
+    ]
+    for value in values:
+        cell_x = round(
+            (scale.resource_max - value) / scale.resource_max * (canvas.width - 1)
+        )
         axis[GRAPH_GUTTER + cell_x] = "┬"
 
-    label_costs = [costs[-1], costs[0], *reversed(costs[1:-1])]
-    for cost in label_costs:
-        cell_x = round((scale.cost_max - cost) / scale.cost_max * (canvas.width - 1))
-        label = f"${cost:g}"
+    label_values = [values[-1], values[0], *reversed(values[1:-1])]
+    for value in label_values:
+        cell_x = round(
+            (scale.resource_max - value) / scale.resource_max * (canvas.width - 1)
+        )
+        label = f"${value:g}" if scale.resource == "cost" else f"{value:,.0f}"
         start = max(
             GRAPH_GUTTER,
             min(
@@ -609,7 +681,7 @@ def render_cost_axis(
             ansi=ansi,
         ).rstrip()
     )
-    axis_title = "Cost / Task"
+    axis_title = objective_header(scale.resource)
     lines.append(" " * max(0, (len(axis) - len(axis_title)) // 2) + axis_title)
     return lines
 
@@ -642,18 +714,22 @@ def render_graph(
     ansi: bool = False,
     columns: int | None = None,
     rows: int | None = None,
+    pareto_objectives: tuple[str, ...] = DEFAULT_PARETO,
 ) -> str:
     terminal = shutil.get_terminal_size((120, 32))
     graph_columns = max(24, min(columns or terminal.columns, 140))
     graph_rows = rows or max(14, min(24, terminal.lines - 8))
     canvas = BrailleCanvas(graph_columns - GRAPH_GUTTER, graph_rows)
-    scale, cost_step = make_graph_scale(results, canvas)
+    resource = next(
+        objective for objective in pareto_objectives if objective != "score"
+    )
+    scale, resource_step = make_graph_scale(results, canvas, resource)
     draw_order = draw_series(canvas, build_series(results), scale)
-    draw_frontier(canvas, results, scale)
+    draw_frontier(canvas, results, scale, pareto_objectives)
     legend = place_series_labels(canvas, draw_order, scale)
 
     lines = render_plot_rows(canvas, scale, ansi=ansi)
-    lines.extend(render_cost_axis(canvas, scale, cost_step, ansi=ansi))
+    lines.extend(render_resource_axis(canvas, scale, resource_step, ansi=ansi))
     if legend:
         lines.extend(render_legend(legend, graph_columns, ansi=ansi))
     frontier_key: list[tuple[str, RGB | None]] = [(" ", None)] * GRAPH_GUTTER
@@ -739,46 +815,112 @@ def render(results: list[Result], *, ansi: bool = False) -> str:
     )
 
 
-def render_pareto(results: list[Result], *, ansi: bool = False) -> str:
-    frontier = pareto_frontier(results)
+def objective_header(objective: str) -> str:
+    return {
+        "score": "Score",
+        "cost": "Cost / Task",
+        "tokens": "Tokens / Task",
+        "steps": "Steps / Task",
+    }[objective]
+
+
+def objective_cell(result: Result, objective: str) -> str:
+    if objective == "score":
+        return f"{result.score:.1f}%"
+    if objective == "cost":
+        return f"${result.cost:.2f}"
+    return f"{int(objective_value(result, objective)):,}"
+
+
+def resource_delta(value: float, resource: str) -> str:
+    if resource == "cost":
+        return f"+${value:.2f}"
+    return f"+{int(value):,}"
+
+
+def marginal_cell(value: float, score_gain: float, resource: str) -> str:
+    marginal = value / score_gain
+    if resource == "cost":
+        return f"${marginal:.3f}"
+    return f"{marginal:,.1f}"
+
+
+def render_pareto(
+    results: list[Result],
+    objectives: tuple[str, ...] = DEFAULT_PARETO,
+    *,
+    ansi: bool = False,
+) -> str:
+    frontier = sorted(
+        pareto_frontier(results, objectives),
+        key=lambda result: (-result.score, result.source_rank),
+    )
+    if len(objectives) > MIN_PARETO_OBJECTIVES:
+        headers = (
+            "Rank",
+            "Model",
+            *(objective_header(objective) for objective in objectives),
+        )
+        rows = [
+            (
+                str(result.source_rank),
+                f"● {result.model}",
+                *(objective_cell(result, objective) for objective in objectives),
+            )
+            for result in frontier
+        ]
+        return render_table(
+            headers,
+            rows,
+            [result.model for result in frontier],
+            {0} | set(range(2, len(headers))),
+            ansi=ansi,
+        )
+
+    resource = next(objective for objective in objectives if objective != "score")
     rows: list[tuple[str, ...]] = []
-    previous: Result | None = None
-    for result in frontier:
-        if previous is None:
-            delta_score = delta_cost = marginal_cost = "—"
+    for index, result in enumerate(frontier):
+        lower = frontier[index + 1] if index + 1 < len(frontier) else None
+        if lower is None:
+            delta_score = delta_resource = marginal_resource = "—"
         else:
-            score_gain = result.score - previous.score
-            cost_increase = result.cost - previous.cost
+            score_gain = result.score - lower.score
+            resource_increase = objective_value(result, resource) - objective_value(
+                lower, resource
+            )
             delta_score = f"+{score_gain:.1f}pp"
-            delta_cost = f"+${cost_increase:.2f}"
-            marginal_cost = (
-                f"${cost_increase / score_gain:.3f}" if score_gain > 0 else "—"
+            delta_resource = resource_delta(resource_increase, resource)
+            marginal_resource = (
+                marginal_cell(resource_increase, score_gain, resource)
+                if score_gain > 0
+                else "—"
             )
         rows.append(
             (
+                str(result.source_rank),
                 f"● {result.model}",
                 f"{result.score:.1f}%",
-                f"${result.cost:.2f}",
+                objective_cell(result, resource),
                 delta_score,
-                delta_cost,
-                marginal_cost,
+                delta_resource,
+                marginal_resource,
             )
         )
-        previous = result
 
     headers = (
+        "Rank",
         "Model",
         "Score",
-        "Cost / Task",
+        objective_header(resource),
         "ΔScore",
-        "ΔCost",
-        "Cost / +1pp",
+        f"Δ{objective_header(resource).split()[0]}",
+        f"{objective_header(resource).split()[0]} / +1pp",
     )
     return render_table(
         headers,
         rows,
         [result.model for result in frontier],
-        {1, 2, 3, 4, 5},
+        {0, 2, 3, 4, 5, 6},
         ansi=ansi,
     )
 
@@ -786,6 +928,7 @@ def render_pareto(results: list[Result], *, ansi: bool = False) -> str:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Display the official CursorBench ranking.",
+        allow_abbrev=False,
     )
     parser.add_argument(
         "--models",
@@ -797,7 +940,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
-        "--variant",
+        "--variants",
         type=variant_filter,
         metavar="VARIANT,...",
         help=(
@@ -819,8 +962,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--pareto",
-        action="store_true",
-        help="show the Pareto frontier with marginal cost metrics",
+        nargs="?",
+        const=DEFAULT_PARETO,
+        type=pareto_filter,
+        metavar="OBJECTIVE,...",
+        help="show a Pareto frontier (default: score,cost)",
     )
     args = parser.parse_args(argv)
 
@@ -838,12 +984,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not results:
             print("cursorbench: no models matched --models", file=sys.stderr)
             return 1
-    if args.variant:
+    if args.variants:
         results = [
-            result for result in results if model_variant(result.model) in args.variant
+            result for result in results if model_variant(result.model) in args.variants
         ]
         if not results:
-            print("cursorbench: no models matched --variant", file=sys.stderr)
+            print("cursorbench: no models matched --variants", file=sys.stderr)
             return 1
     if args.exclude:
         results = [
@@ -858,9 +1004,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     results.sort(key=lambda result: result.source_rank)
     ansi = sys.stdout.isatty() and not args.no_color and "NO_COLOR" not in os.environ
     if args.graph:
-        print(render_graph(results, ansi=ansi))
+        print(
+            render_graph(
+                results,
+                ansi=ansi,
+                pareto_objectives=args.pareto or DEFAULT_PARETO,
+            )
+        )
     print(
-        render_pareto(results, ansi=ansi) if args.pareto else render(results, ansi=ansi)
+        render_pareto(results, args.pareto, ansi=ansi)
+        if args.pareto
+        else render(results, ansi=ansi)
     )
     return 0
 
