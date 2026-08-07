@@ -88,6 +88,7 @@ let
   generated = {
     defaultConfig = json.generate "opencode-default.json" (mkOpenCodeConfig {
       model = "openai/gpt-5.6-sol";
+      plugin = "${ponytail}/.opencode/plugins/ponytail.mjs";
     });
     omoConfig = json.generate "opencode-omo.json" (mkOpenCodeConfig {
       model = "openai/gpt-5.6-sol";
@@ -108,6 +109,13 @@ let
     "${config.home.homeDirectory}/.config/opencode/plugins/tui";
   profileShellEnvPlugin = ../../files/config/opencode/plugins/profile-shell-env.js;
   slimOpenCodePluginConfig = ../../files/config/opencode/profiles/slim/oh-my-opencode-slim.jsonc;
+
+  ponytail = pkgs.fetchFromGitHub {
+    owner = "DietrichGebert";
+    repo = "ponytail";
+    rev = "16f29800fd2681bdf24f3eb4ccffe38be3baec6b";
+    hash = "sha256-Y7d4s7uqjH6IbEXhqAiQ+yaxr6iiGcv2X64LuMtG1T8=";
+  };
 
   herdrAgentLayout = pkgs.fetchFromGitHub {
     owner = "mi2428";
