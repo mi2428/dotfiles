@@ -14,6 +14,7 @@ let
     "scripts/lazygit-popup.sh"
     "scripts/session-popup.sh"
     "scripts/storage.sh"
+    "scripts/system-monitor-popup.sh"
     "scripts/window-label.sh"
     "scripts/yazi-popup.sh"
     "scripts/yazi-tmux-open.sh"
