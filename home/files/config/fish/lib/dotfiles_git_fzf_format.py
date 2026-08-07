@@ -115,8 +115,15 @@ def format_branches(list_width: int, home: str) -> None:
     rows = []
     reader = csv.reader(sys.stdin, delimiter="\t")
     for ref_short, ref_full, age, author, subject, worktree in reader:
-        kind = "local" if ref_full.startswith("refs/heads/") else "remote"
-        marker = "[L]" if kind == "local" else "[R]"
+        if ref_full.startswith("refs/heads/"):
+            kind = "local"
+            marker = "[L]"
+        elif ref_full.startswith("refs/worktrees/"):
+            kind = "worktree"
+            marker = "[W]"
+        else:
+            kind = "remote"
+            marker = "[R]"
         switch_target = (
             ref_short.split("/", 1)[1]
             if kind == "remote" and "/" in ref_short
@@ -196,8 +203,8 @@ def format_branches(list_width: int, home: str) -> None:
     pink = "245;194;231"
 
     for row in rows:
-        marker_rgb = green if row["kind"] == "local" else blue
-        branch_rgb = lavender if row["kind"] == "local" else blue
+        marker_rgb = green if row["kind"] != "remote" else blue
+        branch_rgb = lavender if row["kind"] != "remote" else blue
         marker = colorize(f"{row['marker']:<3}", marker_rgb, bold=True)
         branch_display = colorize(
             f"{ellipsize(row['ref_short'], branch_width):<{branch_width}}",

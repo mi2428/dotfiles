@@ -3,6 +3,7 @@
 set -g __dotfiles_work_self_path (path resolve (status filename))
 set -g __dotfiles_work_script_dir (path dirname "$__dotfiles_work_self_path")
 set -g __dotfiles_work_git_b_path "$__dotfiles_work_script_dir/git-b"
+set -g __dotfiles_work_worktree_home (path normalize "$HOME/io/worktrees")
 set -g __dotfiles_work_history_file ''
 if set -q DOTFILES_RESOLVED_HISTORY_FILE
     set __dotfiles_work_history_file "$DOTFILES_RESOLVED_HISTORY_FILE"
@@ -34,6 +35,7 @@ function usage
     printf '%s\n' \
         'Usage:' \
         '  work [directory | -C directory] [--fetch]' \
+        '  work -l|--list' \
         '  work -w|--worktree [branch] [-C directory] [--fetch]' \
         '  work -w|--worktree -c|--create branch [--from ref] [-C directory] [--fetch]' \
         '' \
@@ -45,6 +47,7 @@ function usage
         '' \
         'Use -C to choose a repository without changing directory. With -w and no' \
         'branch, select one with fzf. Existing worktrees are reused.' \
+        'Use -l from anywhere to select a managed worktree under ~/io/worktrees.' \
         'Inside tmux, each invocation opens a window in the current session; outside' \
         'tmux, a repository session and its worktree windows are created or reused.' \
         'New branches require -c and default to HEAD.'
@@ -79,6 +82,77 @@ function repository_common_dir --argument-names root
     path resolve "$common_dir"
 end
 
+function select_managed_worktree
+    test -d "$__dotfiles_work_worktree_home"; or die "managed worktree directory does not exist: $__dotfiles_work_worktree_home"
+
+    set -l size (__dotfiles_git_ui_current_terminal_size)
+    set -l cols "$size[1]"
+    if not string match -rq '^[0-9]+$' -- "$cols"
+        set cols 160
+    end
+    set -l list_width (math -s0 "$cols - 2")
+    if test "$list_width" -le 72
+        set list_width 72
+    end
+
+    set -l rows
+    for candidate in "$__dotfiles_work_worktree_home"/*/*
+        test -d "$candidate"; or continue
+
+        set -l root (git -C "$candidate" rev-parse --show-toplevel 2>/dev/null); or continue
+        set root (path resolve "$root"); or continue
+        test "$root" = (path resolve "$candidate"); or continue
+
+        set -l main_root (repository_main_root "$root"); or continue
+        set -l project (path basename "$main_root")
+        set -l branch (git -C "$root" branch --show-current 2>/dev/null)
+        if test -z "$branch"
+            set branch "detached-"(git -C "$root" rev-parse --short HEAD 2>/dev/null)
+        end
+
+        set -l head (git -C "$root" log -1 --format='%cr%x09%an%x09%s' 2>/dev/null)
+        set -l fields (string split \t -- "$head")
+        test (count $fields) -ge 3; or continue
+        set -a rows (string join \t -- "$project/$branch" "refs/worktrees/$branch" "$fields[1]" "$fields[2]" "$fields[3]" "$root")
+    end
+
+    test (count $rows) -gt 0; or die "no managed worktrees found under $__dotfiles_work_worktree_home"
+
+    set -l tab \t
+    set -lx NO_COLOR ''
+    set -l selected (
+        printf '%s\n' $rows \
+        | __dotfiles_git_ui_format_fzf_rows branches "$list_width" "$HOME" \
+        | fzf \
+            --ansi \
+            --no-sort \
+            --height=60% \
+            --layout=reverse \
+            --border=sharp \
+            --padding=0 \
+            --margin=0 \
+            --info=hidden \
+            --no-scrollbar \
+            --highlight-line \
+            --pointer=' ' \
+            --marker=' ' \
+            --gutter=' ' \
+            --cycle \
+            --tiebreak=index \
+            --ellipsis='…' \
+            "--delimiter=$tab" \
+            --with-nth=5 \
+            --prompt='worktree> ' \
+            --color='bg:-1,bg+:#63547e,fg:#cdd6f4,fg+:#f5e0dc,hl:#89b4fa,hl+:#b4befe,border:#89b4fa,separator:#89b4fa,gutter:-1,info:#7f849c,prompt:#cba6f7,pointer:#fab387,marker:#a6e3a1,spinner:#89dceb,header:#94e2d5,label:#89b4fa,query:#cdd6f4' \
+            "--preview=$__dotfiles_work_self_path --preview-worktree {4}" \
+            --preview-window=down,80%,border-top,wrap,noinfo
+    ); or return $status
+
+    set -l fields (string split \t -- "$selected")
+    test -n "$fields[4]"; or return 1
+    printf '%s\n' "$fields[4]"
+end
+
 function window_name_for_root --argument-names root
     set -l label (git -C "$root" branch --show-current 2>/dev/null)
     if test -z "$label"
@@ -88,33 +162,6 @@ function window_name_for_root --argument-names root
     set -l slug (__dotfiles_git_ui_slugify "$label")
     test -n "$slug"; or set slug worktree
     printf '%s\n' "$slug"
-end
-
-function session_common_dir --argument-names session
-    set -l common_dir (tmux show-option -qv -t "$session" @work_common_dir)
-    if test -n "$common_dir"
-        printf '%s\n' "$common_dir"
-        return
-    end
-
-    # Upgrade sessions created by the original single-worktree implementation.
-    set -l legacy_root (tmux show-option -qv -t "$session" @work_root)
-    if test -n "$legacy_root"; and test -d "$legacy_root"
-        repository_common_dir "$legacy_root"
-    end
-end
-
-function adopt_legacy_window --argument-names session common_dir
-    set -l legacy_root (tmux show-option -qv -t "$session" @work_root)
-    test -n "$legacy_root"; and test -d "$legacy_root"; or return
-
-    set -l first_window (tmux list-windows -t "$session" -F '#{window_id}' | head -n 1)
-    test -n "$first_window"; or return
-    set -l existing_root (tmux show-option -w -qv -t "$first_window" @work_root)
-    if test -z "$existing_root"
-        tmux set-option -w -q -t "$first_window" @work_root (path resolve "$legacy_root")
-    end
-    tmux set-option -q -t "$session" @work_common_dir "$common_dir"
 end
 
 function find_worktree_window --argument-names session root
@@ -128,28 +175,10 @@ function find_worktree_window --argument-names session root
     return 1
 end
 
-function remove_git_panes --argument-names window_target
-    for pane_id in (tmux list-panes -t "$window_target" -F '#{pane_id}')
-        set -l pane_title (tmux display-message -p -t "$pane_id" '#{pane_title}')
-        if test "$pane_title" = git-status
-            tmux kill-pane -t "$pane_id"
-        end
-    end
-end
-
-function remove_legacy_terminal_pane --argument-names window_target
-    set -l terminal_pane (tmux show-option -w -qv -t "$window_target" @work_terminal_pane)
-    if test -n "$terminal_pane"; and tmux display-message -p -t "$terminal_pane" '#{pane_id}' >/dev/null 2>/dev/null
-        tmux kill-pane -t "$terminal_pane"
-    end
-    tmux set-option -w -qu -t "$window_target" @work_terminal_pane
-end
-
 function configure_worktree_window --argument-names session main_pane root server manage_session
     tmux set-option -w -q -t "$main_pane" @work_root "$root"
     tmux set-option -w -q -t "$main_pane" @work_nvim_server "$server"
     tmux set-option -w -q -t "$main_pane" @work_nvim_pane "$main_pane"
-    tmux set-option -w -qu -t "$main_pane" @work_terminal_pane
     if test "$manage_session" = 1
         tmux set-option -q -t "$session" @work_common_dir (repository_common_dir "$root")
     end
@@ -207,16 +236,36 @@ function ensure_worktree_editor --argument-names session window_target root user
     printf '%s\n' "$main_pane"
 end
 
+function preview_managed_worktree --argument-names root
+    set root (path resolve "$root" 2>/dev/null); or return 1
+
+    set -l tab \t
+    for line in (tmux list-windows -a -F "#{window_id}$tab#{@work_root}" 2>/dev/null)
+        set -l fields (string split "$tab" -- "$line")
+        if test (count $fields) -ge 2; and test "$fields[2]" = "$root"
+            tmux capture-pane -e -p -t "$fields[1]"
+            return
+        end
+    end
+
+    printf 'tmux workspace is not running\n'
+end
+
 if test (count $argv) -ge 1
     switch "$argv[1]"
         case --nvim-pane
             test (count $argv) -eq 4; or die '--nvim-pane requires a shell, server address, and root'
             run_nvim_pane "$argv[2]" "$argv[3]" "$argv[4]"
             exit 0
+        case --preview-worktree
+            test (count $argv) -eq 2; or die '--preview-worktree requires a root'
+            preview_managed_worktree "$argv[2]"
+            exit $status
     end
 end
 
 set -l worktree_mode 0
+set -l list_mode 0
 set -l create_branch 0
 set -l branch ''
 set -l start_ref ''
@@ -233,6 +282,8 @@ while test (count $args) -gt 0
             exit 0
         case -w --worktree
             set worktree_mode 1
+        case -l --list
+            set list_mode 1
         case -c --create
             set create_branch 1
         case -C --directory
@@ -259,13 +310,21 @@ while test (count $args) -gt 0
     set args $args[2..-1]
 end
 
-test (count $operands) -le 1; or die 'expected at most one directory or branch'
-if test (count $operands) -eq 1
-    if test $worktree_mode -eq 1
-        set branch "$operands[1]"
-    else
-        test $directory_option -eq 0; or die 'directory specified both positionally and with -C'
-        set requested_dir "$operands[1]"
+if test $list_mode -eq 1
+    test $worktree_mode -eq 0; or die '-l cannot be combined with -w'
+    test $create_branch -eq 0; or die '-l cannot be combined with -c'
+    test $directory_option -eq 0; or die '-l cannot be combined with -C'
+    test $fetch_origin -eq 0; or die '-l cannot be combined with --fetch'
+    test (count $operands) -eq 0; or die '-l does not accept a directory or branch'
+else
+    test (count $operands) -le 1; or die 'expected at most one directory or branch'
+    if test (count $operands) -eq 1
+        if test $worktree_mode -eq 1
+            set branch "$operands[1]"
+        else
+            test $directory_option -eq 0; or die 'directory specified both positionally and with -C'
+            set requested_dir "$operands[1]"
+        end
     end
 end
 
@@ -281,39 +340,49 @@ need_cmd nvim
 need_cmd tmux
 need_cmd yazi
 
-set requested_dir (path resolve "$requested_dir" 2>/dev/null); or die "directory does not exist: $requested_dir"
-test -d "$requested_dir"; or die "not a directory: $requested_dir"
-set -l root (git -C "$requested_dir" rev-parse --show-toplevel 2>/dev/null); or die "not inside a Git repository: $requested_dir"
-set root (path resolve "$root")
-set -l invocation_root "$root"
+set -l root ''
+set -l invocation_root ''
 
-if test $fetch_origin -eq 1
-    git -C "$root" remote get-url origin >/dev/null 2>/dev/null; or die 'cannot fetch: origin remote is not configured'
-    git -C "$root" fetch --prune origin; or die 'git fetch failed'
-end
+if test $list_mode -eq 1
+    need_cmd fzf
+    need_cmd python3
+    set root (select_managed_worktree); or exit $status
+else
+    set requested_dir (path resolve "$requested_dir" 2>/dev/null); or die "directory does not exist: $requested_dir"
+    test -d "$requested_dir"; or die "not a directory: $requested_dir"
+    set root (git -C "$requested_dir" rev-parse --show-toplevel 2>/dev/null); or die "not inside a Git repository: $requested_dir"
+    set root (path resolve "$root")
+    set invocation_root "$root"
 
-if test $worktree_mode -eq 1
-    builtin cd -- "$root"; or die "could not enter repository: $root"
-    set -l worktree_action
-    set -l selected_worktree_interactively 0
-    if test $create_branch -eq 1
-        set worktree_action (command "$__dotfiles_work_git_b_path" __create-worktree "$branch" "$start_ref"); or exit $status
-    else
-        test -n "$branch"; or set selected_worktree_interactively 1
-        set worktree_action (env DOTFILES_GIT_B_FZF_LAYOUT=vertical "$__dotfiles_work_git_b_path" __resolve-worktree "$branch"); or exit $status
+    if test $fetch_origin -eq 1
+        git -C "$root" remote get-url origin >/dev/null 2>/dev/null; or die 'cannot fetch: origin remote is not configured'
+        git -C "$root" fetch --prune origin; or die 'git fetch failed'
     end
 
-    set -l fields (string split \t -- "$worktree_action")
-    test "$fields[1]" = cd; and test -n "$fields[2]"; or die 'git-b returned an invalid worktree action'
-    set root (path resolve "$fields[2]")
-
-    if test $selected_worktree_interactively -eq 1
-        test -n "$fields[3]"; or die 'git-b did not report the selected branch'
-        set -l resolved_history_args -w -C "$invocation_root"
-        if test $fetch_origin -eq 1
-            set -a resolved_history_args --fetch
+    if test $worktree_mode -eq 1
+        builtin cd -- "$root"; or die "could not enter repository: $root"
+        set -lx WORK_WORKTREE_HOME "$__dotfiles_work_worktree_home"
+        set -l worktree_action
+        set -l selected_worktree_interactively 0
+        if test $create_branch -eq 1
+            set worktree_action (command "$__dotfiles_work_git_b_path" __create-worktree "$branch" "$start_ref"); or exit $status
+        else
+            test -n "$branch"; or set selected_worktree_interactively 1
+            set worktree_action (env DOTFILES_GIT_B_FZF_LAYOUT=vertical "$__dotfiles_work_git_b_path" __resolve-worktree "$branch"); or exit $status
         end
-        report_resolved_history work $resolved_history_args "$fields[3]"
+
+        set -l fields (string split \t -- "$worktree_action")
+        test "$fields[1]" = cd; and test -n "$fields[2]"; or die 'git-b returned an invalid worktree action'
+        set root (path resolve "$fields[2]")
+
+        if test $selected_worktree_interactively -eq 1
+            test -n "$fields[3]"; or die 'git-b did not report the selected branch'
+            set -l resolved_history_args -w -C "$invocation_root"
+            if test $fetch_origin -eq 1
+                set -a resolved_history_args --fetch
+            end
+            report_resolved_history work $resolved_history_args "$fields[3]"
+        end
     end
 end
 
@@ -323,15 +392,8 @@ set -l common_dir (repository_common_dir "$root"); or die 'could not determine t
 set -l project (path basename "$main_root")
 set -l slug (__dotfiles_git_ui_slugify "$project")
 test -n "$slug"; or set slug workspace
-set -l legacy_session "work-$slug"
 set -l repository_id (__dotfiles_git_ui_stable_id "$common_dir"); or die 'could not derive a repository id'
-set -l session "$legacy_session-$repository_id"
-if not tmux has-session -t "$session" 2>/dev/null; and tmux has-session -t "$legacy_session" 2>/dev/null
-    set -l legacy_common_dir (session_common_dir "$legacy_session")
-    if test "$legacy_common_dir" = "$common_dir"
-        set session "$legacy_session"
-    end
-end
+set -l session "work-$slug-$repository_id"
 set -l use_current_session 0
 if set -q TMUX; and set -q TMUX_PANE
     set session (tmux display-message -p -t "$TMUX_PANE" '#{session_name}'); or die 'could not determine the current tmux session'
@@ -352,20 +414,17 @@ set -l target_pane ''
 if test $use_current_session -eq 1
     set target_pane (create_worktree_window "$session" "$root" "$user_shell" 0 "$session_width" "$session_height" 0); or die 'failed to create tmux window'
 else if tmux has-session -t "$session" 2>/dev/null
-    set -l existing_common_dir (session_common_dir "$session")
+    set -l existing_common_dir (tmux show-option -qv -t "$session" @work_common_dir)
     if test -z "$existing_common_dir"
         die "session $session exists but is not managed by work"
     else if test "$existing_common_dir" != "$common_dir"
         die "session $session already belongs to a different repository: $existing_common_dir"
     end
 
-    adopt_legacy_window "$session" "$common_dir"
     set target_pane (find_worktree_window "$session" "$root")
     if test -z "$target_pane"
         set target_pane (create_worktree_window "$session" "$root" "$user_shell" 0 "$session_width" "$session_height" 1); or die 'failed to create tmux window'
     else
-        remove_git_panes "$target_pane"
-        remove_legacy_terminal_pane "$target_pane"
         set target_pane (ensure_worktree_editor "$session" "$target_pane" "$root" "$user_shell" 1); or die 'failed to restore the workspace editor'
     end
 else

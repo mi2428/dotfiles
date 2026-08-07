@@ -11,6 +11,11 @@ vim.o.lines = 60
 vim.o.columns = 180
 vim.env.XDG_CONFIG_HOME = "/tmp/dotfiles-lazygit-test"
 vim.env.LG_CONFIG_FILE = "/tmp/lazygit-base.yml"
+local branch_log_config = table.concat(vim.fn.readfile(vim.fs.joinpath(
+	dotfiles_root,
+	"home/files/config/lazygit/nvim-files-commits.yml"
+)), "\n")
+assert(branch_log_config:find("showWholeGraph: false", 1, true), "Commits must stay on the current branch graph")
 
 local calls = { open = {}, show = 0, hide = 0, close = 0, focus = 0 }
 
@@ -120,6 +125,8 @@ assert(
 )
 assert(calls.open[1].opts.win.position == "bottom", "Commits must initially open at the bottom")
 assert(calls.open[2].opts.win.position == "right", "Files must open to the right of Commits")
+assert(calls.open[1].opts.cwd == vim.fn.getcwd(0), "Commits must use the current worktree")
+assert(calls.open[2].opts.cwd == vim.fn.getcwd(0), "Files must use the current worktree")
 assert(calls.open[2].opts.win.win == group.commits.win, "Files must be anchored to Commits")
 assert(math.abs(calls.open[2].opts.win.width - 0.3) < 0.001, "Files must request thirty percent width")
 assert(calls.open[1].opts.win.wo.winbar:find("Commits", 1, true), "left winbar must identify Commits")
@@ -133,7 +140,7 @@ assert(calls.open[1].opts.env.LG_CONFIG_FILE == table.concat({
 	"/tmp/lazygit-base.yml",
 	"/tmp/dotfiles-lazygit-test/herdr/lazygit-unified.yml",
 	"/tmp/dotfiles-lazygit-test/lazygit/nvim-files-commits.yml",
-}, ","), "Commits must add the whole-graph config")
+}, ","), "Commits must add the branch-log config")
 assert(
 	calls.open[2].opts.env.LG_CONFIG_FILE
 		== "/tmp/lazygit-base.yml,/tmp/dotfiles-lazygit-test/herdr/lazygit-unified.yml",

@@ -2,4 +2,4 @@ git:
   autoFetch: false
   log:
     showGraph: always
-    showWholeGraph: true
+    showWholeGraph: false
