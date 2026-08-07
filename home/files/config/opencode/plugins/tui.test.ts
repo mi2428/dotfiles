@@ -6,6 +6,7 @@ import {
   MAX_BODY_HEIGHT,
   MAX_PANEL_WIDTH,
   popupWidth,
+  registerMessageLabelColors,
   registerTodoOverlay,
   sessionIDFromRoute,
 } from "./tui/tui";
@@ -16,6 +17,74 @@ const todos = [
   { content: "run tests", status: "in_progress" },
   { content: "old task", status: "cancelled" },
 ];
+
+describe("message label colors", () => {
+  it("recolors nested labels and coalesces message updates", async () => {
+    type Handler = (event: never) => void;
+    const handlers = new Map<string, Handler>();
+    const label = { children: [" File "], fg: "old-fg", bg: "old-bg" };
+    const nested = { children: [label], fg: "old-fg", bg: "old-bg" };
+    const directory = { children: [" Directory "], fg: "old-fg", bg: "old-bg" };
+    let renders = 0;
+    let scans = 0;
+    let unsubscribes = 0;
+    let dispose: (() => void) | undefined;
+    const api = {
+      event: {
+        on: (name: string, handler: Handler) => {
+          handlers.set(name, handler);
+          return () => {
+            handlers.delete(name);
+            unsubscribes += 1;
+          };
+        },
+      },
+      renderer: {
+        root: {
+          getTextChildren: () => {
+            scans += 1;
+            return [nested, directory];
+          },
+          getChildren: () => [],
+        },
+        requestRender: () => {
+          renders += 1;
+        },
+      },
+      route: { current: { name: "session", params: { sessionID: "ses_1" } } },
+      theme: { current: { selectedListItemText: "selected", primary: "primary" } },
+      lifecycle: { onDispose: (handler: () => void) => (dispose = handler) },
+    };
+
+    registerMessageLabelColors(api as never);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(renders, 1);
+    assert.equal(scans, 1);
+    assert.deepEqual(
+      [label.fg, label.bg, nested.fg, nested.bg, directory.fg, directory.bg],
+      ["selected", "primary", "selected", "primary", "selected", "primary"],
+    );
+
+    renders = 0;
+    scans = 0;
+    handlers.get("message.part.updated")?.({
+      properties: { sessionID: "ses_1", part: { type: "tool" } },
+    } as never);
+    handlers.get("message.part.updated")?.({
+      properties: { sessionID: "ses_2", part: { type: "file" } },
+    } as never);
+    handlers.get("message.updated")?.({
+      properties: { sessionID: "ses_1", info: { role: "assistant" } },
+    } as never);
+    assert.equal(renders, 1);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(scans, 1);
+
+    assert(dispose);
+    dispose();
+    assert.equal(unsubscribes, 2);
+  });
+});
 
 describe("todo overlay state", () => {
   it("shows completed, current, and future items in timeline order", () => {

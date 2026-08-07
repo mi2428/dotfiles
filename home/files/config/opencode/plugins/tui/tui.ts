@@ -100,10 +100,6 @@ function lineColor(line: TodoLine, theme: Theme): unknown {
   return theme.textMuted;
 }
 
-function nodeText(node: TextNodeAdapter): string {
-  return (node.children ?? []).map((child) => (typeof child === "string" ? child : nodeText(child))).join("");
-}
-
 function sameColor(current: unknown, target: unknown): boolean {
   if (current === target) return true;
   if (!current || typeof current !== "object" || !("equals" in current)) return false;
@@ -112,14 +108,15 @@ function sameColor(current: unknown, target: unknown): boolean {
 }
 
 function recolorAttachmentLabels(root: RenderTreeAdapter, foreground: unknown, background: unknown): void {
-  const visitTextNode = (node: TextNodeAdapter) => {
-    if ([" File ", " Directory "].includes(nodeText(node))) {
+  const visitTextNode = (node: TextNodeAdapter): string => {
+    const value = (node.children ?? [])
+      .map((child) => (typeof child === "string" ? child : visitTextNode(child)))
+      .join("");
+    if ([" File ", " Directory "].includes(value)) {
       if (!sameColor(node.fg, foreground)) node.fg = foreground;
       if (!sameColor(node.bg, background)) node.bg = background;
     }
-    for (const child of node.children ?? []) {
-      if (typeof child !== "string") visitTextNode(child);
-    }
+    return value;
   };
   const visitRenderable = (node: RenderTreeAdapter) => {
     for (const textNode of node.getTextChildren?.() ?? []) visitTextNode(textNode);
