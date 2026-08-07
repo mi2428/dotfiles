@@ -49,6 +49,12 @@ vim.bo[source_buf].filetype = "lua"
 assert(is_user_buffer(source_buf), "a listed source buffer must be treated as a user buffer")
 assert(has_user_buffer(), "the source buffer must be discoverable as a user buffer")
 
+local initializing_oil_buf = vim.api.nvim_create_buf(true, false)
+vim.api.nvim_buf_set_name(initializing_oil_buf, "oil:///tmp/")
+vim.bo[initializing_oil_buf].filetype = "oil"
+assert(not is_user_buffer(initializing_oil_buf), "an initializing Oil buffer must not look like a user file")
+vim.api.nvim_buf_delete(initializing_oil_buf, { force = true })
+
 local function close_window(win)
 	if vim.api.nvim_win_is_valid(win) then
 		vim.api.nvim_win_close(win, true)
@@ -83,6 +89,14 @@ end
 
 assert(is_user_editor_window(source_win), "a normal source window must be treated as an editor")
 assert(not should_exit_after_quit(source_win), "a lone editor must use Neovim's normal quit behavior")
+
+local oil_win, oil_buf = split("oil", "acwrite")
+assert(is_user_editor_window(oil_win), "Oil must remain an editor window")
+assert(not should_exit_after_quit(source_win), "an Oil window must prevent forced exit")
+vim.bo[oil_buf].modified = true
+assert(has_modified_user_buffer(), "modified Oil operations must prevent forced exit")
+vim.bo[oil_buf].modified = false
+close_window(oil_win)
 
 local unknown_float = float("third_party_popup")
 assert(not should_exit_after_quit(source_win), "an unrelated floating popup must not trigger forced exit")

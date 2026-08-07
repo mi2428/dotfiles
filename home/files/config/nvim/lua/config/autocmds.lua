@@ -97,6 +97,7 @@ local function is_user_buffer(buf)
 	return vim.api.nvim_buf_is_valid(buf)
 		and vim.bo[buf].buflisted
 		and vim.bo[buf].buftype == ""
+		and vim.bo[buf].filetype ~= "oil"
 		and not is_auxiliary_buffer(buf)
 		and not is_empty_editor_buffer(buf)
 end
@@ -234,23 +235,25 @@ autocmd("VimEnter", {
 
 			if workspace_mode then
 				local fzf_window = vim.api.nvim_get_current_win()
-				Snacks.explorer({ focus = false, watch = true })
-				require("config.sidebar").open_aerial({ source_win = editor_window })
-				vim.schedule(function()
-					require("config.lazygit").toggle()
-					if vim.api.nvim_win_is_valid(editor_window) then
-						vim.api.nvim_set_current_win(editor_window)
-					end
-					if not vim.api.nvim_win_is_valid(fzf_window) then
-						return
-					end
-					local buffer = vim.api.nvim_win_get_buf(fzf_window)
-					if vim.bo[buffer].filetype ~= "fzf" then
-						return
-					end
-					vim.api.nvim_set_current_win(fzf_window)
-					vim.cmd.startinsert()
-				end)
+				vim.defer_fn(function()
+					Snacks.explorer({ focus = false, watch = true })
+					require("config.sidebar").open_aerial({ source_win = editor_window })
+					vim.schedule(function()
+						require("config.lazygit").toggle()
+						if vim.api.nvim_win_is_valid(editor_window) then
+							vim.api.nvim_set_current_win(editor_window)
+						end
+						if not vim.api.nvim_win_is_valid(fzf_window) then
+							return
+						end
+						local buffer = vim.api.nvim_win_get_buf(fzf_window)
+						if vim.bo[buffer].filetype ~= "fzf" then
+							return
+						end
+						vim.api.nvim_set_current_win(fzf_window)
+						vim.cmd.startinsert()
+					end)
+				end, 50)
 			end
 		end)
 	end,

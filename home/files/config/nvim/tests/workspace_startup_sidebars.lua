@@ -46,6 +46,13 @@ dofile(vim.fs.joinpath(nvim_root, "lua/config/autocmds.lua"))
 vim.api.nvim_exec_autocmds("VimEnter", { modeline = false })
 assert(
 	vim.wait(1000, function()
+		return calls.fzf ~= nil
+	end, 1),
+	"workspace picker did not start"
+)
+assert(not calls.explorer, "workspace sidebars must wait for the picker source to initialize")
+assert(
+	vim.wait(1000, function()
 		return calls.lazygit == 1
 	end),
 	"workspace startup did not finish"
