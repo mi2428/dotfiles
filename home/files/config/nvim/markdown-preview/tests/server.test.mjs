@@ -194,7 +194,15 @@ test('token rejection and ready loopback', { timeout: TEST_TIMEOUT }, async (t) 
   assert.equal(ok.res.status, 200);
   assert.match(ok.text, /client\.mjs/);
   assert.match(ok.text, /<title>Markdown Preview<\/title>/);
+  assert.match(ok.text, /id="app" class="markdown-body"/);
   assert.doesNotMatch(ok.text, /<script src="\/vendor\/mermaid\.min\.js/);
+  const style = await fetchText(new URL(`/style.css?token=${server.url.searchParams.get('token')}`, server.url));
+  assert.equal(style.res.status, 200);
+  assert.match(style.text, /\.markdown-body code/);
+  assert.match(style.text, /\.markdown-alert-title/);
+  assert.match(style.text, /\.syntax-highlighting \.comment/);
+  assert.match(style.text, /border-left:\s*3px solid/);
+  assert.doesNotMatch(style.text, /border-radius:\s*8px/);
   const mermaid = await fetchText(new URL(`/vendor/mermaid.min.js?token=${server.url.searchParams.get('token')}`, server.url));
   assert.equal(mermaid.res.status, 200);
   assert.equal(mermaid.text, 'globalThis.mermaid = {};');
@@ -341,7 +349,9 @@ test('real Comrak renders compact GitHub alerts without changing fenced examples
   for (const kind of ['note', 'tip', 'important', 'warning', 'caution']) {
     assert.match(html, new RegExp(`class="markdown-alert markdown-alert-${kind}"`));
   }
-  assert.match(html, /```not-a-close\n&gt;\[!TIP\]\n<\/code>/);
+  assert.equal((html.match(/class="markdown-alert markdown-alert-/g) || []).length, 5);
+  assert.match(html, /&gt;\[!TIP\]/);
+  assert.match(html, /class="syntax-highlighting"/);
   sse.destroy();
 });
 

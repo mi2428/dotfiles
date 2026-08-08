@@ -25,7 +25,7 @@ export const COMRAK_ARGS = [
   '--sourcepos',
   '--github-pre-lang',
   '--syntax-highlighting',
-  'none',
+  'css',
   '--front-matter-delimiter=---',
 ];
 
@@ -132,7 +132,7 @@ function rootHtml() {
   <script type="module" src="/client.mjs?token=${token}"></script>
 </head>
 <body>
-  <main id="app" aria-live="polite"></main>
+  <main id="app" class="markdown-body" aria-live="polite"></main>
 </body>
 </html>`;
 }
