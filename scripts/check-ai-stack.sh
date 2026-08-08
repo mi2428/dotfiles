@@ -220,7 +220,7 @@ for skill_path in \
     fi
 done
 if command -v opencode >/dev/null 2>&1 \
-    && opencode debug skill 2>/dev/null \
+    && opencode debug skill --pure 2>/dev/null \
         | jq -e '[.[] | select(.name == "herdr-agent-layout")] | length == 1' >/dev/null; then
     ok 'OpenCode discovers exactly one managed Herdr agent-layout skill'
 else
