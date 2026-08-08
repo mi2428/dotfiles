@@ -57,9 +57,11 @@ local function with_env(temp_dir, fn)
 	local old_max_bytes = vim.g.dotfiles_markdown_preview_max_bytes
 	local old_debounce_ms = vim.g.dotfiles_markdown_preview_debounce_ms
 	local old_render_markdown = package.loaded["render-markdown"]
+	local old_render_markdown_state = package.loaded["render-markdown.state"]
 	local ok, err = xpcall(fn, debug.traceback)
 	preview.stop()
 	package.loaded["render-markdown"] = old_render_markdown
+	package.loaded["render-markdown.state"] = old_render_markdown_state
 	vim.g.dotfiles_markdown_preview_paths = old_paths
 	vim.g.dotfiles_markdown_preview_startup_timeout = old_startup_timeout
 	vim.g.dotfiles_markdown_preview_max_bytes = old_max_bytes
@@ -72,6 +74,26 @@ local function with_env(temp_dir, fn)
 	vim.env.CMUX_BUNDLE_ID = old_cmux_bundle_id
 	vim.fn.delete(temp_dir, "rf")
 	assert(ok, err)
+end
+
+local function mock_render_markdown(default_enabled)
+	local mock = { calls = {}, configs = {} }
+	package.loaded["render-markdown.state"] = {
+		get = function(bufnr)
+			if not mock.configs[bufnr] then
+				mock.configs[bufnr] = { enabled = default_enabled }
+			end
+			return mock.configs[bufnr]
+		end,
+	}
+	package.loaded["render-markdown"] = {
+		set_buf = function(enabled)
+			local bufnr = vim.api.nvim_get_current_buf()
+			package.loaded["render-markdown.state"].get(bufnr).enabled = enabled
+			mock.calls[#mock.calls + 1] = { bufnr = bufnr, enabled = enabled }
+		end,
+	}
+	return mock
 end
 
 local function make_fake_backend(temp_dir, url)
@@ -162,8 +184,7 @@ do
 	local fake = make_fake_backend(temp_dir, "http://127.0.0.1:8123/page/1")
 	with_env(temp_dir, function()
 		set_fake_paths(fake)
-		local disabled = 0
-		local enabled = 0
+		local rendering = mock_render_markdown(true)
 		local repo_dir_path = vim.fs.joinpath(temp_dir, "repo")
 		local named_path_raw = vim.fs.joinpath(repo_dir_path, "docs", "note.md")
 		vim.fn.mkdir(vim.fs.joinpath(repo_dir_path, ".git"), "p")
@@ -172,22 +193,12 @@ do
 		local repo_dir = canonical(repo_dir_path)
 		local named_path = canonical(named_path_raw)
 		vim.api.nvim_buf_set_name(markdown_buf, named_path)
-		package.loaded["render-markdown"] = {
-			get = function()
-				return true
-			end,
-			disable = function()
-				disabled = disabled + 1
-			end,
-			enable = function()
-				enabled = enabled + 1
-			end,
-		}
-
 		vim.api.nvim_set_current_buf(markdown_buf)
 		vim.api.nvim_win_set_cursor(0, { 2, 0 })
 		assert(preview.start(), "preview must start for Markdown buffers")
 		assert(preview.start(), "restarting the same active buffer must be idempotent")
+		assert(not rendering.configs[markdown_buf].enabled, "preview start must disable editor Markdown rendering")
+		assert(#rendering.calls == 1, "idempotent preview start must not toggle editor rendering twice")
 
 		wait_for(function()
 			return vim.fn.filereadable(fake.browser_args_file) == 1 and #read_json_lines(fake.events_file) >= 1
@@ -247,8 +258,6 @@ do
 		events = read_json_lines(fake.events_file)
 		assert(events[3].line == 1, "cursor updates must send cursor-only payloads")
 		assert(events[3].cursorLine == nil, "cursor updates must not resend render metadata")
-		assert(disabled == 0, "preview must not change the editor's render-markdown style")
-
 		local unnamed_buf = vim.api.nvim_create_buf(false, true)
 		vim.bo[unnamed_buf].filetype = "markdown"
 		vim.api.nvim_buf_set_lines(unnamed_buf, 0, -1, false, { "scratch" })
@@ -265,13 +274,15 @@ do
 			events[4].sourcePath == vim.fs.joinpath(cwd, "untitled.md"),
 			"unnamed buffer sourcePath must use root/untitled.md"
 		)
+		assert(rendering.configs[markdown_buf].enabled, "switching buffers must restore the previous editor")
+		assert(not rendering.configs[unnamed_buf].enabled, "the newly previewed buffer must disable editor rendering")
 
 		preview.stop()
 		wait_for(function()
 			local items = read_json_lines(fake.events_file)
 			return #items >= 5 and items[#items].type == "shutdown"
 		end, "timed out waiting for preview shutdown")
-		assert(enabled == 0, "preview stop must not change the editor's render-markdown style")
+		assert(rendering.configs[unnamed_buf].enabled, "preview stop must restore editor Markdown rendering")
 		assert(vim.b[markdown_buf].MarkdownPreviewToggleBool == 0, "stop must clear the active toggle flag")
 		vim.api.nvim_set_current_buf(markdown_buf)
 		vim.api.nvim_buf_delete(unnamed_buf, { force = true })
@@ -283,27 +294,15 @@ do
 	local fake = make_fake_backend(temp_dir, "http://127.0.0.1:8123/page/render-state")
 	with_env(temp_dir, function()
 		set_fake_paths(fake)
-		local disabled = 0
-		local enabled = 0
-		package.loaded["render-markdown"] = {
-			get = function()
-				return false
-			end,
-			disable = function()
-				disabled = disabled + 1
-			end,
-			enable = function()
-				enabled = enabled + 1
-			end,
-		}
+		local rendering = mock_render_markdown(false)
 		vim.api.nvim_set_current_buf(markdown_buf)
 		assert(preview.start(markdown_buf), "preview must start when render-markdown is already disabled")
 		wait_for(function()
 			return vim.fn.filereadable(fake.starts_file) == 1
 		end, "timed out waiting for render-state preview")
 		preview.stop()
-		assert(disabled == 0, "preview must leave an already-disabled render-markdown state alone")
-		assert(enabled == 0, "preview must not enable render-markdown when it started disabled")
+		assert(#rendering.calls == 0, "preview must leave an already-disabled render-markdown state alone")
+		assert(not rendering.configs[markdown_buf].enabled, "preview stop must preserve the disabled editor state")
 	end)
 end
 

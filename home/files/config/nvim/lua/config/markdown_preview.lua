@@ -63,6 +63,7 @@ local state = {
 	seq = 0,
 	timer = nil,
 	oversize_notified = false,
+	render_markdown_enabled = nil,
 	setup_done = false,
 }
 
@@ -412,6 +413,38 @@ local function set_toggle_state(bufnr, value)
 	end
 end
 
+local function set_editor_rendering(bufnr, enabled)
+	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+		return nil
+	end
+	local render_markdown = package.loaded["render-markdown"]
+	local render_state = package.loaded["render-markdown.state"]
+	if type(render_markdown) ~= "table" or type(render_markdown.set_buf) ~= "function" then
+		return nil
+	end
+	if type(render_state) ~= "table" or type(render_state.get) ~= "function" then
+		return nil
+	end
+	local ok, config = pcall(render_state.get, bufnr)
+	if not ok or type(config) ~= "table" or type(config.enabled) ~= "boolean" then
+		return nil
+	end
+	local previous = config.enabled
+	if previous ~= enabled then
+		vim.api.nvim_buf_call(bufnr, function()
+			render_markdown.set_buf(enabled)
+		end)
+	end
+	return previous
+end
+
+local function restore_editor_rendering()
+	if state.render_markdown_enabled ~= nil then
+		set_editor_rendering(state.bufnr, state.render_markdown_enabled)
+	end
+	state.render_markdown_enabled = nil
+end
+
 local function paths()
 	local overrides = vim.g.dotfiles_markdown_preview_paths or {}
 	local config_dir = overrides.config_dir or vim.fn.stdpath("config")
@@ -584,6 +617,7 @@ local function reset_state(stop_job)
 		pcall(vim.fn.chanclose, state.job_id, "stdin")
 		pcall(vim.fn.jobstop, state.job_id)
 	end
+	restore_editor_rendering()
 	set_toggle_state(state.bufnr, false)
 	state.active = false
 	state.bufnr = nil
@@ -651,6 +685,7 @@ function M.start(bufnr)
 	state.url = nil
 	state.seq = 0
 	state.oversize_notified = false
+	state.render_markdown_enabled = set_editor_rendering(bufnr, false)
 	set_toggle_state(bufnr, true)
 
 	local generation = state.generation
@@ -767,8 +802,10 @@ function M.setup()
 				return
 			end
 			if M.is_markdown_buffer(args.buf) then
+				restore_editor_rendering()
 				set_toggle_state(state.bufnr, false)
 				state.bufnr = args.buf
+				state.render_markdown_enabled = set_editor_rendering(args.buf, false)
 				set_toggle_state(args.buf, true)
 				schedule_render(args.buf)
 			end
