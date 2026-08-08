@@ -80,7 +80,7 @@ cat ${JSON.stringify(html)}
     cwd: dirname(serverFile.pathname),
     env: {
       ...process.env,
-      COMRAK_BIN: fakeComrak,
+      COMRAK_BIN: options.comrakBin ?? fakeComrak,
       COMRAK_DELAY: options.comrakDelay ?? '',
       MERMAID_JS: mermaidJs,
       MARKDOWN_PREVIEW_MAX_BYTES: options.maxBytes ?? '',
@@ -310,6 +310,39 @@ test('render broadcast, cursor, asset checks, shutdown', { timeout: TEST_TIMEOUT
 
   sse.destroy();
   await shutdownServer(server);
+});
+
+test('real Comrak renders compact GitHub alerts without changing fenced examples', { timeout: TEST_TIMEOUT }, async (t) => {
+  const server = await startServer({ comrakBin: process.env.COMRAK_BIN || 'comrak' });
+  t.after(async () => {
+    await shutdownServer(server);
+    await rm(server.dir, { recursive: true, force: true });
+  });
+  const sse = await openStream(new URL(`/sse?token=${server.url.searchParams.get('token')}`, server.url));
+  sse.setEncoding('utf8');
+  const reader = createSseReader(sse);
+  const markdown = [
+    '>[!NOTE]', '> note', '',
+    '>[!TIP]', '> tip', '',
+    '>[!IMPORTANT]', '> important', '',
+    '>[!WARNING]', '> warning', '',
+    '>[!CAUTION]', '> caution', '',
+    '```markdown', '```not-a-close', '>[!TIP]', '```',
+  ].join('\n');
+  server.send({
+    type: 'render',
+    seq: 1,
+    markdown,
+    sourcePath: join(server.sourceDir, 'note.md'),
+    root: server.sourceDir,
+  });
+  const event = await waitFor(nextEventOfType(reader, 'render'), 'real Comrak alert render');
+  const html = JSON.parse(event.data).html;
+  for (const kind of ['note', 'tip', 'important', 'warning', 'caution']) {
+    assert.match(html, new RegExp(`class="markdown-alert markdown-alert-${kind}"`));
+  }
+  assert.match(html, /```not-a-close\n&gt;\[!TIP\]\n<\/code>/);
+  sse.destroy();
 });
 
 test('latest wins', { timeout: TEST_TIMEOUT }, async (t) => {

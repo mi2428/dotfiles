@@ -62,7 +62,6 @@ local state = {
 	seq = 0,
 	timer = nil,
 	oversize_notified = false,
-	render_markdown_enabled = nil,
 	setup_done = false,
 }
 
@@ -475,36 +474,6 @@ local function set_toggle_state(bufnr, value)
 	end
 end
 
-local function maybe_call(module, method)
-	if type(module) ~= "table" or type(module[method]) ~= "function" then
-		return
-	end
-	if pcall(module[method]) then
-		return
-	end
-	pcall(module[method], module)
-end
-
-local function set_render_markdown_enabled(enabled)
-	local ok, render_markdown = pcall(require, "render-markdown")
-	if not ok then
-		return
-	end
-	maybe_call(render_markdown, enabled and "enable" or "disable")
-end
-
-local function render_markdown_enabled()
-	local ok, render_markdown = pcall(require, "render-markdown")
-	if not ok or type(render_markdown.get) ~= "function" then
-		return nil
-	end
-	local status_ok, enabled = pcall(render_markdown.get)
-	if status_ok and type(enabled) == "boolean" then
-		return enabled
-	end
-	return nil
-end
-
 local function paths()
 	local overrides = vim.g.dotfiles_markdown_preview_paths or {}
 	local config_dir = overrides.config_dir or vim.fn.stdpath("config")
@@ -516,7 +485,7 @@ local function paths()
 		server = overrides.server or vim.fs.joinpath(root, "server.mjs"),
 		mermaid = overrides.mermaid
 			or vim.env.MARKDOWN_PREVIEW_MERMAID_JS
-			or vim.fs.joinpath(root, "vendor", "mermaid.min.js"),
+			or vim.fs.joinpath(vim.fn.stdpath("data"), "markdown-preview", "mermaid.min.js"),
 	}
 end
 
@@ -668,8 +637,7 @@ local function schedule_render(bufnr)
 	end)
 end
 
-local function reset_state(enable_render_markdown, stop_job)
-	local previous_render_markdown = state.render_markdown_enabled
+local function reset_state(stop_job)
 	stop_timer()
 	close_generic_browser()
 	close_ghostty_browser()
@@ -686,10 +654,6 @@ local function reset_state(enable_render_markdown, stop_job)
 	state.url = nil
 	state.seq = 0
 	state.oversize_notified = false
-	state.render_markdown_enabled = nil
-	if enable_render_markdown and previous_render_markdown ~= nil then
-		set_render_markdown_enabled(previous_render_markdown)
-	end
 end
 
 local function handle_stdout(data, generation, output)
@@ -749,11 +713,7 @@ function M.start(bufnr)
 	state.url = nil
 	state.seq = 0
 	state.oversize_notified = false
-	state.render_markdown_enabled = render_markdown_enabled()
 	set_toggle_state(bufnr, true)
-	if state.render_markdown_enabled ~= nil then
-		set_render_markdown_enabled(false)
-	end
 
 	local generation = state.generation
 	local output = { stdout_tail = "", stderr = {} }
@@ -786,7 +746,7 @@ function M.start(bufnr)
 				end
 				local message = #output.stderr > 0 and table.concat(output.stderr, "\n")
 					or ("exit code %d"):format(code)
-				reset_state(true, false)
+				reset_state(false)
 				if code ~= 0 then
 					notify_error("Markdown preview server failed: " .. message)
 				end
@@ -794,7 +754,7 @@ function M.start(bufnr)
 		end,
 	})
 	if job_id <= 0 then
-		reset_state(true, true)
+		reset_state(true)
 		notify_error(("Failed to start Markdown preview server (code %d)"):format(job_id))
 		return false
 	end
@@ -824,7 +784,7 @@ function M.stop()
 			pcall(vim.fn.jobstop, job_id)
 		end, 200)
 	end
-	reset_state(true, false)
+	reset_state(false)
 end
 
 function M.toggle()

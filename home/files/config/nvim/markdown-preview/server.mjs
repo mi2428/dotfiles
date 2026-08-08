@@ -448,8 +448,29 @@ function renderMarkdown(markdown, signal) {
       }
     });
     signal.addEventListener('abort', onAbort, { once: true });
-    child.stdin.end(markdown);
+    child.stdin.end(normalizeCompactAlerts(markdown));
   });
+}
+
+function normalizeCompactAlerts(markdown) {
+  let fence;
+  return markdown.split('\n').map((line) => {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (marker) {
+      const next = { character: marker[1][0], length: marker[1].length };
+      if (!fence) {
+        fence = next;
+      } else if (
+        next.character === fence.character
+        && next.length >= fence.length
+        && line.slice(marker[0].length).trim() === ''
+      ) {
+        fence = undefined;
+      }
+      return line;
+    }
+    return fence ? line : line.replace(/^( {0,3})>(\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\])([ \t]*)$/i, '$1> $2$3');
+  }).join('\n');
 }
 
 async function shutdown() {

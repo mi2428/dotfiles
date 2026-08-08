@@ -16,6 +16,6 @@ in {
     recursive = true;
   };
 
-  home.sessionVariables.MARKDOWN_PREVIEW_MERMAID_JS =
+  xdg.dataFile."nvim/markdown-preview/mermaid.min.js".source =
     "${markdownPreviewDeps}/share/mermaid/mermaid.min.js";
 }

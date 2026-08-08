@@ -247,7 +247,7 @@ do
 		events = read_json_lines(fake.events_file)
 		assert(events[3].line == 1, "cursor updates must send cursor-only payloads")
 		assert(events[3].cursorLine == nil, "cursor updates must not resend render metadata")
-		assert(disabled == 1, "render-markdown must disable when preview starts")
+		assert(disabled == 0, "preview must not change the editor's render-markdown style")
 
 		local unnamed_buf = vim.api.nvim_create_buf(false, true)
 		vim.bo[unnamed_buf].filetype = "markdown"
@@ -271,7 +271,7 @@ do
 			local items = read_json_lines(fake.events_file)
 			return #items >= 5 and items[#items].type == "shutdown"
 		end, "timed out waiting for preview shutdown")
-		assert(enabled == 1, "render-markdown must re-enable when preview stops")
+		assert(enabled == 0, "preview stop must not change the editor's render-markdown style")
 		assert(vim.b[markdown_buf].MarkdownPreviewToggleBool == 0, "stop must clear the active toggle flag")
 		vim.api.nvim_set_current_buf(markdown_buf)
 		vim.api.nvim_buf_delete(unnamed_buf, { force = true })
@@ -302,8 +302,8 @@ do
 			return vim.fn.filereadable(fake.starts_file) == 1
 		end, "timed out waiting for render-state preview")
 		preview.stop()
-		assert(disabled == 2, "preview stop must restore render-markdown to its disabled state")
-		assert(enabled == 0, "preview stop must not enable render-markdown when it started disabled")
+		assert(disabled == 0, "preview must leave an already-disabled render-markdown state alone")
+		assert(enabled == 0, "preview must not enable render-markdown when it started disabled")
 	end)
 end
 

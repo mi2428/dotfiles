@@ -15,6 +15,7 @@ return {
 		opts = function()
 			return {
 				legacy_commands = false,
+				ui = { enable = false },
 				workspaces = {
 					obsidian.workspace_spec(),
 				},
