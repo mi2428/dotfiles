@@ -158,7 +158,7 @@ describe("todo overlay state", () => {
     assert.equal(header.props.alignSelf, "flex-start");
     assert.equal(header.props.backgroundColor, "info");
     assert.equal(header.children?.[0]?.props.fg, "panel");
-    assert.equal(header.children?.[0]?.props.attributes, 1);
+    assert.equal(header.children?.[0]?.props.attributes, undefined);
     assert.equal(header.children?.[0]?.text, "Todo · 0 of 1");
     assert.equal(nodes.children?.[1]?.kind, "scrollbox");
     assert.deepEqual(nodes.children?.[1]?.props.verticalScrollbarOptions, { visible: false, showArrows: false });
@@ -395,7 +395,6 @@ describe("todo overlay state", () => {
     const firstScrollBox = scrollBoxFrom(first);
     applyLayout(firstScrollBox);
     assert.equal(headerFrom(first).children[0], "Todo · 2 of 6");
-    assert.equal(headerFrom(first).props.attributes, 1);
     assert.deepEqual(lineTextsFrom(firstScrollBox), [
       "▸ first",
       "▸ second",

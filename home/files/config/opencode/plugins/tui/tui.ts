@@ -53,7 +53,6 @@ type RenderTreeAdapter = {
 export const MAX_PANEL_WIDTH = 94;
 export const MIN_PANEL_WIDTH = 36;
 export const MAX_BODY_HEIGHT = 12;
-const BOLD_TEXT_ATTRIBUTES = 1;
 const PANEL_WIDTH_RATIO = 0.85;
 const PANEL_MARGIN = 2;
 const TODO_LINE_ID_PREFIX = "opencode-todo-line";
@@ -226,7 +225,6 @@ export function buildTodoOverlayNodes(
           text(
             {
               fg: theme.backgroundPanel,
-              attributes: BOLD_TEXT_ATTRIBUTES,
               wrapMode: "none",
               truncate: true,
             },

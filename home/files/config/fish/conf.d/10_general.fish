@@ -1,3 +1,36 @@
+# Ghostty can outlive the Herdr process that launched it. New windows then
+# inherit stale HERDR_* values even though they are not inside Herdr.
+function __dotfiles_is_inside_herdr
+    set -l pid $fish_pid
+
+    while string match -qr '^[0-9]+$' -- "$pid"; and test "$pid" -gt 1
+        set pid (command ps -p "$pid" -o ppid= 2>/dev/null | string trim)
+        string match -qr '^[0-9]+$' -- "$pid"; or return 1
+
+        set -l executable (command ps -p "$pid" -o comm= 2>/dev/null | string trim)
+        if test -n "$executable"
+            switch (path basename -- "$executable")
+                case herdr
+                    return 0
+                case ghostty
+                    # HERDR_* inherited by the terminal itself is stale for a
+                    # new regular window, even if Herdr launched the app.
+                    return 1
+            end
+        end
+    end
+
+    return 1
+end
+
+set -l __dotfiles_herdr_variables (set --names | string match 'HERDR_*')
+if test (count $__dotfiles_herdr_variables) -gt 0; and not __dotfiles_is_inside_herdr
+    for variable in $__dotfiles_herdr_variables
+        set -e $variable
+    end
+end
+functions -e __dotfiles_is_inside_herdr
+
 set -gx NOTES_DIR $HOME/notes
 set -gx NOTES_DIRECTORY $HOME/notes
 set -gx LANG en_US.UTF-8
