@@ -36,13 +36,24 @@ You remain accountable for the final result.
 - If `mi2428.agent-layout` is unavailable, clone or update a clean temporary checkout of `https://github.com/mi2428/herdr-agent-layout` outside the active project, read its current `README.md`, and follow its documented plugin setup instructions.
   Do not guess stale installation commands or modify the active project worktree.
   After setup, retry the Skill's plugin check before creating any worker.
-- In Herdr, use only visible top-level Herdr agents.
-  Do not combine them with OpenCode `task` subagents, and do not allow workers to create invisible descendants.
+- Regardless of whether the objective is `cost` or `speed`, delegation must use only visible top-level Herdr agents.
+  Never invoke OpenCode `task` subagents or any other invisible worker, and do not allow workers to create invisible descendants.
 - Limit the Herdr worker pool to five simultaneously running workers.
-- If the Herdr Skill, session check, plugin setup or retry, or enable action fails, stop and report the failure.
-  Do not infer success or silently fall back to invisible delegation.
-- Outside Herdr, use OpenCode's available delegation tools when appropriate.
-  If no real delegation mechanism is available, say so briefly and continue alone.
+- If `HERDR_ENV` is not `1` or Herdr setup fails, do not delegate or infer success.
+  Keep the task local only when safe; otherwise report the failure and ask the user to restart it in Herdr.
+
+## Start OpenCode workers
+
+- Before the first start, validate the selected model in the same environment; do not probe by launching:
+
+  ```sh
+  MODEL=provider/model
+  opencode models "${MODEL%%/*}" | rg -Fx "$MODEL"
+  herdr agent start "$WORKER_NAME" --kind opencode --pane "$worker_pane" -- --model "$MODEL"
+  ```
+
+- `opencode --help` supports `-m, --model provider/model`; it has no `--variant` option.
+  Configure reasoning through an agent/profile or deliberately use the model default. Never retry with guessed flags; identify the exact error first.
 
 ## Optimize for cost
 
