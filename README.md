@@ -38,6 +38,39 @@ What bootstrap does:
 - On Linux, host auto-detection resolves from container markers first and then `/etc/machine-id`.
 - Secret template data lives in [`chezmoi/.chezmoidata/`](chezmoi/.chezmoidata/).
 
+### MCP Workspace
+
+The repo includes a local MCP coding workspace with Streamable HTTP at `http://127.0.0.1:3000/mcp` and `/healthz` for readiness.
+
+```console
+$ task docker.build
+$ task docker.run PORT=3000 WORKSPACE_DIR=$PWD
+$ task mcp.test
+$ task mcp.test-container
+$ docker exec -it dotfiles-mcp sudo -H -u teo /etc/skel/.nix-profile/bin/zsh --login
+$ docker stop dotfiles-mcp
+```
+
+The Go server in [`mcp/`](mcp/) uses the official MCP Go SDK and exposes `read_path`, `search_files`, `apply_patch`, and `run_command`. File operations are confined to `/work`; commands start there and remain isolated inside the container.
+
+If you already have `gh` auth on the host, `task docker.run` forwards `GH_TOKEN` automatically.
+You can override the container name with `CONTAINER_NAME=`.
+
+OpenCode or any MCP client can point at:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "dotfiles": {
+      "type": "remote",
+      "url": "http://127.0.0.1:3000/mcp",
+      "enabled": true
+    }
+  }
+}
+```
+
 After bootstrap, `task` shows the common maintenance commands:
 
 ```console

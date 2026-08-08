@@ -38,6 +38,10 @@ includes:
   docker:
     taskfile: ./taskfiles/docker.yml
     flatten: true
+  mcp:
+    taskfile: ./taskfiles/mcp.yml
+    flatten: true
+    dir: ./mcp
 
 tasks:
   default:
@@ -74,11 +78,15 @@ tasks:
         printf "$task_fmt" "$green" 'docker.build' "$reset" 'Build Dockerfile locally as ghcr.io/OWNER/IMAGE:TAG'
         printf "$task_fmt" "$green" 'docker.login' "$reset" 'Login to ghcr.io with GHCR_TOKEN, GITHUB_TOKEN, or gh auth token'
         printf "$task_fmt" "$green" 'docker.push' "$reset" 'Build and push Dockerfile to ghcr.io as ghcr.io/OWNER/IMAGE:TAG'
+        printf "$task_fmt" "$green" 'docker.run' "$reset" 'Run the MCP workspace container on 127.0.0.1:3000'
         printf '\n%bDefaults%b\n' "$bold$cyan" "$reset"
         printf "$default_fmt" "$yellow" 'GHCR_OWNER' "$reset" 'mi2428'
         printf "$default_fmt" "$yellow" 'GHCR_IMAGE_NAME' "$reset" 'dotfiles'
         printf "$default_fmt" "$yellow" 'TAG' "$reset" 'latest'
         printf "$default_fmt" "$yellow" 'DOCKER_RUNTIME' "$reset" 'docker'
+        printf "$default_fmt" "$yellow" 'PORT' "$reset" '3000'
+        printf "$default_fmt" "$yellow" 'WORKSPACE_DIR' "$reset" 'repository root'
+        printf "$default_fmt" "$yellow" 'CONTAINER_NAME' "$reset" 'dotfiles-mcp'
         printf "$default_fmt" "$yellow" 'PLATFORMS' "$reset" 'linux/amd64,linux/arm64'
         printf "$default_fmt" "$yellow" 'HOST' "$reset" 'auto-detected from the current machine'
         printf "$default_fmt" "$yellow" 'IMPORT_GPG' "$reset" '0'
@@ -94,3 +102,4 @@ tasks:
         printf '  %btask secrets.backup%b\n' "$green" "$reset"
         printf '  %btask docker.build TAG=latest%b\n' "$green" "$reset"
         printf '  %btask docker.push TAG=latest%b\n' "$green" "$reset"
+        printf '  %btask docker.run%b\n' "$green" "$reset"

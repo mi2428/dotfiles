@@ -1,0 +1,18 @@
+version: '3'
+
+tasks:
+  mcp.test:
+    desc: Run the MCP workspace test suite
+    preconditions:
+      - sh: 'command -v go >/dev/null 2>&1'
+        msg: go was not found in PATH
+    cmds:
+      - go test ./...
+
+  mcp.test-container:
+    desc: Run the Docker MCP E2E test suite
+    preconditions:
+      - sh: 'command -v go >/dev/null 2>&1'
+        msg: go was not found in PATH
+    cmds:
+      - go test -tags=integration -run TestDocker ./...

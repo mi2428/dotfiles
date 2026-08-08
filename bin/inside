@@ -150,10 +150,11 @@ main() {
 
     CONTAINER_NAME="$(qualify_container_name "$CONTAINER_NAME")"
     host_name="$(hostname)"
+    host_uid="$(id -u)"
 
     docker start "$CONTAINER_NAME" >/dev/null 2>&1 || exit $?
     exec docker exec -it "$CONTAINER_NAME" \
-      sudo -u shizk env OUTSIDE_HOSTNAME="$host_name" SSH_CLIENT="$remote_ip" zsh --login
+      sudo -H -u "#$host_uid" env MCP_WORKSPACE_ROOT=/work OUTSIDE_HOSTNAME="$host_name" SSH_CLIENT="$remote_ip" /etc/skel/.nix-profile/bin/zsh --login
   fi
 
   case "$CONTAINER_IMAGE_CODE" in
@@ -237,7 +238,7 @@ main() {
   fi
 
   exec docker "${docker_args[@]}" "$CONTAINER_IMAGE" \
-    sudo -u shizk env OUTSIDE_HOSTNAME="$host_name" SSH_CLIENT="$remote_ip" zsh --login
+    env OUTSIDE_HOSTNAME="$host_name" SSH_CLIENT="$remote_ip" zsh --login
 }
 
 

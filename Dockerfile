@@ -1,4 +1,18 @@
 # hadolint global ignore=DL3008
+FROM --platform=${BUILDPLATFORM} golang:1.26.5-bookworm AS mcp-builder
+
+WORKDIR /src/mcp
+
+ARG TARGETOS
+ARG TARGETARCH
+
+COPY mcp/go.mod mcp/go.sum ./
+RUN go mod download
+
+COPY mcp/main.go mcp/workspace.go ./
+RUN CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
+    go build -trimpath -ldflags='-s -w' -o /out/dotfiles-mcp .
+
 FROM ubuntu:26.04 AS runtime-base
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -42,7 +56,12 @@ WORKDIR /src
 ARG TARGETARCH
 ARG NIX_VERSION=2.35.1
 
-COPY . /src
+COPY flake.nix flake.lock /src/
+COPY bin /src/bin
+COPY bootstrap /src/bootstrap
+COPY containers /src/containers
+COPY home /src/home
+COPY system /src/system
 
 RUN useradd --create-home --shell /bin/bash builder \
  && chown -R builder:builder /src \
@@ -64,15 +83,18 @@ FROM runtime-base AS runtime
 LABEL org.opencontainers.image.source="https://github.com/mi2428/dotfiles"
 
 ENV PATH=/etc/skel/.nix-profile/bin:/nix/var/nix/profiles/default/bin:${PATH}
+ENV MCP_WORKSPACE_ROOT=/work
 
 WORKDIR /work
 
 COPY --from=builder /nix /nix
 COPY --from=builder /tmp/skel/ /etc/skel/
+COPY --from=mcp-builder /out/dotfiles-mcp /usr/local/bin/dotfiles-mcp
 COPY --from=builder /src/containers/dotfiles/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 RUN chmod 0755 /usr/local/bin/entrypoint.sh \
+ && ln -sfn /etc/skel/.local/state/nix/profiles/profile /etc/skel/.nix-profile \
  && install -d -m 0755 /work
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["/etc/skel/.nix-profile/bin/fish", "--login"]
+CMD ["/usr/local/bin/dotfiles-mcp"]

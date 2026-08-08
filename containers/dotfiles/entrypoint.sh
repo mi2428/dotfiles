@@ -40,4 +40,4 @@ if (($# == 0)); then
   set -- "${DEFAULT_SHELL}" --login
 fi
 
-exec sudo -H -u "${RUNTIME_USER}" -- "$@"
+exec sudo -H -u "${RUNTIME_USER}" env PATH="$PATH" MCP_WORKSPACE_ROOT=/work "$@"

@@ -61,3 +61,46 @@ tasks:
           "$docker_runtime" buildx build --platform "$platform" --load -t "$ghcr_image:$tag" .
         fi
         "$docker_runtime" push "$ghcr_image:$tag"
+
+  docker.run:
+    desc: Run the MCP workspace container on 127.0.0.1:3000
+    preconditions:
+      - sh: 'command -v {{default "docker" .DOCKER_RUNTIME}} >/dev/null 2>&1'
+        msg: DOCKER_RUNTIME was not found in PATH
+    cmds:
+      - |
+        set -eu
+        docker_runtime='{{default "docker" .DOCKER_RUNTIME}}'
+        ghcr_owner='{{default "mi2428" .GHCR_OWNER}}'
+        ghcr_image_name='{{default "dotfiles" .GHCR_IMAGE_NAME}}'
+        tag='{{default "latest" .TAG}}'
+        port='{{default "3000" .PORT}}'
+        workspace='{{default .REPO_ROOT .WORKSPACE_DIR}}'
+        container_name='{{default "dotfiles-mcp" .CONTAINER_NAME}}'
+        host_user="${USER:-teo}"
+        host_uid="$(id -u)"
+        host_gid="$(id -g)"
+        if [ ! -d "$workspace" ]; then
+          echo "workspace does not exist: $workspace" >&2
+          exit 1
+        fi
+        if [ -n "${GH_TOKEN:-}" ]; then
+          gh_token="$GH_TOKEN"
+        elif command -v gh >/dev/null 2>&1; then
+          gh_token="$(gh auth token 2>/dev/null || true)"
+        else
+          gh_token=""
+        fi
+        image="ghcr.io/$ghcr_owner/$ghcr_image_name:$tag"
+        if "$docker_runtime" inspect -f '{{.State.Running}}' "$container_name" >/dev/null 2>&1; then
+          if [ "$($docker_runtime inspect -f '{{.State.Running}}' "$container_name")" != true ]; then
+            "$docker_runtime" start "$container_name" >/dev/null
+          fi
+        else
+          if [ -n "$gh_token" ]; then
+            export GH_TOKEN="$gh_token"
+            "$docker_runtime" run -d --init --rm --name "$container_name" -p "127.0.0.1:${port}:3000" -v "$workspace:/work" -e "HOST_USER=$host_user" -e "HOST_UID=$host_uid" -e "HOST_GID=$host_gid" -e GH_TOKEN "$image"
+          else
+            "$docker_runtime" run -d --init --rm --name "$container_name" -p "127.0.0.1:${port}:3000" -v "$workspace:/work" -e "HOST_USER=$host_user" -e "HOST_UID=$host_uid" -e "HOST_GID=$host_gid" "$image"
+          fi
+        fi

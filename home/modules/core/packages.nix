@@ -39,11 +39,13 @@ let
     yaml-language-server
   ];
   containerDevPackages = neovimPackages ++ (with pkgs; [
+    gh
     nixd
     pre-commit
     python313Packages.python-lsp-server
     taplo
     yarn
+    zsh
   ]);
   dockerPackages = sharedPackages ++ containerDevPackages;
   linuxPackages = sharedPackages ++ neovimPackages;
