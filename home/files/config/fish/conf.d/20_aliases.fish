@@ -540,6 +540,15 @@ if command -sq opencode
         __dotfiles_run_opencode opencode --auto $argv
     end
 
+    function en --description 'Translate Japanese text with OpenCode /en'
+        if test (count $argv) -eq 0
+            echo 'Usage: en TEXT...' >&2
+            return 2
+        end
+
+        __dotfiles_run_opencode opencode run --command en -- $argv
+    end
+
     if command -sq oc-omo
         function ocomo --wraps oc-omo
             __dotfiles_run_opencode oc-omo $argv
