@@ -4,5 +4,68 @@ set -eu
 script_dir=$(
     CDPATH='' cd -- "$(dirname -- "$0")" && pwd
 ) || exit 1
+repo_root=$(
+    CDPATH='' cd -- "$script_dir/.." && pwd
+) || exit 1
+
+preview_deps_ready() {
+    deps_root=$1
+    [ -x "$deps_root/bin/node" ] &&
+        [ -x "$deps_root/bin/comrak" ] &&
+        [ -r "$deps_root/share/mermaid/mermaid.min.js" ]
+}
+
+if ! command -v node >/dev/null 2>&1 ||
+    ! command -v comrak >/dev/null 2>&1 ||
+    [ ! -r "${MARKDOWN_PREVIEW_MERMAID_JS:-}" ]; then
+    cache_dir=${XDG_CACHE_HOME:-${HOME:?}/.cache}/dotfiles-dev/nvim
+    cache_file=$cache_dir/markdown-preview-deps.path
+    dependency_key=$(
+        cksum \
+            "$repo_root/flake.lock" \
+            "$repo_root/flake.nix" \
+            "$repo_root/home/modules/programs/markdown-preview-deps.nix" |
+            cksum |
+            (
+                IFS=' ' read -r checksum _
+                printf '%s\n' "$checksum"
+            )
+    )
+    cached_key=
+    preview_deps=
+    if [ -f "$cache_file" ]; then
+        {
+            IFS= read -r cached_key || cached_key=
+            IFS= read -r preview_deps || preview_deps=
+        } < "$cache_file"
+    fi
+
+    if [ "$cached_key" != "$dependency_key" ] || ! preview_deps_ready "$preview_deps"; then
+        nix_bin=$(command -v nix || true)
+        [ -n "$nix_bin" ] || {
+            printf '%s\n' 'nvim.dev: Nix is required to provide Markdown preview dependencies' >&2
+            exit 1
+        }
+        preview_deps=$(
+            "$nix_bin" build \
+                --extra-experimental-features 'nix-command flakes' \
+                --no-link \
+                --print-out-paths \
+                "path:$repo_root#nvim-markdown-preview-deps"
+        )
+        preview_deps_ready "$preview_deps" || {
+            printf '%s\n' 'nvim.dev: failed to realize Markdown preview dependencies' >&2
+            exit 1
+        }
+        mkdir -p -- "$cache_dir"
+        cache_temp=$cache_file.$$
+        printf '%s\n%s\n' "$dependency_key" "$preview_deps" > "$cache_temp"
+        mv -f -- "$cache_temp" "$cache_file"
+    fi
+
+    PATH=$preview_deps/bin:$PATH
+    MARKDOWN_PREVIEW_MERMAID_JS=$preview_deps/share/mermaid/mermaid.min.js
+    export PATH MARKDOWN_PREVIEW_MERMAID_JS
+fi
 
 exec "$script_dir/dotfiles-dev" xdg nvim "$@"

@@ -2,12 +2,14 @@
 let
   sharedPackages = with pkgs; [
     atuin
+    comrak
     eza
     fd
     fzf
     git
     gnupg
     mise
+    nodejs
     ripgrep
     starship
     uv

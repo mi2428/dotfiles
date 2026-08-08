@@ -1,3 +1,5 @@
+local obsidian = require("config.obsidian")
+
 return {
 	{
 		"windwp/nvim-autopairs",
@@ -5,6 +7,22 @@ return {
 		opts = {
 			check_ts = true,
 		},
+	},
+	{
+		"obsidian-nvim/obsidian.nvim",
+		version = "*",
+		ft = { "markdown" },
+		opts = function()
+			return {
+				legacy_commands = false,
+				workspaces = {
+					obsidian.workspace_spec(),
+				},
+			}
+		end,
+		config = function(_, opts)
+			obsidian.setup(opts)
+		end,
 	},
 	{
 		"kylechui/nvim-surround",

@@ -1,4 +1,7 @@
-{ ... }: {
+{ pkgs, ... }:
+let
+  markdownPreviewDeps = pkgs.callPackage ./markdown-preview-deps.nix { };
+in {
   programs.neovim = {
     enable = true;
     defaultEditor = true;
@@ -12,4 +15,7 @@
     source = ../../../home/files/config/nvim;
     recursive = true;
   };
+
+  home.sessionVariables.MARKDOWN_PREVIEW_MERMAID_JS =
+    "${markdownPreviewDeps}/share/mermaid/mermaid.min.js";
 }

@@ -1,0 +1,11 @@
+{
+  "name": "dotfiles-markdown-preview",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}

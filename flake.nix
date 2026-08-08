@@ -32,6 +32,16 @@
     };
     mkLinux = import ./system/linux/lib/mk-linux.nix { inherit inputs; };
     mkHome = import ./home/lib/mk-home.nix { inherit inputs; };
+    markdownPreviewSystems = [
+      "aarch64-darwin"
+      "aarch64-linux"
+      "x86_64-linux"
+    ];
+    mkMarkdownPreviewDeps = system:
+      let
+        pkgs = import inputs.nixpkgs { inherit system; };
+      in
+      pkgs.callPackage ./home/modules/programs/markdown-preview-deps.nix { };
     mkLinuxHome = {
       system,
       homeModule,
@@ -120,8 +130,13 @@
       "dockerX86_64" = dockerX86_64Config;
     };
 
-    packages.aarch64-darwin = {
-      macos-system = macosSystemOnlyConfig.config.system.build.toplevel;
-    };
+    packages = builtins.listToAttrs (map (system: {
+      name = system;
+      value = {
+        nvim-markdown-preview-deps = mkMarkdownPreviewDeps system;
+      } // (if system == "aarch64-darwin" then {
+        macos-system = macosSystemOnlyConfig.config.system.build.toplevel;
+      } else { });
+    }) markdownPreviewSystems);
   };
 }

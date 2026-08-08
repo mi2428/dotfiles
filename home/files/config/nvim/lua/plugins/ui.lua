@@ -1159,6 +1159,18 @@ return {
 	{
 		"MeanderingProgrammer/render-markdown.nvim",
 		ft = { "markdown" },
+		init = function()
+			require("config.markdown_preview").setup()
+		end,
+		keys = {
+			{
+				"<leader>mp",
+				function()
+					require("config.markdown_preview").toggle()
+				end,
+				desc = "Toggle Markdown preview",
+			},
+		},
 		dependencies = {
 			"nvim-treesitter/nvim-treesitter",
 			"nvim-tree/nvim-web-devicons",
@@ -1172,27 +1184,6 @@ return {
 			},
 			latex = {
 				enabled = false,
-			},
-		},
-	},
-	{
-		"iamcco/markdown-preview.nvim",
-		cmd = { "MarkdownPreview", "MarkdownPreviewStop", "MarkdownPreviewToggle" },
-		ft = { "markdown" },
-		build = function(plugin)
-			vim.opt.runtimepath:prepend(plugin.dir)
-			vim.fn["mkdp#util#install_sync"](true)
-		end,
-		init = function()
-			require("config.markdown_preview").setup()
-		end,
-		keys = {
-			{
-				"<leader>mp",
-				function()
-					require("config.markdown_preview").toggle()
-				end,
-				desc = "Toggle Markdown preview",
 			},
 		},
 	},
