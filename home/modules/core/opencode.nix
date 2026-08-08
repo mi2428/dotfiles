@@ -129,6 +129,7 @@ in {
     "opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
     "opencode/agents/herdr-supervisor.md" =
       mkLink ../../files/config/opencode/agents/herdr-supervisor.md;
+    "opencode/commands/en.md" = mkLink ../../files/config/opencode/commands/en.md;
     "opencode/opencode.jsonc" = mkLink generated.defaultConfig;
     "opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
@@ -139,6 +140,8 @@ in {
     "opencode-profiles/omo/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
     "opencode-profiles/omo/opencode/agents/herdr-supervisor.md" =
       mkLink ../../files/config/opencode/agents/herdr-supervisor.md;
+    "opencode-profiles/omo/opencode/commands/en.md" =
+      mkLink ../../files/config/opencode/commands/en.md;
     "opencode-profiles/omo/opencode/opencode.jsonc" = mkLink generated.omoConfig;
     "opencode-profiles/omo/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
@@ -153,6 +156,8 @@ in {
     "opencode-profiles/slim/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
     "opencode-profiles/slim/opencode/agents/herdr-supervisor.md" =
       mkLink ../../files/config/opencode/agents/herdr-supervisor.md;
+    "opencode-profiles/slim/opencode/commands/en.md" =
+      mkLink ../../files/config/opencode/commands/en.md;
     "opencode-profiles/slim/opencode/opencode.jsonc" = mkLink generated.slimConfig;
     "opencode-profiles/slim/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
