@@ -208,7 +208,7 @@ export function buildTodoOverlayNodes(
       customBorderChars: SPLIT_BORDER_CHARS,
       paddingLeft: 2,
       paddingRight: 2,
-      paddingTop: 1,
+      paddingTop: 0,
       paddingBottom: 1,
     },
     [
@@ -258,15 +258,6 @@ export function sessionIDFromRoute(route: TuiRouteCurrent): string | undefined {
   return typeof sessionID === "string" && sessionID.length > 0 ? sessionID : undefined;
 }
 
-function todoFingerprint(todos: readonly TodoItem[]): string {
-  return JSON.stringify(
-    todos.map((todo) => ({
-      content: todo.content,
-      status: todo.status,
-    })),
-  );
-}
-
 function latestUserMessageID(messages: readonly { id: string; role: string }[]): string | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -277,7 +268,6 @@ function latestUserMessageID(messages: readonly { id: string; role: string }[]):
 
 export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidAdapter): void {
   const scrollOffsets = new Map<string, { scrollTop: number; windowKey: string }>();
-  const hiddenTodoSnapshots = new Map<string, string>();
   const latestUserMessages = new Map<string, string>();
   const [overlayRevision, setOverlayRevision] = solid.createSignal(0);
   let mounted: { sessionID: string; scrollbox: ScrollBoxAdapter; windowKey: string } | undefined;
@@ -298,18 +288,12 @@ export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidA
   };
 
   const unsubscribeTodo = api.event.on("todo.updated", (event) => {
-    const staleFingerprint = hiddenTodoSnapshots.get(event.properties.sessionID);
-    // A delayed repeat of the old Todo list must not reopen the stale popup.
-    if (staleFingerprint !== undefined && todoFingerprint(event.properties.todos) !== staleFingerprint) {
-      hiddenTodoSnapshots.delete(event.properties.sessionID);
-    }
     invalidateOverlay();
   });
   api.lifecycle.onDispose(() => {
     rememberScroll();
     mounted = undefined;
     scrollOffsets.clear();
-    hiddenTodoSnapshots.clear();
     latestUserMessages.clear();
     unsubscribeTodo();
   });
@@ -331,12 +315,7 @@ export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidA
       latestUserMessages.set(sessionID, latestUser);
     } else if (latestUser !== undefined && latestUser !== previousUser) {
       latestUserMessages.set(sessionID, latestUser);
-      hiddenTodoSnapshots.set(sessionID, todoFingerprint(todos));
       scrollOffsets.delete(sessionID);
-    }
-    if (hiddenTodoSnapshots.has(sessionID)) {
-      mounted = undefined;
-      return null;
     }
     const nodes = buildTodoOverlayNodes(todos, api.theme.current, api.renderer.width);
     if (!nodes) {

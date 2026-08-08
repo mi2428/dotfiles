@@ -151,6 +151,7 @@ describe("todo overlay state", () => {
     assert.equal(nodes.props.width, MAX_PANEL_WIDTH);
     assert.deepEqual(nodes.props.border, ["left", "right"]);
     assert.equal(nodes.props.borderStyle, undefined);
+    assert.equal(nodes.props.paddingTop, 0);
     assert.equal("focusable" in nodes.props, false);
     const header = nodes.children?.[0];
     assert(header);
@@ -250,7 +251,7 @@ describe("todo overlay state", () => {
     assert.equal(many?.children?.[1]?.scrollWindow?.endID, "opencode-todo-line-4");
   });
 
-  it("redraws progress and hides stale tasks until a new request gets new todos", () => {
+  it("redraws progress without dropping the overlay when a new request starts", () => {
     type TodoEvent = {
       properties: { sessionID: string; todos: Array<{ content: string; status: string }> };
     };
@@ -458,12 +459,15 @@ describe("todo overlay state", () => {
     assert.equal(reads, 5);
 
     liveMessages = [...liveMessages, { id: "new-user-message", role: "user" }];
-    assert.equal((appSlot() as FakeNode).children.length, 0);
+    const updated = appSlot() as FakeNode;
+    assert.equal(updated.children.length, 1);
+    assert.equal(headerFrom(updated).children[0], "Todo · 4 of 6");
     assert.equal(reads, 6);
 
     todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
     assert.equal(renders, 3);
-    assert.equal((appSlot() as FakeNode).children.length, 0);
+    assert.equal((appSlot() as FakeNode).children.length, 1);
+    assert.equal(headerFrom(appSlot() as FakeNode).children[0], "Todo · 4 of 6");
 
     liveTodos = [
       { content: "inspect new request", status: "in_progress" },
@@ -589,7 +593,7 @@ describe("todo overlay state", () => {
 
     liveMessages = [...liveMessages, { id: "next-request", role: "user" }];
     for (const observer of messageObservers) observer();
-    assert.equal(rendered.children.length, 0);
+    assert.equal(rendered.children.length, 1);
 
     liveTodos = [{ content: "second request", status: "in_progress" }];
     todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
