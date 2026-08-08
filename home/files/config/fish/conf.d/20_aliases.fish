@@ -511,6 +511,19 @@ if command -sq terminal-browser
     alias tb='terminal-browser'
 end
 
+function __dotfiles_render_ai_markdown
+    if isatty stdout; and command -sq glow
+        set -l style "$HOME/.config/glow/styles/catppuccin-mocha.json"
+        if test -f "$style"
+            command glow --style "$style" -
+        else
+            command glow -
+        end
+    else
+        command cat
+    end
+end
+
 if command -sq codex
     #alias codex+='codex --dangerously-bypass-hook-trust'
     alias codex++='codex --dangerously-bypass-approvals-and-sandbox'
@@ -538,15 +551,6 @@ if command -sq opencode
 
     function oc++ --wraps opencode
         __dotfiles_run_opencode opencode --auto $argv
-    end
-
-    function en --description 'Translate Japanese text with OpenCode /en'
-        if test (count $argv) -eq 0
-            echo 'Usage: en TEXT...' >&2
-            return 2
-        end
-
-        __dotfiles_run_opencode opencode run --command en -- $argv
     end
 
     if command -sq oc-omo

@@ -1,0 +1,46 @@
+#!/bin/sh
+
+set -eu
+
+usage() {
+    printf '%s\n' 'Usage: en TEXT...'
+}
+
+case "${1-}" in
+    -h|--help) usage; exit 0 ;;
+    --) shift ;;
+esac
+[ "$#" -gt 0 ] || { usage >&2; exit 2; }
+command -v codex >/dev/null 2>&1 || { printf '%s\n' 'en: codex is not installed' >&2; exit 127; }
+
+tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/en.XXXXXX")
+result="$tmpdir/result.md"
+trap 'rm -rf "$tmpdir"' EXIT
+trap 'exit 130' HUP INT TERM
+
+if [ -t 1 ] && command -v gum >/dev/null 2>&1; then
+    gum spin --show-error --spinner dot --spinner.foreground '#cba6f7' \
+        --title 'Translating with Spark...' --title.foreground '#cdd6f4' -- \
+        codex exec --ephemeral --disable hooks --ignore-rules --skip-git-repo-check \
+        --profile en --sandbox read-only --output-last-message "$result" -- "$*"
+else
+    codex exec --ephemeral --disable hooks --ignore-rules --skip-git-repo-check \
+        --profile en --sandbox read-only --output-last-message "$result" -- "$*" \
+        >/dev/null 2>"$tmpdir/error.log" || {
+            status=$?
+            command cat "$tmpdir/error.log" >&2
+            exit "$status"
+        }
+fi
+
+[ -s "$result" ] || { printf '%s\n' 'en: Codex returned no output' >&2; exit 1; }
+style="$HOME/.config/glow/styles/catppuccin-mocha.json"
+if [ -t 1 ] && command -v glow >/dev/null 2>&1; then
+    if [ -f "$style" ]; then
+        glow --style "$style" "$result"
+    else
+        glow "$result"
+    fi
+else
+    command cat "$result"
+fi

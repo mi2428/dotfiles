@@ -73,6 +73,7 @@ in {
 
   home.file = binFiles // macCompatibilityFiles // {
     ".codex/dot-q.config.toml" = mkLink ../../files/codex-dot-q.config.toml;
+    ".codex/en.config.toml" = mkLink ../../files/codex-en.config.toml;
     ".local/libexec/dotfiles/codex-nvim-edit-event" = mkLink codexNvimEditEvent;
     ".local/libexec/dotfiles/gh-review-preview" = mkLink ghReviewPreview;
     ".gitignore" = mkLink ../../files/git/gitignore;

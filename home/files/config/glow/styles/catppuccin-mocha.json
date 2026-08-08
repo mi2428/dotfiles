@@ -3,7 +3,7 @@
     "block_prefix": "\n",
     "block_suffix": "\n",
     "color": "#cdd6f4",
-    "margin": 2
+    "margin": 0
   },
   "block_quote": {
     "indent": 1,
@@ -19,29 +19,29 @@
     "bold": true
   },
   "h1": {
-    "prefix": "▓▓▓ ",
+    "prefix": "",
     "suffix": " ",
     "color": "#f38ba8",
     "bold": true
   },
   "h2": {
-    "prefix": "▓▓▓▓ ",
+    "prefix": "",
     "color": "#fab387"
   },
   "h3": {
-    "prefix": "▓▓▓▓▓ ",
+    "prefix": "",
     "color": "#f9e2af"
   },
   "h4": {
-    "prefix": "▓▓▓▓▓▓ ",
+    "prefix": "",
     "color": "#a6e3a1"
   },
   "h5": {
-    "prefix": "▓▓▓▓▓▓▓ ",
+    "prefix": "",
     "color": "#74c7ec"
   },
   "h6": {
-    "prefix": "▓▓▓▓▓▓▓▓ ",
+    "prefix": "",
     "color": "#b4befe"
   },
   "text": {},
@@ -85,8 +85,8 @@
     "format": "Image: {{.text}} →"
   },
   "code": {
-    "prefix": " ",
-    "suffix": " ",
+    "prefix": "",
+    "suffix": "",
     "color": "#eba0ac",
     "background_color": "#181825"
   },

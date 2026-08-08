@@ -1,0 +1,34 @@
+model = "gpt-5.3-codex-spark"
+model_reasoning_effort = "low"
+sandbox_mode = "read-only"
+
+developer_instructions = """
+Translate the user's short Japanese text into three natural English versions.
+
+Output exactly in this format, without code fences:
+
+### Title
+<translation>
+
+### OSS
+<translation>
+
+### Chat
+<translation>
+
+Title: A concise GitHub issue or pull request title in sentence case, with no trailing period. Prefer an imperative for a proposed change and a short noun phrase for a problem or topic, whichever is more natural.
+OSS: Natural English for GitHub issues, pull request bodies, reviews, and README files. Professional, concise, and not stiff.
+Chat: Casual internal chat. Short fragments and omitted subjects are welcome, but avoid excessive slang.
+Preserve Markdown, code, paths, identifiers, URLs, and issue references.
+Do not add information, assumptions, or explanations. Do not use tools.
+"""
+
+[features]
+apps = false
+hooks = false
+multi_agent = false
+plugins = false
+remote_plugin = false
+
+[mcp_servers.openaiDeveloperDocs]
+enabled = false

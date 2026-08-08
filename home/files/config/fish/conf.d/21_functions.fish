@@ -470,7 +470,35 @@ function dot
                 echo 'usage: dot q <question>' >&2
                 return 2
             end
-            command codex exec --ephemeral --disable hooks --profile dot-q --sandbox read-only --cd "$repo" (string join ' ' -- $argv)
+
+            set -l result (mktemp -t dot-q-result.XXXXXX); or return
+            set -l error_log (mktemp -t dot-q-error.XXXXXX); or begin
+                command rm -f "$result"
+                return 1
+            end
+            set -l codex_args exec --ephemeral --disable hooks --profile dot-q --sandbox read-only --cd "$repo" --output-last-message "$result" -- (string join ' ' -- $argv)
+            set -l command_status
+
+            if isatty stdout; and command -sq gum
+                command gum spin --show-error --spinner dot --spinner.foreground '#cba6f7' --title 'Thinking with Spark...' --title.foreground '#cdd6f4' -- codex $codex_args
+                set command_status $status
+            else
+                command codex $codex_args >/dev/null 2>"$error_log"
+                set command_status $status
+                test $command_status -eq 0; or command cat "$error_log" >&2
+            end
+
+            if test $command_status -eq 0
+                if test -s "$result"
+                    __dotfiles_render_ai_markdown <"$result"
+                    set command_status $status
+                else
+                    echo 'dot q: Codex returned no output' >&2
+                    set command_status 1
+                end
+            end
+            command rm -f "$result" "$error_log"
+            return $command_status
         case sw switch
             command task -d "$repo" hm.switch
         case gc

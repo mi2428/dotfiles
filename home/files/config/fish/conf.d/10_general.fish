@@ -46,6 +46,12 @@ set -gx PROMPT_SEVERITY 0
 set -gx TRASHBIN $HOME/.trash
 set -g fish_cursor_default block blink
 
+function fish_should_add_to_history
+    string match -qr '^( |\s*en(\s|$)|\s*dot\s+(q|query)(\s|$))' -- "$argv[1]"
+    and return 1
+    return 0
+end
+
 if test -t 0
     set -gx GPG_TTY (tty)
 end
