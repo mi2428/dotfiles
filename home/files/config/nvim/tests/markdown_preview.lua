@@ -726,22 +726,11 @@ do
 	local ghostty_script_file = vim.fs.joinpath(temp_dir, "osascript-stdin")
 	local ghostty_close_argv_file = vim.fs.joinpath(temp_dir, "close-argv")
 	local ghostty_close_script_file = vim.fs.joinpath(temp_dir, "close-stdin")
-	local ghostty_tty = vim.fs.joinpath(temp_dir, "tty")
-	local fake_ps = vim.fs.joinpath(temp_dir, "ps")
 	local fake_osascript = vim.fs.joinpath(temp_dir, "osascript")
 
-	vim.fn.writefile({}, ghostty_tty)
-	write_executable(fake_ps, {
-		"#!/bin/sh",
-		'if [ "$4" = ' .. vim.fn.shellescape(tostring(vim.fn.getpid())) .. " ]; then",
-		"  printf '%s\\n' '4242 ??'",
-		"else",
-		"  printf '%s\\n' " .. vim.fn.shellescape("1 " .. ghostty_tty),
-		"fi",
-	})
 	write_executable(fake_osascript, {
 		"#!/bin/sh",
-		"if [ \"$2\" = 'ghostty-test-pane' ]; then",
+		"if [ \"$3\" = 'ghostty-test-pane' ]; then",
 		"  /bin/cat > " .. vim.fn.shellescape(ghostty_close_script_file),
 		"  printf '%s\\n' \"$@\" > " .. vim.fn.shellescape(ghostty_close_argv_file),
 		"else",
@@ -764,31 +753,35 @@ do
 
 		local argv = vim.fn.readfile(ghostty_argv_file)
 		assert(argv[1] == "-", "osascript must read the Ghostty split script from stdin")
-		assert(argv[2]:match("^markdown%-preview%-%d+%-%d+$"), "Ghostty pane marker is invalid")
+		assert(argv[2] == "/Applications/Ghostty.app", "Ghostty split must target the running app explicitly")
 		assert(argv[3] == shell_command({
 			fake.browser,
 			"open",
 			"http://127.0.0.1:8123/page/3",
-			"--split-dir=right",
-			"--parent-tty=" .. ghostty_tty,
 		}), "Ghostty must launch terminal-browser as the split command")
 		assert(argv[4] == vim.fn.getcwd(), "Ghostty split must preserve Neovim's working directory")
 
 		local script = table.concat(vim.fn.readfile(ghostty_script_file), "\n")
 		assert(script:find("configuration {command:cmdText", 1, true), "Ghostty split must use the command API")
 		assert(
+			script:find("focused terminal of selected tab of front window", 1, true),
+			"Ghostty split must target its focused terminal directly"
+		)
+		assert(
 			not script:find("initial input", 1, true),
 			"Ghostty split must not race the login shell with initial input"
 		)
-		local tty_contents = table.concat(vim.fn.readfile(ghostty_tty, "b"), "\n")
-		assert(tty_contents:find(argv[2], 1, true), "Ghostty pane marker must be written to the parent TTY")
+		assert(not script:find("contains marker", 1, true), "Ghostty split must not depend on mutable pane titles")
 
 		preview.stop()
 		wait_for(function()
 			return vim.fn.filereadable(ghostty_close_argv_file) == 1
 		end, "timed out waiting for the Ghostty preview pane to close")
 		assert(
-			vim.deep_equal(vim.fn.readfile(ghostty_close_argv_file), { "-", "ghostty-test-pane" }),
+			vim.deep_equal(
+				vim.fn.readfile(ghostty_close_argv_file),
+				{ "-", "/Applications/Ghostty.app", "ghostty-test-pane" }
+			),
 			"stop must close the Ghostty pane"
 		)
 		assert(
