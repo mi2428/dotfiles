@@ -102,4 +102,3 @@ tasks:
         printf '  %btask secrets.backup%b\n' "$green" "$reset"
         printf '  %btask docker.build TAG=latest%b\n' "$green" "$reset"
         printf '  %btask docker.push TAG=latest%b\n' "$green" "$reset"
-        printf '  %btask docker.run%b\n' "$green" "$reset"
