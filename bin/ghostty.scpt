@@ -7,11 +7,22 @@
 
 -- Fixed Herdr pane width in pixels.
 property herdrWidth : 700
+property ghosttyApplicationPath : "/Applications/Ghostty.app"
+property ghosttyBundleIdentifier : "com.mitchellh.ghostty"
 
-on run
+on run argv
     set homeDirectory to POSIX path of (path to home folder)
 
     if herdrWidth is less than or equal to 0 then error "herdrWidth must be greater than zero"
+    if (count of argv) is greater than 1 then error "Usage: ghostty.scpt [SESSION]"
+
+    set herdrCommand to "herdr"
+    set tmuxCommand to "tmux"
+    if (count of argv) is 1 then
+        set quotedSessionName to quoted form of item 1 of argv
+        set herdrCommand to "herdr --session " & quotedSessionName
+        set tmuxCommand to "tmux new-session -A -s " & quotedSessionName
+    end if
 
     try
         set projectDirectory to system attribute "PWD"
@@ -20,36 +31,49 @@ on run
         set projectDirectory to homeDirectory
     end try
 
-    tell application "Ghostty"
-        activate
+    using terms from application "Ghostty"
+        tell application ghosttyApplicationPath
+            activate
 
-        set herdrConfiguration to new surface configuration
-        set initial working directory of herdrConfiguration to projectDirectory
+            set herdrConfiguration to new surface configuration
+            set initial working directory of herdrConfiguration to projectDirectory
 
-        set tmuxConfiguration to new surface configuration
-        set initial working directory of tmuxConfiguration to homeDirectory
+            set tmuxConfiguration to new surface configuration
+            set initial working directory of tmuxConfiguration to homeDirectory
 
-        set workspaceWindow to new window with configuration herdrConfiguration
-        set herdrPane to terminal 1 of selected tab of workspaceWindow
-        set tmuxPane to split herdrPane direction right with configuration tmuxConfiguration
-        -- perform action "decrease_font_size:2" on herdrPane
-        activate window workspaceWindow
-        focus herdrPane
+            set workspaceWindow to new window with configuration herdrConfiguration
+            set herdrPane to terminal 1 of selected tab of workspaceWindow
+            set tmuxPane to split herdrPane direction right with configuration tmuxConfiguration
+            -- perform action "decrease_font_size:2" on herdrPane
+            activate window workspaceWindow
+            focus herdrPane
 
-        -- Keep Ghostty's normal shell startup and shell integration so titles
-        -- match regular windows. Wait until both shells publish their titles
-        -- before sending the startup commands.
-        repeat 100 times
-            if (name of herdrPane is not "👻") and (name of tmuxPane is not "👻") then exit repeat
-            delay 0.02
+            -- Keep Ghostty's normal shell startup and shell integration so titles
+            -- match regular windows. Wait until both shells publish their titles
+            -- before sending the startup commands.
+            repeat 100 times
+                if (name of herdrPane is not "👻") and (name of tmuxPane is not "👻") then exit repeat
+                delay 0.02
+            end repeat
+
+            input text herdrCommand to herdrPane
+            send key "enter" to herdrPane
+            input text tmuxCommand to tmuxPane
+            send key "enter" to tmuxPane
+            activate window workspaceWindow
+            focus herdrPane
+        end tell
+    end using terms from
+
+    tell application "System Events"
+        set ghosttyProcess to missing value
+        repeat with candidateProcess in (application processes whose bundle identifier is ghosttyBundleIdentifier)
+            if POSIX path of application file of candidateProcess is ghosttyApplicationPath then
+                set ghosttyProcess to contents of candidateProcess
+                exit repeat
+            end if
         end repeat
-
-        input text "herdr" to herdrPane
-        send key "enter" to herdrPane
-        input text "tmux" to tmuxPane
-        send key "enter" to tmuxPane
-        activate window workspaceWindow
-        focus herdrPane
+        if ghosttyProcess is missing value then error "Ghostty is not running from " & ghosttyApplicationPath
     end tell
 
     -- Quick Terminal hides asynchronously. Wait until the new two-pane window
@@ -57,7 +81,7 @@ on run
     -- values. This prevents the final window-placement pass from restoring the
     -- default height after this script has already resized the window.
     tell application "System Events"
-        tell process "Ghostty"
+        tell ghosttyProcess
             set frontmost to true
             set workspaceWindowReady to false
 
@@ -100,20 +124,22 @@ on run
         end tell
     end tell
 
-    tell application "Ghostty"
-        -- Ghostty creates a 1:1 split. Move the divider from the center so
-        -- Herdr reaches its fixed target width.
-        set contentWidth to restoredWindowWidth - 1
-        set initialHerdrWidth to contentWidth div 2
-        set widthDelta to herdrWidth - initialHerdrWidth
+    using terms from application "Ghostty"
+        tell application ghosttyApplicationPath
+            -- Ghostty creates a 1:1 split. Move the divider from the center so
+            -- Herdr reaches its fixed target width.
+            set contentWidth to restoredWindowWidth - 1
+            set initialHerdrWidth to contentWidth div 2
+            set widthDelta to herdrWidth - initialHerdrWidth
 
-        if widthDelta is less than 0 then
-            set resizeAmount to -widthDelta
-            perform action ("resize_split:left," & resizeAmount) on herdrPane
-        else if widthDelta is greater than 0 then
-            perform action ("resize_split:right," & widthDelta) on herdrPane
-        end if
+            if widthDelta is less than 0 then
+                set resizeAmount to -widthDelta
+                perform action ("resize_split:left," & resizeAmount) on herdrPane
+            else if widthDelta is greater than 0 then
+                perform action ("resize_split:right," & widthDelta) on herdrPane
+            end if
 
-        focus herdrPane
-    end tell
+            focus herdrPane
+        end tell
+    end using terms from
 end run

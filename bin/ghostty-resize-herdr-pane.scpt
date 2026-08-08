@@ -1,35 +1,79 @@
 #!/usr/bin/osascript
 
--- Resize the Herdr pane in the frontmost Ghostty window to a fixed width.
+-- Resize the Herdr pane in every Ghostty window to a fixed width.
 -- Change this value to adjust the target width in pixels.
 property herdrWidth : 700
+property ghosttyApplicationPath : "/Applications/Ghostty.app"
+property ghosttyBundleIdentifier : "com.mitchellh.ghostty"
 
 on run
     if herdrWidth is less than or equal to 0 then error "herdrWidth must be greater than zero"
 
+    tell application "System Events"
+        set ghosttyProcess to missing value
+        repeat with candidateProcess in (application processes whose bundle identifier is ghosttyBundleIdentifier)
+            if POSIX path of application file of candidateProcess is ghosttyApplicationPath then
+                set ghosttyProcess to contents of candidateProcess
+                exit repeat
+            end if
+        end repeat
+        if ghosttyProcess is missing value then error "Ghostty is not running from " & ghosttyApplicationPath
+    end tell
+
+    using terms from application "Ghostty"
+        tell application ghosttyApplicationPath
+            set workspaceWindows to every window
+            if (count of workspaceWindows) is 0 then error "Ghostty has no windows"
+            set originalFrontWindow to front window
+        end tell
+    end using terms from
+
+    set resizedCount to 0
+    set unchangedCount to 0
+    set skippedCount to 0
+
+    repeat with workspaceWindow in workspaceWindows
+        set resizeResult to my resizeHerdrPane(workspaceWindow, ghosttyProcess)
+        if resizeResult is "resized" then
+            set resizedCount to resizedCount + 1
+        else if resizeResult is "unchanged" then
+            set unchangedCount to unchangedCount + 1
+        else
+            set skippedCount to skippedCount + 1
+        end if
+    end repeat
+
+    using terms from application "Ghostty"
+        tell application ghosttyApplicationPath to activate window originalFrontWindow
+    end using terms from
+
+    return "Herdr panes: " & resizedCount & " resized, " & unchangedCount & " unchanged, " & skippedCount & " skipped"
+end run
+
+on resizeHerdrPane(workspaceWindow, ghosttyProcess)
     set herdrPane to missing value
 
     with timeout of 5 seconds
-        tell application "Ghostty"
-            if not running then error "Ghostty is not running"
+        using terms from application "Ghostty"
+            tell application ghosttyApplicationPath
+                repeat with candidatePane in terminals of workspaceWindow
+                    if name of candidatePane contains "herdr" then
+                        set herdrPane to candidatePane
+                        exit repeat
+                    end if
+                end repeat
 
-            set workspaceWindow to front window
-            repeat with candidatePane in terminals of workspaceWindow
-                if name of candidatePane contains "herdr" then
-                    set herdrPane to candidatePane
-                    exit repeat
-                end if
-            end repeat
-
-            if herdrPane is missing value then error "No Herdr pane found in the frontmost Ghostty window"
-            focus herdrPane
-        end tell
+                if herdrPane is missing value then return "skipped"
+                activate window workspaceWindow
+                focus herdrPane
+            end tell
+        end using terms from
     end timeout
 
     delay 0.05
 
     tell application "System Events"
-        tell process "Ghostty"
+        tell ghosttyProcess
             set ghosttyWindow to front window
             set windowPosition to position of ghosttyWindow
             set windowSize to size of ghosttyWindow
@@ -57,7 +101,7 @@ on run
     end tell
 
     set widthDelta to herdrWidth - currentWidth
-    if widthDelta is 0 then return "Herdr pane width is already " & herdrWidth & "px"
+    if widthDelta is 0 then return "unchanged"
 
     if widthDelta is greater than 0 then
         set resizeAmount to widthDelta
@@ -76,11 +120,13 @@ on run
     end if
 
     with timeout of 5 seconds
-        tell application "Ghostty"
-            perform action ("resize_split:" & resizeDirection & "," & resizeAmount) on herdrPane
-            focus herdrPane
-        end tell
+        using terms from application "Ghostty"
+            tell application ghosttyApplicationPath
+                perform action ("resize_split:" & resizeDirection & "," & resizeAmount) on herdrPane
+                focus herdrPane
+            end tell
+        end using terms from
     end timeout
 
-    return "Herdr pane width: " & currentWidth & "px -> " & herdrWidth & "px"
-end run
+    return "resized"
+end resizeHerdrPane

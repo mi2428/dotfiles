@@ -6,18 +6,39 @@ function f
     open -a Finder -- "$target"
 end
 
-function gty --description 'Open or resize the Ghostty Herdr workspace'
+function gty --description 'Open or resize Ghostty Herdr workspaces'
     if test (count $argv) -eq 0
         command ghostty.scpt
         return $status
     end
 
-    if test (count $argv) -eq 1 -a "$argv[1]" = r
-        command ghostty-resize-herdr-pane.scpt
-        return $status
+    if test (count $argv) -eq 1
+        switch "$argv[1]"
+            case -h --help
+                printf '%s\n' \
+                    'Usage:' \
+                    '  gty' \
+                    '  gty SESSION' \
+                    '  gty r' \
+                    '' \
+                    'Open a Ghostty window with Herdr on the left and tmux on the right.' \
+                    'Without SESSION, use the default Herdr session and unnamed tmux session.' \
+                    'With SESSION, use that name for both Herdr and tmux.' \
+                    'Use r to resize Herdr panes in every Ghostty window.'
+                return 0
+            case r
+                command ghostty-resize-herdr-pane.scpt
+                return $status
+            case '-*'
+                printf 'gty: unknown option: %s\n' "$argv[1]" >&2
+                return 2
+            case '*'
+                command ghostty.scpt "$argv[1]"
+                return $status
+        end
     end
 
-    echo 'Usage: gty [r]' >&2
+    echo 'Usage: gty [SESSION|r]' >&2
     return 2
 end
 
