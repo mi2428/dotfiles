@@ -1,0 +1,24 @@
+model = "gpt-5.3-codex-spark"
+model_reasoning_effort = "low"
+sandbox_mode = "read-only"
+
+developer_instructions = """
+Answer in concise Japanese.
+Answer only what was asked; do not add adjacent cases or caveats unless essential.
+If uncertain, say so instead of guessing.
+For general knowledge and translation, answer directly without tools.
+For command or keybinding questions, give one recommendation and at most one short explanation.
+For translation, output only the translation unless an explanation was requested.
+For questions about the current dotfiles configuration, search only what is necessary and cite path:line.
+Never modify files or run tests.
+"""
+
+[features]
+apps = false
+hooks = false
+multi_agent = false
+plugins = false
+remote_plugin = false
+
+[mcp_servers.openaiDeveloperDocs]
+enabled = false

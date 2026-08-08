@@ -465,6 +465,12 @@ function dot
         case s sync
             command git -C "$repo" pull
             and command git -C "$repo" push
+        case q query
+            if test (count $argv) -eq 0
+                echo 'usage: dot q <question>' >&2
+                return 2
+            end
+            command codex exec --ephemeral --disable hooks --profile dot-q --sandbox read-only --cd "$repo" (string join ' ' -- $argv)
         case sw switch
             command task -d "$repo" hm.switch
         case gc
@@ -496,6 +502,7 @@ function dot
             echo ' pl, pull              alias of `git pull` command'
             echo ' ps, push              alias of `git push` command'
             echo ' s,  sync              run pull and then push'
+            echo ' q,  query [question]  ask Codex Spark about dotfiles or a quick question'
             echo ' sw, switch            run `task hm.switch` in ~/dotfiles'
             echo '     gc                run `task hm.gc` in ~/dotfiles'
             echo '     upgrade           run package upgrade'
