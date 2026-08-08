@@ -451,7 +451,7 @@ return {
 					SnacksWinBarNC = { fg = colors.subtext1, bg = colors.surface1, bold = true },
 					BlinkCmpMenu = { link = "NormalFloat" },
 					BlinkCmpMenuBorder = { link = "FloatBorder" },
-					BlinkCmpMenuSelection = { fg = colors.text, bg = colors.surface0, bold = true },
+					BlinkCmpMenuSelection = { fg = colors.text, bg = colors.surface0, bold = true, blend = 40 },
 					BlinkCmpDoc = { link = "NormalFloat" },
 					BlinkCmpDocBorder = { link = "FloatBorder" },
 					BlinkCmpDocSeparator = { fg = colors.surface2, bg = colors.none },

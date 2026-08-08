@@ -363,12 +363,12 @@ return {
 					auto_show_delay_ms = 200,
 					window = {
 						border = "rounded",
-						winblend = 0,
+						winblend = 40,
 					},
 				},
 				menu = {
 					border = "rounded",
-					winblend = 0,
+					winblend = 40,
 					-- Only show a menu when an attached LSP can provide completions. This keeps
 					-- prose, extensionless, and other unstructured buffers free of buffer-word
 					-- suggestions (including Japanese text in Markdown).
@@ -408,7 +408,7 @@ return {
 				enabled = true,
 				window = {
 					border = "rounded",
-					winblend = 0,
+					winblend = 40,
 				},
 			},
 		},
