@@ -59,6 +59,15 @@ if vim.uv.os_uname().sysname == "Darwin" then
 	press(")")
 	assert_col(5, "sentence motion did not reach the next sentence")
 
+	reset("私は 日本語を書く。")
+	vim.api.nvim_buf_set_lines(0, 1, -1, false, { "明日は晴れる。", "範囲外" })
+	vim.cmd("1,2Wakachigaki")
+	assert_equal(vim.api.nvim_buf_get_lines(0, 0, -1, false), {
+		"私 は 日本 語 を 書く 。",
+		"明日 は 晴れる 。",
+		"範囲外",
+	}, "Wakachigaki did not separate the selected lines")
+
 	print("NaturalLanguage word and sentence motions: ok")
 	return
 end
