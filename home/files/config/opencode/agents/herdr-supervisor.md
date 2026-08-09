@@ -111,10 +111,11 @@ Do not request full transcripts or file dumps.
   ```
 
 - Treat `blocked` as a decision point, not permission to approve blindly.
-  If the worker requested necessary access within its assignment, the supervisor may approve the least-privileged, one-time option in the visible worker pane.
-  Never grant persistent or session-wide access unless the user explicitly authorizes it.
+  Prefer the least-privileged, one-time approval for necessary access within the worker's assignment.
+  If repeated permission prompts materially impede progress, the supervisor may use the prompt's persistent or `Always` approval for clearly scoped, necessary access.
+  Persistent approval does not reduce the supervisor's responsibility: before destructive, secret-sensitive, privileged, deployment, or otherwise high-risk operations, require the worker to report the exact action, review it, and actively supervise its execution.
   If the request is unnecessary or outside the assignment, reject it with `herdr agent send-keys "$WORKER_NAME" escape`, narrow the same worker's brief, and resume it with `herdr agent prompt`.
-  Ask the user to decide when a request is ambiguous, destructive, secret-sensitive, or broader than the worker's stated boundary.
+  Ask the user to decide when a high-risk action is ambiguous, not already authorized, or broader than the worker's stated boundary.
 - Monitor workers with compact status snapshots rather than repeatedly reading complete histories.
 - Review actual diffs, tests, lint, type checks, logs, or live behavior as appropriate; do not accept a worker's success claim without evidence.
 - If work is wrong or incomplete, send a concrete correction to the same compatible worker and review it again.
