@@ -1,4 +1,5 @@
 local obsidian = require("config.obsidian")
+local is_macos = vim.uv.os_uname().sysname == "Darwin"
 
 return {
 	{
@@ -73,7 +74,8 @@ return {
 	},
 	{
 		"chrisgrieser/nvim-spider",
-		keys = {
+		cond = not is_macos,
+		keys = not is_macos and {
 			{
 				"w",
 				"<cmd>lua require('config.word_motion').motion('w')<cr>",
@@ -101,7 +103,7 @@ return {
 			-- Spider intentionally makes `cw` follow `w` exactly. Preserve Vim's
 			-- familiar change-to-end behavior while still using Spider's `e` motion.
 			{ "cw", "ce", mode = "n", remap = true, desc = "Change word" },
-		},
+		} or nil,
 		opts = {
 			-- Skip syntax punctuation such as `.` in `value.method()`, but keep
 			-- whitespace-delimited operators such as `==` as useful stops.

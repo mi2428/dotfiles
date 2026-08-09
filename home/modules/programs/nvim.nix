@@ -1,6 +1,7 @@
-{ pkgs, ... }:
+{ inputs, lib, pkgs, ... }:
 let
   markdownPreviewDeps = pkgs.callPackage ./markdown-preview-deps.nix { };
+  linguaMotionPackages = inputs.lingua-motion.packages.${pkgs.system};
 in {
   programs.neovim = {
     enable = true;
@@ -9,6 +10,12 @@ in {
     vimAlias = true;
     withRuby = false;
     withPython3 = false;
+    plugins = lib.optionals pkgs.stdenv.isDarwin [
+      linguaMotionPackages.lingua-motion
+    ];
+    extraPackages = lib.optionals pkgs.stdenv.isDarwin [
+      linguaMotionPackages.lingua-motion-helper
+    ];
   };
 
   xdg.configFile."nvim" = {

@@ -21,6 +21,27 @@
         "type": "github"
       }
     },
+    "lingua-motion": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1786291665,
+        "narHash": "sha256-jQhSCXg/v91O2V9m5IumUkgiPG0vOYETbpZ230Ct+dE=",
+        "ref": "refs/tags/v0.9.0",
+        "rev": "996348cc6dd3699b773184b77318bcb281ad2617",
+        "revCount": 10,
+        "type": "git",
+        "url": "ssh://git@github.com/mi2428/lingua-motion.nvim.git"
+      },
+      "original": {
+        "ref": "refs/tags/v0.9.0",
+        "type": "git",
+        "url": "ssh://git@github.com/mi2428/lingua-motion.nvim.git"
+      }
+    },
     "nix-darwin": {
       "inputs": {
         "nixpkgs": [
@@ -61,6 +82,7 @@
     "root": {
       "inputs": {
         "home-manager": "home-manager",
+        "lingua-motion": "lingua-motion",
         "nix-darwin": "nix-darwin",
         "nixpkgs": "nixpkgs"
       }
