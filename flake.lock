@@ -28,16 +28,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1786291665,
-        "narHash": "sha256-jQhSCXg/v91O2V9m5IumUkgiPG0vOYETbpZ230Ct+dE=",
-        "ref": "refs/tags/v0.9.0",
-        "rev": "996348cc6dd3699b773184b77318bcb281ad2617",
-        "revCount": 10,
+        "lastModified": 1786295532,
+        "narHash": "sha256-THmUBRqbLD7qgWgfme3qE+hIWr/WRfW8M8HPaQ1QVvM=",
+        "ref": "refs/tags/v0.9.1",
+        "rev": "b6c6f6726da8a82eed17fdde2849678c604044d6",
+        "revCount": 12,
         "type": "git",
         "url": "ssh://git@github.com/mi2428/lingua-motion.nvim.git"
       },
       "original": {
-        "ref": "refs/tags/v0.9.0",
+        "ref": "refs/tags/v0.9.1",
         "type": "git",
         "url": "ssh://git@github.com/mi2428/lingua-motion.nvim.git"
       }
