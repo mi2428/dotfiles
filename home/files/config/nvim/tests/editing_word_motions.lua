@@ -26,6 +26,43 @@ local function assert_col(expected, message)
 	assert_equal(vim.api.nvim_win_get_cursor(0), { 1, expected }, message)
 end
 
+if vim.uv.os_uname().sysname == "Darwin" then
+	assert(vim.fn.executable("lingua-motion-helper") == 1, "lingua-motion-helper is missing from Neovim PATH")
+	for _, lhs in ipairs({ "w", "e", "b", "ge", "iw", "aw", "is", "as", "(", ")" }) do
+		for _, mode in ipairs({ "n", "o", "x" }) do
+			assert(mapping(lhs, mode).desc == "Lingua motion " .. lhs, lhs .. " is not owned by lingua-motion")
+		end
+	end
+	assert(mapping("cw", "n").desc == "Change word", "cw compatibility mapping is missing")
+	assert(package.loaded.spider == nil, "nvim-spider must stay unloaded on macOS")
+	for _, lhs in ipairs({ "W", "E", "B", "gE" }) do
+		assert(vim.fn.maparg(lhs, "n") == "", lhs .. " must remain a native WORD motion")
+	end
+
+	reset("日本語。次")
+	press("w")
+	assert_col(6, "w did not reach the next NaturalLanguage token")
+	press("w")
+	assert_col(9, "w did not reach Japanese punctuation")
+	press("b")
+	assert_col(6, "b did not return to the previous Japanese token")
+
+	reset("日本語。次")
+	press("diw")
+	assert_equal(vim.api.nvim_get_current_line(), "語。次", "diw did not use the NaturalLanguage word range")
+
+	reset("日本語。次")
+	press("cwX<Esc>")
+	assert_equal(vim.api.nvim_get_current_line(), "X語。次", "cw no longer behaves like ce")
+
+	reset("One. Two.")
+	press(")")
+	assert_col(5, "sentence motion did not reach the next sentence")
+
+	print("NaturalLanguage word and sentence motions: ok")
+	return
+end
+
 -- Force the key-driven plugin to load so the test exercises the final mappings
 -- produced by the real Lazy specification.
 require("lazy").load({ plugins = { "nvim-spider" } })
