@@ -42,6 +42,39 @@
         "url": "ssh://git@github.com/mi2428/lingua-motion.nvim.git"
       }
     },
+    "luamigemo": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784776397,
+        "narHash": "sha256-R0PeG/Ba4zJbSZEMbCmrm1xOtcEipjkZU33YhqhoXUs=",
+        "owner": "delphinus",
+        "repo": "luamigemo",
+        "rev": "137392e925254b49095121f67223386844882077",
+        "type": "github"
+      },
+      "original": {
+        "owner": "delphinus",
+        "ref": "v1.4.1",
+        "repo": "luamigemo",
+        "type": "github"
+      }
+    },
+    "migemo-dict": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1620367266,
+        "narHash": "sha256-CNdtL9TlveieNzwbLrM7tA+bC8yUyNy90JTI2j8+imE=",
+        "owner": "oguna",
+        "repo": "migemo-compact-dict-latest",
+        "rev": "043c04bf2c0be8a730c25c9ecfb08265dd0d340c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "oguna",
+        "repo": "migemo-compact-dict-latest",
+        "type": "github"
+      }
+    },
     "nix-darwin": {
       "inputs": {
         "nixpkgs": [
@@ -83,6 +116,8 @@
       "inputs": {
         "home-manager": "home-manager",
         "lingua-motion": "lingua-motion",
+        "luamigemo": "luamigemo",
+        "migemo-dict": "migemo-dict",
         "nix-darwin": "nix-darwin",
         "nixpkgs": "nixpkgs"
       }

@@ -7,6 +7,10 @@
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
     nix-darwin.url = "github:nix-darwin/nix-darwin/master";
     nix-darwin.inputs.nixpkgs.follows = "nixpkgs";
+    luamigemo.url = "github:delphinus/luamigemo/v1.4.1";
+    luamigemo.flake = false;
+    migemo-dict.url = "github:oguna/migemo-compact-dict-latest";
+    migemo-dict.flake = false;
     lingua-motion.url = "git+ssh://git@github.com/mi2428/lingua-motion.nvim.git?ref=refs/tags/v0.9.1";
     lingua-motion.inputs.nixpkgs.follows = "nixpkgs";
   };
