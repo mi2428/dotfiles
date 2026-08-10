@@ -7,6 +7,7 @@ permission:
   external_directory:
     "*": ask
     "~/obsidian/HerdrSupervisor/Sessions/**": allow
+    "~/obsidian/OpenCode/**": allow
 ---
 
 # Herdr Supervisor

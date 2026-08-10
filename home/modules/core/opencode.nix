@@ -42,7 +42,10 @@ let
       "result-*"
     ];
     permission = {
-      external_directory = "ask";
+      external_directory = {
+        "*" = "ask";
+        "~/obsidian/OpenCode/**" = "allow";
+      };
       doom_loop = "ask";
       bash = {
         "*" = "allow";
@@ -109,6 +112,8 @@ let
     "${config.home.homeDirectory}/.config/opencode/plugins/tui";
   herdrWorkerTitlePlugin = ../../files/config/opencode/plugins/herdr-worker-title.js;
   profileShellEnvPlugin = ../../files/config/opencode/plugins/profile-shell-env.js;
+  obsidianExportPlugin = ../../files/config/opencode/plugins/obsidian-export.js;
+  obsidianExportSkill = ../../files/agents/skills/obsidian-export;
   slimOpenCodePluginConfig = ../../files/config/opencode/profiles/slim/oh-my-opencode-slim.jsonc;
 
   ponytail = pkgs.fetchFromGitHub {
@@ -133,8 +138,10 @@ in {
     "opencode/agents/herdr-worker.md" =
       mkLink ../../files/config/opencode/agents/herdr-worker.md;
     "opencode/commands/en.md" = mkLink ../../files/config/opencode/commands/en.md;
+    "opencode/commands/obsidian.md" = mkLink ../../files/config/opencode/commands/obsidian.md;
     "opencode/opencode.jsonc" = mkLink generated.defaultConfig;
     "opencode/plugins/herdr-worker-title.js" = mkLink herdrWorkerTitlePlugin;
+    "opencode/plugins/obsidian-export.js" = mkLink obsidianExportPlugin;
     "opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode/tui.json" = mkLink generated.defaultTui;
@@ -148,6 +155,8 @@ in {
       mkLink ../../files/config/opencode/agents/herdr-worker.md;
     "opencode-profiles/omo/opencode/commands/en.md" =
       mkLink ../../files/config/opencode/commands/en.md;
+    "opencode-profiles/omo/opencode/commands/obsidian.md" =
+      mkLink ../../files/config/opencode/commands/obsidian.md;
     "opencode-profiles/omo/opencode/opencode.jsonc" = mkLink generated.omoConfig;
     "opencode-profiles/omo/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
@@ -160,6 +169,8 @@ in {
       mkLink profileShellEnvPlugin;
     "opencode-profiles/omo/opencode/plugins/herdr-worker-title.js" =
       mkLink herdrWorkerTitlePlugin;
+    "opencode-profiles/omo/opencode/plugins/obsidian-export.js" =
+      mkLink obsidianExportPlugin;
 
     "opencode-profiles/slim/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
     "opencode-profiles/slim/opencode/agents/herdr-supervisor.md" =
@@ -168,6 +179,8 @@ in {
       mkLink ../../files/config/opencode/agents/herdr-worker.md;
     "opencode-profiles/slim/opencode/commands/en.md" =
       mkLink ../../files/config/opencode/commands/en.md;
+    "opencode-profiles/slim/opencode/commands/obsidian.md" =
+      mkLink ../../files/config/opencode/commands/obsidian.md;
     "opencode-profiles/slim/opencode/opencode.jsonc" = mkLink generated.slimConfig;
     "opencode-profiles/slim/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
@@ -180,6 +193,8 @@ in {
       mkLink profileShellEnvPlugin;
     "opencode-profiles/slim/opencode/plugins/herdr-worker-title.js" =
       mkLink herdrWorkerTitlePlugin;
+    "opencode-profiles/slim/opencode/plugins/obsidian-export.js" =
+      mkLink obsidianExportPlugin;
     "opencode-profiles/slim/opencode/oh-my-opencode-slim.seed.jsonc" =
       mkLink slimOpenCodePluginConfig;
   };
@@ -187,6 +202,7 @@ in {
   home.file = {
     ".omo/omo.jsonc" = mkLink ../../files/omo/omo.jsonc;
     ".agents/skills/herdr-agent-layout" = mkLink herdrAgentLayoutSkill;
+    ".agents/skills/obsidian-export" = mkLink obsidianExportSkill;
     ".agents/skills/pr-review" =
       mkLink ../../files/agents/skills/pr-review;
     ".agents/skills/repo-qa" =
