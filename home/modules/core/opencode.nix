@@ -107,6 +107,7 @@ let
   todoOverlayPackageRoot = ../../files/config/opencode/plugins/tui;
   todoOverlayOpenCodePackage = config.lib.file.mkOutOfStoreSymlink
     "${config.home.homeDirectory}/.config/opencode/plugins/tui";
+  herdrWorkerTitlePlugin = ../../files/config/opencode/plugins/herdr-worker-title.js;
   profileShellEnvPlugin = ../../files/config/opencode/plugins/profile-shell-env.js;
   slimOpenCodePluginConfig = ../../files/config/opencode/profiles/slim/oh-my-opencode-slim.jsonc;
 
@@ -133,6 +134,7 @@ in {
       mkLink ../../files/config/opencode/agents/herdr-worker.md;
     "opencode/commands/en.md" = mkLink ../../files/config/opencode/commands/en.md;
     "opencode/opencode.jsonc" = mkLink generated.defaultConfig;
+    "opencode/plugins/herdr-worker-title.js" = mkLink herdrWorkerTitlePlugin;
     "opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode/tui.json" = mkLink generated.defaultTui;
@@ -156,6 +158,8 @@ in {
     };
     "opencode-profiles/omo/opencode/plugins/profile-shell-env.js" =
       mkLink profileShellEnvPlugin;
+    "opencode-profiles/omo/opencode/plugins/herdr-worker-title.js" =
+      mkLink herdrWorkerTitlePlugin;
 
     "opencode-profiles/slim/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
     "opencode-profiles/slim/opencode/agents/herdr-supervisor.md" =
@@ -174,6 +178,8 @@ in {
     };
     "opencode-profiles/slim/opencode/plugins/profile-shell-env.js" =
       mkLink profileShellEnvPlugin;
+    "opencode-profiles/slim/opencode/plugins/herdr-worker-title.js" =
+      mkLink herdrWorkerTitlePlugin;
     "opencode-profiles/slim/opencode/oh-my-opencode-slim.seed.jsonc" =
       mkLink slimOpenCodePluginConfig;
   };
