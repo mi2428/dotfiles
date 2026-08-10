@@ -1170,6 +1170,11 @@ return {
 				end,
 				desc = "Toggle Markdown preview",
 			},
+			{
+				"<leader>ur",
+				"<cmd>RenderMarkdown toggle<cr>",
+				desc = "Toggle Markdown rendering",
+			},
 		},
 		dependencies = {
 			"nvim-treesitter/nvim-treesitter",
