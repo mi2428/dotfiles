@@ -391,6 +391,11 @@ return {
 			sources = {
 				default = { "lazydev", "lsp", "path", "buffer", "snippets" },
 				providers = {
+					buffer = {
+						enabled = function()
+							return vim.bo.filetype ~= "markdown"
+						end,
+					},
 					lazydev = {
 						name = "LazyDev",
 						module = "lazydev.integrations.blink",
