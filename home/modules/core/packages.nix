@@ -9,9 +9,12 @@ let
     git
     gnupg
     mise
+    nixfmt
     nodejs
     ripgrep
+    shellcheck
     starship
+    statix
     uv
     yazi
     zoxide
