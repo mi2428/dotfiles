@@ -11,7 +11,7 @@
     luamigemo.flake = false;
     migemo-dict.url = "github:oguna/migemo-compact-dict-latest";
     migemo-dict.flake = false;
-    lingua-motion.url = "git+ssh://git@github.com/mi2428/lingua-motion.nvim.git?ref=refs/tags/v0.9.1";
+    lingua-motion.url = "git+ssh://git@github.com/mi2428/lingua-motion.nvim.git?ref=refs/tags/v1.0.0";
     lingua-motion.inputs.nixpkgs.follows = "nixpkgs";
   };
 
