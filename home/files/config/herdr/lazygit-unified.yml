@@ -1,5 +1,5 @@
 git:
-  pagers:
+  diffRenderers:
     - name: delta
-      pager: 'delta --features=catppuccin-mocha --dark --paging=never --line-numbers --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"'
-    - {}
+      command: 'delta --features=catppuccin-mocha --dark --paging=never --line-numbers --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"'
+    - type: rawGit

@@ -23,10 +23,10 @@ gui:
     "^chore/": blue
 
 git:
-  pagers:
+  diffRenderers:
     - name: delta
-      pager: 'delta --features=catppuccin-mocha --dark --paging=never --line-numbers --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}" --side-by-side'
-    - {}
+      command: 'delta --features=catppuccin-mocha --dark --paging=never --line-numbers --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}" --side-by-side'
+    - type: rawGit
   autoForwardBranches: onlyMainBranches
 
 os:
