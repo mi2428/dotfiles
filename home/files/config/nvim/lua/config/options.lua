@@ -481,3 +481,70 @@ vim.api.nvim_create_autocmd("InsertLeave", {
 		set_relative_number(true)
 	end,
 })
+
+if not vim.g.dotfiles_long_paste_guard_installed then
+	vim.g.dotfiles_long_paste_guard_installed = true
+	local paste = vim.paste
+	local long_line_bytes = 64 * 1024
+	local streamed_line_bytes = 0
+	local window_guard = "dotfiles_long_paste_breakindent"
+
+	local function apply_long_paste_guard(buf)
+		if vim.b[buf].dotfiles_long_line_paste then
+			return
+		end
+		vim.b[buf].dotfiles_long_line_paste = true
+		for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+			if vim.api.nvim_win_is_valid(win) and vim.wo[win].breakindent then
+				vim.w[win][window_guard] = true
+				vim.wo[win].breakindent = false
+			end
+		end
+		vim.schedule(function()
+			vim.notify("Disabled breakindent for a pasted line over 64 KiB", vim.log.levels.WARN)
+		end)
+	end
+
+	local function contains_long_line(lines, phase)
+		if phase == 1 or phase == -1 then
+			streamed_line_bytes = 0
+		end
+		local found = false
+		for index, line in ipairs(lines) do
+			local bytes = #line + (index == 1 and streamed_line_bytes or 0)
+			found = found or bytes > long_line_bytes
+		end
+		if #lines == 1 then
+			streamed_line_bytes = streamed_line_bytes + #lines[1]
+		elseif #lines > 1 then
+			streamed_line_bytes = #lines[#lines]
+		end
+		if phase == 3 or phase == -1 then
+			streamed_line_bytes = 0
+		end
+		return found
+	end
+
+	vim.paste = function(lines, phase)
+		local mode = vim.api.nvim_get_mode().mode:sub(1, 1)
+		if contains_long_line(lines, phase) and mode ~= "c" and mode ~= "t" and vim.bo.modifiable then
+			apply_long_paste_guard(vim.api.nvim_get_current_buf())
+		end
+		return paste(lines, phase)
+	end
+
+	vim.api.nvim_create_autocmd("BufWinEnter", {
+		group = vim.api.nvim_create_augroup("dotfiles-long-paste", { clear = true }),
+		callback = function(args)
+			local win = vim.api.nvim_get_current_win()
+			if vim.w[win][window_guard] then
+				vim.wo[win].breakindent = true
+				vim.w[win][window_guard] = nil
+			end
+			if vim.b[args.buf].dotfiles_long_line_paste and vim.wo[win].breakindent then
+				vim.w[win][window_guard] = true
+				vim.wo[win].breakindent = false
+			end
+		end,
+	})
+end
