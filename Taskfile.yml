@@ -65,7 +65,7 @@ tasks:
         printf "$task_fmt" "$green" 'hm.build' "$reset" 'Build the current host activation without switching'
         printf "$task_fmt" "$green" 'hm.switch' "$reset" 'Apply the current host activation and refresh managed symlinks'
         printf "$task_fmt" "$green" 'hm.link' "$reset" 'Re-apply the current host activation to re-create managed symlinks'
-        printf "$task_fmt" "$green" 'hm.update' "$reset" 'Update nixpkgs in flake.lock and apply the current host activation'
+        printf "$task_fmt" "$green" 'hm.update' "$reset" 'Update Nix inputs in flake.lock and apply the current host activation'
         printf "$task_fmt" "$green" 'hm.gc' "$reset" 'Delete old generations and collect Nix garbage (run without sudo)'
         printf "$task_fmt" "$green" 'brew.check' "$reset" 'Check the repo-managed Brewfile against the local Homebrew state'
         printf "$task_fmt" "$green" 'brew.sync' "$reset" 'Update and upgrade Homebrew, then apply the repo-managed Brewfile'

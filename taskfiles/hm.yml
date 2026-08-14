@@ -2,7 +2,7 @@ version: '3'
 
 tasks:
   hm.update:
-    desc: Update nixpkgs in flake.lock and apply the current host activation
+    desc: Update Nix inputs in flake.lock and apply the current host activation
     cmds:
       - |
         set -eu
@@ -16,7 +16,7 @@ tasks:
         PATH="$nix_bin_dir:$PATH" \
           "$nix_bin" flake update \
             --extra-experimental-features 'nix-command flakes' \
-            nixpkgs \
+            nixpkgs home-manager nix-darwin gh-inbox \
             --flake "path:${stage_repo}"
 
         cp "$stage_repo/flake.lock" "$repo_root/flake.lock"

@@ -13,5 +13,5 @@ tasks:
     desc: Update and upgrade Homebrew, then apply the repo-managed Brewfile
     cmds:
       - /opt/homebrew/bin/brew update
-      - /opt/homebrew/bin/brew upgrade
-      - /opt/homebrew/bin/brew bundle install --file '{{.BREWFILE}}'
+      - yes | /opt/homebrew/bin/brew upgrade
+      - yes | /opt/homebrew/bin/brew bundle install --file '{{.BREWFILE}}'
