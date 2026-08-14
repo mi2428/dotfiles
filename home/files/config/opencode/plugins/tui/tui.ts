@@ -27,12 +27,10 @@ type RenderNode = {
 
 type RenderableAdapter = {
   y: number;
-  height: number;
 };
 
 type ScrollBoxAdapter = {
   scrollTop: number;
-  height: number;
   isDestroyed?: boolean;
   content?: RenderableAdapter & {
     findDescendantById: (id: string) => RenderableAdapter | undefined;
@@ -55,7 +53,9 @@ export const MIN_PANEL_WIDTH = 36;
 export const MAX_BODY_HEIGHT = 12;
 const PANEL_WIDTH_RATIO = 0.85;
 const PANEL_MARGIN = 2;
+const PANEL_TOP = 1;
 const TODO_LINE_ID_PREFIX = "opencode-todo-line";
+const graphemes = new Intl.Segmenter();
 
 const SPLIT_BORDER_CHARS = {
   topLeft: "",
@@ -153,6 +153,34 @@ export function popupWidth(terminalWidth: number): number {
   return Math.min(MAX_PANEL_WIDTH, available, responsive);
 }
 
+function lineHeight(line: TodoLine, panelWidth: number, maxRows: number): number {
+  const contentWidth = Math.max(1, panelWidth - 6);
+  const stringWidth = (globalThis as typeof globalThis & { Bun: { stringWidth: (text: string) => number } }).Bun
+    .stringWidth;
+  let columns = 0;
+  let rows = 1;
+  for (const { segment } of graphemes.segment(line.text)) {
+    const width = stringWidth(segment);
+    if (columns > 0 && columns + width > contentWidth) {
+      rows += 1;
+      if (rows >= maxRows) return maxRows;
+      columns = 0;
+    }
+    columns += width;
+  }
+  return rows;
+}
+
+function linesHeight(lines: readonly TodoLine[], start: number, end: number, panelWidth: number): number {
+  if (end < start) return 0;
+  let rows = 0;
+  for (const line of lines.slice(start, end + 1)) {
+    rows += lineHeight(line, panelWidth, MAX_BODY_HEIGHT - rows);
+    if (rows >= MAX_BODY_HEIGHT) return MAX_BODY_HEIGHT;
+  }
+  return rows;
+}
+
 export function buildTodoOverlayNodes(
   todos: readonly TodoItem[],
   theme: Theme,
@@ -162,18 +190,17 @@ export function buildTodoOverlayNodes(
   if (!view) return null;
 
   const header = `Todo · ${view.completed} of ${view.total}`;
+  const width = popupWidth(terminalWidth);
   const startID = `${TODO_LINE_ID_PREFIX}-${view.windowStart}`;
   const endID = `${TODO_LINE_ID_PREFIX}-${view.windowEnd}`;
   const body = scrollbox(
     {
       width: "100%",
-      // Give wrapped task text room without letting the HUD grow indefinitely.
-      // The ScrollBox still handles unusually long content and larger lists.
-      height: Math.min(MAX_BODY_HEIGHT, Math.max(1, view.lines.length * 2)),
+      height: Math.min(MAX_BODY_HEIGHT, Math.max(1, linesHeight(view.lines, view.windowStart, view.windowEnd, width))),
       scrollX: false,
       scrollY: true,
       viewportCulling: true,
-      verticalScrollbarOptions: { visible: false, showArrows: false },
+      verticalScrollbarOptions: { visible: false, showArrows: false, width: 0 },
       contentOptions: { flexDirection: "column" },
     },
     view.lines.map((line, index) =>
@@ -197,9 +224,9 @@ export function buildTodoOverlayNodes(
   return box(
     {
       position: "absolute",
-      top: PANEL_MARGIN,
+      top: PANEL_TOP,
       right: PANEL_MARGIN,
-      width: popupWidth(terminalWidth),
+      width,
       zIndex: 900,
       flexDirection: "column",
       backgroundColor: theme.backgroundPanel,
@@ -337,21 +364,15 @@ export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidA
       solid.setProp(nextScrollBox, "onSizeChange", function (this: ScrollBoxAdapter) {
         if (initialized || this.isDestroyed) return;
 
-        const start = this.content?.findDescendantById(window.startID);
-        const end = this.content?.findDescendantById(window.endID);
-        if (start && end) {
-          const windowHeight = Math.min(MAX_BODY_HEIGHT, Math.max(1, end.y + end.height - start.y));
-          if (this.height !== windowHeight) {
-            this.height = windowHeight;
-            return;
-          }
-        }
-        initialized = true;
         if (offset !== undefined) {
+          initialized = true;
           this.scrollTop = offset;
-        } else if (start && this.content) {
-          this.scrollTop = Math.max(0, start.y - this.content.y);
+          return;
         }
+        const start = this.content?.findDescendantById(window.startID);
+        if (!start || !this.content) return;
+        initialized = true;
+        this.scrollTop = Math.max(0, start.y - this.content.y);
       });
       mounted = { sessionID, scrollbox: nextScrollBox, windowKey: nextScrollWindow.key };
     }

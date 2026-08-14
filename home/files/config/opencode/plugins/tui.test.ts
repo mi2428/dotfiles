@@ -146,7 +146,7 @@ describe("todo overlay state", () => {
     );
     assert(nodes);
     assert.equal(nodes.props.position, "absolute");
-    assert.equal(nodes.props.top, 2);
+    assert.equal(nodes.props.top, 1);
     assert.equal(nodes.props.right, 2);
     assert.equal(nodes.props.width, MAX_PANEL_WIDTH);
     assert.deepEqual(nodes.props.border, ["left", "right"]);
@@ -162,7 +162,8 @@ describe("todo overlay state", () => {
     assert.equal(header.children?.[0]?.props.attributes, undefined);
     assert.equal(header.children?.[0]?.text, "Todo · 0 of 1");
     assert.equal(nodes.children?.[1]?.kind, "scrollbox");
-    assert.deepEqual(nodes.children?.[1]?.props.verticalScrollbarOptions, { visible: false, showArrows: false });
+    assert.equal(nodes.children?.[1]?.props.height, 1);
+    assert.deepEqual(nodes.children?.[1]?.props.verticalScrollbarOptions, { visible: false, showArrows: false, width: 0 });
     assert.equal(nodes.children?.[1]?.children?.[0]?.props.fg, "warning");
     assert.equal(nodes.children?.[1]?.children?.[0]?.props.wrapMode, "char");
     assert.equal(nodes.children?.[1]?.children?.[0]?.text, "▸ work");
@@ -222,7 +223,7 @@ describe("todo overlay state", () => {
     const body = nodes?.children?.[1];
     assert(body);
     assert.equal(body.kind, "scrollbox");
-    assert.equal(body.props.height, MAX_BODY_HEIGHT);
+    assert.equal(body.props.height, 6);
     assert.equal(body.children?.length, 9);
     assert.deepEqual(body.scrollWindow, {
       startID: "opencode-todo-line-2",
@@ -241,6 +242,24 @@ describe("todo overlay state", () => {
       "warning",
     ]);
     assert.equal(body.children?.every((line) => line.props.wrapMode === "char"), true);
+
+    const wrappedCurrent = buildTodoOverlayNodes(
+      [
+        { content: "done", status: "completed" },
+        { content: longContent, status: "in_progress" },
+        { content: "next", status: "pending" },
+      ],
+      {} as never,
+      80,
+    );
+    assert.equal(wrappedCurrent?.children?.[1]?.props.height, 5);
+
+    const wideCurrent = buildTodoOverlayNodes(
+      [{ content: "日本語".repeat(50), status: "in_progress" }],
+      {} as never,
+      80,
+    );
+    assert.equal(wideCurrent?.children?.[1]?.props.height, 5);
 
     const many = buildTodoOverlayNodes(
       Array.from({ length: 12 }, (_, index) => ({ content: `task ${index}`, status: "pending" })),
@@ -394,6 +413,10 @@ describe("todo overlay state", () => {
     assert(appSlot);
     const first = appSlot() as FakeNode;
     const firstScrollBox = scrollBoxFrom(first);
+    const initializeFirstScroll = firstScrollBox.props.onSizeChange as ((this: FakeNode) => void) | undefined;
+    assert(initializeFirstScroll);
+    initializeFirstScroll.call(firstScrollBox);
+    assert.equal(firstScrollBox.scrollTop, 0);
     applyLayout(firstScrollBox);
     assert.equal(headerFrom(first).children[0], "Todo · 2 of 6");
     assert.deepEqual(lineTextsFrom(firstScrollBox), [
