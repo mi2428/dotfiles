@@ -8,11 +8,7 @@ return {
 		event = "VeryLazy",
 		dependencies = { "kevinhwang91/promise-async" },
 		opts = {
-			-- The Folded highlight already marks the entire closed screen row.
-			-- Preserve the first line's syntax text without adding ufo's ellipsis.
-			fold_virt_text_handler = function(virt_text)
-				return virt_text
-			end,
+			override_foldtext = false,
 			provider_selector = function(_, filetype, _)
 				if filetype == "bigfile" then
 					return ""

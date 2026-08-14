@@ -386,6 +386,7 @@ opt.foldcolumn = "auto:1"
 opt.foldlevel = 99
 opt.foldlevelstart = 99
 opt.foldenable = true
+opt.foldtext = ""
 opt.showtabline = 2
 opt.showmode = false
 opt.scrolloff = 8

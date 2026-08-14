@@ -8,20 +8,11 @@ package.path = table.concat({
 }, ";")
 
 local specs = dofile(vim.fs.joinpath(nvim_root, "lua/plugins/folding.lua"))
-local handler = assert(specs[2].opts.fold_virt_text_handler, "nvim-ufo must define a fold text handler")
-local original = {
-	{ "local ", "Keyword" },
-	{ "function folded()", "Function" },
-}
-local rendered = handler(vim.deepcopy(original), 1, 3, 80, function(text)
-	return text
-end)
-assert(vim.deep_equal(rendered, original), "fold text must preserve the first line without adding a suffix")
-assert(not vim.iter(rendered):any(function(chunk)
-	return chunk[1]:find("⋯", 1, true) ~= nil
-end), "fold text must not append ufo's ellipsis")
+assert(specs[2].opts.override_foldtext == false, "nvim-ufo must preserve native fold text rendering")
+assert(specs[2].opts.fold_virt_text_handler == nil, "nvim-ufo must not overlay the folded line with virtual text")
 
 dofile(vim.fs.joinpath(nvim_root, "lua/config/options.lua"))
+assert(vim.wo.foldtext == "", "closed folds must render their first line normally")
 vim.wo.foldmethod = "manual"
 vim.wo.foldcolumn = "0"
 vim.wo.number = false
@@ -34,9 +25,16 @@ vim.api.nvim_buf_set_lines(0, 0, -1, false, {
 	"plain line",
 	"cursor line",
 })
-vim.cmd("1,3fold")
 vim.api.nvim_win_set_cursor(0, { 5, 0 })
+vim.fn.setreg("/", "folded")
+vim.v.hlsearch = 1
 vim.cmd.redraw({ bang = true })
+local open_search_attr = vim.fn.screenattr(1, 16)
+
+vim.cmd("1,3fold")
+vim.cmd.redraw({ bang = true })
+local closed_search_attr = vim.fn.screenattr(1, 16)
+assert(closed_search_attr == open_search_attr, "closed folds must preserve search highlighting")
 
 local far_column = math.min(70, vim.o.columns - 1)
 local folded_attr = vim.fn.screenattr(1, far_column)
