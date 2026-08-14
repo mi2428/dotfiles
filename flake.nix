@@ -7,6 +7,8 @@
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
     nix-darwin.url = "github:nix-darwin/nix-darwin/master";
     nix-darwin.inputs.nixpkgs.follows = "nixpkgs";
+    gh-inbox.url = "github:mi2428/gh-inbox";
+    gh-inbox.flake = false;
     luamigemo.url = "github:delphinus/luamigemo/v1.4.1";
     luamigemo.flake = false;
     migemo-dict.url = "github:oguna/migemo-compact-dict-latest";
