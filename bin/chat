@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+workspace=/tmp/chat-workspace
+mkdir -p "$workspace"
+cd "$workspace"
+
+export OPENCODE_DISABLE_PROJECT_CONFIG=1
+export OPENCODE_DISABLE_EXTERNAL_SKILLS=1
+export OPENCODE_DISABLE_CLAUDE_CODE=1
+
+exec "$script_dir/opencode-profile" chat "$@"

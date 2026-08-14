@@ -73,6 +73,8 @@ slim_plugin_spec="oh-my-opencode-slim@$slim_version"
 default_plugin_config="$HOME/.config/opencode/opencode.jsonc"
 default_tui_config="$HOME/.config/opencode/tui.json"
 omo_config="$repo_root/home/files/omo/omo.jsonc"
+chat_config_home="$HOME/.config/opencode-profiles/chat"
+chat_root="$chat_config_home/opencode"
 
 for pin in "OmO:$omo_plugin_spec:$omo_version" "Slim:$slim_plugin_spec:$slim_version"; do
     label=${pin%%:*}
@@ -176,6 +178,53 @@ check_resolved_plugin_config() {
 if command -v opencode >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
     check_resolved_plugin_config OmO omo "$omo_plugin_spec"
     check_resolved_plugin_config Slim slim "$slim_plugin_spec"
+
+    if chat_config=$(
+        XDG_CONFIG_HOME="$chat_config_home" \
+            OPENCODE_DISABLE_PROJECT_CONFIG=1 \
+            OPENCODE_DISABLE_EXTERNAL_SKILLS=1 \
+            OPENCODE_DISABLE_CLAUDE_CODE=1 \
+            opencode debug config 2>/dev/null
+    ); then
+        if printf '%s\n' "$chat_config" | jq -e '
+            .default_agent == "Chat"
+            and .agent.Chat.mode == "primary"
+            and .agent.build.disable == true
+            and .agent.plan.disable == true
+            and .agent.general.disable == true
+            and .agent.explore.disable == true
+            and .permission.external_directory["*"] == "deny"
+        ' >/dev/null; then
+            ok 'OpenCode Chat profile exposes only the Chat primary agent'
+        else
+            fail 'OpenCode Chat profile agent isolation is incomplete'
+        fi
+        if printf '%s\n' "$chat_config" \
+            | jq -e '[.plugin[]? | select(endswith("/chat-system.js"))] | length == 1' >/dev/null; then
+            ok 'OpenCode Chat profile loads its system prompt plugin'
+        else
+            fail 'OpenCode Chat profile system prompt plugin is missing'
+        fi
+    else
+        fail 'OpenCode could not resolve the installed Chat profile'
+    fi
+
+    if jq -e '
+        .keybinds.agent_list == "none"
+        and .keybinds.agent_cycle == "none"
+        and .keybinds.agent_cycle_reverse == "none"
+    ' "$chat_root/tui.json" >/dev/null; then
+        ok 'OpenCode Chat TUI disables agent switching'
+    else
+        fail 'OpenCode Chat TUI still allows agent switching'
+    fi
+
+    if XDG_CONFIG_HOME="$HOME/.config" OPENCODE_DISABLE_PROJECT_CONFIG=1 \
+        opencode debug config 2>/dev/null | jq -e '.agent.Chat == null' >/dev/null; then
+        ok 'the default OpenCode profile does not expose Chat'
+    else
+        fail 'the default OpenCode profile exposes Chat'
+    fi
 fi
 
 if command -v herdr >/dev/null 2>&1; then
@@ -192,7 +241,7 @@ fi
 integration_source="$HOME/.config/opencode/plugins/herdr-agent-state.js"
 if [ -f "$integration_source" ]; then
     ok "Herdr OpenCode integration exists"
-    for profile in omo slim; do
+    for profile in chat omo slim; do
         profile_integration="$HOME/.config/opencode-profiles/$profile/opencode/plugins/herdr-agent-state.js"
         if [ -e "$profile_integration" ] && [ "$profile_integration" -ef "$integration_source" ]; then
             ok "OpenCode $profile profile links the Herdr integration"
@@ -202,7 +251,7 @@ if [ -f "$integration_source" ]; then
     done
 else
     fail "Herdr OpenCode integration is missing: $integration_source"
-    for profile in omo slim; do
+    for profile in chat omo slim; do
         profile_integration="$HOME/.config/opencode-profiles/$profile/opencode/plugins/herdr-agent-state.js"
         if [ -L "$profile_integration" ] && [ ! -e "$profile_integration" ]; then
             fail "OpenCode $profile profile contains a dangling Herdr integration"

@@ -3,13 +3,13 @@ set -eu
 
 profile=${1:-}
 if [ -z "$profile" ]; then
-    printf '%s\n' 'usage: opencode-profile {omo|slim} [opencode options...]' >&2
+    printf '%s\n' 'usage: opencode-profile {chat|omo|slim} [opencode options...]' >&2
     exit 64
 fi
 shift
 
 case "$profile" in
-    omo|slim)
+    chat|omo|slim)
         ;;
     *)
         printf 'opencode-profile: unknown profile: %s\n' "$profile" >&2

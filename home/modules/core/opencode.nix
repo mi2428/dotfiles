@@ -70,6 +70,21 @@ let
       plugin = [ plugin ];
     };
 
+  chatConfig = commonOpenCodeConfig // {
+    model = "openai/gpt-5.6-sol";
+    provider.openai.models = openAIModels;
+    default_agent = "Chat";
+    permission = commonOpenCodeConfig.permission // {
+      external_directory."*" = "deny";
+    };
+    agent = {
+      build.disable = true;
+      plan.disable = true;
+      general.disable = true;
+      explore.disable = true;
+    };
+  };
+
   commonTuiConfig = {
     "$schema" = "https://opencode.ai/tui.json";
     theme = "catppuccin-mocha-mauve";
@@ -86,6 +101,13 @@ let
     commonTuiConfig // {
       plugin = lib.optional (plugin != null) plugin ++ [ "./plugins/tui" ];
     };
+  chatTuiConfig = commonTuiConfig // {
+    keybinds = commonTuiConfig.keybinds // {
+      agent_list = "none";
+      agent_cycle = "none";
+      agent_cycle_reverse = "none";
+    };
+  };
 
   json = pkgs.formats.json { };
   generated = {
@@ -102,9 +124,11 @@ let
       models = slimOpenAIModels;
       plugin = slimPlugin;
     });
+    chatConfig = json.generate "opencode-chat.json" chatConfig;
     defaultTui = json.generate "opencode-default-tui.json" (mkTuiConfig null);
     omoTui = json.generate "opencode-omo-tui.json" (mkTuiConfig omoPlugin);
     slimTui = json.generate "opencode-slim-tui.json" (mkTuiConfig slimPlugin);
+    chatTui = json.generate "opencode-chat-tui.json" chatTuiConfig;
   };
 
   todoOverlayPackageRoot = ../../files/config/opencode/plugins/tui;
@@ -147,6 +171,17 @@ in {
     "opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode/tui.json" = mkLink generated.defaultTui;
+
+    "opencode-profiles/chat/opencode/agents/chat.md" =
+      mkLink ../../files/config/opencode/agents/chat.md;
+    "opencode-profiles/chat/opencode/opencode.jsonc" = mkLink generated.chatConfig;
+    "opencode-profiles/chat/opencode/plugins/chat-system.js" =
+      mkLink ../../files/config/opencode/plugins/chat-system.js;
+    "opencode-profiles/chat/opencode/plugins/profile-shell-env.js" =
+      mkLink profileShellEnvPlugin;
+    "opencode-profiles/chat/opencode/themes/catppuccin-mocha-mauve.json" =
+      mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
+    "opencode-profiles/chat/opencode/tui.json" = mkLink generated.chatTui;
 
     # These are config-only profiles: sessions, auth, cache, and state remain
     # shared, while framework plugin registries stay isolated.
@@ -223,7 +258,7 @@ in {
   home.activation.linkOpenCodeProfileHerdrIntegration =
     lib.hm.dag.entryAfter [ "installHerdrAgentIntegrations" "linkGeneration" ] ''
       integration_source="${config.home.homeDirectory}/.config/opencode/plugins/herdr-agent-state.js"
-      for profile in omo slim; do
+      for profile in chat omo slim; do
         integration_target="${config.home.homeDirectory}/.config/opencode-profiles/$profile/opencode/plugins/herdr-agent-state.js"
         if [ -f "$integration_source" ]; then
           if [ -e "$integration_target" ] && [ ! -L "$integration_target" ]; then
