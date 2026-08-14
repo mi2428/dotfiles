@@ -33,7 +33,7 @@ let
   ghReviewPreview = ../../files/libexec/dotfiles/gh-review-preview;
   hermesConfig = config.lib.file.mkOutOfStoreSymlink
     "${config.home.homeDirectory}/dotfiles/home/files/hermes/config.yaml";
-  macCompatibilityFiles = lib.optionalAttrs pkgs.stdenv.isDarwin {
+  macCompatibilityFiles = lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
     "Library/Application Support/com.mitchellh.ghostty/themes" =
       mkLink ../../files/config/ghostty/themes;
     "Library/Application Support/lazygit/config.yml" =
@@ -61,6 +61,7 @@ in {
     "ghostty/themes" = mkLink ../../files/config/ghostty/themes;
     "ghostty/shaders" = mkLink ../../files/config/ghostty/shaders;
     "glow" = mkLink ../../files/config/glow;
+    "gh-dash/config.yml" = mkLink ../../files/config/gh-dash/config.yml;
     "herdr/config.toml" = mkLink ../../files/config/herdr/config.toml;
     "herdr/lazygit-unified.yml" = mkLink ../../files/config/herdr/lazygit-unified.yml;
     "hunk" = mkLink ../../files/config/hunk;
@@ -68,6 +69,7 @@ in {
     "lazydocker/config.yml" = mkLink ../../files/config/lazydocker/config.yml;
     "lazygit" = mkLink ../../files/config/lazygit;
     "starship" = mkLink ../../files/config/starship;
+    "tuicr/config.toml" = mkLink ../../files/config/tuicr/config.toml;
     "yazi" = mkLink yaziConfig;
   };
 
