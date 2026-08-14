@@ -1,7 +1,7 @@
 { inputs, lib, pkgs, ... }:
 let
   markdownPreviewDeps = pkgs.callPackage ./markdown-preview-deps.nix { };
-  linguaMotionPackages = inputs.lingua-motion.packages.${pkgs.system};
+  linguaMotionPackages = inputs.lingua-motion.packages.${pkgs.stdenv.hostPlatform.system};
   luamigemo = pkgs.vimUtils.buildVimPlugin {
     pname = "luamigemo";
     version = "1.4.1";
@@ -15,10 +15,10 @@ in {
     vimAlias = true;
     withRuby = false;
     withPython3 = false;
-    plugins = [ luamigemo ] ++ lib.optionals pkgs.stdenv.isDarwin [
+    plugins = [ luamigemo ] ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
       linguaMotionPackages.lingua-motion
     ];
-    extraPackages = lib.optionals pkgs.stdenv.isDarwin [
+    extraPackages = lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
       linguaMotionPackages.lingua-motion-helper
     ];
   };

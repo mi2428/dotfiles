@@ -57,7 +57,7 @@ in {
   # basics. macOS-specific CLI and GUI packages live in the repo-root Brewfile
   # so routine Homebrew upgrades do not depend on a Nix store refresh first.
   home.packages =
-    if pkgs.stdenv.isDarwin then
+    if pkgs.stdenv.hostPlatform.isDarwin then
       sharedPackages
     else if platformName == "docker" then
       dockerPackages

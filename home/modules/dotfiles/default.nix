@@ -5,14 +5,14 @@ in {
   options.dotfiles.platform = {
     fish.extraFiles = mkOption {
       type = types.listOf types.str;
-      default = lib.optionals pkgs.stdenv.isDarwin [ "conf.d/22_aliases.fish" ];
+      default = lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ "conf.d/22_aliases.fish" ];
       description = "Additional Fish config files enabled for the current host.";
     };
 
     fish.overrides = mkOption {
       type = types.attrsOf types.path;
       default =
-        if pkgs.stdenv.isDarwin then
+        if pkgs.stdenv.hostPlatform.isDarwin then
           {
             "conf.d/12_general_path.fish" = ../../files/config/fish/conf.d/12_general_path.macos.fish;
           }
@@ -24,7 +24,7 @@ in {
     git = mkOption {
       type = types.path;
       default =
-        if pkgs.stdenv.isDarwin then
+        if pkgs.stdenv.hostPlatform.isDarwin then
           ../../files/git/gitconfig.macos
         else
           ../../files/git/gitconfig;
@@ -35,7 +35,7 @@ in {
       cpu = mkOption {
         type = types.path;
         default =
-          if pkgs.stdenv.isDarwin then
+          if pkgs.stdenv.hostPlatform.isDarwin then
             ../../files/tmux/scripts/cpu.macos.sh
           else
             ../../files/tmux/scripts/cpu.sh;
@@ -45,7 +45,7 @@ in {
       mem = mkOption {
         type = types.path;
         default =
-          if pkgs.stdenv.isDarwin then
+          if pkgs.stdenv.hostPlatform.isDarwin then
             ../../files/tmux/scripts/mem.macos.sh
           else
             ../../files/tmux/scripts/mem.sh;
