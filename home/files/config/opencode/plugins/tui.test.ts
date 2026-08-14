@@ -1,5 +1,14 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "bun:test";
+import {
+  BoxRenderable,
+  DiffRenderable,
+  ScrollBoxRenderable,
+  SyntaxStyle,
+  TextAttributes,
+  TextRenderable,
+} from "./tui/node_modules/@opentui/core";
+import { createTestRenderer } from "./tui/node_modules/@opentui/core/testing";
 import { buildTodoView } from "./tui/lib/todo-overlay";
 import {
   buildTodoOverlayNodes,
@@ -146,7 +155,7 @@ describe("todo overlay state", () => {
     );
     assert(nodes);
     assert.equal(nodes.props.position, "absolute");
-    assert.equal(nodes.props.top, 1);
+    assert.equal(nodes.props.top, 0);
     assert.equal(nodes.props.right, 2);
     assert.equal(nodes.props.width, MAX_PANEL_WIDTH);
     assert.deepEqual(nodes.props.border, ["left", "right"]);
@@ -173,6 +182,109 @@ describe("todo overlay state", () => {
     assert.equal(popupWidth(240), MAX_PANEL_WIDTH);
     assert.equal(MAX_PANEL_WIDTH, 94);
     assert.equal(MAX_BODY_HEIGHT, 12);
+  });
+
+  it("covers styled split-diff cells on the first app row", async () => {
+    const width = 80;
+    const syntax = SyntaxStyle.fromStyles({
+      "keyword.type": { bold: true, fg: "#ffffff" },
+      keyword: { bold: true, fg: "#ffffff" },
+      type: { bold: true, fg: "#ffffff" },
+      default: { fg: "#ffffff" },
+    });
+    const test = await createTestRenderer({ width, height: 8 });
+
+    try {
+      test.renderer.root.add(
+        new DiffRenderable(test.renderer, {
+          diff: [
+            "diff --git a/a.ts b/a.ts",
+            "--- a/a.ts",
+            "+++ b/a.ts",
+            "@@ -1,3 +1,3 @@",
+            "-const oldValue = true",
+            "+const newValue = false",
+            " type Old = string",
+            " type New = number",
+          ].join("\n"),
+          view: "split",
+          width: "100%",
+          wrapMode: "word",
+          filetype: "typescript",
+          syntaxStyle: syntax,
+          fg: "#ffffff",
+        }),
+      );
+      for (let pass = 0; pass < 6; pass += 1) {
+        await Bun.sleep(30);
+        await test.renderOnce();
+      }
+      const before = test.renderer.currentRenderBuffer.buffers.attributes.slice();
+      const nodes = buildTodoOverlayNodes(
+        [
+          { content: "done", status: "completed" },
+          { content: "current task", status: "in_progress" },
+          { content: "next", status: "pending" },
+        ],
+        {
+          backgroundPanel: "#181825",
+          borderSubtle: "#585b70",
+          info: "#94e2d5",
+          primary: "#cba6f7",
+          selectedListItemText: "#1e1e2e",
+          success: "#a6e3a1",
+          warning: "#f9e2af",
+          text: "#cdd6f4",
+          textMuted: "#bac2de",
+        },
+        width,
+      );
+      assert(nodes);
+
+      const materialize = (node: typeof nodes): any => {
+        const Constructor = node.kind === "box"
+          ? BoxRenderable
+          : node.kind === "scrollbox"
+            ? ScrollBoxRenderable
+            : TextRenderable;
+        const renderable = new Constructor(
+          test.renderer,
+          node.kind === "text" ? { ...node.props, content: node.text } : { ...node.props },
+        ) as any;
+        for (const child of node.children ?? []) renderable.add(materialize(child as typeof nodes));
+        return renderable;
+      };
+      const app = new BoxRenderable(test.renderer, {
+        position: "absolute",
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+        zIndex: 900,
+      });
+      const panel = materialize(nodes) as BoxRenderable;
+      app.add(panel);
+      test.renderer.root.add(app);
+      await test.renderOnce();
+
+      const countBold = (attributes: Uint32Array, row: number, start: number, end: number): number => {
+        let count = 0;
+        for (let column = start; column < end; column += 1) {
+          if ((attributes[row * width + column]! & TextAttributes.BOLD) !== 0) count += 1;
+        }
+        return count;
+      };
+      const after = test.renderer.currentRenderBuffer.buffers.attributes;
+      const panelEnd = panel.x + panel.width;
+      assert(countBold(before, 0, panel.x, panelEnd) > 0, "split diff must exercise bold syntax cells");
+      assert.equal(countBold(after, 0, panel.x, panelEnd), 0);
+      assert.equal(panel.y, 0);
+      assert.match(test.captureCharFrame().split("\n")[0]!.slice(panel.x, panelEnd), /Todo · 1 of 3/);
+      assert.deepEqual(Array.from(after.slice(0, panel.x)), Array.from(before.slice(0, panel.x)));
+    } finally {
+      test.renderer.destroy();
+      syntax.destroy();
+    }
   });
 
   it("keeps every task scrollable and centers the initial window around the current task", () => {

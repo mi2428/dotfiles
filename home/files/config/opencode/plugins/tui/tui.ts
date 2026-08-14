@@ -53,7 +53,7 @@ export const MIN_PANEL_WIDTH = 36;
 export const MAX_BODY_HEIGHT = 12;
 const PANEL_WIDTH_RATIO = 0.85;
 const PANEL_MARGIN = 2;
-const PANEL_TOP = 1;
+const PANEL_TOP = 0;
 const TODO_LINE_ID_PREFIX = "opencode-todo-line";
 const graphemes = new Intl.Segmenter();
 
