@@ -44,7 +44,11 @@ function assert_equal --argument-names label expected actual
     end
 end
 
-assert_equal 'tmux attach dispatch failed' 'tmux|attach|-t|existing' (:: existing)
+set -e TMUX
+assert_equal 'tmux outside attach dispatch failed' 'tmux|attach|-t|existing' (:: existing)
+set -gx TMUX /tmp/tmux-1000/default,1,0
+assert_equal 'tmux inside switch dispatch failed' 'tmux|switch-client|-t|existing' (:: existing)
+set -e TMUX
 assert_equal 'tmux delete dispatch failed' 'tmux|kill-session|-t|existing' (:: d existing)
 assert_equal 'tmux list dispatch failed' 'tmux|list-sessions' (:: l)
 assert_equal 'tmux passthrough failed' 'tmux|list-sessions|extra' (:: list-sessions extra)

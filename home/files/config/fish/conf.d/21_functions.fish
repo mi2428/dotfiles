@@ -782,7 +782,11 @@ function :: --description 'Manage tmux sessions and windows'
     if test (count $argv) -eq 0
         tmux
     else if test (count $argv) -eq 1; and contains -- "$argv[1]" (__dotfiles_tmux_session_names)
-        tmux attach -t "$argv[1]"
+        if set -q TMUX; and test -n "$TMUX"
+            tmux switch-client -t "$argv[1]"
+        else
+            tmux attach -t "$argv[1]"
+        end
     else
         tmux $argv
     end
