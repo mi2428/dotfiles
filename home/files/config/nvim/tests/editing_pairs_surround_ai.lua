@@ -94,8 +94,20 @@ reset_buffer({ "word" })
 type_keys("viwgs]")
 assert_equal(vim.api.nvim_get_current_line(), "[word]", "Visual gs did not add a surround")
 
+reset_buffer({ "word" })
+type_keys('viw<leader>s"""<CR>')
+assert_equal(vim.api.nvim_get_current_line(), '"""word"""', "Visual leader-s did not apply the entered delimiter")
+
+reset_buffer({ "text" })
+type_keys("V<leader>s**<CR>")
+assert_equal(vim.api.nvim_buf_get_lines(0, 0, -1, false), { "**text**" }, "linewise surround added new lines")
+
 assert(mapping("s", "n").desc == "Flash", "nvim-surround introduced an s-prefix delay for Flash")
 assert(mapping("S", "x").desc == "Flash Treesitter", "nvim-surround replaced Flash's Visual S mapping")
+assert(
+	mapping("<leader>s", "x").desc == "Surround selection symmetrically",
+	"Visual symmetric surround mapping is missing"
+)
 assert(mapping("gs", "x").desc == "Add surround to selection", "Visual surround was not moved to gs")
 assert(mapping("gS", "x").desc == "Add linewise surround to selection", "linewise Visual surround was not moved to gS")
 for _, lhs in ipairs({ "sa", "sd", "sr", "sf", "sF", "sh" }) do

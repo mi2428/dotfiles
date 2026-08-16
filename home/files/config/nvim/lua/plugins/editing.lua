@@ -35,9 +35,26 @@ return {
 			-- Visual defaults, then expose the same actions under `gs`/`gS`.
 			vim.g.nvim_surround_no_visual_mappings = true
 		end,
-		opts = {},
+		opts = {
+			surrounds = {
+				m = {
+					add = function()
+						local delimiter = require("nvim-surround.config").get_input("Surround with: ")
+						return delimiter and delimiter ~= "" and { delimiter, delimiter } or nil
+					end,
+				},
+			},
+		},
 		config = function(_, opts)
 			require("nvim-surround").setup(opts)
+			vim.keymap.set("x", "<leader>s", function()
+				local surround = "<Plug>(nvim-surround-visual)m"
+				return vim.fn.mode() == "V" and "<Esc>`<0v`>$" .. surround or surround
+			end, {
+				desc = "Surround selection symmetrically",
+				expr = true,
+				remap = true,
+			})
 			vim.keymap.set("x", "gs", "<Plug>(nvim-surround-visual)", {
 				desc = "Add surround to selection",
 			})
