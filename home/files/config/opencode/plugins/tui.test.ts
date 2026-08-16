@@ -12,6 +12,7 @@ import { createTestRenderer } from "./tui/node_modules/@opentui/core/testing";
 import { buildTodoView } from "./tui/lib/todo-overlay";
 import {
   buildTodoOverlayNodes,
+  disableAnimations,
   MAX_BODY_HEIGHT,
   MAX_PANEL_WIDTH,
   popupWidth,
@@ -26,6 +27,28 @@ const todos = [
   { content: "run tests", status: "in_progress" },
   { content: "old task", status: "cancelled" },
 ];
+
+describe("performance defaults", () => {
+  it("disables animations once", () => {
+    for (const initial of [undefined, true, false]) {
+      let value = initial;
+      let writes = 0;
+      const kv = {
+        get: <Value = unknown>(_key: string, fallback?: Value) => (value ?? fallback) as Value,
+        set: (key: string, next: unknown) => {
+          assert.equal(key, "animations_enabled");
+          value = next as boolean;
+          writes += 1;
+        },
+      };
+
+      disableAnimations(kv);
+      disableAnimations(kv);
+      assert.equal(value, false);
+      assert.equal(writes, initial === false ? 0 : 1);
+    }
+  });
+});
 
 describe("message label colors", () => {
   it("recolors nested labels and coalesces message updates", async () => {
