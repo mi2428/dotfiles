@@ -12,7 +12,7 @@ import { createTestRenderer } from "./tui/node_modules/@opentui/core/testing";
 import { buildTodoView } from "./tui/lib/todo-overlay";
 import {
   buildTodoOverlayNodes,
-  disableAnimations,
+  enableAnimations,
   MAX_BODY_HEIGHT,
   MAX_PANEL_WIDTH,
   popupWidth,
@@ -29,7 +29,7 @@ const todos = [
 ];
 
 describe("performance defaults", () => {
-  it("disables animations once", () => {
+  it("enables animations once", () => {
     for (const initial of [undefined, true, false]) {
       let value = initial;
       let writes = 0;
@@ -42,10 +42,10 @@ describe("performance defaults", () => {
         },
       };
 
-      disableAnimations(kv);
-      disableAnimations(kv);
-      assert.equal(value, false);
-      assert.equal(writes, initial === false ? 0 : 1);
+      enableAnimations(kv);
+      enableAnimations(kv);
+      assert.equal(kv.get("animations_enabled", true), true);
+      assert.equal(writes, initial === false ? 1 : 0);
     }
   });
 });
