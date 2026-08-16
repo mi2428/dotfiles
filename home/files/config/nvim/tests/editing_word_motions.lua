@@ -28,8 +28,14 @@ end
 
 if vim.uv.os_uname().sysname == "Darwin" then
 	assert(vim.fn.executable("lingua-motion-helper") == 1, "lingua-motion-helper is missing from Neovim PATH")
-	for _, lhs in ipairs({ "w", "e", "b", "ge", "iw", "aw", "is", "as", "(", ")" }) do
+	for _, lhs in ipairs({ "w", "e", "b", "ge", "(", ")" }) do
 		for _, mode in ipairs({ "n", "o", "x" }) do
+			assert(mapping(lhs, mode).desc == "Lingua motion " .. lhs, lhs .. " is not owned by lingua-motion")
+		end
+	end
+	for _, lhs in ipairs({ "iw", "aw", "is", "as" }) do
+		assert(vim.fn.maparg(lhs, "n") == "", lhs .. " must not delay Normal-mode i/a")
+		for _, mode in ipairs({ "o", "x" }) do
 			assert(mapping(lhs, mode).desc == "Lingua motion " .. lhs, lhs .. " is not owned by lingua-motion")
 		end
 	end

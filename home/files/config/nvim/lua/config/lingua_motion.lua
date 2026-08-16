@@ -8,6 +8,9 @@ function M.setup()
 	vim.cmd.packadd("lingua-motion.nvim")
 	local lingua_motion = require("lingua_motion")
 	lingua_motion.setup({ timeout_ms = 500 })
+	for _, lhs in ipairs({ "iw", "aw", "is", "as" }) do
+		vim.keymap.del("n", lhs)
+	end
 	vim.keymap.set("n", "cw", "ce", { remap = true, desc = "Change word" })
 	vim.api.nvim_create_user_command("Wakachigaki", function(args)
 		local view = vim.fn.winsaveview()
