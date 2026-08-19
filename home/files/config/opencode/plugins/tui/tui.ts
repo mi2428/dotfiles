@@ -407,6 +407,18 @@ export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidA
 }
 
 export const tui: TuiPlugin = async (api) => {
+  // Keep OpenCode's native animations enabled. This plugin previously forced
+  // `animations_enabled=false` after the animation load was misattributed to
+  // the Todo overlay. Controlled runs showed the continuous work is upstream:
+  // stock OpenCode used 2.875% CPU with animations off and 20.875% with them on;
+  // loading this plugin changed those medians to 2.875% and 21.875%. A visible
+  // 30-item Todo panel added only about one percentage point in a paired run.
+  // OpenCode 1.18.15 drives its busy spinner every 40 ms, while OpenTUI 0.4.5
+  // walks the full renderable tree for each request (anomalyco/opentui#1339).
+  // OpenTUI PR #1305 fixed multiplying frame-timer chains, not this baseline
+  // full-tree redraw cost. This plugin owns no animation timer; disabling the
+  // host animation only obscures running state. Reconsider this only after the
+  // upstream issue is fixed and the stock-vs-plugin benchmark is repeated.
   const [solid, { createSignal }] = await Promise.all([
     import("@opentui/solid"),
     import("solid-js"),
