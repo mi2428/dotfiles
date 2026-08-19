@@ -12,7 +12,6 @@ import { createTestRenderer } from "./tui/node_modules/@opentui/core/testing";
 import { buildTodoView } from "./tui/lib/todo-overlay";
 import {
   buildTodoOverlayNodes,
-  disableAnimations,
   MAX_BODY_HEIGHT,
   MAX_PANEL_WIDTH,
   popupWidth,
@@ -28,25 +27,11 @@ const todos = [
   { content: "old task", status: "cancelled" },
 ];
 
-describe("performance defaults", () => {
-  it("disables animations once", () => {
-    for (const initial of [undefined, true, false]) {
-      let value = initial;
-      let writes = 0;
-      const kv = {
-        get: <Value = unknown>(_key: string, fallback?: Value) => (value ?? fallback) as Value,
-        set: (key: string, next: unknown) => {
-          assert.equal(key, "animations_enabled");
-          value = next as boolean;
-          writes += 1;
-        },
-      };
-
-      disableAnimations(kv);
-      disableAnimations(kv);
-      assert.equal(kv.get("animations_enabled", true), false);
-      assert.equal(writes, initial === false ? 0 : 1);
-    }
+describe("runtime integration", () => {
+  it("loads Solid through the host runtime alias", async () => {
+    const source = await Bun.file(new URL("./tui/tui.ts", import.meta.url)).text();
+    assert.match(source, /import\("solid-js"\)/);
+    assert.doesNotMatch(source, /solid-js\/dist\//);
   });
 });
 

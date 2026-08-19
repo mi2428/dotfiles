@@ -1,4 +1,4 @@
-import type { TuiKV, TuiPlugin, TuiRouteCurrent } from "@opencode-ai/plugin/tui";
+import type { TuiPlugin, TuiRouteCurrent } from "@opencode-ai/plugin/tui";
 import { buildTodoView, type TodoLine, type TodoItem } from "./lib/todo-overlay";
 
 type Theme = {
@@ -56,7 +56,6 @@ const PANEL_MARGIN = 2;
 const PANEL_TOP = 0;
 const PANEL_CHROME_HEIGHT = 3;
 const TODO_LINE_ID_PREFIX = "opencode-todo-line";
-const ANIMATIONS_ENABLED_KEY = "animations_enabled";
 const graphemes = new Intl.Segmenter();
 
 const SPLIT_BORDER_CHARS = {
@@ -106,10 +105,6 @@ function sameColor(current: unknown, target: unknown): boolean {
   if (!current || typeof current !== "object" || !("equals" in current)) return false;
   const equals = (current as { equals?: (color: unknown) => boolean }).equals;
   return typeof equals === "function" && equals.call(current, target);
-}
-
-export function disableAnimations(kv: Pick<TuiKV, "get" | "set">): void {
-  if (kv.get(ANIMATIONS_ENABLED_KEY, true)) kv.set(ANIMATIONS_ENABLED_KEY, false);
 }
 
 function recolorAttachmentLabels(root: RenderTreeAdapter, foreground: unknown, background: unknown): void {
@@ -412,10 +407,9 @@ export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidA
 }
 
 export const tui: TuiPlugin = async (api) => {
-  disableAnimations(api.kv);
   const [solid, { createSignal }] = await Promise.all([
     import("@opentui/solid"),
-    import("solid-js/dist/solid.js"),
+    import("solid-js"),
   ]);
   registerMessageLabelColors(api);
   registerTodoOverlay(api, { ...solid, createSignal });
