@@ -89,6 +89,7 @@ let
     "$schema" = "https://opencode.ai/tui.json";
     theme = "catppuccin-mocha-mauve";
     diff_style = "auto";
+    mouse = false;
     scroll_acceleration.enabled = true;
     attention = {
       enabled = true;
