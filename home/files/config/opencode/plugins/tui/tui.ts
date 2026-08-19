@@ -107,8 +107,8 @@ function sameColor(current: unknown, target: unknown): boolean {
   return typeof equals === "function" && equals.call(current, target);
 }
 
-export function enableAnimations(kv: Pick<TuiKV, "get" | "set">): void {
-  if (!kv.get(ANIMATIONS_ENABLED_KEY, true)) kv.set(ANIMATIONS_ENABLED_KEY, true);
+export function disableAnimations(kv: Pick<TuiKV, "get" | "set">): void {
+  if (kv.get(ANIMATIONS_ENABLED_KEY, true)) kv.set(ANIMATIONS_ENABLED_KEY, false);
 }
 
 function recolorAttachmentLabels(root: RenderTreeAdapter, foreground: unknown, background: unknown): void {
@@ -403,7 +403,7 @@ export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidA
 }
 
 export const tui: TuiPlugin = async (api) => {
-  enableAnimations(api.kv);
+  disableAnimations(api.kv);
   const [solid, { createSignal }] = await Promise.all([
     import("@opentui/solid"),
     import("solid-js/dist/solid.js"),
