@@ -405,6 +405,99 @@ describe("todo overlay state", () => {
     assert.equal(many?.children?.[1]?.scrollWindow?.endID, "opencode-todo-line-4");
   });
 
+  it("keeps chat scrolling reachable outside the Todo panel", async () => {
+    const test = await createTestRenderer({ width: 80, height: 20 });
+    let appSlot: (() => unknown) | undefined;
+    let dispose: (() => void) | undefined;
+    const chat = new ScrollBoxRenderable(test.renderer, {
+      width: "100%",
+      height: "100%",
+      scrollY: true,
+      contentOptions: { flexDirection: "column" },
+    });
+    for (let index = 0; index < 30; index += 1) {
+      chat.add(new TextRenderable(test.renderer, { content: `message ${index}`, width: "100%" }));
+    }
+    test.renderer.root.add(chat);
+
+    const api = {
+      state: {
+        session: {
+          todo: () => Array.from({ length: 12 }, (_, index) => ({ content: `task ${index}`, status: "pending" })),
+          messages: () => [{ id: "user-1", role: "user" }],
+        },
+      },
+      event: { on: () => () => {} },
+      renderer: test.renderer,
+      lifecycle: { onDispose: (handler: () => void) => (dispose = handler) },
+      slots: {
+        register: (registration: { slots: { app: () => unknown } }) => {
+          appSlot = registration.slots.app;
+        },
+      },
+      route: { current: { name: "session", params: { sessionID: "ses_1" } } },
+      theme: {
+        current: {
+          backgroundPanel: "#181825",
+          borderSubtle: "#585b70",
+          info: "#94e2d5",
+          success: "#a6e3a1",
+          warning: "#f9e2af",
+          text: "#cdd6f4",
+          textMuted: "#bac2de",
+        },
+      },
+    };
+    const solid = {
+      createSignal: <T>(initial: T) => {
+        let value = initial;
+        return [
+          () => value,
+          (next: T | ((previous: T) => T)) => {
+            value = typeof next === "function" ? (next as (previous: T) => T)(value) : next;
+          },
+        ] as const;
+      },
+      createElement: (kind: "box" | "scrollbox" | "text") => {
+        if (kind === "scrollbox") return new ScrollBoxRenderable(test.renderer, {});
+        if (kind === "text") return new TextRenderable(test.renderer, { content: "" });
+        return new BoxRenderable(test.renderer, {});
+      },
+      setProp: (node: Record<string, unknown>, name: string, value: unknown) => {
+        node[name] = value;
+      },
+      insert: (parent: BoxRenderable | ScrollBoxRenderable | TextRenderable, child: unknown) => {
+        const value = typeof child === "function" ? (child as () => unknown)() : child;
+        if (value !== null && value !== undefined) parent.add(value as never);
+      },
+    };
+
+    try {
+      registerTodoOverlay(api as never, solid as never);
+      assert(appSlot);
+      const overlayRoot = appSlot() as BoxRenderable;
+      test.renderer.root.add(overlayRoot);
+      await test.renderOnce();
+
+      assert.equal(overlayRoot.width, popupWidth(80) + 2);
+      assert.equal(overlayRoot.height, 8);
+      const panel = overlayRoot.getChildren()[0] as BoxRenderable;
+      const todoBody = panel.getChildren()[1] as ScrollBoxRenderable;
+
+      await test.mockMouse.scroll(5, 12, "down", { delayMs: 0 });
+      await test.renderOnce();
+      assert(chat.scrollTop > 0, "chat must receive wheel events outside the Todo panel");
+
+      const todoScrollTop = todoBody.scrollTop;
+      await test.mockMouse.scroll(todoBody.x + 1, todoBody.y + 1, "down", { delayMs: 0 });
+      await test.renderOnce();
+      assert(todoBody.scrollTop > todoScrollTop, "Todo panel must retain its own wheel scrolling");
+    } finally {
+      dispose?.();
+      test.renderer.destroy();
+    }
+  });
+
   it("redraws progress without dropping the overlay when a new request starts", () => {
     type TodoEvent = {
       properties: { sessionID: string; todos: Array<{ content: string; status: string }> };
@@ -448,7 +541,12 @@ describe("todo overlay state", () => {
           };
         },
       },
-      renderer: { width: 120, requestRender: () => (renders += 1) },
+      renderer: {
+        width: 120,
+        requestRender: () => (renders += 1),
+        on: (name: string) => assert.equal(name, "resize"),
+        off: (name: string) => assert.equal(name, "resize"),
+      },
       lifecycle: { onDispose: (handler: () => void) => (dispose = handler) },
       slots: {
         register: (registration: { slots: { app: () => unknown } }) => {
@@ -656,6 +754,8 @@ describe("todo overlay state", () => {
     let todoEventHandler: ((event: TodoEvent) => void) | undefined;
     let appSlot: (() => unknown) | undefined;
     let activeObserver: (() => void) | undefined;
+    let resizeHandler: (() => void) | undefined;
+    let dispose: (() => void) | undefined;
     let liveTodos = [{ content: "first request", status: "in_progress" }];
     let liveMessages = [{ id: "first-request", role: "user" }];
     const messageObservers = new Set<() => void>();
@@ -676,8 +776,20 @@ describe("todo overlay state", () => {
           return () => {};
         },
       },
-      renderer: { width: 120, requestRender: () => {} },
-      lifecycle: { onDispose: () => {} },
+      renderer: {
+        width: 120,
+        requestRender: () => {},
+        on: (name: string, handler: () => void) => {
+          assert.equal(name, "resize");
+          resizeHandler = handler;
+        },
+        off: (name: string, handler: () => void) => {
+          assert.equal(name, "resize");
+          assert.equal(handler, resizeHandler);
+          resizeHandler = undefined;
+        },
+      },
+      lifecycle: { onDispose: (handler: () => void) => (dispose = handler) },
       slots: {
         register: (registration: { slots: { app: () => unknown } }) => {
           appSlot = registration.slots.app;
@@ -742,6 +854,13 @@ describe("todo overlay state", () => {
 
     const rendered = appSlot() as FakeNode;
     assert(rendered);
+    assert.equal(rendered.props.width, MAX_PANEL_WIDTH + 2);
+    assert.equal(rendered.props.height, 4);
+
+    api.renderer.width = 80;
+    assert(resizeHandler);
+    resizeHandler();
+    assert.equal(rendered.props.width, popupWidth(80) + 2);
 
     liveTodos = [{ content: "first request", status: "completed" }];
     todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
@@ -756,5 +875,9 @@ describe("todo overlay state", () => {
     liveTodos = [{ content: "second request", status: "in_progress" }];
     todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
     assert.equal(rendered.children.length, 1);
+
+    assert(dispose);
+    dispose();
+    assert.equal(resizeHandler, undefined);
   });
 });

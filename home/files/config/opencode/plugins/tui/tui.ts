@@ -54,6 +54,7 @@ export const MAX_BODY_HEIGHT = 12;
 const PANEL_WIDTH_RATIO = 0.85;
 const PANEL_MARGIN = 2;
 const PANEL_TOP = 0;
+const PANEL_CHROME_HEIGHT = 3;
 const TODO_LINE_ID_PREFIX = "opencode-todo-line";
 const ANIMATIONS_ENABLED_KEY = "animations_enabled";
 const graphemes = new Intl.Segmenter();
@@ -309,6 +310,13 @@ export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidA
     api.renderer.requestRender();
   };
 
+  const hideOverlay = (root: any) => {
+    mounted = undefined;
+    solid.setProp(root, "width", 0);
+    solid.setProp(root, "height", 0);
+    return null;
+  };
+
   const rememberScroll = () => {
     if (!mounted || mounted.scrollbox.isDestroyed) return;
     if (Number.isFinite(mounted.scrollbox.scrollTop)) {
@@ -322,24 +330,23 @@ export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidA
   const unsubscribeTodo = api.event.on("todo.updated", (event) => {
     invalidateOverlay();
   });
+  api.renderer.on("resize", invalidateOverlay);
   api.lifecycle.onDispose(() => {
     rememberScroll();
     mounted = undefined;
     scrollOffsets.clear();
     latestUserMessages.clear();
     unsubscribeTodo();
+    api.renderer.off("resize", invalidateOverlay);
   });
 
-  const renderOverlay = () => {
+  const renderOverlay = (root: any) => {
     // Host state getters and requestRender do not invalidate a static slot
     // result. Keep the changing HUD inside a reactive insertion.
     overlayRevision();
     rememberScroll();
     const sessionID = sessionIDFromRoute(api.route.current);
-    if (!sessionID) {
-      mounted = undefined;
-      return null;
-    }
+    if (!sessionID) return hideOverlay(root);
     const todos = api.state.session.todo(sessionID);
     const latestUser = latestUserMessageID(api.state.session.messages(sessionID));
     const previousUser = latestUserMessages.get(sessionID);
@@ -350,10 +357,12 @@ export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidA
       scrollOffsets.delete(sessionID);
     }
     const nodes = buildTodoOverlayNodes(todos, api.theme.current, api.renderer.width);
-    if (!nodes) {
-      mounted = undefined;
-      return null;
-    }
+    if (!nodes) return hideOverlay(root);
+
+    const panelWidth = nodes.props.width;
+    const bodyHeight = nodes.children?.[1]?.props.height;
+    solid.setProp(root, "width", (typeof panelWidth === "number" ? panelWidth : 0) + PANEL_MARGIN);
+    solid.setProp(root, "height", (typeof bodyHeight === "number" ? bodyHeight : 0) + PANEL_CHROME_HEIGHT);
 
     let nextScrollBox: ScrollBoxAdapter | undefined;
     let nextScrollWindow: RenderNode["scrollWindow"];
@@ -392,10 +401,10 @@ export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidA
         solid.setProp(root, "position", "absolute");
         solid.setProp(root, "top", 0);
         solid.setProp(root, "right", 0);
-        solid.setProp(root, "bottom", 0);
-        solid.setProp(root, "left", 0);
+        solid.setProp(root, "width", 0);
+        solid.setProp(root, "height", 0);
         solid.setProp(root, "zIndex", 900);
-        solid.insert(root, renderOverlay);
+        solid.insert(root, () => renderOverlay(root));
         return root;
       },
     },
