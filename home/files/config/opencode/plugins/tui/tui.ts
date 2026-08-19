@@ -413,9 +413,10 @@ export const tui: TuiPlugin = async (api) => {
   // stock OpenCode used 2.875% CPU with animations off and 20.875% with them on;
   // loading this plugin changed those medians to 2.875% and 21.875%. A visible
   // 30-item Todo panel added only about one percentage point in a paired run.
-  // OpenCode 1.18.15 drives its busy spinner every 40 ms, while OpenTUI 0.4.5
-  // walks the full renderable tree for each request (anomalyco/opentui#1339).
-  // OpenTUI PR #1305 fixed multiplying frame-timer chains, not this baseline
+  // OpenCode 1.18.18 still bundles OpenTUI 0.4.5 and drives its busy spinner
+  // every 40 ms; OpenTUI walks the full renderable tree for each request
+  // (anomalyco/opentui#1339). PR #1305 fixes multiplying frame-timer chains,
+  // but 1.18.18 does not bundle that fix and it does not address the baseline
   // full-tree redraw cost. This plugin owns no animation timer; disabling the
   // host animation only obscures running state. Reconsider this only after the
   // upstream issue is fixed and the stock-vs-plugin benchmark is repeated.

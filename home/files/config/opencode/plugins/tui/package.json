@@ -7,10 +7,10 @@
     "./tui": "./tui.ts"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "1.18.10",
-    "@opentui/core": "0.5.3",
-    "@opentui/keymap": "0.5.3",
-    "@opentui/solid": "0.5.3",
+    "@opencode-ai/plugin": "1.18.18",
+    "@opentui/core": "0.5.4",
+    "@opentui/keymap": "0.5.4",
+    "@opentui/solid": "0.5.4",
     "solid-js": "1.9.12"
   }
 }

@@ -144,8 +144,8 @@ let
   ponytail = pkgs.fetchFromGitHub {
     owner = "DietrichGebert";
     repo = "ponytail";
-    rev = "16f29800fd2681bdf24f3eb4ccffe38be3baec6b";
-    hash = "sha256-Y7d4s7uqjH6IbEXhqAiQ+yaxr6iiGcv2X64LuMtG1T8=";
+    rev = "0a4dd63ad4541f4f655c4108a295916f3c1d8fda";
+    hash = "sha256-8cYggVltBAlZ/Zj4pl1bOu7mQdZFXCmDGW4RSpvRA+w=";
   };
 
   herdrAgentLayout = pkgs.fetchFromGitHub {

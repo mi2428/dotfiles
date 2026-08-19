@@ -13,7 +13,7 @@ tasks:
         set -eu
         brew_bin="$(command -v brew)"
         "$brew_bin" update
-        "$brew_bin" upgrade herdr opencode
+        "$brew_bin" upgrade herdr anomalyco/tap/opencode
         "$brew_bin" upgrade --cask codex claude-code
         for target in claude codex opencode; do
           herdr integration install "$target" >/dev/null

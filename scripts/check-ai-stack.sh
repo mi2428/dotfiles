@@ -46,7 +46,7 @@ require_command jq jq
 require_command curl curl
 
 if [ "$(uname -s)" = Darwin ]; then
-    require_brewfile_entry 'brew "opencode"'
+    require_brewfile_entry 'brew "anomalyco/tap/opencode", trusted: true'
     require_brewfile_entry 'brew "herdr"'
     require_brewfile_entry 'cask "codex"'
     require_brewfile_entry 'cask "claude-code"'
