@@ -60,9 +60,10 @@ dark_name = "catppuccin"
 [theme.custom]
 panel_bg = "reset"
 accent = "#cba6f7"
-# Sidebar row/background styling uses the surface tokens.
-# Keep the overall active emphasis aligned with tmux's mauve chip while the
-# background stays on Catppuccin's darker surface shades.
+# Herdr 0.8.2 gives the sidebar and its highlighted rows dedicated tokens.
+sidebar_bg = "#1e1e2e"
+active_row_bg = "#313244"
+selection_bg = "#45475a"
 surface0 = "#45475a"
 surface_dim = "#313244"
 subtext0 = "#bac2de"
