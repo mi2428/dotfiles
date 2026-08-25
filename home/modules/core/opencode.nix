@@ -134,6 +134,7 @@ let
   todoOverlayPackageRoot = ../../files/config/opencode/plugins/tui;
   todoOverlayOpenCodePackage = config.lib.file.mkOutOfStoreSymlink
     "${config.home.homeDirectory}/.config/opencode/plugins/tui";
+  firstThingsFirstPlugin = ../../files/config/opencode/plugins/first-things-first.js;
   herdrWorkerTitlePlugin = ../../files/config/opencode/plugins/herdr-worker-title.js;
   profileShellEnvPlugin = ../../files/config/opencode/plugins/profile-shell-env.js;
   obsidianExportPlugin = ../../files/config/opencode/plugins/obsidian-export.js;
@@ -166,6 +167,7 @@ in {
     "opencode/commands/obsidian.md" = mkLink ../../files/config/opencode/commands/obsidian.md;
     "opencode/commands/showme.md" = mkLink ../../files/config/opencode/commands/showme.md;
     "opencode/opencode.jsonc" = mkLink generated.defaultConfig;
+    "opencode/plugins/first-things-first.js" = mkLink firstThingsFirstPlugin;
     "opencode/plugins/herdr-worker-title.js" = mkLink herdrWorkerTitlePlugin;
     "opencode/plugins/obsidian-export.js" = mkLink obsidianExportPlugin;
     "opencode/themes/catppuccin-mocha-mauve.json" =
@@ -200,6 +202,8 @@ in {
     "opencode-profiles/omo/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode-profiles/omo/opencode/tui.json" = mkLink generated.omoTui;
+    "opencode-profiles/omo/opencode/plugins/first-things-first.js" =
+      mkLink firstThingsFirstPlugin;
     "opencode-profiles/omo/opencode/plugins/tui" = {
       force = true;
       source = todoOverlayOpenCodePackage;
@@ -226,6 +230,8 @@ in {
     "opencode-profiles/slim/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode-profiles/slim/opencode/tui.json" = mkLink generated.slimTui;
+    "opencode-profiles/slim/opencode/plugins/first-things-first.js" =
+      mkLink firstThingsFirstPlugin;
     "opencode-profiles/slim/opencode/plugins/tui" = {
       force = true;
       source = todoOverlayOpenCodePackage;
