@@ -2,18 +2,12 @@
 set -euo pipefail
 
 repo_root="${1:?repo root is required}"
-env_file="$repo_root/containers/open-webui/.env"
-compose_file="$repo_root/containers/open-webui/compose.yml"
-
-set -a
-# shellcheck disable=SC1090
-. "$env_file"
-set +a
+gateway_env_file="${XDG_STATE_HOME:-$HOME/.local/state}/open-webui/cptr-gateway.env"
 
 : "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
 : "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
 
-compose=(docker compose --env-file "$env_file" -f "$compose_file")
+compose=(docker compose -f "$repo_root/containers/open-webui/compose.yml")
 
 export CPTR_STARTUP_TOKEN=
 for _ in {1..60}; do
@@ -87,21 +81,13 @@ PY
 )"
 
 if [[ -n "$new_gateway_key" ]]; then
-  export new_gateway_key
-  python3 - "$env_file" <<'PY'
-import os
-import pathlib
-import re
-import sys
-
-path = pathlib.Path(sys.argv[1])
-content = path.read_text()
-replacement = f"CPTR_GATEWAY_API_KEY={os.environ['new_gateway_key']}"
-updated, count = re.subn(r"^CPTR_GATEWAY_API_KEY=.*$", replacement, content, flags=re.MULTILINE)
-if count != 1:
-    raise SystemExit("CPTR_GATEWAY_API_KEY must appear exactly once in .env")
-path.write_text(updated)
-PY
+  mkdir -p "${gateway_env_file%/*}"
+  chmod 700 "${gateway_env_file%/*}"
+  umask 077
+  printf '%s\n' \
+    '# Machine-local Gateway API key used by Open WebUI to call Computer.' \
+    "CPTR_GATEWAY_API_KEY=$new_gateway_key" \
+    > "$gateway_env_file"
 fi
 
 printf '%s\n' 'Computer account is ready'

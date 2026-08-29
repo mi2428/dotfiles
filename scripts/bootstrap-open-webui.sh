@@ -2,21 +2,14 @@
 set -euo pipefail
 
 repo_root="${1:?repository root is required}"
-env_file="$repo_root/containers/open-webui/.env"
-compose_file="$repo_root/containers/open-webui/compose.yml"
 profile_file="$repo_root/containers/open-webui/profile.webp"
-
-set -a
-# shellcheck disable=SC1090
-source "$env_file"
-set +a
 
 : "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
 : "${WEBUI_ADMIN_EMAIL:?set WEBUI_ADMIN_EMAIL}"
 : "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
 
 base_url="http://127.0.0.1:${OPEN_WEBUI_PORT:-8080}"
-compose=(docker compose --env-file "$env_file" -f "$compose_file")
+compose=(docker compose -f "$repo_root/containers/open-webui/compose.yml")
 marker=/app/backend/data/.profile-provisioned
 
 for _ in {1..90}; do
