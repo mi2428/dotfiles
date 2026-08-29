@@ -172,11 +172,9 @@ Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `t
 $ cp containers/open-webui/.env.example containers/open-webui/.env
 $ openssl rand -hex 32  # use this for WEBUI_SECRET_KEY, then set the remaining required values
 $ task ai.webui.up
-$ task ai.webui.logs       # follow service logs
-$ task ai.webui.down       # stops containers without deleting persistent data
+$ task ai.webui.logs    # follow service logs
+$ task ai.webui.down    # stops containers without deleting persistent data
 ```
-
-The Computer admin account is created from `CPTR_ADMIN_USERNAME` and `CPTR_ADMIN_PASSWORD`. On the first run only, add `/workspace` and an LLM provider in cptr, then create a Gateway key under `Settings > Admin > Gateway`. Put that key in `CPTR_GATEWAY_API_KEY` and run `task ai.webui.up` again. cptr stores provider credentials encrypted in its persistent volume.
 
 ## Random Notes
 
