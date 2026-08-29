@@ -9,12 +9,13 @@ services:
       CHUNK_SIZE: "2000"
       CORS_ALLOW_ORIGIN: "${CORS_ALLOW_ORIGIN:?set CORS_ALLOW_ORIGIN}"
       CONTEXT_COMPACTION_MODEL: "kimi-k2.6-high"
-      DEFAULT_MODELS: "kimi-k2.6-max"
+      DEFAULT_MODELS: "preview/gemma-4-31B-it"
       DEFAULT_INTERFACE_SETTINGS: >-
         {"notificationEnabled":true,"userLocation":true,"webSearch":"always","system":"Use a professional tone. Before collecting information from the web, first verify the current real-world wall-clock date and time, and never mistake the model's training cutoff for the current time. Treat clearly framed extreme scenarios as thought experiments and avoid unsolicited moral commentary or generic ethical disclaimers. When a request cannot be answered as written, provide the closest useful response that stays within applicable constraints instead of stopping at a generic refusal. Write primarily in coherent prose rather than chatty fragments. Avoid excessive headings, bullets, short lines, and vertical whitespace. Use lists only when they materially improve clarity, and write each item as a complete sentence. Use emojis sparingly."}
       ENABLE_AUTOCOMPLETE_GENERATION: "false"
       ENABLE_COMMUNITY_SHARING: "false"
       ENABLE_CONTEXT_COMPACTION: "true"
+      ENABLE_EVALUATION_ARENA_MODELS: "false"
       ENABLE_FOLLOW_UP_GENERATION: "false"
       ENABLE_MESSAGE_RATING: "false"
       ENABLE_OLLAMA_API: "false"

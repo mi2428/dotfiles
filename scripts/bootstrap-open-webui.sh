@@ -30,6 +30,7 @@ token="$({
         --data-binary @-
 } | jq -er '.token')"
 
+# This shortlist represents the speed/accuracy Pareto frontier on Sakura AI Engine as of September 2026.
 jq -n \
   'def model($id; $name): {
     id: $id,
@@ -53,24 +54,26 @@ jq -n \
       access_grants: [],
       is_active: true
     });
+  def hidden_variants($base; $slug; $name; $tag; $efforts):
+    variants($base; $slug; $name; $tag; $efforts) | map(.meta.hidden = true);
   {models:
     [
-      model("llm-jp-3.1-8x13b-instruct4"; "LLM-jp 3.1 8x13B Instruct 4"),
-      model("preview/Qwen3-0.6B-cpu"; "Qwen3 0.6B CPU"),
-      model("preview/Phi-4-mini-instruct-cpu"; "Phi-4 Mini Instruct CPU"),
-      model("preview/Qwen3-Embedding-4B-FP16"; "Qwen3 Embedding 4B FP16"),
+      hidden_model("llm-jp-3.1-8x13b-instruct4"; "LLM-jp 3.1 8x13B Instruct 4"),
+      hidden_model("preview/Qwen3-0.6B-cpu"; "Qwen3 0.6B CPU"),
+      hidden_model("preview/Phi-4-mini-instruct-cpu"; "Phi-4 Mini Instruct CPU"),
+      hidden_model("preview/Qwen3-Embedding-4B-FP16"; "Qwen3 Embedding 4B FP16"),
       hidden_model("preview/Kimi-K2.6"; "Kimi K2.6"),
       model("preview/gemma-4-31B-it"; "Gemma 4 31B IT"),
       model("preview/Qwen3.6-35B-A3B"; "Qwen3.6 35B A3B"),
       hidden_model("preview/Kimi-K2.7-Code"; "Kimi K2.7 Code"),
-      model("whisper-large-v3-turbo"; "Whisper Large V3 Turbo"),
+      hidden_model("whisper-large-v3-turbo"; "Whisper Large V3 Turbo"),
       model("preview/Qwen3-VL-30B-A3B-Instruct"; "Qwen3 VL 30B A3B Instruct"),
-      model("multilingual-e5-large"; "Multilingual E5 Large"),
+      hidden_model("multilingual-e5-large"; "Multilingual E5 Large"),
       hidden_model("gpt-oss-120b"; "GPT-OSS 120B")
     ]
     + variants("preview/Kimi-K2.6"; "kimi-k2.6"; "Kimi K2.6"; "Kimi"; ["low", "medium", "high", "max"])
     + variants("preview/Kimi-K2.7-Code"; "kimi-k2.7-code"; "Kimi K2.7 Code"; "Kimi"; ["low", "medium", "high", "max"])
-    + variants("gpt-oss-120b"; "gpt-oss-120b"; "GPT-OSS 120B"; "GPT-OSS"; ["low", "medium", "high"])
+    + hidden_variants("gpt-oss-120b"; "gpt-oss-120b"; "GPT-OSS 120B"; "GPT-OSS"; ["low", "medium", "high"])
   }' \
   | curl -fsS "$base_url/api/v1/models/import" \
       -H 'Content-Type: application/json' \
@@ -94,6 +97,13 @@ model_order_list="$(
           ])
         | map(.id)'
 )"
+
+jq -e 'length == 11 and all(.[];
+    . == "preview/gemma-4-31B-it" or
+    . == "preview/Qwen3.6-35B-A3B" or
+    . == "preview/Qwen3-VL-30B-A3B-Instruct" or
+    test("^kimi-k2\\.(6|7-code)-(low|medium|high|max)$"))' \
+  <<<"$model_order_list" >/dev/null
 
 curl -fsS "$base_url/api/v1/configs/models" \
   -H "Authorization: Bearer $token" \

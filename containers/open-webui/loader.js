@@ -28,8 +28,7 @@
 	};
 	const familyHues = [
 		['kimi-k2.6', '--ctp-mauve'],
-		['kimi-k2.7-code', '--ctp-sapphire'],
-		['gpt-oss', '--ctp-green']
+		['kimi-k2.7-code', '--ctp-sapphire']
 	];
 	const selector = 'img.assistant-message-profile-image';
 
