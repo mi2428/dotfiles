@@ -24,6 +24,8 @@
         value = builtins.getEnv name;
       in
       if value != "" then value else fallback;
+    runtimeUser = envOr "DOTFILES_RUNTIME_USER" "teo";
+    runtimeHome = prefix: envOr "DOTFILES_RUNTIME_HOME" "${prefix}/${runtimeUser}";
     runtimeLinuxSystem =
       let
         value = envOr "DOTFILES_RUNTIME_SYSTEM" "";
@@ -59,8 +61,8 @@
       mkLinux {
         inherit system homeModule platformName hostName;
         systemModule = ./system/linux/hosts/ubuntu.nix;
-        userName = envOr "DOTFILES_RUNTIME_USER" "teo";
-        homeDirectory = envOr "DOTFILES_RUNTIME_HOME" "/home/teo";
+        userName = runtimeUser;
+        homeDirectory = runtimeHome "/home";
       };
     macosConfig = mkDarwin {
       system = "aarch64-darwin";
@@ -68,24 +70,24 @@
       homeModule = ./home/hosts/macos.nix;
       platformName = "macos";
       hostName = "macos";
-      userName = "teo";
-      homeDirectory = "/Users/teo";
+      userName = runtimeUser;
+      homeDirectory = runtimeHome "/Users";
     };
     macosSystemOnlyConfig = mkDarwin {
       system = "aarch64-darwin";
       darwinModule = ./system/darwin/hosts/macos.nix;
       platformName = "macos";
       hostName = "macos";
-      userName = "teo";
-      homeDirectory = "/Users/teo";
+      userName = runtimeUser;
+      homeDirectory = runtimeHome "/Users";
     };
     macosHomeConfig = mkHome {
       system = "aarch64-darwin";
       hostModule = ./home/hosts/macos.nix;
       platformName = "macos";
       hostName = "macos";
-      userName = "teo";
-      homeDirectory = "/Users/teo";
+      userName = runtimeUser;
+      homeDirectory = runtimeHome "/Users";
     };
     linuxAarch64Config = mkLinuxHome {
       system = "aarch64-linux";
