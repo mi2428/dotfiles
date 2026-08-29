@@ -94,20 +94,6 @@ Examples
 On macOS, Homebrew is intentionally decoupled from `darwin-rebuild`.
 Use the repo-root `Brewfile` with `task brew.check` and `task brew.sync` for Homebrew state, then use `task hm.switch HOST=macos` for Nix-managed changes.
 
-### Open WebUI and Computer
-
-[Open WebUI](https://openwebui.com/) and [Open WebUI Computer](https://openwebui.com/computer) run together under Docker. Computer has read-write access to `CPTR_WORKSPACE_DIR`, so mount only a trusted workspace. Persistent data lives in named volumes and `<workspace>/.cptr`; manage Open WebUI Admin UI configuration in Compose because UI changes do not survive a restart.
-
-```console
-$ cp containers/open-webui/.env.example containers/open-webui/.env
-$ openssl rand -hex 32  # use this for WEBUI_SECRET_KEY, then set the remaining required values
-$ task ai.webui.up
-$ task ai.webui.logs       # follow service logs
-$ task ai.webui.down       # stops containers without deleting persistent data
-```
-
-The Computer admin account is created from `CPTR_ADMIN_USERNAME` and `CPTR_ADMIN_PASSWORD`. On the first run only, add `/workspace` and an LLM provider in cptr, then create a Gateway key under `Settings > Admin > Gateway`. Put that key in `CPTR_GATEWAY_API_KEY` and run `task ai.webui.up` again. cptr stores provider credentials encrypted in its persistent volume.
-
 Run `task hm.gc` as the login user, never as `sudo task hm.gc`; it elevates only
 the system garbage-collection pass. macOS SIP protects `com.apple.macl`, so a
 path blocked by that attribute cannot be removed from a normally booted system;
@@ -177,6 +163,20 @@ Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `t
 >   }
 > }
 > ```
+
+### Open WebUI and Computer
+
+[Open WebUI](https://openwebui.com/) and [Open WebUI Computer](https://openwebui.com/computer) run together under Docker. Computer has read-write access to `CPTR_WORKSPACE_DIR`, so mount only a trusted workspace. Persistent data lives in named volumes and `<workspace>/.cptr`; manage Open WebUI Admin UI configuration in Compose because UI changes do not survive a restart.
+
+```console
+$ cp containers/open-webui/.env.example containers/open-webui/.env
+$ openssl rand -hex 32  # use this for WEBUI_SECRET_KEY, then set the remaining required values
+$ task ai.webui.up
+$ task ai.webui.logs       # follow service logs
+$ task ai.webui.down       # stops containers without deleting persistent data
+```
+
+The Computer admin account is created from `CPTR_ADMIN_USERNAME` and `CPTR_ADMIN_PASSWORD`. On the first run only, add `/workspace` and an LLM provider in cptr, then create a Gateway key under `Settings > Admin > Gateway`. Put that key in `CPTR_GATEWAY_API_KEY` and run `task ai.webui.up` again. cptr stores provider credentials encrypted in its persistent volume.
 
 ## Random Notes
 
