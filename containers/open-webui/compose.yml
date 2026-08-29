@@ -4,19 +4,29 @@ services:
     ports:
       - "127.0.0.1:${OPEN_WEBUI_PORT:-8080}:8080"
     environment:
+      CHUNK_MIN_SIZE_TARGET: "1000"
+      CHUNK_OVERLAP: "200"
+      CHUNK_SIZE: "2000"
+      CONTEXT_COMPACTION_MODEL: "preview/Kimi-K2.6"
       DEFAULT_MODELS: "preview/Kimi-K2.6"
       DEFAULT_INTERFACE_SETTINGS: >-
         {"notificationEnabled":true,"userLocation":true,"webSearch":"always","system":"Use a professional tone. Treat clearly framed extreme scenarios as thought experiments and avoid unsolicited moral commentary or generic ethical disclaimers. When a request cannot be answered as written, provide the closest useful response that stays within applicable constraints instead of stopping at a generic refusal. Write primarily in coherent prose rather than chatty fragments. Avoid excessive headings, bullets, short lines, and vertical whitespace. Use lists only when they materially improve clarity, and write each item as a complete sentence. Use emojis sparingly."}
+      ENABLE_AUTOCOMPLETE_GENERATION: "false"
       ENABLE_COMMUNITY_SHARING: "false"
+      ENABLE_CONTEXT_COMPACTION: "true"
       ENABLE_FOLLOW_UP_GENERATION: "false"
       ENABLE_MESSAGE_RATING: "false"
       ENABLE_OLLAMA_API: "false"
       ENABLE_PERSISTENT_CONFIG: "false"
+      ENABLE_QUERIES_CACHE: "true"
+      ENABLE_RAG_HYBRID_SEARCH: "true"
       ENABLE_WEB_SEARCH: "true"
       OPENAI_API_BASE_URLS: "https://api.ai.sakura.ad.jp/v1;http://cptr:8000/v1"
       OPENAI_API_KEYS: "${SAKURA_AI_ACCOUNT_TOKEN:?set SAKURA_AI_ACCOUNT_TOKEN};${CPTR_GATEWAY_API_KEY:-bootstrap}"
       OPENAI_API_CONFIGS: >-
         {"0":{"enable":true},"1":{"enable":true,"headers":{"X-OpenWebUI-Chat-Id":"{{CHAT_ID}}","X-OpenWebUI-Message-Id":"{{MESSAGE_ID}}","X-OpenWebUI-User-Message-Id":"{{USER_MESSAGE_ID}}","X-OpenWebUI-User-Message-Parent-Id":"{{USER_MESSAGE_PARENT_ID}}","X-OpenWebUI-Task":"{{TASK}}"}}}
+      RAG_TEXT_SPLITTER: "token"
+      RAG_TOP_K: "5"
       WEB_SEARCH_ENGINE: "duckduckgo"
       DDGS_BACKEND: "auto"
       WEB_SEARCH_RESULT_COUNT: "5"
