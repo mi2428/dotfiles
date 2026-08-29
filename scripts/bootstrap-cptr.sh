@@ -15,28 +15,42 @@ set +a
 
 compose=(docker compose --env-file "$env_file" -f "$compose_file")
 
-token_line="$("${compose[@]}" logs --no-color cptr | rg -o 'token=[0-9a-f]{64}' | tail -n 1 || true)"
-export CPTR_STARTUP_TOKEN="${token_line#token=}"
+export CPTR_STARTUP_TOKEN=
+for _ in {1..60}; do
+  token_line="$("${compose[@]}" logs --no-color cptr | rg -o 'token=[0-9a-f]{64}' | tail -n 1 || true)"
+  CPTR_STARTUP_TOKEN="${token_line#token=}"
+  if [[ -n "$CPTR_STARTUP_TOKEN" ]]; then
+    break
+  fi
+  sleep 1
+done
 
-"${compose[@]}" exec -T \
+new_gateway_key="$("${compose[@]}" exec -T \
   -e WEBUI_ADMIN_USERNAME \
   -e WEBUI_ADMIN_PASSWORD \
   -e CPTR_STARTUP_TOKEN \
+  -e CPTR_GATEWAY_API_KEY \
   cptr python3 - <<'PY'
+import http.cookiejar
 import json
 import os
 import time
+import urllib.error
 import urllib.request
 
+cookies = http.cookiejar.CookieJar()
+opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
 
-def request(path, payload=None):
-    data = json.dumps(payload).encode() if payload else None
+
+def request(path, payload=None, method=None, headers=None):
+    data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(
         f"http://127.0.0.1:8000{path}",
         data=data,
-        headers={"Content-Type": "application/json"},
+        method=method,
+        headers={"Content-Type": "application/json", **(headers or {})},
     )
-    with urllib.request.urlopen(req, timeout=5) as response:
+    with opener.open(req, timeout=5) as response:
         return json.load(response)
 
 
@@ -58,6 +72,36 @@ if config["needs_setup"]:
     request("/api/auth/setup", {"username": username, "password": password, "token": token})
 
 request("/api/auth/login", {"username": username, "password": password})
+
+gateway_key = os.environ.get("CPTR_GATEWAY_API_KEY", "")
+try:
+    request("/v1/models", headers={"Authorization": f"Bearer {gateway_key}"})
+except urllib.error.HTTPError as error:
+    if error.code != 401:
+        raise
+    for key in request("/v1/keys"):
+        if key["name"] == "Open WebUI":
+            request(f"/v1/keys/{key['id']}", method="DELETE")
+    print(request("/v1/keys", {"name": "Open WebUI"})["key"])
 PY
+)"
+
+if [[ -n "$new_gateway_key" ]]; then
+  export new_gateway_key
+  python3 - "$env_file" <<'PY'
+import os
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+content = path.read_text()
+replacement = f"CPTR_GATEWAY_API_KEY={os.environ['new_gateway_key']}"
+updated, count = re.subn(r"^CPTR_GATEWAY_API_KEY=.*$", replacement, content, flags=re.MULTILINE)
+if count != 1:
+    raise SystemExit("CPTR_GATEWAY_API_KEY must appear exactly once in .env")
+path.write_text(updated)
+PY
+fi
 
 printf '%s\n' 'Computer account is ready'

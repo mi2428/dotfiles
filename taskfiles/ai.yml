@@ -24,8 +24,8 @@ tasks:
   ai.webui.up:
     desc: Start Open WebUI and cptr with Docker
     preconditions:
-      - sh: command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && command -v rg >/dev/null 2>&1
-        msg: Docker Compose, curl, jq, and rg are required
+      - sh: command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && command -v base64 >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 && command -v rg >/dev/null 2>&1
+        msg: Docker Compose, base64, curl, jq, Python 3, and rg are required
       - sh: docker info >/dev/null 2>&1
         msg: Docker is not running
       - sh: test -f '{{.REPO_ROOT}}/containers/open-webui/.env'
@@ -35,9 +35,10 @@ tasks:
       - sh: set -a; . '{{.REPO_ROOT}}/containers/open-webui/.env'; test -d "$CPTR_WORKSPACE_DIR"
         msg: CPTR_WORKSPACE_DIR must be an existing directory
     cmds:
-      - docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' up -d cptr
+      - set -a; . '{{.REPO_ROOT}}/containers/open-webui/.env'; set +a; docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' up -d cptr
       - '{{.REPO_ROOT}}/scripts/bootstrap-cptr.sh ''{{.REPO_ROOT}}'''
-      - docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' up -d --build
+      - set -a; . '{{.REPO_ROOT}}/containers/open-webui/.env'; set +a; docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' up -d --build
+      - '{{.REPO_ROOT}}/scripts/bootstrap-open-webui.sh ''{{.REPO_ROOT}}'''
 
   ai.webui.down:
     desc: Stop Open WebUI and cptr without deleting their data
@@ -47,7 +48,7 @@ tasks:
       - sh: test -f '{{.REPO_ROOT}}/containers/open-webui/.env'
         msg: containers/open-webui/.env is missing
     cmds:
-      - docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' down
+      - set -a; . '{{.REPO_ROOT}}/containers/open-webui/.env'; set +a; docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' down
 
   ai.webui.logs:
     desc: Follow Open WebUI and cptr logs
@@ -57,4 +58,4 @@ tasks:
       - sh: test -f '{{.REPO_ROOT}}/containers/open-webui/.env'
         msg: containers/open-webui/.env is missing
     cmds:
-      - docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' logs -f
+      - set -a; . '{{.REPO_ROOT}}/containers/open-webui/.env'; set +a; docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' logs -f

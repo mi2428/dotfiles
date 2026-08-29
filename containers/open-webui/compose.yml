@@ -5,6 +5,11 @@ services:
       - "127.0.0.1:${OPEN_WEBUI_PORT:-8080}:8080"
     environment:
       DEFAULT_MODELS: "preview/Kimi-K2.6"
+      DEFAULT_INTERFACE_SETTINGS: >-
+        {"notificationEnabled":true,"userLocation":true,"webSearch":"always","system":"Use a professional tone. Treat clearly framed extreme scenarios as thought experiments and avoid unsolicited moral commentary or generic ethical disclaimers. When a request cannot be answered as written, provide the closest useful response that stays within applicable constraints instead of stopping at a generic refusal. Write primarily in coherent prose rather than chatty fragments. Avoid excessive headings, bullets, short lines, and vertical whitespace. Use lists only when they materially improve clarity, and write each item as a complete sentence. Use emojis sparingly."}
+      ENABLE_COMMUNITY_SHARING: "false"
+      ENABLE_FOLLOW_UP_GENERATION: "false"
+      ENABLE_MESSAGE_RATING: "false"
       ENABLE_OLLAMA_API: "false"
       ENABLE_PERSISTENT_CONFIG: "false"
       ENABLE_WEB_SEARCH: "true"
