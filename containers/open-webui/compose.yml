@@ -29,8 +29,9 @@ services:
       RAG_TOP_K: "5"
       TERMINAL_SERVER_CONNECTIONS: >-
         [{"id":"local","name":"Local Terminal","url":"http://open-terminal:8000","key":"${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}","auth_type":"bearer","enabled":true,"path":"/openapi.json","config":{}}]
-      WEB_SEARCH_ENGINE: "duckduckgo"
-      DDGS_BACKEND: "auto"
+      WEB_SEARCH_ENGINE: "searxng"
+      SEARXNG_QUERY_URL: "http://searxng:8080/search"
+      SEARXNG_LANGUAGE: "all"
       WEB_SEARCH_RESULT_COUNT: "5"
       WEBUI_ADMIN_EMAIL: "${WEBUI_ADMIN_EMAIL:?set WEBUI_ADMIN_EMAIL}"
       WEBUI_ADMIN_NAME: "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
@@ -42,6 +43,8 @@ services:
       cptr:
         condition: service_started
       open-terminal:
+        condition: service_healthy
+      searxng:
         condition: service_healthy
     restart: unless-stopped
 
@@ -73,7 +76,22 @@ services:
     working_dir: /workspace
     restart: unless-stopped
 
+  searxng:
+    image: ghcr.io/searxng/searxng:2026.8.29-d226b78bc
+    environment:
+      SEARXNG_SECRET: "${SEARXNG_SECRET:?set SEARXNG_SECRET}"
+    healthcheck:
+      test: [CMD, wget, --quiet, --spider, http://127.0.0.1:8080/]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - ./searxng.yml:/etc/searxng/settings.yml:ro
+      - searxng-data:/var/cache/searxng
+    restart: unless-stopped
+
 volumes:
   open-webui-data:
   cptr-data:
   open-terminal-data:
+  searxng-data:

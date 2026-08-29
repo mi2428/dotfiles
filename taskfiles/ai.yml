@@ -22,7 +22,7 @@ tasks:
       - task: ai.check
 
   ai.webui.up:
-    desc: Start Open WebUI, Computer, and Open Terminal with Docker
+    desc: Start Open WebUI, Computer, Open Terminal, and SearXNG with Docker
     preconditions:
       - sh: command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && command -v base64 >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && command -v nix >/dev/null 2>&1 && command -v rg >/dev/null 2>&1
         msg: Docker Compose, base64, curl, jq, Nix, and rg are required
@@ -32,7 +32,7 @@ tasks:
       - '{{.REPO_ROOT}}/scripts/open-webui.sh ''{{.REPO_ROOT}}'' up'
 
   ai.webui.down:
-    desc: Stop Open WebUI, Computer, and Open Terminal without deleting their data
+    desc: Stop Open WebUI, Computer, Open Terminal, and SearXNG without deleting their data
     preconditions:
       - sh: command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && command -v nix >/dev/null 2>&1
         msg: Docker Compose and Nix are required
@@ -40,7 +40,7 @@ tasks:
       - '{{.REPO_ROOT}}/scripts/open-webui.sh ''{{.REPO_ROOT}}'' down'
 
   ai.webui.logs:
-    desc: Follow Open WebUI, Computer, and Open Terminal logs
+    desc: Follow Open WebUI, Computer, Open Terminal, and SearXNG logs
     preconditions:
       - sh: command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && command -v nix >/dev/null 2>&1
         msg: Docker Compose and Nix are required
