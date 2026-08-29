@@ -58,6 +58,7 @@ Tasks
   ai.webui.logs      Follow Open WebUI and cptr logs
   secrets.encrypt    Encrypt ssh and/or gnupg into chezmoi source state
   secrets.decrypt    Decrypt ssh and/or gnupg into a target directory
+  secrets.edit.webui Edit the age-encrypted Open WebUI environment
   secrets.backup     Backup ssh and gnupg into encrypted chezmoi source state
   secrets.clear      Remove local staging and decrypted secret work directories
   docker.build       Build Dockerfile locally as ghcr.io/OWNER/IMAGE:TAG
@@ -169,8 +170,6 @@ Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `t
 [Open WebUI](https://openwebui.com/) and [Open WebUI Computer](https://openwebui.com/computer) run together under Docker. Computer has read-write access to `CPTR_WORKSPACE_DIR`, so mount only a trusted workspace. Persistent data lives in named volumes and `<workspace>/.cptr`; manage Open WebUI Admin UI configuration in Compose because UI changes do not survive a restart.
 
 ```console
-$ cp containers/open-webui/.env.example containers/open-webui/.env
-$ openssl rand -hex 32  # use this for WEBUI_SECRET_KEY, then set the remaining required values
 $ task ai.webui.up
 $ task ai.webui.logs    # follow service logs
 $ task ai.webui.down    # stops containers without deleting persistent data
