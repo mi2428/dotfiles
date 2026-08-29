@@ -44,7 +44,12 @@ set -gx LESS '-g -i -M -R -S -W -z-4 -x4'
 set -gx EDITOR vim
 set -gx PROMPT_SEVERITY 0
 set -gx TRASHBIN $HOME/.trash
-set -g fish_cursor_default block blink
+set -g fish_cursor_default block
+set -g fish_cursor_insert line
+set -g fish_cursor_replace_one underscore
+set -g fish_cursor_replace underscore
+set -g fish_cursor_external line
+set -g fish_cursor_visual block
 
 function fish_should_add_to_history
     string match -qr '^( |\s*en(\s|$)|\s*dot\s+(q|query)(\s|$))' -- "$argv[1]"

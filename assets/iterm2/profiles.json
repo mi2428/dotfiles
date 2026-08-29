@@ -298,7 +298,7 @@
     "Green Component" : 0.29411765933036804
   },
   "Name" : "Material",
-  "Blinking Cursor" : true,
+  "Blinking Cursor" : false,
   "Guid" : "44C473CF-384A-4241-A86F-69DAC6B02451",
   "Badge Max Width" : 0.5,
   "Match Background Color" : {
@@ -370,7 +370,7 @@
     "Green Component" : 0.27843138575553894
   },
   "Option Key Sends" : 2,
-  "Blink Allowed" : true,
+  "Blink Allowed" : false,
   "Ansi 15 Color" : {
     "Red Component" : 1,
     "Color Space" : "sRGB",
@@ -720,7 +720,7 @@
     "Green Component" : 0.29411765933036804
   },
   "Name" : "Material (Quick Terminal)",
-  "Blinking Cursor" : true,
+  "Blinking Cursor" : false,
   "Guid" : "E93A018A-31A5-43E0-95AC-3370C2E6C4E4",
   "Idle Code" : 0,
   "Ansi 10 Color" : {
@@ -784,7 +784,7 @@
   },
   "Option Key Sends" : 0,
   "HotKey Window Animates" : true,
-  "Blink Allowed" : true,
+  "Blink Allowed" : false,
   "Ansi 15 Color" : {
     "Red Component" : 1,
     "Color Space" : "sRGB",
@@ -1137,7 +1137,7 @@
   },
   "Name" : "Catppuccin",
   "Guid" : "60D653FC-91F5-4099-92AB-4DF67AD9B0B2",
-  "Blinking Cursor" : true,
+  "Blinking Cursor" : false,
   "Badge Max Width" : 0.5,
   "Match Background Color" : {
     "Red Component" : 0.99697142839431763,
@@ -1194,7 +1194,7 @@
   "Terminal Type" : "xterm-256color",
   "Horizontal Spacing" : 1,
   "Option Key Sends" : 2,
-  "Blink Allowed" : true,
+  "Blink Allowed" : false,
   "Ansi 15 Color" : {
     "Red Component" : 0.72941176470588232,
     "Color Space" : "sRGB",
@@ -1547,7 +1547,7 @@
     "Green Component" : 0.54509803921568623
   },
   "Name" : "Catppuccin (Quick Terminal)",
-  "Blinking Cursor" : true,
+  "Blinking Cursor" : false,
   "Guid" : "E270FA9A-DD2C-455F-B824-A926A9D24130",
   "Match Background Color" : {
     "Red Component" : 0.99697142839431763,
@@ -1603,7 +1603,7 @@
   "Terminal Type" : "xterm-256color",
   "Horizontal Spacing" : 1,
   "Option Key Sends" : 0,
-  "Blink Allowed" : true,
+  "Blink Allowed" : false,
   "HotKey Window Animates" : true,
   "HotKey Modifier Flags" : 1179648,
   "Ansi 15 Color" : {

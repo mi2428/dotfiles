@@ -109,7 +109,7 @@
     "geminicodeassist.inlineSuggestions.enableAuto": false,
     "git.confirmSync": false,
     "geminicodeassist.project": "teo-playground-464609",
-    "terminal.integrated.cursorBlinking": true,
+    "terminal.integrated.cursorBlinking": false,
     "extensions.experimental.affinity": {
         "vscodevim.vim": 1,
         "asvetliakov.vscode-neovim": 1

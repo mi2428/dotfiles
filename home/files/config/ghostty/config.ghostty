@@ -55,6 +55,7 @@ alpha-blending = native
 font-thicken = true
 font-thicken-strength = 100
 cursor-style = block
+cursor-style-blink = false
 shell-integration-features = no-cursor,no-sudo,title,no-ssh-env,no-ssh-terminfo,path
 quick-terminal-position = top
 quick-terminal-size = 50%

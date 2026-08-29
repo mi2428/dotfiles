@@ -372,6 +372,7 @@ opt.ttimeoutlen = 0
 opt.number = true
 opt.numberwidth = 3
 opt.relativenumber = true
+opt.guicursor = "a:block-blinkon0"
 opt.diffopt:remove("linematch:40")
 opt.diffopt:append("linematch:60")
 opt.fillchars:append({
