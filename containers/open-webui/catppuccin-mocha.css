@@ -196,12 +196,25 @@ html.dark a.selected[href^='/c/']:hover {
 	background: color-mix(in srgb, var(--ctp-lavender) 24%, var(--ctp-mantle)) !important;
 }
 
+html.dark [id^='message-']:has(img.assistant-message-profile-image) {
+	--ctp-model-accent: color-mix(
+		in srgb,
+		var(--ctp-model-hue, var(--ctp-accent)) var(--ctp-model-intensity, 100%),
+		var(--ctp-base)
+	);
+	--ctp-model-accent-muted: color-mix(
+		in srgb,
+		var(--ctp-model-accent) 72%,
+		var(--ctp-subtext-0)
+	);
+}
+
 html.dark div:has(> img.assistant-message-profile-image) {
 	position: relative;
 	width: 1.5rem;
 	background: linear-gradient(
-			color-mix(in srgb, var(--ctp-accent) 55%, transparent),
-			color-mix(in srgb, var(--ctp-accent) 55%, transparent)
+			color-mix(in srgb, var(--ctp-model-accent) 55%, transparent),
+			color-mix(in srgb, var(--ctp-model-accent) 55%, transparent)
 		) center 1.75rem / 3px calc(100% - 1.75rem) no-repeat;
 	isolation: isolate;
 }
@@ -211,7 +224,7 @@ html.dark div:has(> img.assistant-message-profile-image)::before {
 	inset: 0 auto auto 0;
 	width: 1.5rem;
 	height: 1.5rem;
-	background: var(--ctp-accent);
+	background: var(--ctp-model-accent);
 	border-radius: 0.5rem;
 	content: '';
 }
@@ -226,15 +239,33 @@ html.dark img.assistant-message-profile-image {
 }
 
 html.dark #response-message-model-name {
-	color: var(--ctp-accent) !important;
+	color: var(--ctp-model-accent) !important;
 }
 
-html.dark #response-content-container .markdown-prose button[aria-expanded] {
-	color: var(--ctp-lavender) !important;
+html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded] {
+	color: var(--ctp-overlay-2) !important;
 }
 
-html.dark #response-content-container .markdown-prose button[aria-expanded]:hover {
-	color: var(--ctp-accent) !important;
+html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded]:hover {
+	color: var(--ctp-model-accent-muted) !important;
+}
+
+html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded]:focus-visible {
+	outline: none !important;
+	text-decoration: underline;
+	text-decoration-color: var(--ctp-overlay-0);
+	text-underline-offset: 0.2rem;
+}
+
+html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded='true'] + div,
+html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded='true'] + div .markdown-prose {
+	--tw-prose-body: var(--ctp-subtext-0);
+	--tw-prose-headings: var(--ctp-subtext-0);
+	--tw-prose-bold: var(--ctp-subtext-0);
+	--tw-prose-quotes: var(--ctp-subtext-0);
+	--tw-prose-counters: var(--ctp-subtext-0);
+	--tw-prose-bullets: var(--ctp-overlay-1);
+	color: var(--ctp-subtext-0);
 }
 
 html.dark #message-input-container {

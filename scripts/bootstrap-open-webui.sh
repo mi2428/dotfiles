@@ -83,7 +83,15 @@ model_order_list="$(
   curl -fsS "$base_url/api/models?refresh=true" \
     -H "Authorization: Bearer $token" \
     | jq -c '[.data[] | select((.info.meta.hidden // false) == false)]
-        | sort_by([(.name | ascii_downcase), .id])
+        | sort_by([
+            (.name | sub(" (Low|Medium|High|Max)$"; "") | ascii_downcase),
+            (if (.name | endswith(" Low")) then 0
+             elif (.name | endswith(" Medium")) then 1
+             elif (.name | endswith(" High")) then 2
+             elif (.name | endswith(" Max")) then 3
+             else -1 end),
+            .id
+          ])
         | map(.id)'
 )"
 
