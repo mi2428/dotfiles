@@ -175,6 +175,8 @@ $ task ai.webui.logs    # follow service logs
 $ task ai.webui.down    # stops containers without deleting persistent data
 ```
 
+`task ai.webui.up` also configures private Tailscale Serve access when Tailscale is available. Open WebUI stays bound to localhost, and Funnel is not used.
+
 ## Random Notes
 
 #### PAM

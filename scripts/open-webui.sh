@@ -21,6 +21,8 @@ unset \
   OPEN_WEBUI_PORT \
   SAKURA_AI_ACCOUNT_TOKEN \
   SEARXNG_SECRET \
+  CORS_ALLOW_ORIGIN \
+  WEBUI_URL \
   WEBUI_ADMIN_EMAIL \
   WEBUI_ADMIN_PASSWORD \
   WEBUI_ADMIN_USERNAME \
@@ -42,6 +44,25 @@ wait "$decrypt_pid"
 : "${SEARXNG_SECRET:?set SEARXNG_SECRET}"
 [[ -d "$CPTR_WORKSPACE_DIR" ]] || { printf 'CPTR_WORKSPACE_DIR is not a directory\n' >&2; exit 1; }
 
+resolve_tailscale_bin() {
+  local candidate
+  candidate="$(command -v tailscale || true)"
+  if [[ -n "$candidate" ]]; then
+    printf '%s\n' "$candidate"
+  elif [[ -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ]]; then
+    printf '%s\n' /Applications/Tailscale.app/Contents/MacOS/Tailscale
+  else
+    printf '%s\n' 'Tailscale CLI is unavailable' >&2
+    return 1
+  fi
+}
+
+tailscale_webui_url() {
+  local tailscale_bin="$1"
+  TAILSCALE_BE_CLI=1 "$tailscale_bin" status --json \
+    | jq -er 'select(.BackendState == "Running") | .Self.DNSName | rtrimstr(".") | "https://\(.)"'
+}
+
 unset CPTR_GATEWAY_API_KEY
 set -a
 # shellcheck disable=SC1090
@@ -49,9 +70,18 @@ set -a
 set +a
 
 compose=(docker compose -f "$repo_root/containers/open-webui/compose.yml")
+local_url="http://127.0.0.1:${OPEN_WEBUI_PORT:-38080}"
+export WEBUI_URL="$local_url"
+export CORS_ALLOW_ORIGIN="$WEBUI_URL"
 
 case "$action" in
   up)
+    tailscale_bin=
+    if tailscale_bin="$(resolve_tailscale_bin)" \
+      && tailscale_url="$(tailscale_webui_url "$tailscale_bin")"; then
+      export WEBUI_URL="$tailscale_url"
+      export CORS_ALLOW_ORIGIN="$WEBUI_URL"
+    fi
     "${compose[@]}" up -d cptr
     "$repo_root/scripts/bootstrap-cptr.sh" "$repo_root"
     unset CPTR_GATEWAY_API_KEY
@@ -61,6 +91,9 @@ case "$action" in
     set +a
     "${compose[@]}" up -d --build
     "$repo_root/scripts/bootstrap-open-webui.sh" "$repo_root"
+    [[ -z "$tailscale_bin" ]] \
+      || TAILSCALE_BE_CLI=1 "$tailscale_bin" serve --bg "$local_url" \
+      || true
     ;;
   down)
     "${compose[@]}" down
