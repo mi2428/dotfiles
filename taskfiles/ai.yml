@@ -24,8 +24,8 @@ tasks:
   ai.webui.up:
     desc: Start Open WebUI and cptr with Docker
     preconditions:
-      - sh: command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
-        msg: Docker Compose is required
+      - sh: command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && command -v rg >/dev/null 2>&1
+        msg: Docker Compose, curl, jq, and rg are required
       - sh: docker info >/dev/null 2>&1
         msg: Docker is not running
       - sh: test -f '{{.REPO_ROOT}}/containers/open-webui/.env'
@@ -35,6 +35,8 @@ tasks:
       - sh: set -a; . '{{.REPO_ROOT}}/containers/open-webui/.env'; test -d "$CPTR_WORKSPACE_DIR"
         msg: CPTR_WORKSPACE_DIR must be an existing directory
     cmds:
+      - docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' up -d cptr
+      - '{{.REPO_ROOT}}/scripts/bootstrap-cptr.sh ''{{.REPO_ROOT}}'''
       - docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' up -d
 
   ai.webui.down:
