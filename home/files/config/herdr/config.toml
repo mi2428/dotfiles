@@ -71,6 +71,7 @@ text = "#bac2de"
 mauve = "#cba6f7"
 
 [ui]
+window_title = "herdr: {hostname}: {workspace}"
 host_cursor = "native"
 tab_bar_position = "bottom"
 sidebar_collapsed_mode = "hidden"
