@@ -27,6 +27,8 @@ services:
         {"0":{"enable":true},"1":{"enable":true,"headers":{"X-OpenWebUI-Chat-Id":"{{CHAT_ID}}","X-OpenWebUI-Message-Id":"{{MESSAGE_ID}}","X-OpenWebUI-User-Message-Id":"{{USER_MESSAGE_ID}}","X-OpenWebUI-User-Message-Parent-Id":"{{USER_MESSAGE_PARENT_ID}}","X-OpenWebUI-Task":"{{TASK}}"}}}
       RAG_TEXT_SPLITTER: "token"
       RAG_TOP_K: "5"
+      TERMINAL_SERVER_CONNECTIONS: >-
+        [{"id":"local","name":"Local Terminal","url":"http://open-terminal:8000","key":"${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}","auth_type":"bearer","enabled":true,"path":"/openapi.json","config":{}}]
       WEB_SEARCH_ENGINE: "duckduckgo"
       DDGS_BACKEND: "auto"
       WEB_SEARCH_RESULT_COUNT: "5"
@@ -37,7 +39,10 @@ services:
     volumes:
       - open-webui-data:/app/backend/data
     depends_on:
-      - cptr
+      cptr:
+        condition: service_started
+      open-terminal:
+        condition: service_healthy
     restart: unless-stopped
 
   cptr:
@@ -48,6 +53,27 @@ services:
     working_dir: /workspace
     restart: unless-stopped
 
+  open-terminal:
+    image: ghcr.io/open-webui/open-terminal:0.12.3
+    environment:
+      OPEN_TERMINAL_API_KEY: "${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}"
+      OPEN_TERMINAL_FILE_BROWSER_ROOT: /workspace
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - import os,urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/api/config',headers={'Authorization':'Bearer '+os.environ['OPEN_TERMINAL_API_KEY']}))
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - open-terminal-data:/home/user
+      - "${CPTR_WORKSPACE_DIR:?set CPTR_WORKSPACE_DIR}:/workspace"
+    working_dir: /workspace
+    restart: unless-stopped
+
 volumes:
   open-webui-data:
   cptr-data:
+  open-terminal-data:
