@@ -196,6 +196,47 @@ html.dark a.selected[href^='/c/']:hover {
 	background: color-mix(in srgb, var(--ctp-lavender) 24%, var(--ctp-mantle)) !important;
 }
 
+html.dark div:has(> img.assistant-message-profile-image) {
+	position: relative;
+	width: 1.5rem;
+	background: linear-gradient(
+			color-mix(in srgb, var(--ctp-accent) 55%, transparent),
+			color-mix(in srgb, var(--ctp-accent) 55%, transparent)
+		) center 1.75rem / 3px calc(100% - 1.75rem) no-repeat;
+	isolation: isolate;
+}
+
+html.dark div:has(> img.assistant-message-profile-image)::before {
+	position: absolute;
+	inset: 0 auto auto 0;
+	width: 1.5rem;
+	height: 1.5rem;
+	background: var(--ctp-accent);
+	border-radius: 0.5rem;
+	content: '';
+}
+
+html.dark img.assistant-message-profile-image {
+	position: relative;
+	z-index: 1;
+	width: 1.5rem;
+	height: 1.5rem;
+	border-radius: 0.5rem;
+	mix-blend-mode: multiply;
+}
+
+html.dark #response-message-model-name {
+	color: var(--ctp-accent) !important;
+}
+
+html.dark #response-content-container .markdown-prose button[aria-expanded] {
+	color: var(--ctp-lavender) !important;
+}
+
+html.dark #response-content-container .markdown-prose button[aria-expanded]:hover {
+	color: var(--ctp-accent) !important;
+}
+
 html.dark #message-input-container {
 	background-color: color-mix(in srgb, var(--ctp-sapphire) 10%, var(--ctp-base)) !important;
 }
