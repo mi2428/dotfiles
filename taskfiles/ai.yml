@@ -37,7 +37,7 @@ tasks:
     cmds:
       - docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' up -d cptr
       - '{{.REPO_ROOT}}/scripts/bootstrap-cptr.sh ''{{.REPO_ROOT}}'''
-      - docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' up -d
+      - docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' up -d --build
 
   ai.webui.down:
     desc: Stop Open WebUI and cptr without deleting their data
