@@ -41,48 +41,11 @@ if cmp -s "$original_env" "$plain_env"; then
   exit
 fi
 
-allowed='^(#.*|[[:space:]]*|SAKURA_AI_ACCOUNT_TOKEN=.*|WEBUI_SECRET_KEY=.*|WEBUI_ADMIN_USERNAME=.*|WEBUI_ADMIN_EMAIL=.*|WEBUI_ADMIN_PASSWORD=.*|CPTR_WORKSPACE_DIR=.*|OPEN_WEBUI_PORT=.*)$'
-if rg -n -v "$allowed" "$plain_env" >/dev/null; then
-  printf '%s\n' 'The environment contains an unsupported line' >&2
+env_line='^(#.*|[[:space:]]*|[A-Za-z_][A-Za-z0-9_]*=.*)$'
+if rg -n -v "$env_line" "$plain_env" >/dev/null; then
+  printf '%s\n' 'The environment must contain only comments, blank lines, or KEY=VALUE entries' >&2
   exit 1
 fi
-
-for key in \
-  SAKURA_AI_ACCOUNT_TOKEN \
-  WEBUI_SECRET_KEY \
-  WEBUI_ADMIN_USERNAME \
-  WEBUI_ADMIN_EMAIL \
-  WEBUI_ADMIN_PASSWORD \
-  CPTR_WORKSPACE_DIR \
-  OPEN_WEBUI_PORT; do
-  [[ "$(rg -c "^${key}=" "$plain_env" || true)" == 1 ]] || {
-    printf '%s must appear exactly once\n' "$key" >&2
-    exit 1
-  }
-done
-
-(
-  unset \
-    CPTR_WORKSPACE_DIR \
-    OPEN_WEBUI_PORT \
-    SAKURA_AI_ACCOUNT_TOKEN \
-    WEBUI_ADMIN_EMAIL \
-    WEBUI_ADMIN_PASSWORD \
-    WEBUI_ADMIN_USERNAME \
-    WEBUI_SECRET_KEY
-  set -a
-  # shellcheck disable=SC1090
-  source "$plain_env"
-  set +a
-  : "${SAKURA_AI_ACCOUNT_TOKEN:?set SAKURA_AI_ACCOUNT_TOKEN}"
-  : "${WEBUI_SECRET_KEY:?set WEBUI_SECRET_KEY}"
-  : "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
-  : "${WEBUI_ADMIN_EMAIL:?set WEBUI_ADMIN_EMAIL}"
-  : "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
-  : "${CPTR_WORKSPACE_DIR:?set CPTR_WORKSPACE_DIR}"
-  : "${OPEN_WEBUI_PORT:?set OPEN_WEBUI_PORT}"
-  [[ -d "$CPTR_WORKSPACE_DIR" ]]
-)
 
 cipher_temp="$(mktemp "$encrypted_env.XXXXXX")"
 "$age_bin" --encrypt --recipient "$recipient" "$plain_env" > "$cipher_temp"
