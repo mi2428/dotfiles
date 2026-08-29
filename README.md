@@ -47,23 +47,32 @@ Tasks
   hm.build           Build the current host activation without switching
   hm.switch          Apply the current host activation and refresh managed symlinks
   hm.link            Re-apply the current host activation to re-create managed symlinks
-  hm.update          Update nixpkgs in flake.lock and apply the current host activation
+  hm.update          Update Nix inputs in flake.lock and apply the current host activation
   hm.gc              Delete old generations and collect Nix garbage (run without sudo)
   brew.check         Check the repo-managed Brewfile against the local Homebrew state
   brew.sync          Update and upgrade Homebrew, then apply the repo-managed Brewfile
-  secrets.encrypt    Encrypt ssh, gnupg, and/or Hermes context into source state
-  secrets.decrypt    Decrypt ssh, gnupg, and/or Hermes context into a target directory
-  secrets.backup     Backup ssh, gnupg, and Hermes context into encrypted source state
+  ai.check           Check AI harness versions, Herdr integrations, and pinned OpenCode config
+  ai.upgrade         Upgrade AI harnesses and refresh exact OmO and Slim plugin pins
+  ai.ui.up           Start Open WebUI and cptr with Podman
+  ai.ui.down         Stop Open WebUI and cptr without deleting their data
+  ai.ui.logs         Follow Open WebUI and cptr logs
+  secrets.encrypt    Encrypt ssh and/or gnupg into chezmoi source state
+  secrets.decrypt    Decrypt ssh and/or gnupg into a target directory
+  secrets.backup     Backup ssh and gnupg into encrypted chezmoi source state
   secrets.clear      Remove local staging and decrypted secret work directories
   docker.build       Build Dockerfile locally as ghcr.io/OWNER/IMAGE:TAG
   docker.login       Login to ghcr.io with GHCR_TOKEN, GITHUB_TOKEN, or gh auth token
   docker.push        Build and push Dockerfile to ghcr.io as ghcr.io/OWNER/IMAGE:TAG
+  docker.run         Run the MCP workspace container on 127.0.0.1:3000
 
 Defaults
   GHCR_OWNER         mi2428
   GHCR_IMAGE_NAME    dotfiles
   TAG                latest
   DOCKER_RUNTIME     docker
+  PORT               3000
+  WORKSPACE_DIR      repository root
+  CONTAINER_NAME     dotfiles-mcp
   PLATFORMS          linux/amd64,linux/arm64
   HOST               auto-detected from the current machine
   IMPORT_GPG         0
@@ -76,8 +85,6 @@ Examples
   task secrets.encrypt
   task secrets.encrypt BUNDLE=ssh
   task secrets.encrypt BUNDLE=gnupg GPG_KEY_IDS='E8D3009C6341BDEAF038009685AB6867E2147DDA'
-  task secrets.encrypt BUNDLE=hermes
-  task secrets.decrypt BUNDLE=hermes DECRYPT_HOME=$HOME
   task secrets.decrypt IMPORT_GPG=1 DECRYPT_HOME=$HOME
   task secrets.backup
   task docker.build TAG=latest
@@ -86,6 +93,20 @@ Examples
 
 On macOS, Homebrew is intentionally decoupled from `darwin-rebuild`.
 Use the repo-root `Brewfile` with `task brew.check` and `task brew.sync` for Homebrew state, then use `task hm.switch HOST=macos` for Nix-managed changes.
+
+### Open WebUI and Computer
+
+[Open WebUI](https://openwebui.com/) and [Open WebUI Computer](https://openwebui.com/computer) run together under Podman. Computer has read-write access to `CPTR_WORKSPACE_DIR`, so mount only a trusted workspace. Persistent data lives in named volumes and `<workspace>/.cptr`; manage Open WebUI Admin UI configuration in Compose because UI changes do not survive a restart.
+
+```console
+$ cp containers/open-webui/.env.example containers/open-webui/.env
+$ openssl rand -hex 32  # use this for WEBUI_SECRET_KEY, then set the remaining required values
+$ task ai.ui.up
+$ task ai.ui.logs       # first-run cptr setup URL
+$ task ai.ui.down       # stops containers without deleting persistent data
+```
+
+On the first run only, add `/workspace` and an LLM provider in cptr, then create a Gateway key under `Settings > Admin > Gateway`. Put that key in `CPTR_GATEWAY_API_KEY` and run `task ai.ui.up` again. cptr stores provider credentials encrypted in its persistent volume.
 
 Run `task hm.gc` as the login user, never as `sudo task hm.gc`; it elevates only
 the system garbage-collection pass. macOS SIP protects `com.apple.macl`, so a
