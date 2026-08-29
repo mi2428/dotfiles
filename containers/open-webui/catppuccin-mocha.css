@@ -25,6 +25,10 @@ html.dark {
 	--ctp-base: #1e1e2e;
 	--ctp-mantle: #181825;
 	--ctp-crust: #11111b;
+	--ctp-accent: var(--ctp-mauve);
+	--ctp-accent-hover: var(--ctp-lavender);
+	--ctp-accent-active: color-mix(in srgb, var(--ctp-mauve) 80%, var(--ctp-base));
+	--ctp-on-accent: var(--ctp-crust);
 
 	--color-gray-50: var(--ctp-text);
 	--color-gray-100: var(--ctp-subtext-1);
@@ -146,7 +150,7 @@ html.dark {
 	--color-rose-700: color-mix(in srgb, var(--ctp-maroon) 65%, var(--ctp-base));
 	--color-rose-900: color-mix(in srgb, var(--ctp-maroon) 30%, var(--ctp-base));
 
-	accent-color: var(--ctp-mauve);
+	accent-color: var(--ctp-accent);
 }
 
 html.dark body,
@@ -170,7 +174,70 @@ html.dark :where(.font-light, .font-extralight, .font-thin) {
 
 html.dark ::selection,
 html.dark .editor-selection {
-	background: color-mix(in srgb, var(--ctp-overlay-2) 30%, transparent);
+	background: color-mix(in srgb, var(--ctp-accent) 35%, transparent);
+	color: var(--ctp-text);
+}
+
+html.dark mark {
+	background: color-mix(in srgb, var(--ctp-accent) 35%, transparent);
+	color: var(--ctp-text);
+}
+
+html.dark a.selected[href^='/c/'] {
+	background: color-mix(in srgb, var(--ctp-lavender) 18%, var(--ctp-mantle)) !important;
+}
+
+html.dark a.selected[href^='/c/'],
+html.dark a.selected[href^='/c/'] * {
+	color: var(--ctp-lavender) !important;
+}
+
+html.dark a.selected[href^='/c/']:hover {
+	background: color-mix(in srgb, var(--ctp-lavender) 24%, var(--ctp-mantle)) !important;
+}
+
+html.dark #message-input-container {
+	background-color: color-mix(in srgb, var(--ctp-sapphire) 10%, var(--ctp-base)) !important;
+}
+
+html.dark #message-input-container button.dark\:bg-gray-700:not(.self-center) {
+	background-color: var(--ctp-yellow) !important;
+	color: var(--ctp-crust) !important;
+}
+
+html.dark #message-input-container button.dark\:bg-gray-700:not(.self-center):hover {
+	background-color: var(--ctp-peach) !important;
+}
+
+html.dark :is(button, a, [role='button']).dark\:bg-white.dark\:text-black {
+	background-color: var(--ctp-accent);
+	border-color: var(--ctp-accent);
+	color: var(--ctp-on-accent);
+}
+
+html.dark :is(button, a, [role='button']).dark\:bg-white.dark\:text-black:hover:not(:disabled) {
+	background-color: var(--ctp-accent-hover);
+}
+
+html.dark :is(button, a, [role='button']).dark\:bg-white.dark\:text-black:active:not(:disabled) {
+	background-color: var(--ctp-accent-active);
+}
+
+html.dark [role='switch'][aria-checked='true'] {
+	background-color: var(--ctp-accent);
+	outline-color: var(--ctp-accent);
+}
+
+html.dark :focus-visible:not(.ProseMirror):not([contenteditable='true']):not(input):not(textarea),
+html.dark .focus-ring:focus-visible,
+html.dark :is(input, textarea, [contenteditable='true'], .ProseMirror):focus-visible {
+	--tw-ring-color: color-mix(in srgb, var(--ctp-accent) 40%, transparent);
+	--tw-ring-offset-color: var(--ctp-base);
+	outline-color: var(--ctp-accent) !important;
+}
+
+html.dark :where(input, textarea, [contenteditable='true'], .ProseMirror) {
+	caret-color: var(--ctp-accent);
 }
 
 html.dark ::-webkit-scrollbar-thumb {
