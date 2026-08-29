@@ -30,13 +30,13 @@ token="$({
         --data-binary @-
 } | jq -er '.token')"
 
-# The Sakura subset represents the speed/accuracy Pareto frontier as of September 2026.
+# The Sakura subset represents the speed/accuracy Pareto frontier as of August 2026.
 jq -n \
   'def model($id; $name): {
     id: $id,
     base_model_id: null,
     name: $name,
-    meta: {},
+    meta: {hidden: false},
     params: {},
     access_grants: [],
     is_active: true
@@ -49,7 +49,7 @@ jq -n \
       id: ($slug + "-" + $effort),
       base_model_id: $base,
       name: ($name + " " + (($effort[0:1] | ascii_upcase) + $effort[1:])),
-      meta: {tags: [{name: $tag}]},
+      meta: {hidden: false, tags: [{name: $tag}]},
       params: {reasoning_effort: $effort},
       access_grants: [],
       is_active: true
@@ -58,27 +58,30 @@ jq -n \
     variants($base; $slug; $name; $tag; $efforts) | map(.meta.hidden = true);
   {models:
     [
-      hidden_model("sacloud.llm-jp-3.1-8x13b-instruct4"; "Sacloud LLM-jp 3.1 8x13B Instruct 4"),
-      hidden_model("sacloud.preview/Qwen3-0.6B-cpu"; "Sacloud Qwen3 0.6B CPU"),
-      hidden_model("sacloud.preview/Phi-4-mini-instruct-cpu"; "Sacloud Phi-4 Mini Instruct CPU"),
-      hidden_model("sacloud.preview/Qwen3-Embedding-4B-FP16"; "Sacloud Qwen3 Embedding 4B FP16"),
-      hidden_model("sacloud.preview/Kimi-K2.6"; "Sacloud Kimi K2.6"),
-      model("sacloud.preview/gemma-4-31B-it"; "Sacloud Gemma 4 31B IT"),
-      model("sacloud.preview/Qwen3.6-35B-A3B"; "Sacloud Qwen3.6 35B A3B"),
-      hidden_model("sacloud.preview/Kimi-K2.7-Code"; "Sacloud Kimi K2.7 Code"),
-      hidden_model("sacloud.whisper-large-v3-turbo"; "Sacloud Whisper Large V3 Turbo"),
-      model("sacloud.preview/Qwen3-VL-30B-A3B-Instruct"; "Sacloud Qwen3 VL 30B A3B Instruct"),
-      hidden_model("sacloud.multilingual-e5-large"; "Sacloud Multilingual E5 Large"),
-      hidden_model("sacloud.gpt-oss-120b"; "Sacloud GPT-OSS 120B"),
-      model("groq.groq/compound"; "Groq Compound"),
-      model("groq.groq/compound-mini"; "Groq Compound Mini"),
-      model("groq.openai/gpt-oss-120b"; "Groq GPT-OSS 120B"),
-      model("groq.openai/gpt-oss-20b"; "Groq GPT-OSS 20B"),
-      model("groq.qwen/qwen3.6-27b"; "Groq Qwen3.6 27B"),
-      model("groq.qwen/qwen3.8-27b"; "Groq Qwen3.8 27B")
+      hidden_model("sacloud.llm-jp-3.1-8x13b-instruct4"; "Sakura LLM-jp 3.1 8x13B Instruct 4"),
+      hidden_model("sacloud.preview/Qwen3-0.6B-cpu"; "Sakura Qwen3 0.6B CPU"),
+      hidden_model("sacloud.preview/Phi-4-mini-instruct-cpu"; "Sakura Phi-4 Mini Instruct CPU"),
+      hidden_model("sacloud.preview/Qwen3-Embedding-4B-FP16"; "Sakura Qwen3 Embedding 4B FP16"),
+      hidden_model("sacloud.preview/Kimi-K2.6"; "Sakura Kimi K2.6"),
+      hidden_model("sacloud.preview/gemma-4-31B-it"; "Sakura Gemma 4 31B IT"),
+      hidden_model("sacloud.preview/Qwen3.6-35B-A3B"; "Sakura Qwen3.6 35B A3B"),
+      model("sacloud.preview/Kimi-K2.7-Code"; "Sakura Kimi K2.7 Code"),
+      hidden_model("sacloud.whisper-large-v3-turbo"; "Sakura Whisper Large V3 Turbo"),
+      hidden_model("sacloud.preview/Qwen3-VL-30B-A3B-Instruct"; "Sakura Qwen3 VL 30B A3B Instruct"),
+      hidden_model("sacloud.multilingual-e5-large"; "Sakura Multilingual E5 Large"),
+      hidden_model("sacloud.gpt-oss-120b"; "Sakura GPT-OSS 120B"),
+      hidden_model("groq.groq/compound"; "Groq Compound"),
+      hidden_model("groq.groq/compound-mini"; "Groq Compound Mini"),
+      hidden_model("groq.openai/gpt-oss-120b"; "Groq GPT-OSS 120B"),
+      hidden_model("groq.openai/gpt-oss-20b"; "Groq GPT-OSS 20B"),
+      hidden_model("groq.qwen/qwen3.6-27b"; "Groq Qwen3.6 27B"),
+      hidden_model("groq.qwen/qwen3.8-27b"; "Groq Qwen3.8 27B")
     ]
-    + variants("sacloud.preview/Kimi-K2.6"; "sacloud.kimi-k2.6"; "Sacloud Kimi K2.6"; "Kimi"; ["low", "medium", "high", "max"])
-    + variants("sacloud.preview/Kimi-K2.7-Code"; "sacloud.kimi-k2.7-code"; "Sacloud Kimi K2.7 Code"; "Kimi"; ["low", "medium", "high", "max"])
+    + variants("sacloud.preview/gemma-4-31B-it"; "sacloud.gemma-4-31b-it"; "Sakura Gemma 4 31B IT"; "Gemma"; ["low", "high", "max"])
+    + variants("sacloud.preview/Qwen3.6-35B-A3B"; "sacloud.qwen3.6-35b-a3b"; "Sakura Qwen3.6 35B A3B"; "Qwen"; ["high", "max"])
+    + variants("sacloud.preview/Kimi-K2.6"; "sacloud.kimi-k2.6"; "Sakura Kimi K2.6"; "Kimi"; ["low", "high", "max"])
+    + hidden_variants("sacloud.preview/Kimi-K2.6"; "sacloud.kimi-k2.6"; "Sakura Kimi K2.6"; "Kimi"; ["medium"])
+    + hidden_variants("sacloud.preview/Kimi-K2.7-Code"; "sacloud.kimi-k2.7-code"; "Sakura Kimi K2.7 Code"; "Kimi"; ["low", "medium", "high", "max"])
     + hidden_variants("sacloud.preview/Kimi-K2.6"; "kimi-k2.6"; "Kimi K2.6"; "Kimi"; ["low", "medium", "high", "max"])
     + hidden_variants("sacloud.preview/Kimi-K2.7-Code"; "kimi-k2.7-code"; "Kimi K2.7 Code"; "Kimi"; ["low", "medium", "high", "max"])
     + hidden_variants("sacloud.gpt-oss-120b"; "gpt-oss-120b"; "GPT-OSS 120B"; "GPT-OSS"; ["low", "medium", "high"])
@@ -106,12 +109,11 @@ model_order_list="$(
         | map(.id)'
 )"
 
-jq -e 'length == 17 and all(.[];
-    . == "sacloud.preview/gemma-4-31B-it" or
-    . == "sacloud.preview/Qwen3.6-35B-A3B" or
-    . == "sacloud.preview/Qwen3-VL-30B-A3B-Instruct" or
-    test("^sacloud\\.kimi-k2\\.(6|7-code)-(low|medium|high|max)$") or
-    test("^groq\\.(groq/compound(-mini)?|openai/gpt-oss-(20b|120b)|qwen/qwen3\\.(6|8)-27b)$"))' \
+jq -e 'length == 9 and all(.[];
+    . == "sacloud.preview/Kimi-K2.7-Code" or
+    test("^sacloud\\.gemma-4-31b-it-(low|high|max)$") or
+    test("^sacloud\\.qwen3\\.6-35b-a3b-(high|max)$") or
+    test("^sacloud\\.kimi-k2\\.6-(low|high|max)$"))' \
   <<<"$model_order_list" >/dev/null
 
 curl -fsS "$base_url/api/v1/configs/models" \

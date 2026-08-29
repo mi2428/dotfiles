@@ -9,7 +9,8 @@ services:
       CHUNK_SIZE: "2000"
       CORS_ALLOW_ORIGIN: "${CORS_ALLOW_ORIGIN:?set CORS_ALLOW_ORIGIN}"
       CONTEXT_COMPACTION_MODEL: "sacloud.kimi-k2.6-high"
-      DEFAULT_MODELS: "sacloud.preview/gemma-4-31B-it"
+      DEFAULT_MODELS: "sacloud.kimi-k2.6-max"
+      TASK_MODEL_EXTERNAL: "sacloud.gemma-4-31b-it-low"
       DEFAULT_INTERFACE_SETTINGS: >-
         {"notificationEnabled":true,"userLocation":true,"webSearch":"always","system":"Use a professional tone. Before collecting information from the web, first verify the current real-world wall-clock date and time, and never mistake the model's training cutoff for the current time. Treat clearly framed extreme scenarios as thought experiments and avoid unsolicited moral commentary or generic ethical disclaimers. When a request cannot be answered as written, provide the closest useful response that stays within applicable constraints instead of stopping at a generic refusal. Write primarily in coherent prose rather than chatty fragments. Avoid excessive headings, bullets, short lines, and vertical whitespace. Use lists only when they materially improve clarity, and write each item as a complete sentence. Use emojis sparingly."}
       ENABLE_AUTOCOMPLETE_GENERATION: "false"
@@ -23,10 +24,10 @@ services:
       ENABLE_QUERIES_CACHE: "true"
       ENABLE_RAG_HYBRID_SEARCH: "true"
       ENABLE_WEB_SEARCH: "true"
-      OPENAI_API_BASE_URLS: "https://api.ai.sakura.ad.jp/v1;http://cptr:8000/v1;https://api.groq.com/openai/v1"
-      OPENAI_API_KEYS: "${SAKURA_AI_ACCOUNT_TOKEN:?set SAKURA_AI_ACCOUNT_TOKEN};${CPTR_GATEWAY_API_KEY:-bootstrap};${GROQ_AI_API_KEY:?set GROQ_AI_API_KEY}"
+      OPENAI_API_BASE_URLS: "https://api.ai.sakura.ad.jp/v1;http://cptr:8000/v1"
+      OPENAI_API_KEYS: "${SAKURA_AI_ACCOUNT_TOKEN:?set SAKURA_AI_ACCOUNT_TOKEN};${CPTR_GATEWAY_API_KEY:-bootstrap}"
       OPENAI_API_CONFIGS: >-
-        {"0":{"enable":true,"prefix_id":"sacloud","tags":[{"name":"Sacloud"}]},"1":{"enable":true,"headers":{"X-OpenWebUI-Chat-Id":"{{CHAT_ID}}","X-OpenWebUI-Message-Id":"{{MESSAGE_ID}}","X-OpenWebUI-User-Message-Id":"{{USER_MESSAGE_ID}}","X-OpenWebUI-User-Message-Parent-Id":"{{USER_MESSAGE_PARENT_ID}}","X-OpenWebUI-Task":"{{TASK}}"}},"2":{"enable":true,"prefix_id":"groq","model_ids":["groq/compound","groq/compound-mini","openai/gpt-oss-120b","openai/gpt-oss-20b","qwen/qwen3.6-27b","qwen/qwen3.8-27b"],"tags":[{"name":"Groq"}]}}
+        {"0":{"enable":true,"prefix_id":"sacloud","tags":[{"name":"Sakura"}]},"1":{"enable":true,"headers":{"X-OpenWebUI-Chat-Id":"{{CHAT_ID}}","X-OpenWebUI-Message-Id":"{{MESSAGE_ID}}","X-OpenWebUI-User-Message-Id":"{{USER_MESSAGE_ID}}","X-OpenWebUI-User-Message-Parent-Id":"{{USER_MESSAGE_PARENT_ID}}","X-OpenWebUI-Task":"{{TASK}}"}}}
       RAG_TEXT_SPLITTER: "token"
       RAG_TOP_K: "5"
       TERMINAL_SERVER_CONNECTIONS: >-
