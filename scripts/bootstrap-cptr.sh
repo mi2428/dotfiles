@@ -13,41 +13,51 @@ set +a
 : "${CPTR_ADMIN_USERNAME:?set CPTR_ADMIN_USERNAME}"
 : "${CPTR_ADMIN_PASSWORD:?set CPTR_ADMIN_PASSWORD}"
 
-base_url="http://127.0.0.1:${CPTR_PORT:-8000}"
 compose=(docker compose --env-file "$env_file" -f "$compose_file")
 
-config=
-for _ in {1..60}; do
-  if config="$(curl -fsS "$base_url/api/config" 2>/dev/null)"; then
-    break
-  fi
-  sleep 1
-done
-[[ -n "$config" ]] || { printf '%s\n' 'Computer did not become ready' >&2; exit 1; }
+token_line="$("${compose[@]}" logs --no-color cptr | rg -o 'token=[0-9a-f]{64}' | tail -n 1 || true)"
+export CPTR_STARTUP_TOKEN="${token_line#token=}"
 
-if [[ "$(jq -r '.needs_setup' <<<"$config")" == true ]]; then
-  token_line="$("${compose[@]}" logs --no-color cptr | rg -o 'token=[0-9a-f]{64}' | tail -n 1)"
-  token="${token_line#token=}"
-  [[ -n "$token" ]] || { printf '%s\n' 'Computer startup token was not found' >&2; exit 1; }
+"${compose[@]}" exec -T \
+  -e CPTR_ADMIN_USERNAME \
+  -e CPTR_ADMIN_PASSWORD \
+  -e CPTR_STARTUP_TOKEN \
+  cptr python3 - <<'PY'
+import json
+import os
+import time
+import urllib.request
 
-  jq -n \
-    --arg username "$CPTR_ADMIN_USERNAME" \
-    --arg password "$CPTR_ADMIN_PASSWORD" \
-    --arg token "$token" \
-    '{username: $username, password: $password, token: $token}' \
-    | curl -fsS "$base_url/api/auth/setup" \
-        -H 'Content-Type: application/json' \
-        --data-binary @- \
-        >/dev/null
-fi
 
-jq -n \
-  --arg username "$CPTR_ADMIN_USERNAME" \
-  --arg password "$CPTR_ADMIN_PASSWORD" \
-  '{username: $username, password: $password}' \
-  | curl -fsS "$base_url/api/auth/login" \
-      -H 'Content-Type: application/json' \
-      --data-binary @- \
-      >/dev/null
+def request(path, payload=None):
+    data = json.dumps(payload).encode() if payload else None
+    req = urllib.request.Request(
+        f"http://127.0.0.1:8000{path}",
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=5) as response:
+        return json.load(response)
+
+
+for _ in range(60):
+    try:
+        config = request("/api/config")
+        break
+    except Exception:
+        time.sleep(1)
+else:
+    raise SystemExit("Computer did not become ready")
+
+username = os.environ["CPTR_ADMIN_USERNAME"]
+password = os.environ["CPTR_ADMIN_PASSWORD"]
+if config["needs_setup"]:
+    token = os.environ["CPTR_STARTUP_TOKEN"]
+    if not token:
+        raise SystemExit("Computer startup token was not found")
+    request("/api/auth/setup", {"username": username, "password": password, "token": token})
+
+request("/api/auth/login", {"username": username, "password": password})
+PY
 
 printf '%s\n' 'Computer account is ready'

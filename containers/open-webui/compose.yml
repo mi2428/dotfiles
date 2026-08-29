@@ -22,8 +22,6 @@ services:
 
   cptr:
     image: ghcr.io/open-webui/computer:0.9.21-browser
-    ports:
-      - "127.0.0.1:${CPTR_PORT:-8000}:8000"
     volumes:
       - cptr-data:/data
       - "${CPTR_WORKSPACE_DIR:?set CPTR_WORKSPACE_DIR}:/workspace"
