@@ -74,7 +74,7 @@ set +a
 compose=(docker compose -f "$repo_root/containers/open-webui/compose.yml")
 local_url="http://127.0.0.1:${OPEN_WEBUI_PORT:-38080}"
 export WEBUI_URL="$local_url"
-export CORS_ALLOW_ORIGIN="$WEBUI_URL"
+export CORS_ALLOW_ORIGIN="$WEBUI_URL;http://localhost:${OPEN_WEBUI_PORT:-38080}"
 
 case "$action" in
   up)
@@ -82,7 +82,7 @@ case "$action" in
     if tailscale_bin="$(resolve_tailscale_bin)" \
       && tailscale_url="$(tailscale_webui_url "$tailscale_bin")"; then
       export WEBUI_URL="$tailscale_url"
-      export CORS_ALLOW_ORIGIN="$WEBUI_URL"
+      export CORS_ALLOW_ORIGIN="$CORS_ALLOW_ORIGIN;$WEBUI_URL"
     fi
     "${compose[@]}" up -d cptr
     "$repo_root/scripts/bootstrap-cptr.sh" "$repo_root"
