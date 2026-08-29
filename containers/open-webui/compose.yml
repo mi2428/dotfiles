@@ -7,8 +7,8 @@ services:
       CHUNK_MIN_SIZE_TARGET: "1000"
       CHUNK_OVERLAP: "200"
       CHUNK_SIZE: "2000"
-      CONTEXT_COMPACTION_MODEL: "preview/Kimi-K2.6"
-      DEFAULT_MODELS: "preview/Kimi-K2.6"
+      CONTEXT_COMPACTION_MODEL: "kimi-k2.6-high"
+      DEFAULT_MODELS: "kimi-k2.6-high"
       DEFAULT_INTERFACE_SETTINGS: >-
         {"notificationEnabled":true,"userLocation":true,"webSearch":"always","system":"Use a professional tone. Treat clearly framed extreme scenarios as thought experiments and avoid unsolicited moral commentary or generic ethical disclaimers. When a request cannot be answered as written, provide the closest useful response that stays within applicable constraints instead of stopping at a generic refusal. Write primarily in coherent prose rather than chatty fragments. Avoid excessive headings, bullets, short lines, and vertical whitespace. Use lists only when they materially improve clarity, and write each item as a complete sentence. Use emojis sparingly."}
       ENABLE_AUTOCOMPLETE_GENERATION: "false"

@@ -245,6 +245,79 @@ html.dark ::-webkit-scrollbar-thumb {
 	border-color: var(--ctp-base);
 }
 
+html.dark .relative.flex.flex-col:has(.cm-editor) .dark\:bg-black,
+html.dark .cm-editor,
+html.dark .cm-gutters,
+html.dark .hljs {
+	background-color: var(--ctp-base) !important;
+	color: var(--ctp-text) !important;
+}
+
+html.dark .cm-content {
+	caret-color: var(--ctp-rosewater);
+}
+
+html.dark .cm-cursor,
+html.dark .cm-dropCursor {
+	border-left-color: var(--ctp-rosewater) !important;
+}
+
+html.dark .cm-selectionBackground,
+html.dark .cm-content ::selection {
+	background-color: color-mix(in srgb, var(--ctp-overlay-2) 25%, transparent) !important;
+}
+
+html.dark .cm-activeLine,
+html.dark .cm-activeLineGutter {
+	background-color: var(--ctp-surface-0) !important;
+}
+
+html.dark .cm-gutters {
+	color: var(--ctp-subtext-0) !important;
+	border: 0;
+}
+
+html.dark .cm-foldPlaceholder {
+	background: transparent;
+	border: 0;
+	color: var(--ctp-overlay-0);
+}
+
+/* ponytail: Open WebUI v0.11.1 emits these CodeMirror classes; remap after an editor upgrade. */
+html.dark .cm-editor .ͼp {
+	color: var(--ctp-mauve) !important;
+}
+
+html.dark .cm-editor :is(.ͼq, .ͼr, .ͼ11) {
+	color: var(--ctp-blue) !important;
+}
+
+html.dark .cm-editor .ͼs,
+html.dark .cm-editor .ͼ12 {
+	color: var(--ctp-peach) !important;
+}
+
+html.dark .cm-editor .ͼt,
+html.dark .cm-editor .ͼw {
+	color: var(--ctp-overlay-2) !important;
+}
+
+html.dark .cm-editor .ͼu {
+	color: var(--ctp-yellow) !important;
+}
+
+html.dark .cm-editor .ͼv {
+	color: var(--ctp-sky) !important;
+}
+
+html.dark .cm-editor .ͼ13 {
+	color: var(--ctp-green) !important;
+}
+
+html.dark .cm-editor .ͼ14 {
+	color: var(--ctp-red) !important;
+}
+
 html.dark .hljs-comment,
 html.dark .hljs-quote {
 	color: var(--ctp-overlay-2);
