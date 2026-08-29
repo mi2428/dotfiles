@@ -20,7 +20,17 @@
 		'--ctp-green',
 		'--ctp-lavender'
 	];
-	const intensities = { low: '70%', medium: '80%', high: '90%', max: '100%' };
+	const effortHues = {
+		low: '--ctp-green',
+		medium: '--ctp-sapphire',
+		high: '--ctp-mauve',
+		max: '--ctp-peach'
+	};
+	const familyHues = [
+		['kimi-k2.6', '--ctp-mauve'],
+		['kimi-k2.7-code', '--ctp-sapphire'],
+		['gpt-oss', '--ctp-green']
+	];
 	const selector = 'img.assistant-message-profile-image';
 
 	const applyModelAccent = (image) => {
@@ -36,16 +46,11 @@
 		let hash = 0;
 		for (const character of family) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
 
-		const hue = family.startsWith('kimi-k2.6')
-			? '--ctp-mauve'
-			: family.startsWith('kimi-k2.7-code')
-				? '--ctp-sapphire'
-				: family.startsWith('gpt-oss')
-					? '--ctp-green'
-					: hues[hash % hues.length];
+		const familyHue = familyHues.find(([prefix]) => family.startsWith(prefix))?.[1];
+		const hue = effortHues[effort] ?? familyHue ?? hues[hash % hues.length];
 
 		message.style.setProperty('--ctp-model-hue', `var(${hue})`);
-		message.style.setProperty('--ctp-model-intensity', intensities[effort] ?? '100%');
+		message.style.setProperty('--ctp-model-intensity', '100%');
 	};
 
 	const scan = (element) => {

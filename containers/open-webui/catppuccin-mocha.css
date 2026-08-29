@@ -252,24 +252,60 @@ html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded]:
 
 html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded]:focus-visible {
 	outline: none !important;
+	box-shadow: none !important;
 	text-decoration: underline;
 	text-decoration-color: var(--ctp-overlay-0);
 	text-underline-offset: 0.2rem;
 }
 
 html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded='true'] + div,
-html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded='true'] + div .markdown-prose {
+html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded='true'] + div .markdown-prose,
+html.dark #response-content-container .w-full.min-w-0 > div:has(> [role='button'][aria-expanded='true']) + div,
+html.dark #response-content-container .w-full.min-w-0 > div:has(> [role='button'][aria-expanded='true']) + div .markdown-prose {
 	--tw-prose-body: var(--ctp-subtext-0);
 	--tw-prose-headings: var(--ctp-subtext-0);
 	--tw-prose-bold: var(--ctp-subtext-0);
+	--tw-prose-links: var(--ctp-sapphire);
 	--tw-prose-quotes: var(--ctp-subtext-0);
 	--tw-prose-counters: var(--ctp-subtext-0);
 	--tw-prose-bullets: var(--ctp-overlay-1);
 	color: var(--ctp-subtext-0);
 }
 
+html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded='true'] + div a,
+html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded='true'] + div a *,
+html.dark #response-content-container .w-full.min-w-0 > div:has(> [role='button'][aria-expanded='true']) + div a,
+html.dark #response-content-container .w-full.min-w-0 > div:has(> [role='button'][aria-expanded='true']) + div a * {
+	color: var(--ctp-sapphire) !important;
+}
+
+html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded='true'] + div a:hover,
+html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded='true'] + div a:hover *,
+html.dark #response-content-container .w-full.min-w-0 > div:has(> [role='button'][aria-expanded='true']) + div a:hover,
+html.dark #response-content-container .w-full.min-w-0 > div:has(> [role='button'][aria-expanded='true']) + div a:hover * {
+	color: var(--ctp-sky) !important;
+}
+
 html.dark #message-input-container {
 	background-color: color-mix(in srgb, var(--ctp-sapphire) 10%, var(--ctp-base)) !important;
+	border-color: transparent !important;
+	box-shadow: none !important;
+}
+
+html.dark .user-message .chat-user div.rounded-3xl.dark\:bg-gray-850 {
+	background-color: color-mix(in srgb, var(--ctp-peach) 12%, var(--ctp-base)) !important;
+	border-color: transparent !important;
+}
+
+html.dark button[class~='text-[0.625rem]'][class~='dark:bg-white/5'] {
+	background-color: color-mix(in srgb, var(--ctp-teal) 12%, var(--ctp-base)) !important;
+	box-shadow: none !important;
+	color: var(--ctp-subtext-1) !important;
+}
+
+html.dark button[class~='text-[0.625rem]'][class~='dark:bg-white/5']:hover {
+	background-color: color-mix(in srgb, var(--ctp-teal) 18%, var(--ctp-base)) !important;
+	color: var(--ctp-text) !important;
 }
 
 html.dark #message-input-container button.dark\:bg-gray-700:not(.self-center) {
