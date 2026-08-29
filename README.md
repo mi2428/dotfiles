@@ -53,9 +53,9 @@ Tasks
   brew.sync          Update and upgrade Homebrew, then apply the repo-managed Brewfile
   ai.check           Check AI harness versions, Herdr integrations, and pinned OpenCode config
   ai.upgrade         Upgrade AI harnesses and refresh exact OmO and Slim plugin pins
-  ai.ui.up           Start Open WebUI and cptr with Podman
-  ai.ui.down         Stop Open WebUI and cptr without deleting their data
-  ai.ui.logs         Follow Open WebUI and cptr logs
+  ai.webui.up        Start Open WebUI and cptr with Docker
+  ai.webui.down      Stop Open WebUI and cptr without deleting their data
+  ai.webui.logs      Follow Open WebUI and cptr logs
   secrets.encrypt    Encrypt ssh and/or gnupg into chezmoi source state
   secrets.decrypt    Decrypt ssh and/or gnupg into a target directory
   secrets.backup     Backup ssh and gnupg into encrypted chezmoi source state
@@ -96,17 +96,17 @@ Use the repo-root `Brewfile` with `task brew.check` and `task brew.sync` for Hom
 
 ### Open WebUI and Computer
 
-[Open WebUI](https://openwebui.com/) and [Open WebUI Computer](https://openwebui.com/computer) run together under Podman. Computer has read-write access to `CPTR_WORKSPACE_DIR`, so mount only a trusted workspace. Persistent data lives in named volumes and `<workspace>/.cptr`; manage Open WebUI Admin UI configuration in Compose because UI changes do not survive a restart.
+[Open WebUI](https://openwebui.com/) and [Open WebUI Computer](https://openwebui.com/computer) run together under Docker. Computer has read-write access to `CPTR_WORKSPACE_DIR`, so mount only a trusted workspace. Persistent data lives in named volumes and `<workspace>/.cptr`; manage Open WebUI Admin UI configuration in Compose because UI changes do not survive a restart.
 
 ```console
 $ cp containers/open-webui/.env.example containers/open-webui/.env
 $ openssl rand -hex 32  # use this for WEBUI_SECRET_KEY, then set the remaining required values
-$ task ai.ui.up
-$ task ai.ui.logs       # first-run cptr setup URL
-$ task ai.ui.down       # stops containers without deleting persistent data
+$ task ai.webui.up
+$ task ai.webui.logs       # first-run cptr setup URL
+$ task ai.webui.down       # stops containers without deleting persistent data
 ```
 
-On the first run only, add `/workspace` and an LLM provider in cptr, then create a Gateway key under `Settings > Admin > Gateway`. Put that key in `CPTR_GATEWAY_API_KEY` and run `task ai.ui.up` again. cptr stores provider credentials encrypted in its persistent volume.
+On the first run only, add `/workspace` and an LLM provider in cptr, then create a Gateway key under `Settings > Admin > Gateway`. Put that key in `CPTR_GATEWAY_API_KEY` and run `task ai.webui.up` again. cptr stores provider credentials encrypted in its persistent volume.
 
 Run `task hm.gc` as the login user, never as `sudo task hm.gc`; it elevates only
 the system garbage-collection pass. macOS SIP protects `com.apple.macl`, so a

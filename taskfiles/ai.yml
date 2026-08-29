@@ -21,11 +21,13 @@ tasks:
       - '{{.REPO_ROOT}}/scripts/update-ai-stack.sh ''{{default "" .OMO_VERSION}}'' ''{{default "" .SLIM_VERSION}}'''
       - task: ai.check
 
-  ai.ui.up:
-    desc: Start Open WebUI and cptr with Podman
+  ai.webui.up:
+    desc: Start Open WebUI and cptr with Docker
     preconditions:
-      - sh: command -v podman >/dev/null 2>&1 && command -v podman-compose >/dev/null 2>&1
-        msg: podman and podman-compose are required
+      - sh: command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
+        msg: Docker Compose is required
+      - sh: docker info >/dev/null 2>&1
+        msg: Docker is not running
       - sh: test -f '{{.REPO_ROOT}}/containers/open-webui/.env'
         msg: Copy containers/open-webui/.env.example to .env and set its secrets
       - sh: '! rg -q ''=(replace-me)?$'' ''{{.REPO_ROOT}}/containers/open-webui/.env'''
@@ -33,30 +35,24 @@ tasks:
       - sh: set -a; . '{{.REPO_ROOT}}/containers/open-webui/.env'; test -d "$CPTR_WORKSPACE_DIR"
         msg: CPTR_WORKSPACE_DIR must be an existing directory
     cmds:
-      - |
-        set -eu
-        if [ "$(uname -s)" = Darwin ]; then
-          podman machine inspect >/dev/null 2>&1 || podman machine init
-          podman info >/dev/null 2>&1 || podman machine start
-        fi
-        podman-compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' up -d
+      - docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' up -d
 
-  ai.ui.down:
+  ai.webui.down:
     desc: Stop Open WebUI and cptr without deleting their data
     preconditions:
-      - sh: command -v podman-compose >/dev/null 2>&1
-        msg: podman-compose is required
+      - sh: command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
+        msg: Docker Compose is required
       - sh: test -f '{{.REPO_ROOT}}/containers/open-webui/.env'
         msg: containers/open-webui/.env is missing
     cmds:
-      - podman-compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' down
+      - docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' down
 
-  ai.ui.logs:
+  ai.webui.logs:
     desc: Follow Open WebUI and cptr logs
     preconditions:
-      - sh: command -v podman-compose >/dev/null 2>&1
-        msg: podman-compose is required
+      - sh: command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
+        msg: Docker Compose is required
       - sh: test -f '{{.REPO_ROOT}}/containers/open-webui/.env'
         msg: containers/open-webui/.env is missing
     cmds:
-      - podman-compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' logs -f
+      - docker compose --env-file '{{.REPO_ROOT}}/containers/open-webui/.env' -f '{{.REPO_ROOT}}/containers/open-webui/compose.yml' logs -f
