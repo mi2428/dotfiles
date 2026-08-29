@@ -10,8 +10,8 @@ set -a
 . "$env_file"
 set +a
 
-: "${CPTR_ADMIN_USERNAME:?set CPTR_ADMIN_USERNAME}"
-: "${CPTR_ADMIN_PASSWORD:?set CPTR_ADMIN_PASSWORD}"
+: "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
+: "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
 
 compose=(docker compose --env-file "$env_file" -f "$compose_file")
 
@@ -19,8 +19,8 @@ token_line="$("${compose[@]}" logs --no-color cptr | rg -o 'token=[0-9a-f]{64}' 
 export CPTR_STARTUP_TOKEN="${token_line#token=}"
 
 "${compose[@]}" exec -T \
-  -e CPTR_ADMIN_USERNAME \
-  -e CPTR_ADMIN_PASSWORD \
+  -e WEBUI_ADMIN_USERNAME \
+  -e WEBUI_ADMIN_PASSWORD \
   -e CPTR_STARTUP_TOKEN \
   cptr python3 - <<'PY'
 import json
@@ -49,8 +49,8 @@ for _ in range(60):
 else:
     raise SystemExit("Computer did not become ready")
 
-username = os.environ["CPTR_ADMIN_USERNAME"]
-password = os.environ["CPTR_ADMIN_PASSWORD"]
+username = os.environ["WEBUI_ADMIN_USERNAME"]
+password = os.environ["WEBUI_ADMIN_PASSWORD"]
 if config["needs_setup"]:
     token = os.environ["CPTR_STARTUP_TOKEN"]
     if not token:

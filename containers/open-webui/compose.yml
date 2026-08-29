@@ -11,8 +11,8 @@ services:
       OPENAI_API_CONFIGS: >-
         {"0":{"enable":true,"model_ids":["${SAKURA_AI_MODEL:-gpt-oss-120b}"]},"1":{"enable":true,"headers":{"X-OpenWebUI-Chat-Id":"{{CHAT_ID}}","X-OpenWebUI-Message-Id":"{{MESSAGE_ID}}","X-OpenWebUI-User-Message-Id":"{{USER_MESSAGE_ID}}","X-OpenWebUI-User-Message-Parent-Id":"{{USER_MESSAGE_PARENT_ID}}","X-OpenWebUI-Task":"{{TASK}}"}}}
       WEBUI_ADMIN_EMAIL: "${WEBUI_ADMIN_EMAIL:?set WEBUI_ADMIN_EMAIL}"
-      WEBUI_ADMIN_NAME: "${CPTR_ADMIN_USERNAME:?set CPTR_ADMIN_USERNAME}"
-      WEBUI_ADMIN_PASSWORD: "${CPTR_ADMIN_PASSWORD:?set CPTR_ADMIN_PASSWORD}"
+      WEBUI_ADMIN_NAME: "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
+      WEBUI_ADMIN_PASSWORD: "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
       WEBUI_SECRET_KEY: "${WEBUI_SECRET_KEY:?set WEBUI_SECRET_KEY}"
     volumes:
       - open-webui-data:/app/backend/data
