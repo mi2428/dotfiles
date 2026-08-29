@@ -4,12 +4,17 @@ services:
     ports:
       - "127.0.0.1:${OPEN_WEBUI_PORT:-8080}:8080"
     environment:
+      DEFAULT_MODELS: "preview/Kimi-K2.6"
       ENABLE_OLLAMA_API: "false"
       ENABLE_PERSISTENT_CONFIG: "false"
+      ENABLE_WEB_SEARCH: "true"
       OPENAI_API_BASE_URLS: "https://api.ai.sakura.ad.jp/v1;http://cptr:8000/v1"
       OPENAI_API_KEYS: "${SAKURA_AI_ACCOUNT_TOKEN:?set SAKURA_AI_ACCOUNT_TOKEN};${CPTR_GATEWAY_API_KEY:-bootstrap}"
       OPENAI_API_CONFIGS: >-
-        {"0":{"enable":true,"model_ids":["${SAKURA_AI_MODEL:?set SAKURA_AI_MODEL}"]},"1":{"enable":true,"headers":{"X-OpenWebUI-Chat-Id":"{{CHAT_ID}}","X-OpenWebUI-Message-Id":"{{MESSAGE_ID}}","X-OpenWebUI-User-Message-Id":"{{USER_MESSAGE_ID}}","X-OpenWebUI-User-Message-Parent-Id":"{{USER_MESSAGE_PARENT_ID}}","X-OpenWebUI-Task":"{{TASK}}"}}}
+        {"0":{"enable":true},"1":{"enable":true,"headers":{"X-OpenWebUI-Chat-Id":"{{CHAT_ID}}","X-OpenWebUI-Message-Id":"{{MESSAGE_ID}}","X-OpenWebUI-User-Message-Id":"{{USER_MESSAGE_ID}}","X-OpenWebUI-User-Message-Parent-Id":"{{USER_MESSAGE_PARENT_ID}}","X-OpenWebUI-Task":"{{TASK}}"}}}
+      WEB_SEARCH_ENGINE: "duckduckgo"
+      DDGS_BACKEND: "auto"
+      WEB_SEARCH_RESULT_COUNT: "5"
       WEBUI_ADMIN_EMAIL: "${WEBUI_ADMIN_EMAIL:?set WEBUI_ADMIN_EMAIL}"
       WEBUI_ADMIN_NAME: "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
       WEBUI_ADMIN_PASSWORD: "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
