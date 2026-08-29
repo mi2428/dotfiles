@@ -27,8 +27,8 @@
 		max: '--ctp-peach'
 	};
 	const familyHues = [
-		['kimi-k2.6', '--ctp-mauve'],
-		['kimi-k2.7-code', '--ctp-sapphire']
+		['sacloud.kimi-k2.6', '--ctp-mauve'],
+		['sacloud.kimi-k2.7-code', '--ctp-sapphire']
 	];
 	const selector = 'img.assistant-message-profile-image';
 
