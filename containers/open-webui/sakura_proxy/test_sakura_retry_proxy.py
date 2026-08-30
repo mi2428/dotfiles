@@ -41,13 +41,12 @@ class SakuraRetryProxyTest(unittest.TestCase):
         self.proxy = make_server(
             Settings(
                 upstream_url=f"http://127.0.0.1:{upstream_port}",
-                listen_host="127.0.0.1",
-                listen_port=0,
                 max_retries=3,
                 base_backoff=0.01,
                 max_backoff=0.01,
                 jitter=0,
-            )
+            ),
+            ("127.0.0.1", 0),
         )
         self.threads = [
             threading.Thread(target=server.serve_forever, daemon=True)

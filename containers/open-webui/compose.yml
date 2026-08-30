@@ -128,7 +128,6 @@ services:
       SAKURA_RETRY_JITTER_SECONDS: "1"
       SAKURA_RETRY_MAX: "10"
       SAKURA_RETRY_MAX_SECONDS: "120"
-      SAKURA_UPSTREAM_TIMEOUT_SECONDS: "7200"
       SAKURA_UPSTREAM_URL: "https://api.ai.sakura.ad.jp"
     healthcheck:
       test:
