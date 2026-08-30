@@ -293,7 +293,7 @@ html.dark .user-message .chat-user .whitespace-pre-wrap {
 }
 
 html.dark #response-content-container .markdown-prose {
-	--ctp-markdown-accent: color-mix(in srgb, var(--ctp-blue) 68%, var(--ctp-base));
+	--ctp-markdown-accent: color-mix(in srgb, var(--ctp-lavender) 68%, var(--ctp-base));
 	--tw-prose-bullets: var(--ctp-markdown-accent);
 	--tw-prose-counters: var(--ctp-markdown-accent);
 	--tw-prose-links: var(--ctp-markdown-accent);
