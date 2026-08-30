@@ -32,19 +32,33 @@ For every invocation:
 3. Use real labels and data from the conversation. Give the page clear visual
    hierarchy, high contrast, responsive layout, and useful detail rather than a
    prose document placed in cards. Avoid animation unless motion is the topic.
-4. Open it above the conversation with `terminal-browser`, even when an inline
+4. Open it beside the conversation with `terminal-browser`, even when an inline
    diagram would have been sufficient. Outside Herdr, use:
 
    ```bash
-   terminal-browser open "/absolute/path/to/showme-topic.html" --split up --size 0.65
+   terminal-browser open "/absolute/path/to/showme-topic.html" --split right
    ```
 
    Inside Herdr (`HERDR_ENV=1`), the OpenCode TUI may overwrite the terminal title
-   that `terminal-browser --split` uses to find its parent pane. Instead, split
-   above the current pane through Herdr with the same ratio:
+   that `terminal-browser --split` uses to find its parent pane. Instead, inspect
+   the current pane dimensions and split through Herdr. Use a right split only
+   when both resulting panes can remain at least 70 columns wide. Otherwise use a
+   down split when both panes can remain at least 24 rows tall:
 
    ```bash
-   result="$(herdr pane split "$HERDR_PANE_ID" --direction up --ratio 0.65)"
+   layout="$(herdr pane layout --current)"
+   width="$(printf '%s\n' "$layout" | jq -r --arg pane "$HERDR_PANE_ID" '.result.layout.panes[] | select(.pane_id == $pane) | .rect.width')"
+   height="$(printf '%s\n' "$layout" | jq -r --arg pane "$HERDR_PANE_ID" '.result.layout.panes[] | select(.pane_id == $pane) | .rect.height')"
+   if [ "$width" -ge 140 ]; then
+     direction=right
+   elif [ "$height" -ge 48 ]; then
+     direction=down
+   elif [ "$((width * 48))" -ge "$((height * 140))" ]; then
+     direction=right
+   else
+     direction=down
+   fi
+   result="$(herdr pane split "$HERDR_PANE_ID" --direction "$direction" --ratio 0.5)"
    browser_pane="$(printf '%s\n' "$result" | jq -r '.result.pane.pane_id')"
    herdr pane run "$browser_pane" 'terminal-browser open "/absolute/path/to/showme-topic.html"'
    ```
