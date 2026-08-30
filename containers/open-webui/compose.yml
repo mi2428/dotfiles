@@ -146,6 +146,7 @@ services:
     image: ghcr.io/open-webui/computer:0.9.21-browser
     volumes:
       - cptr-data:/data
+      - ./scripts/bootstrap_cptr.py:/usr/local/libexec/bootstrap_cptr.py:ro
       - "${CPTR_WORKSPACE_DIR:?set CPTR_WORKSPACE_DIR}:/workspace"
     working_dir: /workspace
     restart: unless-stopped
