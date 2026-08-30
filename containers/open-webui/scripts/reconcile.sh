@@ -8,6 +8,7 @@ manifest_file="$config_dir/config/kimi-k2.7-deep-research.json"
 system_file="$config_dir/config/kimi-k2.7-deep-research-system.md"
 geoguessor_system_file="$config_dir/config/geoguessor-system.md"
 github_oss_translation_system_file="$config_dir/config/github-oss-translation-system.md"
+movie_akinator_system_file="$config_dir/config/movie-akinator-system.md"
 chat_personality_file="$config_dir/config/chat-personality.md"
 skill_file="$config_dir/skills/deep-research/SKILL.md"
 renderer_file="$script_dir/render-declarations.jq"
@@ -20,6 +21,7 @@ sakura_icon_max_file="$config_dir/assets/sakura-ai-engine-max.png"
 
 for file in \
   "$manifest_file" "$system_file" "$geoguessor_system_file" "$github_oss_translation_system_file" \
+  "$movie_akinator_system_file" \
   "$chat_personality_file" "$skill_file" "$renderer_file" \
   "$sakura_icon_file" "$sakura_icon_low_file" "$sakura_icon_medium_file" \
   "$sakura_icon_high_file" "$sakura_icon_max_file"; do
@@ -40,6 +42,7 @@ desired="$(jq -n \
   --rawfile system "$system_file" \
   --rawfile geoguessor_system "$geoguessor_system_file" \
   --rawfile github_oss_translation_system "$github_oss_translation_system_file" \
+  --rawfile movie_akinator_system "$movie_akinator_system_file" \
   --rawfile chat_personality "$chat_personality_file" \
   --rawfile content "$skill_file" \
   -f "$renderer_file")"
@@ -195,6 +198,7 @@ desired_model="$(jq -c '.model' <<<"$desired")"
 desired_skill="$(jq -c '.skill' <<<"$desired")"
 desired_folder="$(jq -c '.folder' <<<"$desired")"
 desired_translation_folder="$(jq -c '.translation_folder' <<<"$desired")"
+desired_movie_akinator_folder="$(jq -c '.movie_akinator_folder' <<<"$desired")"
 model_id="$(jq -r '.id' <<<"$desired_model")"
 skill_id="$(jq -r '.id' <<<"$desired_skill")"
 desired_model_projection="$(model_projection "$desired_model")"
@@ -410,6 +414,8 @@ geoguessor_folder_id="$upserted_folder_id"
 upsert_folder "$desired_translation_folder"
 translation_folder_id="$upserted_folder_id"
 delete_empty_managed_folder dotfiles:translation-folder
+upsert_folder "$desired_movie_akinator_folder"
+movie_akinator_folder_id="$upserted_folder_id"
 
 api_request GET /api/v1/models/export
 expect_success 'model export'
@@ -475,6 +481,7 @@ verify_model
 verify_skill
 verify_folder "$geoguessor_folder_id" "$desired_folder"
 verify_folder "$translation_folder_id" "$desired_translation_folder"
+verify_folder "$movie_akinator_folder_id" "$desired_movie_akinator_folder"
 for endpoint in base export; do
   api_request GET "/api/v1/models/$endpoint"
   expect_success "model $endpoint GET for Sakura icon verification"
