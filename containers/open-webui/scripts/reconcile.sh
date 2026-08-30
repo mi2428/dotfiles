@@ -6,6 +6,7 @@ mode="${2:-reconcile}"
 manifest_file="$config_dir/config/kimi-k2.7-deep-research.json"
 system_file="$config_dir/config/kimi-k2.7-deep-research-system.md"
 geoguessor_system_file="$config_dir/config/geoguessor-system.md"
+chat_personality_file="$config_dir/config/chat-personality.md"
 skill_file="$config_dir/skills/deep-research/SKILL.md"
 profile_file="$config_dir/assets/profile.webp"
 sakura_icon_file="$config_dir/assets/sakura-ai-engine.png"
@@ -15,7 +16,7 @@ sakura_icon_high_file="$config_dir/assets/sakura-ai-engine-high.png"
 sakura_icon_max_file="$config_dir/assets/sakura-ai-engine-max.png"
 
 for file in \
-  "$manifest_file" "$system_file" "$geoguessor_system_file" "$skill_file" \
+  "$manifest_file" "$system_file" "$geoguessor_system_file" "$chat_personality_file" "$skill_file" \
   "$sakura_icon_file" "$sakura_icon_low_file" "$sakura_icon_medium_file" \
   "$sakura_icon_high_file" "$sakura_icon_max_file"; do
   [[ -r "$file" ]] || { printf 'Missing %s\n' "$file" >&2; exit 1; }
@@ -34,11 +35,13 @@ desired="$({
     --argjson sakura_icons "$sakura_icons" \
     --rawfile system "$system_file" \
     --rawfile geoguessor_system "$geoguessor_system_file" \
+    --rawfile chat_personality "$chat_personality_file" \
     --rawfile content "$skill_file" \
     '
       def require($condition; $message): if $condition then . else error($message) end;
       {
         marker: .marker,
+        chat_personality: $chat_personality,
         model: (.model | .params.system = $system | .meta.profile_image_url = $sakura_icons.default),
         skill: (.skill | .content = $content),
         folder: {
@@ -50,6 +53,7 @@ desired="$({
       }
       | . as $desired
       | require($desired.marker != ""; "managed marker is required")
+      | require(($desired.chat_personality | length) > 0; "chat personality is required")
       | require($desired.model.meta.provisioned_by == $desired.marker; "model marker mismatch")
       | require(($desired.skill.meta.tags | index($desired.marker)) != null; "skill marker mismatch")
       | require($desired.folder.meta.provisioned_by == "dotfiles:geoguessor-folder"; "folder marker mismatch")
@@ -232,6 +236,13 @@ auth_response="$({
 })"
 token="$(jq -er '.token' <<<"$auth_response")"
 owner_id="$(jq -er '.id' <<<"$auth_response")"
+
+api_request GET /api/v1/users/user/settings
+expect_success 'user settings GET'
+user_settings="$(jq -c --argjson desired "$desired" '.ui = (.ui // {}) | .ui.system = $desired.chat_personality' <<<"$api_body")"
+api_request POST /api/v1/users/user/settings/update "$user_settings"
+expect_success 'user settings update'
+jq -e --argjson desired "$desired" '.ui.system == $desired.chat_personality' <<<"$api_body" >/dev/null
 
 api_request POST /api/v1/models/import "$legacy_models"
 expect_success 'legacy model import'
@@ -535,4 +546,4 @@ if [[ ! -f "$profile_marker" ]]; then
   touch "$profile_marker"
 fi
 
-printf '%s\n' 'Open WebUI models, Deep Research Skill, and profile are ready'
+printf '%s\n' 'Open WebUI models, settings, Deep Research Skill, and profile are ready'
