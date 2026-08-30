@@ -39,7 +39,8 @@ services:
       DEFAULT_MODEL_METADATA: >-
         {"capabilities": {"web_search": true, "code_interpreter": true},
         "defaultFeatureIds": ["web_search", "code_interpreter"]}
-      DEFAULT_MODELS: "sacloud.kimi-k2.6-max"
+      DEFAULT_MODELS: "sacloud.kimi-k2.6-high"
+      DEFAULT_PINNED_MODELS: "sacloud.kimi-k2.6-low,sacloud.kimi-k2.6-high,sacloud.kimi-k2.7-deep-research"
       ENABLE_AUTOCOMPLETE_GENERATION: "false"
       ENABLE_COMMUNITY_SHARING: "false"
       ENABLE_CONTEXT_COMPACTION: "true"
