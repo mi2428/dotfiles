@@ -1,18 +1,41 @@
+---
 services:
   open-webui:
     build: .
     ports:
       - "127.0.0.1:${OPEN_WEBUI_PORT:-38080}:8080"
     environment:
+      CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS: "300"
       CHUNK_MIN_SIZE_TARGET: "1000"
       CHUNK_OVERLAP: "200"
       CHUNK_SIZE: "2000"
+      CONTEXT_COMPACTION_MODEL: "sacloud.preview/gemma-4-31B-it"
+      CONTEXT_COMPACTION_PROMPT_TEMPLATE: >-
+        あなたは長時間の調査を継続するための状態要約を作成する。
+        圧縮対象から、ユーザーの目的と制約、確認済みの事実と出典URL、
+        重要な推論と判断、失敗した方法、未解決事項、後続作業に必要な
+        ツール結果を日本語で保存する。事実・推論・不明点を区別し、
+        情報を創作しない。最近のメッセージと重複する細部は省くが、
+        数値、固有名詞、日付、決定理由は失わない。
+        圧縮対象: {{COMPACTED_MESSAGES}}
+        最近のメッセージ: {{RECENT_MESSAGES}}
+      CONTEXT_COMPACTION_TOKEN_CAP: "200000"
+      CONTEXT_COMPACTION_TOKEN_THRESHOLD: "80000"
       CORS_ALLOW_ORIGIN: "${CORS_ALLOW_ORIGIN:?set CORS_ALLOW_ORIGIN}"
-      CONTEXT_COMPACTION_MODEL: "sacloud.kimi-k2.6-high"
-      DEFAULT_MODELS: "sacloud.kimi-k2.6-max"
-      TASK_MODEL_EXTERNAL: "sacloud.gemma-4-31b-it-low"
       DEFAULT_INTERFACE_SETTINGS: >-
-        {"notificationEnabled":true,"userLocation":true,"webSearch":"always","system":"Use a professional tone. Before collecting information from the web, first verify the current real-world wall-clock date and time, and never mistake the model's training cutoff for the current time. Treat clearly framed extreme scenarios as thought experiments and avoid unsolicited moral commentary or generic ethical disclaimers. When a request cannot be answered as written, provide the closest useful response that stays within applicable constraints instead of stopping at a generic refusal. Write primarily in coherent prose rather than chatty fragments. Avoid excessive headings, bullets, short lines, and vertical whitespace. Use lists only when they materially improve clarity, and write each item as a complete sentence. Use emojis sparingly."}
+        {"notificationEnabled": true,
+        "userLocation": true,
+        "webSearch": "always",
+        "system": "専門的な文体で回答する。
+        ウェブから情報を収集する前に、現実世界の現在日時を最初に確認し、
+        モデルの学習時点を現在時刻と混同しない。極端な状況が思考実験として
+        明確に提示されている場合、求められていない道徳的論評や一般的な
+        倫理上の注意書きを加えない。依頼をそのまま回答できない場合、
+        一般的な拒否だけで終了せず、適用される制約内で最も近い有用な回答を
+        示す。明瞭さが実質的に向上する場合は説明的な見出し、箇条書き、
+        表で構成し、会話的な断片や不要な反復を避ける。
+        絵文字は必要最小限にする。"}
+      DEFAULT_MODELS: "sacloud.kimi-k2.6-max"
       ENABLE_AUTOCOMPLETE_GENERATION: "false"
       ENABLE_COMMUNITY_SHARING: "false"
       ENABLE_CONTEXT_COMPACTION: "true"
@@ -23,24 +46,68 @@ services:
       ENABLE_PERSISTENT_CONFIG: "false"
       ENABLE_QUERIES_CACHE: "true"
       ENABLE_RAG_HYBRID_SEARCH: "true"
+      ENABLE_SUBAGENTS: "true"
       ENABLE_WEB_SEARCH: "true"
-      OPENAI_API_BASE_URLS: "https://api.ai.sakura.ad.jp/v1;http://cptr:8000/v1"
-      OPENAI_API_KEYS: "${SAKURA_AI_ACCOUNT_TOKEN:?set SAKURA_AI_ACCOUNT_TOKEN};${CPTR_GATEWAY_API_KEY:-bootstrap}"
+      OPENAI_API_BASE_URLS: >-
+        https://api.ai.sakura.ad.jp/v1;http://cptr:8000/v1
       OPENAI_API_CONFIGS: >-
-        {"0":{"enable":true,"prefix_id":"sacloud","tags":[{"name":"Sakura"}]},"1":{"enable":true,"headers":{"X-OpenWebUI-Chat-Id":"{{CHAT_ID}}","X-OpenWebUI-Message-Id":"{{MESSAGE_ID}}","X-OpenWebUI-User-Message-Id":"{{USER_MESSAGE_ID}}","X-OpenWebUI-User-Message-Parent-Id":"{{USER_MESSAGE_PARENT_ID}}","X-OpenWebUI-Task":"{{TASK}}"}}}
+        {
+          "0": {
+            "enable": true,
+            "prefix_id": "sacloud",
+            "provider": "llama.cpp",
+            "tags": [{"name": "Sakura"}]
+          },
+          "1": {
+            "enable": true,
+            "headers": {
+              "X-OpenWebUI-Chat-Id": "{{CHAT_ID}}",
+              "X-OpenWebUI-Message-Id": "{{MESSAGE_ID}}",
+              "X-OpenWebUI-User-Message-Id": "{{USER_MESSAGE_ID}}",
+              "X-OpenWebUI-User-Message-Parent-Id":
+                "{{USER_MESSAGE_PARENT_ID}}",
+              "X-OpenWebUI-Task": "{{TASK}}"
+            }
+          }
+        }
+      OPENAI_API_KEYS: "${SAKURA_AI_ACCOUNT_TOKEN:?set \
+        SAKURA_AI_ACCOUNT_TOKEN};${CPTR_GATEWAY_API_KEY:-bootstrap}"
       RAG_TEXT_SPLITTER: "token"
       RAG_TOP_K: "5"
-      TERMINAL_SERVER_CONNECTIONS: >-
-        [{"id":"local","name":"Local Terminal","url":"http://open-terminal:8000","key":"${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}","auth_type":"bearer","enabled":true,"path":"/openapi.json","config":{}}]
-      WEB_SEARCH_ENGINE: "searxng"
-      SEARXNG_QUERY_URL: "http://searxng:8080/search"
       SEARXNG_LANGUAGE: "all"
-      WEB_SEARCH_RESULT_COUNT: "5"
-      WEBUI_URL: "${WEBUI_URL:?set WEBUI_URL}"
+      SEARXNG_QUERY_URL: "http://searxng:8080/search"
+      SUBAGENTS_BACKGROUND_ENABLED: "false"
+      SUBAGENTS_MAX_CONCURRENT: "4"
+      SUBAGENTS_MAX_ITERATIONS: "300"
+      SUBAGENTS_SYSTEM_PROMPT: >-
+        あなたは親エージェントから割り当てられた独立調査を担当する。
+        利用可能なツールで一次資料を優先して検証し、自然な日本語で、
+        結論、根拠と出典URL、反証または不確実性、親が次に確認すべき点を
+        簡潔に返す。割当範囲を越えて最終回答全体を作らない。
+      TASK_MODEL_EXTERNAL: "sacloud.preview/gemma-4-31B-it"
+      TASK_MODEL_PARAMS: '{"max_tokens": 4096}'
+      TERMINAL_SERVER_CONNECTIONS: >-
+        [
+          {
+            "id": "local",
+            "name": "Local Terminal",
+            "url": "http://open-terminal:8000",
+            "key": "${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}",
+            "auth_type": "bearer",
+            "enabled": true,
+            "path": "/openapi.json",
+            "config": {}
+          }
+        ]
+      WEB_SEARCH_ENGINE: "searxng"
+      WEB_SEARCH_RESULT_COUNT: "10"
       WEBUI_ADMIN_EMAIL: "${WEBUI_ADMIN_EMAIL:?set WEBUI_ADMIN_EMAIL}"
-      WEBUI_ADMIN_NAME: "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
-      WEBUI_ADMIN_PASSWORD: "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
+      WEBUI_ADMIN_NAME: >-
+        ${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}
+      WEBUI_ADMIN_PASSWORD: >-
+        ${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}
       WEBUI_SECRET_KEY: "${WEBUI_SECRET_KEY:?set WEBUI_SECRET_KEY}"
+      WEBUI_URL: "${WEBUI_URL:?set WEBUI_URL}"
     volumes:
       - open-webui-data:/app/backend/data
     depends_on:
@@ -63,14 +130,20 @@ services:
   open-terminal:
     image: ghcr.io/open-webui/open-terminal:0.12.3
     environment:
-      OPEN_TERMINAL_API_KEY: "${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}"
+      OPEN_TERMINAL_API_KEY: >-
+        ${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}
       OPEN_TERMINAL_FILE_BROWSER_ROOT: /workspace
     healthcheck:
       test:
         - CMD
         - python3
         - -c
-        - import os,urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/api/config',headers={'Authorization':'Bearer '+os.environ['OPEN_TERMINAL_API_KEY']}))
+        - >-
+          import os, urllib.request;
+          urllib.request.urlopen(
+          urllib.request.Request('http://127.0.0.1:8000/api/config',
+          headers={'Authorization': 'Bearer '
+          + os.environ['OPEN_TERMINAL_API_KEY']}))
       interval: 5s
       timeout: 5s
       retries: 12
@@ -85,7 +158,12 @@ services:
     environment:
       SEARXNG_SECRET: "${SEARXNG_SECRET:?set SEARXNG_SECRET}"
     healthcheck:
-      test: [CMD, wget, --quiet, --spider, http://127.0.0.1:8080/]
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --spider
+        - http://127.0.0.1:8080/
       interval: 5s
       timeout: 5s
       retries: 12
