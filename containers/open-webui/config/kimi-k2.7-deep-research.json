@@ -13,7 +13,7 @@
         "file_upload": true,
         "web_search": true,
         "image_generation": false,
-        "code_interpreter": false,
+        "code_interpreter": true,
         "terminal": false,
         "citations": true,
         "status_updates": true,
@@ -28,7 +28,8 @@
         }
       ],
       "defaultFeatureIds": [
-        "web_search"
+        "web_search",
+        "code_interpreter"
       ],
       "builtinTools": {
         "time": true,
@@ -42,7 +43,7 @@
         "notifications": false,
         "web_search": true,
         "image_generation": false,
-        "code_interpreter": false,
+        "code_interpreter": true,
         "tasks": true,
         "automations": false,
         "calendar": false,

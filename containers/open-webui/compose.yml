@@ -25,6 +25,7 @@ services:
       DEFAULT_INTERFACE_SETTINGS: >-
         {"notificationEnabled": true,
         "userLocation": true,
+        "features": {"web_search": true, "code_interpreter": true},
         "webSearch": "always",
         "system": "専門的な文体で回答する。
         ウェブから情報を収集する前に、現実世界の現在日時を最初に確認し、
