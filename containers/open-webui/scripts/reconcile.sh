@@ -239,10 +239,14 @@ owner_id="$(jq -er '.id' <<<"$auth_response")"
 
 api_request GET /api/v1/users/user/settings
 expect_success 'user settings GET'
-user_settings="$(jq -c --argjson desired "$desired" '.ui = (.ui // {}) | .ui.system = $desired.chat_personality' <<<"$api_body")"
+user_settings="$(jq -c --argjson desired "$desired" \
+  '.ui = (.ui // {}) | .ui.system = $desired.chat_personality | .ui.widescreenMode = true' \
+  <<<"$api_body")"
 api_request POST /api/v1/users/user/settings/update "$user_settings"
 expect_success 'user settings update'
-jq -e --argjson desired "$desired" '.ui.system == $desired.chat_personality' <<<"$api_body" >/dev/null
+jq -e --argjson desired "$desired" \
+  '.ui.system == $desired.chat_personality and .ui.widescreenMode == true' \
+  <<<"$api_body" >/dev/null
 
 api_request POST /api/v1/models/import "$legacy_models"
 expect_success 'legacy model import'
