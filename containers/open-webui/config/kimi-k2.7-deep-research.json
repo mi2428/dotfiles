@@ -3,7 +3,7 @@
   "model": {
     "id": "sacloud.kimi-k2.7-deep-research",
     "base_model_id": "sacloud.preview/Kimi-K2.7-Code",
-    "name": "Kimi K2.7 Deep Research",
+    "name": "Sakura Deep Research",
     "meta": {
       "profile_image_url": null,
       "description": "複数のフォアグラウンド・サブエージェントで調査し、引用付きのNoteにまとめます。",
