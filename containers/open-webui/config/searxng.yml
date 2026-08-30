@@ -5,3 +5,10 @@ search:
   formats:
     - html
     - json
+
+engines:
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    ddg_url: http://ddg-proxy:8081/html/
+    enable_http: true

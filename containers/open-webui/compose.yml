@@ -165,6 +165,29 @@ services:
       retries: 12
     restart: unless-stopped
 
+  ddg-proxy:
+    build: ./ddg_proxy
+    cap_drop:
+      - ALL
+    environment:
+      DDG_IMPERSONATE: "chrome_151"
+      DDG_IMPERSONATE_OS: "macos"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8081/health')
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
   cptr:
     image: ghcr.io/open-webui/computer:0.9.21-browser
     volumes:
@@ -214,6 +237,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+    depends_on:
+      ddg-proxy:
+        condition: service_healthy
     volumes:
       - ./config/searxng.yml:/etc/searxng/settings.yml:ro
       - searxng-data:/var/cache/searxng
