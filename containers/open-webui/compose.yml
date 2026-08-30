@@ -5,6 +5,7 @@ services:
     ports:
       - "127.0.0.1:${OPEN_WEBUI_PORT:-38080}:8080"
     environment:
+      AIOHTTP_CLIENT_TIMEOUT_TOOL_SERVER: "960"
       CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS: "300"
       CHUNK_MIN_SIZE_TARGET: "1000"
       CHUNK_OVERLAP: "200"
@@ -72,6 +73,8 @@ services:
         SAKURA_AI_ACCOUNT_TOKEN};${CPTR_GATEWAY_API_KEY:-bootstrap}"
       RAG_TEXT_SPLITTER: "token"
       RAG_TOP_K: "5"
+      RESEARCH_RUNTIME_API_KEY: >-
+        ${RESEARCH_RUNTIME_API_KEY:?set RESEARCH_RUNTIME_API_KEY}
       SEARXNG_LANGUAGE: "all"
       SEARXNG_QUERY_URL: "http://searxng:8080/search"
       SUBAGENTS_BACKGROUND_ENABLED: "false"
@@ -136,10 +139,51 @@ services:
         condition: service_started
       open-terminal:
         condition: service_healthy
+      research-runtime:
+        condition: service_healthy
       sakura-proxy:
         condition: service_healthy
       searxng:
         condition: service_healthy
+    restart: unless-stopped
+
+  research-runtime:
+    build: ./research_runtime
+    cap_drop:
+      - ALL
+    environment:
+      RESEARCH_DB_PATH: /data/research.sqlite3
+      RESEARCH_LLM_API_KEY: >-
+        ${SAKURA_AI_ACCOUNT_TOKEN:?set SAKURA_AI_ACCOUNT_TOKEN}
+      RESEARCH_LLM_BASE_URL: http://sakura-proxy:8080/v1
+      RESEARCH_PLANNER_MODEL: preview/gemma-4-31B-it
+      RESEARCH_RUNTIME_API_KEY: >-
+        ${RESEARCH_RUNTIME_API_KEY:?set RESEARCH_RUNTIME_API_KEY}
+      RESEARCH_SYNTHESIZER_MODEL: preview/gemma-4-31B-it
+      SEARXNG_URL: http://searxng:8080
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/health')
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    depends_on:
+      sakura-proxy:
+        condition: service_healthy
+      searxng:
+        condition: service_healthy
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    volumes:
+      - research-runtime-data:/data
     restart: unless-stopped
 
   sakura-proxy:
@@ -247,4 +291,5 @@ volumes:
   open-webui-data:
   cptr-data:
   open-terminal-data:
+  research-runtime-data:
   searxng-data:
