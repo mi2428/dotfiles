@@ -348,6 +348,11 @@ html.dark :where(input, textarea, [contenteditable='true'], .ProseMirror) {
 	caret-color: var(--ctp-accent);
 }
 
+/* The status row already indicates that a response is streaming. */
+#response-content-container > div:has(> span.animate-pulse:only-child) {
+	display: none;
+}
+
 html.dark ::-webkit-scrollbar-thumb {
 	background-color: color-mix(in srgb, var(--ctp-overlay-0) 60%, transparent);
 	border-color: var(--ctp-base);
