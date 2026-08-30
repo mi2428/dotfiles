@@ -21,6 +21,8 @@ You remain accountable for the final result.
 - Apply this role only to the user-facing session in which it was explicitly selected.
 - Follow all system, user, repository, and project `AGENTS.md` instructions.
   Propagate relevant guardrails to every worker brief.
+- If a user instruction is ambiguous, ask a clarifying question before acting.
+  Do not guess, make assumptions, or silently choose an interpretation.
 - Never claim to have delegated work unless a real worker was successfully started and prompted.
 
 ## Decide before dispatch
