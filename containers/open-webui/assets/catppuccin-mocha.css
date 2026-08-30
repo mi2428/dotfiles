@@ -236,7 +236,8 @@ html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded]:
 	color: var(--ctp-model-accent-muted) !important;
 }
 
-html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded]:focus-visible {
+html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded]:focus-visible,
+html.dark #response-content-container [role='button'][aria-expanded]:focus-visible {
 	outline: none !important;
 	box-shadow: none !important;
 	text-decoration: underline;
@@ -289,10 +290,63 @@ html.dark .user-message .chat-user .whitespace-pre-wrap {
 	line-height: 1.5 !important;
 }
 
+html.dark #response-content-container .markdown-prose {
+	--ctp-markdown-accent: color-mix(in srgb, var(--ctp-blue) 68%, var(--ctp-base));
+	--tw-prose-bullets: var(--ctp-markdown-accent);
+	--tw-prose-counters: var(--ctp-markdown-accent);
+	--tw-prose-links: var(--ctp-markdown-accent);
+	--tw-prose-quotes: var(--ctp-subtext-1);
+	--tw-prose-quote-borders: color-mix(in srgb, var(--ctp-markdown-accent) 50%, transparent);
+	--tw-prose-th-borders: var(--ctp-markdown-accent);
+	--tw-prose-td-borders: var(--ctp-surface-1);
+}
+
+html.dark #response-content-container .markdown-prose :is(h1, h2, h3, h4) {
+	color: var(--ctp-markdown-accent) !important;
+}
+
+html.dark #response-content-container .markdown-prose h1 {
+	font-size: 1.25rem !important;
+	font-weight: 700 !important;
+}
+
+html.dark #response-content-container .markdown-prose h2 {
+	border-block-end: 1px solid var(--ctp-surface-1);
+	font-size: 1.125rem !important;
+	font-weight: 600 !important;
+	padding-block-end: 0.25rem;
+}
+
+html.dark #response-content-container .markdown-prose h3 {
+	font-size: 1rem !important;
+	font-weight: 600 !important;
+}
+
+html.dark #response-content-container .markdown-prose h4 {
+	color: var(--ctp-subtext-1) !important;
+	font-size: 0.875rem !important;
+	font-weight: 400 !important;
+}
+
+html.dark #response-content-container .markdown-prose thead {
+	background-color: color-mix(in srgb, var(--ctp-blue) 6%, var(--ctp-surface-0));
+}
+
+html.dark #response-content-container .markdown-prose th {
+	color: var(--ctp-markdown-accent) !important;
+	font-weight: 700 !important;
+	padding-block: 0.125rem !important;
+}
+
 html.dark #message-input-container {
 	background-color: color-mix(in srgb, var(--ctp-sapphire) 10%, var(--ctp-base)) !important;
 	border-color: transparent !important;
 	box-shadow: none !important;
+}
+
+html.dark #message-input-container :is(textarea, [contenteditable='true'], .ProseMirror) {
+	font-size: 0.875rem !important;
+	line-height: 1.5 !important;
 }
 
 html.dark .user-message .chat-user div.rounded-3xl.dark\:bg-gray-850 {
@@ -361,12 +415,16 @@ html.dark ::-webkit-scrollbar-thumb {
 	border-color: var(--ctp-base);
 }
 
-html.dark .relative.flex.flex-col:has(.cm-editor) .dark\:bg-black,
+html.dark #response-content-container .markdown-prose .relative.flex.flex-col:has(> .sticky) .dark\:bg-black,
 html.dark .cm-editor,
 html.dark .cm-gutters,
 html.dark .hljs {
 	background-color: var(--ctp-base) !important;
 	color: var(--ctp-text) !important;
+}
+
+html.dark #response-content-container .markdown-prose :is(pre, code, .cm-editor, .cm-scroller) {
+	font-family: 'Summer Ghost', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
 }
 
 html.dark .cm-content {
