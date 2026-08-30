@@ -63,7 +63,7 @@ Tasks
   secrets.clear      Remove local staging and decrypted secret work directories
   docker.build       Build Dockerfile locally as ghcr.io/OWNER/IMAGE:TAG
   docker.login       Login to ghcr.io with GHCR_TOKEN, GITHUB_TOKEN, or gh auth token
-  docker.push        Build and push Dockerfile to ghcr.io as ghcr.io/OWNER/IMAGE:TAG
+  docker.push        Build and push dotfiles and Open WebUI images to ghcr.io
   docker.run         Run the MCP workspace container on 127.0.0.1:3000
 
 Defaults

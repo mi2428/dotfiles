@@ -81,7 +81,7 @@ tasks:
         printf "$task_fmt" "$green" 'secrets.clear' "$reset" 'Remove local staging and decrypted secret work directories'
         printf "$task_fmt" "$green" 'docker.build' "$reset" 'Build Dockerfile locally as ghcr.io/OWNER/IMAGE:TAG'
         printf "$task_fmt" "$green" 'docker.login' "$reset" 'Login to ghcr.io with GHCR_TOKEN, GITHUB_TOKEN, or gh auth token'
-        printf "$task_fmt" "$green" 'docker.push' "$reset" 'Build and push Dockerfile to ghcr.io as ghcr.io/OWNER/IMAGE:TAG'
+        printf "$task_fmt" "$green" 'docker.push' "$reset" 'Build and push dotfiles and Open WebUI images to ghcr.io'
         printf "$task_fmt" "$green" 'docker.run' "$reset" 'Run the MCP workspace container on 127.0.0.1:3000'
         printf '\n%bDefaults%b\n' "$bold$cyan" "$reset"
         printf "$default_fmt" "$yellow" 'GHCR_OWNER' "$reset" 'mi2428'

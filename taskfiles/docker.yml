@@ -40,7 +40,7 @@ tasks:
         printf '%s' "$token" | "$docker_runtime" login ghcr.io -u "$username" --password-stdin
 
   docker.push:
-    desc: Push the local image to ghcr.io, building linux/arm64 only when it is missing
+    desc: Build and push the dotfiles and Open WebUI images to ghcr.io
     preconditions:
       - sh: 'command -v {{default "docker" .DOCKER_RUNTIME}} >/dev/null 2>&1'
         msg: DOCKER_RUNTIME was not found in PATH
@@ -53,14 +53,14 @@ tasks:
         set -eu
         docker_runtime='{{default "docker" .DOCKER_RUNTIME}}'
         ghcr_owner='{{default "mi2428" .GHCR_OWNER}}'
-        ghcr_image_name='{{default "dotfiles" .GHCR_IMAGE_NAME}}'
         tag='{{default "latest" .TAG}}'
         platform='{{default "linux/arm64" .PLATFORM}}'
-        ghcr_image="ghcr.io/$ghcr_owner/$ghcr_image_name"
-        if ! "$docker_runtime" image inspect "$ghcr_image:$tag" >/dev/null 2>&1; then
-          "$docker_runtime" buildx build --platform "$platform" --load -t "$ghcr_image:$tag" .
-        fi
-        "$docker_runtime" push "$ghcr_image:$tag"
+        for spec in 'dotfiles:.' 'open-webui:containers/open-webui'; do
+          ghcr_image_name="${spec%%:*}"
+          build_context="${spec#*:}"
+          ghcr_image="ghcr.io/$ghcr_owner/$ghcr_image_name"
+          "$docker_runtime" buildx build --platform "$platform" --push -t "$ghcr_image:$tag" "$build_context"
+        done
 
   docker.run:
     desc: Run the MCP workspace container on 127.0.0.1:3000
