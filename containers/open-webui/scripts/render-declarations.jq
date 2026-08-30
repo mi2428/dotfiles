@@ -129,6 +129,12 @@ def model_import: {
     meta: {provisioned_by: "dotfiles:movie-akinator-folder", icon: "clapper"},
     data: {system_prompt: $movie_akinator_system, files: []}
   },
+  books_movies_subculture_folder: {
+    name: "本・映画・サブカル",
+    parent_id: null,
+    meta: {provisioned_by: "dotfiles:books-movies-subculture-folder", icon: "books"},
+    data: {system_prompt: $books_movies_subculture_system, files: []}
+  },
   model_import: model_import,
   required_visible_model_ids: [
     "sacloud.preview/Kimi-K2.7-Code",
@@ -156,6 +162,9 @@ def model_import: {
 | require($desired.movie_akinator_folder.parent_id == null; "movie Akinator must be a root folder")
 | require(($desired.movie_akinator_folder.data.system_prompt | length) > 0; "movie Akinator prompt is required")
 | require($desired.movie_akinator_folder.data.files == []; "movie Akinator must not attach knowledge")
+| require($desired.books_movies_subculture_folder.parent_id == null; "books, movies, and subculture must be a root folder")
+| require(($desired.books_movies_subculture_folder.data.system_prompt | length) > 0; "books, movies, and subculture prompt is required")
+| require($desired.books_movies_subculture_folder.data.files == []; "books, movies, and subculture folder must not attach knowledge")
 | require($desired.model.base_model_id == "sacloud.preview/Kimi-K2.7-Code"; "unexpected base model")
 | require($desired.model.params.function_calling == "native"; "native function calling is required")
 | require($desired.model.params.max_tokens == 32768; "max_tokens must be 32768")
