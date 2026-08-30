@@ -5,31 +5,46 @@ config_dir="${1:?configuration directory is required}"
 mode="${2:-reconcile}"
 manifest_file="$config_dir/config/kimi-k2.7-deep-research.json"
 system_file="$config_dir/config/kimi-k2.7-deep-research-system.md"
+geoguessor_system_file="$config_dir/config/geoguessor-system.md"
 skill_file="$config_dir/skills/deep-research/SKILL.md"
 profile_file="$config_dir/assets/profile.webp"
+sakura_icon_file="$config_dir/assets/sakura-ai-engine.png"
 
-for file in "$manifest_file" "$system_file" "$skill_file"; do
+for file in "$manifest_file" "$system_file" "$geoguessor_system_file" "$skill_file" "$sakura_icon_file"; do
   [[ -r "$file" ]] || { printf 'Missing %s\n' "$file" >&2; exit 1; }
 done
 
+sakura_icon="data:image/png;base64,$(base64 <"$sakura_icon_file" | tr -d '\n')"
+
 desired="$({
   jq \
+    --arg sakura_icon "$sakura_icon" \
     --rawfile system "$system_file" \
+    --rawfile geoguessor_system "$geoguessor_system_file" \
     --rawfile content "$skill_file" \
     '
       def require($condition; $message): if $condition then . else error($message) end;
       {
         marker: .marker,
-        model: (.model | .params.system = $system),
-        skill: (.skill | .content = $content)
+        model: (.model | .params.system = $system | .meta.profile_image_url = $sakura_icon),
+        skill: (.skill | .content = $content),
+        folder: {
+          name: "GeoGuessor",
+          parent_id: null,
+          meta: {provisioned_by: "dotfiles:geoguessor-folder"},
+          data: {system_prompt: $geoguessor_system, files: []}
+        }
       }
       | . as $desired
       | require($desired.marker != ""; "managed marker is required")
       | require($desired.model.meta.provisioned_by == $desired.marker; "model marker mismatch")
       | require(($desired.skill.meta.tags | index($desired.marker)) != null; "skill marker mismatch")
+      | require($desired.folder.meta.provisioned_by == "dotfiles:geoguessor-folder"; "folder marker mismatch")
+      | require($desired.folder.data.files == []; "GeoGuessor folder must not attach knowledge")
       | require($desired.model.base_model_id == "sacloud.preview/Kimi-K2.7-Code"; "unexpected base model")
       | require($desired.model.params.function_calling == "native"; "native function calling is required")
       | require($desired.model.params.max_tokens == 32768; "max_tokens must be 32768")
+      | require(($desired.model.meta.profile_image_url | startswith("data:image/png;base64,")); "unexpected model icon")
       | require(($desired.model.params | has("reasoning_effort") | not); "reasoning_effort is unsupported")
       | require($desired.model.meta.capabilities.web_search == true; "web search capability is required")
       | require($desired.model.meta.capabilities.code_interpreter == true; "code interpreter capability is required")
@@ -47,7 +62,7 @@ desired="$({
 })"
 
 # The Sakura subset represents the speed/accuracy Pareto frontier as of August 2026.
-legacy_models="$(jq -n \
+legacy_models="$(jq -n --arg sakura_icon "$sakura_icon" \
   'def model($id; $name): {
     id: $id,
     base_model_id: null,
@@ -131,7 +146,13 @@ legacy_models="$(jq -n \
     + hidden_variants("sacloud.preview/Kimi-K2.6"; "sacloud.kimi-k2.6"; "Sakura Kimi K2.6"; "Kimi"; ["medium"])
     + hidden_variants("sacloud.preview/Kimi-K2.6"; "kimi-k2.6"; "Kimi K2.6"; "Kimi"; ["low", "medium", "high", "max"])
     + hidden_variants("sacloud.gpt-oss-120b"; "gpt-oss-120b"; "GPT-OSS 120B"; "GPT-OSS"; ["low", "medium", "high"])
-  )}')"
+  )} | .models |= map(
+    if (.id | startswith("sacloud.")) then
+      .meta.profile_image_url = $sakura_icon
+    else
+      .
+    end
+  )')"
 
 if [[ "$mode" == --dry-run ]]; then
   jq -S . <<<"$desired"
@@ -202,6 +223,24 @@ api_request POST /api/v1/models/import "$legacy_models"
 expect_success 'legacy model import'
 jq -e '. == true' <<<"$api_body" >/dev/null
 
+for endpoint in base export; do
+  api_request GET "/api/v1/models/$endpoint"
+  expect_success "model $endpoint GET for Sakura icons"
+  sakura_icon_patch="$(
+    jq -c --arg icon "$sakura_icon" '{models: [
+      .[]
+      | select(.id | startswith("sacloud."))
+      | select(.meta.profile_image_url != $icon)
+      | .meta.profile_image_url = $icon
+    ]}' <<<"$api_body"
+  )"
+  if [[ "$(jq '.models | length' <<<"$sakura_icon_patch")" -gt 0 ]]; then
+    api_request POST /api/v1/models/import "$sakura_icon_patch"
+    expect_success "model $endpoint Sakura icon update"
+    jq -e '. == true' <<<"$api_body" >/dev/null
+  fi
+done
+
 grant_projection='[.[] | {principal_type, principal_id, permission}] | sort_by([.principal_type, .principal_id, .permission])'
 
 model_projection() {
@@ -232,13 +271,26 @@ skill_projection() {
   " <<<"$1"
 }
 
+folder_projection() {
+  jq -cS '{
+    name,
+    provisioned_by: .meta.provisioned_by,
+    system_prompt: .data.system_prompt,
+    files: .data.files
+  }' <<<"$1"
+}
+
 managed_marker="$(jq -r '.marker' <<<"$desired")"
 desired_model="$(jq -c '.model' <<<"$desired")"
 desired_skill="$(jq -c '.skill' <<<"$desired")"
+desired_folder="$(jq -c '.folder' <<<"$desired")"
 model_id="$(jq -r '.id' <<<"$desired_model")"
 skill_id="$(jq -r '.id' <<<"$desired_skill")"
+folder_name="$(jq -r '.name' <<<"$desired_folder")"
+folder_marker="$(jq -r '.meta.provisioned_by' <<<"$desired_folder")"
 desired_model_projection="$(model_projection "$desired_model")"
 desired_skill_projection="$(skill_projection "$desired_skill")"
+desired_folder_projection="$(folder_projection "$desired_folder")"
 
 assert_model_owner_and_marker() {
   jq -e --arg owner "$owner_id" --arg marker "$managed_marker" \
@@ -282,6 +334,21 @@ verify_skill() {
     || { printf 'Skill projection mismatch: %s\n' "$skill_id" >&2; exit 1; }
 }
 
+assert_folder_owner_and_marker() {
+  jq -e --arg owner "$owner_id" --arg marker "$folder_marker" \
+    '.user_id == $owner and .meta.provisioned_by == $marker' \
+    <<<"$1" >/dev/null \
+    || { printf 'Refusing unmanaged or foreign folder: %s\n' "$folder_name" >&2; exit 1; }
+}
+
+verify_folder() {
+  api_request GET "/api/v1/folders/$(urlencode "$folder_id")"
+  expect_success "folder GET $folder_name"
+  assert_folder_owner_and_marker "$api_body"
+  [[ "$(folder_projection "$api_body")" == "$desired_folder_projection" ]] \
+    || { printf 'Folder projection mismatch: %s\n' "$folder_name" >&2; exit 1; }
+}
+
 api_request GET "/api/v1/skills/id/$(urlencode "$skill_id")"
 case "$api_status" in
   200)
@@ -320,6 +387,38 @@ case "$api_status" in
     ;;
 esac
 verify_model
+
+api_request GET /api/v1/folders/
+expect_success 'folder list'
+folder_matches="$(
+  jq -c --arg name "$folder_name" \
+    '[.[] | select(.parent_id == null and (.name | ascii_downcase) == ($name | ascii_downcase))]' \
+    <<<"$api_body"
+)"
+
+case "$(jq 'length' <<<"$folder_matches")" in
+  0)
+    api_request POST /api/v1/folders/ "$desired_folder"
+    expect_success "folder create $folder_name"
+    folder_id="$(jq -er '.id' <<<"$api_body")"
+    ;;
+  1)
+    folder_id="$(jq -er '.[0].id' <<<"$folder_matches")"
+    api_request GET "/api/v1/folders/$(urlencode "$folder_id")"
+    expect_success "folder GET $folder_name"
+    assert_folder_owner_and_marker "$api_body"
+    if [[ "$(folder_projection "$api_body")" != "$desired_folder_projection" ]]; then
+      api_request POST "/api/v1/folders/$(urlencode "$folder_id")/update" \
+        "$(jq -c 'del(.parent_id)' <<<"$desired_folder")"
+      expect_success "folder update $folder_name"
+    fi
+    ;;
+  *)
+    printf 'Multiple root folders named %s\n' "$folder_name" >&2
+    exit 1
+    ;;
+esac
+verify_folder
 
 api_request GET /api/v1/models/export
 expect_success 'model export'
@@ -393,6 +492,15 @@ jq -e --argjson order "$model_order_list" '.MODEL_ORDER_LIST == $order' <<<"$api
 
 verify_model
 verify_skill
+verify_folder
+for endpoint in base export; do
+  api_request GET "/api/v1/models/$endpoint"
+  expect_success "model $endpoint GET for Sakura icon verification"
+  jq -e --arg icon "$sakura_icon" \
+    'all(.[] | select(.id | startswith("sacloud.")); .meta.profile_image_url == $icon)' \
+    <<<"$api_body" >/dev/null \
+    || { printf 'Sakura model icon mismatch in %s\n' "$endpoint" >&2; exit 1; }
+done
 
 if [[ ! -f "$profile_marker" ]]; then
   [[ -r "$profile_file" ]] || { printf 'Missing %s\n' "$profile_file" >&2; exit 1; }
