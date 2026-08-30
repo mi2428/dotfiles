@@ -1,4 +1,4 @@
-"""Stream Sakura AI Engine responses and retry HTTP 429 failures."""
+"""Stream Sakura AI Engine responses and retry recoverable failures."""
 
 from __future__ import annotations
 
@@ -29,6 +29,8 @@ HOP_BY_HOP_HEADERS = {
     "transfer-encoding",
     "upgrade",
 }
+TIMEOUT_STATUSES = {408, 504}
+TIMEOUT_RETRY_EFFORTS = {"medium", "high", "max"}
 
 
 def retry_after_seconds(value: str | None) -> float | None:
@@ -42,6 +44,35 @@ def retry_after_seconds(value: str | None) -> float | None:
             return max(0.0, parsedate_to_datetime(value).timestamp() - time.time())
         except (TypeError, ValueError, OverflowError):
             return None
+
+
+def low_reasoning_body(body: bytes) -> bytes | None:
+    """Return a copy downgraded to low reasoning when retrying is safe."""
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("reasoning_effort") not in TIMEOUT_RETRY_EFFORTS
+    ):
+        return None
+    payload["reasoning_effort"] = "low"
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+
+
+def is_timeout_response(status: int, prefix: bytes) -> bool:
+    """Recognize HTTP and OpenAI-compatible timeout responses."""
+    if status in TIMEOUT_STATUSES:
+        return True
+    payload = prefix.strip()
+    if payload.startswith(b"data:"):
+        payload = payload.removeprefix(b"data:").strip()
+    try:
+        error = json.loads(payload).get("error", {})
+    except (AttributeError, json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    return isinstance(error, dict) and error.get("code") == "timeout"
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,7 +100,7 @@ class Settings:
 
 
 class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
-    """Forward OpenAI-compatible requests and retry rate limits."""
+    """Forward OpenAI-compatible requests and retry recoverable failures."""
 
     protocol_version = "HTTP/1.1"
     settings = Settings()
@@ -94,36 +125,93 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         if body is None:
             return
 
-        for attempt in range(self.settings.max_retries + 1):
+        request_body = body
+        rate_limit_attempt = 0
+        timeout_retried = False
+        while True:
             try:
-                connection, response = self._request_upstream(body)
+                connection, response = self._request_upstream(request_body)
+            except TimeoutError as error:
+                fallback = None if timeout_retried else low_reasoning_body(request_body)
+                if fallback is not None:
+                    LOG.warning(
+                        "Upstream request timed out; retrying once with "
+                        "reasoning_effort=low"
+                    )
+                    request_body = fallback
+                    timeout_retried = True
+                    rate_limit_attempt = 0
+                    continue
+                LOG.warning("Upstream request timed out: %s", error)
+                self._send_json(
+                    504, {"error": {"code": "timeout", "message": "upstream timeout"}}
+                )
+                return
             except (OSError, http.client.HTTPException) as error:
                 LOG.warning("Upstream request failed: %s", error)
                 self._send_json(502, {"error": {"message": "upstream unavailable"}})
                 return
-            if response.status != 429 or attempt == self.settings.max_retries:
-                self._stream(connection, response)
+            if response.status == 429 and rate_limit_attempt < self.settings.max_retries:
+                retry_after = retry_after_seconds(response.getheader("Retry-After"))
+                response.read()
+                connection.close()
+                delay = (
+                    retry_after
+                    if retry_after is not None
+                    else min(
+                        self.settings.max_backoff,
+                        self.settings.base_backoff * (2**rate_limit_attempt),
+                    )
+                )
+                delay += random.uniform(0.0, self.settings.jitter)
+                rate_limit_attempt += 1
+                LOG.warning(
+                    "Upstream returned 429; retrying in %.1fs (%d/%d)",
+                    delay,
+                    rate_limit_attempt,
+                    self.settings.max_retries,
+                )
+                time.sleep(delay)
+                continue
+
+            try:
+                prefix = response.readline(64 * 1024)
+            except TimeoutError as error:
+                response.close()
+                connection.close()
+                fallback = None if timeout_retried else low_reasoning_body(request_body)
+                if fallback is not None:
+                    LOG.warning(
+                        "Upstream response timed out; retrying once with "
+                        "reasoning_effort=low"
+                    )
+                    request_body = fallback
+                    timeout_retried = True
+                    rate_limit_attempt = 0
+                    continue
+                LOG.warning("Upstream response timed out: %s", error)
+                self._send_json(
+                    504, {"error": {"code": "timeout", "message": "upstream timeout"}}
+                )
                 return
 
-            retry_after = retry_after_seconds(response.getheader("Retry-After"))
-            response.read()
-            connection.close()
-            delay = (
-                retry_after
-                if retry_after is not None
-                else min(
-                    self.settings.max_backoff,
-                    self.settings.base_backoff * (2**attempt),
+            fallback = None
+            if is_timeout_response(response.status, prefix) and not timeout_retried:
+                fallback = low_reasoning_body(request_body)
+            if fallback is not None:
+                response.close()
+                connection.close()
+                LOG.warning(
+                    "Upstream returned a timeout; retrying once with "
+                    "reasoning_effort=low"
                 )
-            )
-            delay += random.uniform(0.0, self.settings.jitter)
-            LOG.warning(
-                "Upstream returned 429; retrying in %.1fs (%d/%d)",
-                delay,
-                attempt + 1,
-                self.settings.max_retries,
-            )
-            time.sleep(delay)
+                request_body = fallback
+                timeout_retried = True
+                rate_limit_attempt = 0
+                continue
+
+            self._stream(connection, response, prefix)
+            return
 
     def _read_body(self) -> bytes | None:
         if self.headers.get("Transfer-Encoding"):
@@ -165,18 +253,23 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         headers["Host"] = self.upstream.netloc
         if body:
             headers["Content-Length"] = str(len(body))
-        connection.request(
-            self.command,
-            f"{self.upstream.path.rstrip('/')}{self.path}",
-            body,
-            headers,
-        )
-        return connection, connection.getresponse()
+        try:
+            connection.request(
+                self.command,
+                f"{self.upstream.path.rstrip('/')}{self.path}",
+                body,
+                headers,
+            )
+            return connection, connection.getresponse()
+        except Exception:
+            connection.close()
+            raise
 
     def _stream(
         self,
         connection: http.client.HTTPConnection,
         response: http.client.HTTPResponse,
+        prefix: bytes = b"",
     ) -> None:
         self.send_response(response.status, response.reason)
         for name, value in response.getheaders():
@@ -185,6 +278,9 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
         try:
+            if prefix:
+                self.wfile.write(prefix)
+                self.wfile.flush()
             while chunk := response.read(64 * 1024):
                 self.wfile.write(chunk)
                 self.wfile.flush()
