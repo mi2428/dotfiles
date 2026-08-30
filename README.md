@@ -53,9 +53,9 @@ Tasks
   brew.sync          Update and upgrade Homebrew, then apply the repo-managed Brewfile
   ai.check           Check AI harness versions, Herdr integrations, and pinned OpenCode config
   ai.upgrade         Upgrade AI harnesses and refresh exact OmO and Slim plugin pins
-  ai.webui.up        Start Open WebUI and cptr with Docker
-  ai.webui.down      Stop Open WebUI and cptr without deleting their data
-  ai.webui.logs      Follow Open WebUI and cptr logs
+  ai.webui.up        Start Open WebUI and its local AI services with Docker
+  ai.webui.down      Stop Open WebUI services without deleting their data
+  ai.webui.logs      Follow Open WebUI service logs
   secrets.encrypt    Encrypt ssh and/or gnupg into chezmoi source state
   secrets.decrypt    Decrypt ssh and/or gnupg into a target directory
   secrets.edit.webui Edit the age-encrypted Open WebUI environment
@@ -165,9 +165,9 @@ Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `t
 > }
 > ```
 
-### Open WebUI and Computer
+### Open WebUI and Research Runtime
 
-[Open WebUI](https://openwebui.com/) and [Open WebUI Computer](https://openwebui.com/computer) run together under Docker. Computer has read-write access to `CPTR_WORKSPACE_DIR`, so mount only a trusted workspace. Persistent data lives in named volumes and `<workspace>/.cptr`; manage Open WebUI Admin UI configuration in Compose because UI changes do not survive a restart.
+[Open WebUI](https://openwebui.com/), [Open WebUI Computer](https://openwebui.com/computer), and a private Research Runtime run together under Docker. Deep Research and Kimi Max send at most one bounded tool call to that runtime; its internal search/evidence loop does not enter the Open WebUI turn context. Computer has read-write access to `CPTR_WORKSPACE_DIR`, so mount only a trusted workspace. Persistent data lives in named volumes and `<workspace>/.cptr`; manage Open WebUI Admin UI configuration in Compose because UI changes do not survive a restart.
 
 ```console
 $ task ai.webui.up
