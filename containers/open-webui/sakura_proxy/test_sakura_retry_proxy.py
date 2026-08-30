@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar
 
@@ -15,9 +17,11 @@ class UpstreamHandler(BaseHTTPRequestHandler):
     attempts = 0
     mode = "rate_limit"
     request_bodies: ClassVar[list[bytes]] = []
+    request_times: ClassVar[list[float]] = []
 
     def do_POST(self) -> None:
         type(self).attempts += 1
+        type(self).request_times.append(time.monotonic())
         length = int(self.headers.get("Content-Length", "0"))
         type(self).request_bodies.append(self.rfile.read(length))
         if self.mode == "rate_limit" and self.attempts < 3:
@@ -52,6 +56,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         UpstreamHandler.attempts = 0
         UpstreamHandler.mode = "rate_limit"
         UpstreamHandler.request_bodies = []
+        UpstreamHandler.request_times = []
         self.upstream = ThreadingHTTPServer(("127.0.0.1", 0), UpstreamHandler)
         upstream_port = self.upstream.server_address[1]
         self.proxy = make_server(
@@ -61,6 +66,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
                 base_backoff=0.01,
                 max_backoff=0.01,
                 jitter=0,
+                chat_request_stagger=0.1,
             ),
             ("127.0.0.1", 0),
         )
@@ -135,6 +141,34 @@ class SakuraRetryProxyTest(unittest.TestCase):
     def test_retry_after_parser(self) -> None:
         self.assertEqual(retry_after_seconds("2"), 2)
         self.assertIsNone(retry_after_seconds("invalid"))
+
+    def test_staggers_concurrent_chat_completions(self) -> None:
+        UpstreamHandler.mode = "success"
+        proxy_port = self.proxy.server_address[1]
+
+        def request(_: int) -> bytes:
+            with urllib.request.urlopen(
+                urllib.request.Request(
+                    f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
+                    data=b"{}",
+                )
+            ) as response:
+                return response.read()
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            self.assertEqual(
+                list(executor.map(request, range(3))),
+                [b'{"ok":true}'] * 3,
+            )
+
+        request_times = sorted(UpstreamHandler.request_times)
+        self.assertEqual(len(request_times), 3)
+        self.assertTrue(
+            all(
+                later - earlier >= 0.08
+                for earlier, later in zip(request_times, request_times[1:])
+            )
+        )
 
 
 if __name__ == "__main__":
