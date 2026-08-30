@@ -201,7 +201,7 @@ services:
     restart: unless-stopped
 
   searxng:
-    image: ghcr.io/searxng/searxng:2026.8.29-d226b78bc
+    image: ghcr.io/searxng/searxng:latest
     environment:
       SEARXNG_SECRET: "${SEARXNG_SECRET:?set SEARXNG_SECRET}"
     healthcheck:
