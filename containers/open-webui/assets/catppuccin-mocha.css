@@ -246,6 +246,8 @@ html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded]:
 
 html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded='true'] + div,
 html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded='true'] + div .markdown-prose,
+html.dark #response-content-container .w-full.min-w-0 > button[aria-expanded='true'] + div,
+html.dark #response-content-container .w-full.min-w-0 > button[aria-expanded='true'] + div .markdown-prose,
 html.dark #response-content-container .w-full.min-w-0 > div:has(> [role='button'][aria-expanded='true']) + div,
 html.dark #response-content-container .w-full.min-w-0 > div:has(> [role='button'][aria-expanded='true']) + div .markdown-prose {
 	--tw-prose-body: var(--ctp-subtext-0);
@@ -256,6 +258,14 @@ html.dark #response-content-container .w-full.min-w-0 > div:has(> [role='button'
 	--tw-prose-counters: var(--ctp-subtext-0);
 	--tw-prose-bullets: var(--ctp-overlay-1);
 	color: var(--ctp-subtext-0);
+}
+
+html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded='true'] + div blockquote {
+	border-inline-start: 0 !important;
+	margin-block: 0.5rem !important;
+	padding-inline-start: 0 !important;
+	font-size: 0.75rem !important;
+	line-height: 1.35 !important;
 }
 
 html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded='true'] + div a,
