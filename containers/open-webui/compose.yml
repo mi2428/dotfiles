@@ -42,6 +42,7 @@ services:
       ENABLE_EVALUATION_ARENA_MODELS: "false"
       ENABLE_FOLLOW_UP_GENERATION: "false"
       ENABLE_MESSAGE_RATING: "false"
+      ENABLE_NOTES: "true"
       ENABLE_OLLAMA_API: "false"
       ENABLE_PERSISTENT_CONFIG: "false"
       ENABLE_QUERIES_CACHE: "true"
@@ -79,6 +80,7 @@ services:
       SUBAGENTS_BACKGROUND_ENABLED: "false"
       SUBAGENTS_MAX_CONCURRENT: "4"
       SUBAGENTS_MAX_ITERATIONS: "300"
+      SUBAGENTS_MAX_OUTPUT: "16000"
       SUBAGENTS_SYSTEM_PROMPT: >-
         あなたは親エージェントから割り当てられた独立調査を担当する。
         利用可能なツールで一次資料を優先して検証し、自然な日本語で、
@@ -106,10 +108,27 @@ services:
         ${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}
       WEBUI_ADMIN_PASSWORD: >-
         ${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}
+      WEBUI_ADMIN_USERNAME: "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
       WEBUI_SECRET_KEY: "${WEBUI_SECRET_KEY:?set WEBUI_SECRET_KEY}"
       WEBUI_URL: "${WEBUI_URL:?set WEBUI_URL}"
     volumes:
       - open-webui-data:/app/backend/data
+      - ./assets/profile.webp:/app/backend/declarative/assets/profile.webp:ro
+      - ./config:/app/backend/declarative/config:ro
+      - ./scripts:/app/backend/declarative-scripts:ro
+      - ./skills:/app/backend/declarative/skills:ro
+    command: [bash, /app/backend/declarative-scripts/start.sh]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          test -f /app/backend/data/.declarative-ready &&
+          curl --silent --fail http://127.0.0.1:8080/health |
+          jq -e '.status == true' >/dev/null
+      interval: 2s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
     depends_on:
       cptr:
         condition: service_started

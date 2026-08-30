@@ -89,8 +89,7 @@ case "$action" in
     # shellcheck disable=SC1090
     source "$gateway_env_file"
     set +a
-    "${compose[@]}" up -d --build
-    "$repo_root/scripts/bootstrap-open-webui.sh" "$repo_root"
+    "${compose[@]}" up -d --build --wait
     [[ -z "$tailscale_bin" ]] \
       || TAILSCALE_BE_CLI=1 "$tailscale_bin" serve --bg "$local_url" \
       || true
