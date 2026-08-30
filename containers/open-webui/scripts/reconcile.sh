@@ -7,6 +7,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 manifest_file="$config_dir/config/kimi-k2.7-deep-research.json"
 system_file="$config_dir/config/kimi-k2.7-deep-research-system.md"
 geoguessor_system_file="$config_dir/config/geoguessor-system.md"
+github_oss_translation_system_file="$config_dir/config/github-oss-translation-system.md"
 chat_personality_file="$config_dir/config/chat-personality.md"
 skill_file="$config_dir/skills/deep-research/SKILL.md"
 renderer_file="$script_dir/render-declarations.jq"
@@ -18,7 +19,8 @@ sakura_icon_high_file="$config_dir/assets/sakura-ai-engine-high.png"
 sakura_icon_max_file="$config_dir/assets/sakura-ai-engine-max.png"
 
 for file in \
-  "$manifest_file" "$system_file" "$geoguessor_system_file" "$chat_personality_file" "$skill_file" "$renderer_file" \
+  "$manifest_file" "$system_file" "$geoguessor_system_file" "$github_oss_translation_system_file" \
+  "$chat_personality_file" "$skill_file" "$renderer_file" \
   "$sakura_icon_file" "$sakura_icon_low_file" "$sakura_icon_medium_file" \
   "$sakura_icon_high_file" "$sakura_icon_max_file"; do
   [[ -r "$file" ]] || { printf 'Missing %s\n' "$file" >&2; exit 1; }
@@ -37,6 +39,7 @@ desired="$(jq -n \
   --argjson sakura_icons "$sakura_icons" \
   --rawfile system "$system_file" \
   --rawfile geoguessor_system "$geoguessor_system_file" \
+  --rawfile github_oss_translation_system "$github_oss_translation_system_file" \
   --rawfile chat_personality "$chat_personality_file" \
   --rawfile content "$skill_file" \
   -f "$renderer_file")"
@@ -179,6 +182,7 @@ skill_projection() {
 folder_projection() {
   jq -cS '{
     name,
+    parent_id: (.parent_id // null),
     provisioned_by: .meta.provisioned_by,
     icon: .meta.icon,
     system_prompt: .data.system_prompt,
@@ -190,13 +194,12 @@ managed_marker="$(jq -r '.marker' <<<"$desired")"
 desired_model="$(jq -c '.model' <<<"$desired")"
 desired_skill="$(jq -c '.skill' <<<"$desired")"
 desired_folder="$(jq -c '.folder' <<<"$desired")"
+desired_translation_parent="$(jq -c '.translation_folders.parent' <<<"$desired")"
+desired_translation_child="$(jq -c '.translation_folders.child' <<<"$desired")"
 model_id="$(jq -r '.id' <<<"$desired_model")"
 skill_id="$(jq -r '.id' <<<"$desired_skill")"
-folder_name="$(jq -r '.name' <<<"$desired_folder")"
-folder_marker="$(jq -r '.meta.provisioned_by' <<<"$desired_folder")"
 desired_model_projection="$(model_projection "$desired_model")"
 desired_skill_projection="$(skill_projection "$desired_skill")"
-desired_folder_projection="$(folder_projection "$desired_folder")"
 
 assert_model_owner_and_marker() {
   jq -e --arg owner "$owner_id" --arg marker "$managed_marker" \
@@ -241,18 +244,72 @@ verify_skill() {
 }
 
 assert_folder_owner_and_marker() {
+  local response="$1"
+  local folder_name="$2"
+  local folder_marker="$3"
   jq -e --arg owner "$owner_id" --arg marker "$folder_marker" \
     '.user_id == $owner and .meta.provisioned_by == $marker' \
-    <<<"$1" >/dev/null \
+    <<<"$response" >/dev/null \
     || { printf 'Refusing unmanaged or foreign folder: %s\n' "$folder_name" >&2; exit 1; }
 }
 
 verify_folder() {
+  local folder_id="$1"
+  local desired_folder="$2"
+  local folder_name folder_marker desired_folder_projection
+  folder_name="$(jq -r '.name' <<<"$desired_folder")"
+  folder_marker="$(jq -r '.meta.provisioned_by' <<<"$desired_folder")"
+  desired_folder_projection="$(folder_projection "$desired_folder")"
   api_request GET "/api/v1/folders/$(urlencode "$folder_id")"
   expect_success "folder GET $folder_name"
-  assert_folder_owner_and_marker "$api_body"
+  assert_folder_owner_and_marker "$api_body" "$folder_name" "$folder_marker"
   [[ "$(folder_projection "$api_body")" == "$desired_folder_projection" ]] \
     || { printf 'Folder projection mismatch: %s\n' "$folder_name" >&2; exit 1; }
+}
+
+upsert_folder() {
+  local desired_folder="$1"
+  local folder_name folder_marker parent_id folder_matches folder_id desired_folder_projection
+  folder_name="$(jq -r '.name' <<<"$desired_folder")"
+  folder_marker="$(jq -r '.meta.provisioned_by' <<<"$desired_folder")"
+  parent_id="$(jq -r '.parent_id // empty' <<<"$desired_folder")"
+  desired_folder_projection="$(folder_projection "$desired_folder")"
+
+  api_request GET /api/v1/folders/
+  expect_success 'folder list'
+  folder_matches="$(
+    jq -c --arg name "$folder_name" --arg parent_id "$parent_id" \
+      '[.[] | select(((.parent_id // "") == $parent_id)
+        and (.name | ascii_downcase) == ($name | ascii_downcase))]' \
+      <<<"$api_body"
+  )"
+
+  case "$(jq 'length' <<<"$folder_matches")" in
+    0)
+      api_request POST /api/v1/folders/ "$desired_folder"
+      expect_success "folder create $folder_name"
+      folder_id="$(jq -er '.id' <<<"$api_body")"
+      ;;
+    1)
+      folder_id="$(jq -er '.[0].id' <<<"$folder_matches")"
+      api_request GET "/api/v1/folders/$(urlencode "$folder_id")"
+      expect_success "folder GET $folder_name"
+      assert_folder_owner_and_marker "$api_body" "$folder_name" "$folder_marker"
+      if [[ "$(folder_projection "$api_body")" != "$desired_folder_projection" ]]; then
+        api_request POST "/api/v1/folders/$(urlencode "$folder_id")/update" \
+          "$(jq -c 'del(.parent_id)' <<<"$desired_folder")"
+        expect_success "folder update $folder_name"
+      fi
+      ;;
+    *)
+      printf 'Multiple folders named %s under parent %s\n' \
+        "$folder_name" "${parent_id:-root}" >&2
+      exit 1
+      ;;
+  esac
+
+  verify_folder "$folder_id" "$desired_folder"
+  upserted_folder_id="$folder_id"
 }
 
 api_request GET "/api/v1/skills/id/$(urlencode "$skill_id")"
@@ -294,37 +351,15 @@ case "$api_status" in
 esac
 verify_model
 
-api_request GET /api/v1/folders/
-expect_success 'folder list'
-folder_matches="$(
-  jq -c --arg name "$folder_name" \
-    '[.[] | select(.parent_id == null and (.name | ascii_downcase) == ($name | ascii_downcase))]' \
-    <<<"$api_body"
-)"
-
-case "$(jq 'length' <<<"$folder_matches")" in
-  0)
-    api_request POST /api/v1/folders/ "$desired_folder"
-    expect_success "folder create $folder_name"
-    folder_id="$(jq -er '.id' <<<"$api_body")"
-    ;;
-  1)
-    folder_id="$(jq -er '.[0].id' <<<"$folder_matches")"
-    api_request GET "/api/v1/folders/$(urlencode "$folder_id")"
-    expect_success "folder GET $folder_name"
-    assert_folder_owner_and_marker "$api_body"
-    if [[ "$(folder_projection "$api_body")" != "$desired_folder_projection" ]]; then
-      api_request POST "/api/v1/folders/$(urlencode "$folder_id")/update" \
-        "$(jq -c 'del(.parent_id)' <<<"$desired_folder")"
-      expect_success "folder update $folder_name"
-    fi
-    ;;
-  *)
-    printf 'Multiple root folders named %s\n' "$folder_name" >&2
-    exit 1
-    ;;
-esac
-verify_folder
+upserted_folder_id=
+upsert_folder "$desired_folder"
+geoguessor_folder_id="$upserted_folder_id"
+upsert_folder "$desired_translation_parent"
+translation_parent_id="$upserted_folder_id"
+desired_translation_child="$(jq -c --arg parent_id "$translation_parent_id" \
+  '.parent_id = $parent_id' <<<"$desired_translation_child")"
+upsert_folder "$desired_translation_child"
+translation_child_id="$upserted_folder_id"
 
 api_request GET /api/v1/models/export
 expect_success 'model export'
@@ -388,7 +423,9 @@ jq -e --argjson order "$model_order_list" '.MODEL_ORDER_LIST == $order' <<<"$api
 
 verify_model
 verify_skill
-verify_folder
+verify_folder "$geoguessor_folder_id" "$desired_folder"
+verify_folder "$translation_parent_id" "$desired_translation_parent"
+verify_folder "$translation_child_id" "$desired_translation_child"
 for endpoint in base export; do
   api_request GET "/api/v1/models/$endpoint"
   expect_success "model $endpoint GET for Sakura icon verification"

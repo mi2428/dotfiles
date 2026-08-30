@@ -115,6 +115,20 @@ def model_import: {
     meta: {provisioned_by: "dotfiles:geoguessor-folder", icon: "earth_asia"},
     data: {system_prompt: $geoguessor_system, files: []}
   },
+  translation_folders: {
+    parent: {
+      name: "翻訳",
+      parent_id: null,
+      meta: {provisioned_by: "dotfiles:translation-folder", icon: "left_right_arrow"},
+      data: {system_prompt: "", files: []}
+    },
+    child: {
+      name: "エンジニア英語",
+      parent_id: null,
+      meta: {provisioned_by: "dotfiles:github-oss-translation-folder", icon: "technologist"},
+      data: {system_prompt: $github_oss_translation_system, files: []}
+    }
+  },
   model_import: model_import,
   required_visible_model_ids: [
     "sacloud.preview/Kimi-K2.7-Code",
@@ -136,6 +150,10 @@ def model_import: {
 | require(($desired.skill.meta.tags | index($desired.marker)) != null; "skill marker mismatch")
 | require($desired.folder.meta.provisioned_by == "dotfiles:geoguessor-folder"; "folder marker mismatch")
 | require($desired.folder.data.files == []; "GeoGuessor folder must not attach knowledge")
+| require($desired.translation_folders.parent.parent_id == null; "translation parent must be a root folder")
+| require($desired.translation_folders.parent.data.system_prompt == ""; "translation parent must not add a prompt")
+| require(($desired.translation_folders.child.data.system_prompt | length) > 0; "translation prompt is required")
+| require($desired.translation_folders.child.data.files == []; "translation folder must not attach knowledge")
 | require($desired.model.base_model_id == "sacloud.preview/Kimi-K2.7-Code"; "unexpected base model")
 | require($desired.model.params.function_calling == "native"; "native function calling is required")
 | require($desired.model.params.max_tokens == 32768; "max_tokens must be 32768")
