@@ -6,14 +6,14 @@
     "name": "Sakura Deep Research",
     "meta": {
       "profile_image_url": null,
-      "description": "複数のフォアグラウンド・サブエージェントで調査し、引用付きのNoteにまとめます。",
+      "description": "外部Research Runtimeで調査を完結し、根拠付きの回答を返します。",
       "capabilities": {
         "file_context": true,
         "vision": true,
         "file_upload": true,
-        "web_search": true,
+        "web_search": false,
         "image_generation": false,
-        "code_interpreter": true,
+        "code_interpreter": false,
         "terminal": false,
         "citations": true,
         "status_updates": true,
@@ -27,30 +27,28 @@
           "name": "Research"
         }
       ],
-      "defaultFeatureIds": [
-        "web_search",
-        "code_interpreter"
-      ],
+      "defaultFeatureIds": [],
       "builtinTools": {
-        "time": true,
-        "user_input": true,
+        "time": false,
+        "user_input": false,
         "memory": false,
         "chats": false,
-        "notes": true,
+        "notes": false,
         "knowledge": false,
         "files": false,
         "channels": false,
         "notifications": false,
-        "web_search": true,
+        "web_search": false,
         "image_generation": false,
-        "code_interpreter": true,
-        "tasks": true,
+        "code_interpreter": false,
+        "tasks": false,
         "automations": false,
         "calendar": false,
-        "subagents": true
+        "subagents": false
       },
-      "skillIds": [
-        "deep-research"
+      "skillIds": [],
+      "toolIds": [
+        "server:deep-research"
       ],
       "hidden": false,
       "provisioned_by": "dotfiles:kimi-k2.7-deep-research"
@@ -66,7 +64,7 @@
   "skill": {
     "id": "deep-research",
     "name": "Deep Research",
-    "description": "親エージェント専用。最新情報の確認、複数資料の比較、網羅的な調査、一次資料による検証、引用に基づく整理が必要な場合に、最初の検索前に読みます。サブエージェントや、直接回答できる短い質問では使いません。",
+    "description": "外部deep_research toolを1回だけ呼び、返された引用付き回答を保持するための手順です。",
     "meta": {
       "tags": [
         "Deep Research",

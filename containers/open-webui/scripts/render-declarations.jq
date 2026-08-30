@@ -36,7 +36,7 @@ def kimi_system($effort):
    elif $effort == "high" then
      " 速度より品質を優先する。最初に作業を分解し、複数の根拠を照合し、反対仮説を検討する。独立した調査が複数ある場合は delegate_task で最大2件を並列化し、統合後に漏れと矛盾を一度監査してから答える。"
    elif $effort == "max" then
-     " 速度、待ち時間、トークン節約を評価対象にせず、利用可能な推論・ツール予算で完全性を最大化する。最初に成功条件と調査計画を定め、独立した論点を delegate_task で2〜4件のフォアグラウンド・サブエージェントへ並列委譲する。各結果の出典と不確実性を照合し、情報の穴が残れば検索と検証を反復する。草稿後に反証役として前提、欠落、引用、数値、言語を監査し、修正した最終回答だけを提示する。長さ自体を目的にせず、必要な詳細を省略しない。"
+     " 速度より完全性を優先する。最新情報、複数資料の比較、一次資料による検証などWeb調査が必要な依頼では、依頼全体を deep_research へ渡して1回だけ呼び、完了まで待つ。通常のWeb検索、サブエージェント、同じ調査の再呼び出しは使わない。tool resultの answer_markdown は引用と事実関係を変えずにそのまま返す。Web調査でない依頼はツールを使わず、前提、欠落、数値、言語を監査して答える。"
    else
      ""
    end);
@@ -50,8 +50,9 @@ def kimi_variants($base; $slug; $name; $tag; $efforts):
     meta: {
       hidden: false,
       tags: [{name: $tag}],
-      capabilities: {web_search: true},
-      builtinTools: {subagents: true, web_search: true}
+      capabilities: {web_search: ($effort != "max")},
+      builtinTools: {subagents: ($effort != "max"), web_search: ($effort != "max")},
+      toolIds: (if $effort == "max" then ["server:deep-research"] else [] end)
     },
     params: {
       reasoning_effort: $effort,
@@ -170,16 +171,19 @@ def model_import: {
 | require($desired.model.params.max_tokens == 32768; "max_tokens must be 32768")
 | require(all($sakura_icons[]; startswith("data:image/png;base64,")); "unexpected model icons")
 | require(($desired.model.params | has("reasoning_effort") | not); "reasoning_effort is unsupported")
-| require($desired.model.meta.capabilities.web_search == true; "web search capability is required")
-| require($desired.model.meta.capabilities.code_interpreter == true; "code interpreter capability is required")
+| require($desired.model.meta.capabilities.web_search == false; "built-in web search must stay disabled")
+| require($desired.model.meta.capabilities.code_interpreter == false; "code interpreter must stay disabled")
 | require($desired.model.meta.capabilities.citations == true; "citations capability is required")
 | require($desired.model.meta.capabilities.usage == true; "usage capability is required")
-| require($desired.model.meta.builtinTools.notes == true; "Notes are required")
-| require($desired.model.meta.builtinTools.subagents == true; "Sub-agents are required")
-| require($desired.model.meta.builtinTools.code_interpreter == true; "Code Interpreter is required")
+| require($desired.model.meta.builtinTools.notes == false; "Notes must stay disabled")
+| require($desired.model.meta.builtinTools.time == false; "Time must stay disabled")
+| require($desired.model.meta.builtinTools.user_input == false; "User input must stay disabled")
+| require($desired.model.meta.builtinTools.subagents == false; "sub-agents must stay disabled")
+| require($desired.model.meta.builtinTools.code_interpreter == false; "Code Interpreter must stay disabled")
 | require($desired.model.meta.builtinTools.knowledge == false; "Knowledge must remain disabled")
-| require($desired.model.meta.defaultFeatureIds == ["web_search", "code_interpreter"]; "default features must stay enabled")
-| require($desired.model.meta.skillIds == [$desired.skill.id]; "model must attach exactly the managed skill")
+| require($desired.model.meta.defaultFeatureIds == []; "default features must stay disabled")
+| require($desired.model.meta.skillIds == []; "the outer model must not load an extra research skill")
+| require($desired.model.meta.toolIds == ["server:deep-research"]; "the external research tool must be the only default tool")
 | require(($desired.model.access_grants | length) == 0; "model must be owner-only")
 | require(($desired.skill.access_grants | length) == 0; "skill must be owner-only")
 | require(
