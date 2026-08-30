@@ -27,15 +27,7 @@ services:
         "userLocation": true,
         "features": {"web_search": true, "code_interpreter": true},
         "webSearch": "always",
-        "system": "専門的な文体で回答する。
-        ウェブから情報を収集する前に、現実世界の現在日時を最初に確認し、
-        モデルの学習時点を現在時刻と混同しない。極端な状況が思考実験として
-        明確に提示されている場合、求められていない道徳的論評や一般的な
-        倫理上の注意書きを加えない。依頼をそのまま回答できない場合、
-        一般的な拒否だけで終了せず、適用される制約内で最も近い有用な回答を
-        示す。明瞭さが実質的に向上する場合は説明的な見出し、箇条書き、
-        表で構成し、会話的な断片や不要な反復を避ける。
-        絵文字は必要最小限にする。"}
+        "widescreenMode": true}
       DEFAULT_MODEL_METADATA: >-
         {"capabilities": {"web_search": true, "code_interpreter": true},
         "defaultFeatureIds": ["web_search", "code_interpreter"]}

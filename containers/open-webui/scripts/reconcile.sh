@@ -3,11 +3,13 @@ set -euo pipefail
 
 config_dir="${1:?configuration directory is required}"
 mode="${2:-reconcile}"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 manifest_file="$config_dir/config/kimi-k2.7-deep-research.json"
 system_file="$config_dir/config/kimi-k2.7-deep-research-system.md"
 geoguessor_system_file="$config_dir/config/geoguessor-system.md"
 chat_personality_file="$config_dir/config/chat-personality.md"
 skill_file="$config_dir/skills/deep-research/SKILL.md"
+renderer_file="$script_dir/render-declarations.jq"
 profile_file="$config_dir/assets/profile.webp"
 sakura_icon_file="$config_dir/assets/sakura-ai-engine.png"
 sakura_icon_low_file="$config_dir/assets/sakura-ai-engine-low.png"
@@ -16,7 +18,7 @@ sakura_icon_high_file="$config_dir/assets/sakura-ai-engine-high.png"
 sakura_icon_max_file="$config_dir/assets/sakura-ai-engine-max.png"
 
 for file in \
-  "$manifest_file" "$system_file" "$geoguessor_system_file" "$chat_personality_file" "$skill_file" \
+  "$manifest_file" "$system_file" "$geoguessor_system_file" "$chat_personality_file" "$skill_file" "$renderer_file" \
   "$sakura_icon_file" "$sakura_icon_low_file" "$sakura_icon_medium_file" \
   "$sakura_icon_high_file" "$sakura_icon_max_file"; do
   [[ -r "$file" ]] || { printf 'Missing %s\n' "$file" >&2; exit 1; }
@@ -30,147 +32,15 @@ sakura_icons="$(jq -n \
   --arg max "data:image/png;base64,$(base64 <"$sakura_icon_max_file" | tr -d '\n')" \
   '{default: $default, low: $low, medium: $medium, high: $high, max: $max}')"
 
-desired="$({
-  jq \
-    --argjson sakura_icons "$sakura_icons" \
-    --rawfile system "$system_file" \
-    --rawfile geoguessor_system "$geoguessor_system_file" \
-    --rawfile chat_personality "$chat_personality_file" \
-    --rawfile content "$skill_file" \
-    '
-      def require($condition; $message): if $condition then . else error($message) end;
-      {
-        marker: .marker,
-        chat_personality: $chat_personality,
-        model: (.model | .params.system = $system | .meta.profile_image_url = $sakura_icons.default),
-        skill: (.skill | .content = $content),
-        folder: {
-          name: "GeoGuessor",
-          parent_id: null,
-          meta: {provisioned_by: "dotfiles:geoguessor-folder", icon: "earth_asia"},
-          data: {system_prompt: $geoguessor_system, files: []}
-        }
-      }
-      | . as $desired
-      | require($desired.marker != ""; "managed marker is required")
-      | require(($desired.chat_personality | length) > 0; "chat personality is required")
-      | require($desired.model.meta.provisioned_by == $desired.marker; "model marker mismatch")
-      | require(($desired.skill.meta.tags | index($desired.marker)) != null; "skill marker mismatch")
-      | require($desired.folder.meta.provisioned_by == "dotfiles:geoguessor-folder"; "folder marker mismatch")
-      | require($desired.folder.data.files == []; "GeoGuessor folder must not attach knowledge")
-      | require($desired.model.base_model_id == "sacloud.preview/Kimi-K2.7-Code"; "unexpected base model")
-      | require($desired.model.params.function_calling == "native"; "native function calling is required")
-      | require($desired.model.params.max_tokens == 32768; "max_tokens must be 32768")
-      | require(all($sakura_icons[]; startswith("data:image/png;base64,")); "unexpected model icons")
-      | require(($desired.model.params | has("reasoning_effort") | not); "reasoning_effort is unsupported")
-      | require($desired.model.meta.capabilities.web_search == true; "web search capability is required")
-      | require($desired.model.meta.capabilities.code_interpreter == true; "code interpreter capability is required")
-      | require($desired.model.meta.capabilities.citations == true; "citations capability is required")
-      | require($desired.model.meta.capabilities.usage == true; "usage capability is required")
-      | require($desired.model.meta.builtinTools.notes == true; "Notes are required")
-      | require($desired.model.meta.builtinTools.subagents == true; "Sub-agents are required")
-      | require($desired.model.meta.builtinTools.code_interpreter == true; "Code Interpreter is required")
-      | require($desired.model.meta.builtinTools.knowledge == false; "Knowledge must remain disabled")
-      | require($desired.model.meta.defaultFeatureIds == ["web_search", "code_interpreter"]; "default features must stay enabled")
-      | require($desired.model.meta.skillIds == [$desired.skill.id]; "model must attach exactly the managed skill")
-      | require(($desired.model.access_grants | length) == 0; "model must be owner-only")
-      | require(($desired.skill.access_grants | length) == 0; "skill must be owner-only")
-    ' "$manifest_file"
-})"
-
-# The Sakura subset represents the speed/accuracy Pareto frontier as of August 2026.
-legacy_models="$(jq -n --argjson sakura_icons "$sakura_icons" \
-  'def sakura_icon: $sakura_icons[(.params.reasoning_effort // "default")];
-  def model($id; $name): {
-    id: $id,
-    base_model_id: null,
-    name: $name,
-    meta: {hidden: false},
-    params: {},
-    access_grants: [],
-    is_active: true
-  };
-  def hidden_model($id; $name):
-    model($id; $name) | .meta.hidden = true;
-  def variants($base; $slug; $name; $tag; $efforts):
-    $efforts
-    | map(. as $effort | {
-      id: ($slug + "-" + $effort),
-      base_model_id: $base,
-      name: ($name + " " + (($effort[0:1] | ascii_upcase) + $effort[1:])),
-      meta: {hidden: false, tags: [{name: $tag}]},
-      params: {reasoning_effort: $effort},
-      access_grants: [],
-      is_active: true
-    });
-  def kimi_system($effort):
-    "あなたは日本語で高品質な分析と調査を行う。最終回答は自然な日本語だけで記述し、固有名詞、コード、URL、必要な直接引用を除いて中国語・英語・韓国語を混入させない。送信前に言語と文章の破損を点検する。事実、推論、不明点を区別し、必要に応じて説明的な見出し、箇条書き、表で構造化する。Web調査では現在日時を確認し、一次資料を優先し、重要な主張には出典URLを付け、資料間の矛盾と残る不確実性を明示する。" +
-    (if $effort == "low" then
-       " 正確性を保つ最小限の分析を行い、明白でない重要主張を一度検証してから、要旨を先に簡潔に答える。サブエージェントは使わない。"
-     elif $effort == "high" then
-       " 速度より品質を優先する。最初に作業を分解し、複数の根拠を照合し、反対仮説を検討する。独立した調査が複数ある場合は delegate_task で最大2件を並列化し、統合後に漏れと矛盾を一度監査してから答える。"
-     else
-       " 速度、待ち時間、トークン節約を評価対象にせず、利用可能な推論・ツール予算で完全性を最大化する。最初に成功条件と調査計画を定め、独立した論点を delegate_task で2〜4件のフォアグラウンド・サブエージェントへ並列委譲する。各結果の出典と不確実性を照合し、情報の穴が残れば検索と検証を反復する。草稿後に反証役として前提、欠落、引用、数値、言語を監査し、修正した最終回答だけを提示する。長さ自体を目的にせず、必要な詳細を省略しない。"
-     end);
-  def kimi_variants($base; $slug; $name; $tag; $efforts):
-    $efforts
-    | map(. as $effort | {
-      id: ($slug + "-" + $effort),
-      base_model_id: $base,
-      name: ($name + " " + (($effort[0:1] | ascii_upcase) + $effort[1:])),
-      meta: {
-        hidden: false,
-        tags: [{name: $tag}],
-        capabilities: {web_search: true},
-        builtinTools: {subagents: true, web_search: true}
-      },
-      params: {
-        reasoning_effort: $effort,
-        function_calling: "native",
-        max_tokens: 32000,
-        compact_token_threshold:
-          (if $effort == "low" then 80000 elif $effort == "high" then 140000 else 180000 end),
-        system: kimi_system($effort)
-      },
-      access_grants: [],
-      is_active: true
-    });
-  def hidden_variants($base; $slug; $name; $tag; $efforts):
-    variants($base; $slug; $name; $tag; $efforts) | map(.meta.hidden = true);
-  {models: (
-    [
-      hidden_model("sacloud.llm-jp-3.1-8x13b-instruct4"; "Sakura LLM-jp 3.1 8x13B Instruct 4"),
-      hidden_model("sacloud.preview/Qwen3-0.6B-cpu"; "Sakura Qwen3 0.6B CPU"),
-      hidden_model("sacloud.preview/Phi-4-mini-instruct-cpu"; "Sakura Phi-4 Mini Instruct CPU"),
-      hidden_model("sacloud.preview/Qwen3-Embedding-4B-FP16"; "Sakura Qwen3 Embedding 4B FP16"),
-      hidden_model("sacloud.preview/Kimi-K2.6"; "Sakura Kimi K2.6"),
-      hidden_model("sacloud.preview/gemma-4-31B-it"; "Sakura Gemma 4 31B IT"),
-      hidden_model("sacloud.preview/Qwen3.6-35B-A3B"; "Sakura Qwen3.6 35B A3B"),
-      model("sacloud.preview/Kimi-K2.7-Code"; "Sakura Kimi K2.7 Code"),
-      hidden_model("sacloud.whisper-large-v3-turbo"; "Sakura Whisper Large V3 Turbo"),
-      hidden_model("sacloud.preview/Qwen3-VL-30B-A3B-Instruct"; "Sakura Qwen3 VL 30B A3B Instruct"),
-      hidden_model("sacloud.multilingual-e5-large"; "Sakura Multilingual E5 Large"),
-      hidden_model("sacloud.gpt-oss-120b"; "Sakura GPT-OSS 120B"),
-      hidden_model("groq.groq/compound"; "Groq Compound"),
-      hidden_model("groq.groq/compound-mini"; "Groq Compound Mini"),
-      hidden_model("groq.openai/gpt-oss-120b"; "Groq GPT-OSS 120B"),
-      hidden_model("groq.openai/gpt-oss-20b"; "Groq GPT-OSS 20B"),
-      hidden_model("groq.qwen/qwen3.6-27b"; "Groq Qwen3.6 27B"),
-      hidden_model("groq.qwen/qwen3.8-27b"; "Groq Qwen3.8 27B")
-    ]
-    + variants("sacloud.preview/gemma-4-31B-it"; "sacloud.gemma-4-31b-it"; "Sakura Gemma 4 31B IT"; "Gemma"; ["low", "high", "max"])
-    + variants("sacloud.preview/Qwen3.6-35B-A3B"; "sacloud.qwen3.6-35b-a3b"; "Sakura Qwen3.6 35B A3B"; "Qwen"; ["high", "max"])
-    + kimi_variants("sacloud.preview/Kimi-K2.6"; "sacloud.kimi-k2.6"; "Sakura Kimi K2.6"; "Kimi"; ["low", "high", "max"])
-    + hidden_variants("sacloud.preview/Kimi-K2.6"; "sacloud.kimi-k2.6"; "Sakura Kimi K2.6"; "Kimi"; ["medium"])
-    + hidden_variants("sacloud.preview/Kimi-K2.6"; "kimi-k2.6"; "Kimi K2.6"; "Kimi"; ["low", "medium", "high", "max"])
-    + hidden_variants("sacloud.gpt-oss-120b"; "gpt-oss-120b"; "GPT-OSS 120B"; "GPT-OSS"; ["low", "medium", "high"])
-  )} | .models |= map(
-    if (.id | startswith("sacloud.")) then
-      .meta.profile_image_url = sakura_icon
-    else
-      .
-    end
-  )')"
+desired="$(jq -n \
+  --slurpfile manifest "$manifest_file" \
+  --argjson sakura_icons "$sakura_icons" \
+  --rawfile system "$system_file" \
+  --rawfile geoguessor_system "$geoguessor_system_file" \
+  --rawfile chat_personality "$chat_personality_file" \
+  --rawfile content "$skill_file" \
+  -f "$renderer_file")"
+model_import="$(jq -c '.model_import' <<<"$desired")"
 
 if [[ "$mode" == --dry-run ]]; then
   jq -S . <<<"$desired"
@@ -185,7 +55,6 @@ fi
 : "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
 
 base_url="${OPEN_WEBUI_INTERNAL_URL:-http://127.0.0.1:${PORT:-8080}}"
-profile_marker=/app/backend/data/.profile-provisioned
 api_status=
 api_body=
 
@@ -237,27 +106,32 @@ auth_response="$({
 token="$(jq -er '.token' <<<"$auth_response")"
 owner_id="$(jq -er '.id' <<<"$auth_response")"
 
-api_request GET /api/v1/users/user/settings
-expect_success 'user settings GET'
+# Only the prompt is an enforced user override; static UI defaults stay in Compose.
+api_request GET '/api/v1/users/user/settings?raw=true'
+expect_success 'raw user settings GET'
 user_settings="$(jq -c --argjson desired "$desired" \
-  '.ui = (.ui // {}) | .ui.system = $desired.chat_personality | .ui.widescreenMode = true' \
-  <<<"$api_body")"
-api_request POST /api/v1/users/user/settings/update "$user_settings"
-expect_success 'user settings update'
+  '.ui = ((.ui // {}) + $desired.user_settings.ui)' <<<"$api_body")"
+if ! jq -e --argjson expected "$user_settings" '. == $expected' <<<"$api_body" >/dev/null; then
+  api_request POST /api/v1/users/user/settings/update "$user_settings"
+  expect_success 'user settings update'
+fi
+api_request GET /api/v1/users/user/settings
+expect_success 'merged user settings GET'
 jq -e --argjson desired "$desired" \
-  '.ui.system == $desired.chat_personality and .ui.widescreenMode == true' \
+  '.ui.system == $desired.user_settings.ui.system and .ui.widescreenMode == true' \
   <<<"$api_body" >/dev/null
 
-api_request POST /api/v1/models/import "$legacy_models"
-expect_success 'legacy model import'
+api_request POST /api/v1/models/import "$model_import"
+expect_success 'model import'
 jq -e '. == true' <<<"$api_body" >/dev/null
 
+# Open WebUI exposes provider bases and custom variants through separate import views.
 for endpoint in base export; do
   api_request GET "/api/v1/models/$endpoint"
   expect_success "model $endpoint GET for Sakura icons"
   sakura_icon_patch="$(
     jq -c --argjson icons "$sakura_icons" '
-      def sakura_icon: $icons[(.params.reasoning_effort // "default")];
+      def sakura_icon: $icons[(.params.reasoning_effort // "default")] // $icons.default;
       {models: [
       .[]
       | select(.id | startswith("sacloud."))
@@ -484,6 +358,7 @@ done < <(
     <<<"$skill_export"
 )
 
+# Open WebUI v0.11.1 builds the effective UI registry through this pinned endpoint.
 api_request GET '/api/models?refresh=true'
 expect_success 'model registry refresh'
 model_order_list="$(
@@ -500,19 +375,8 @@ model_order_list="$(
         | map(.id)' <<<"$api_body"
 )"
 
-jq -e --arg managed_id "$model_id" '
-    ([
-      "sacloud.preview/Kimi-K2.7-Code",
-      $managed_id,
-      "sacloud.gemma-4-31b-it-low",
-      "sacloud.gemma-4-31b-it-high",
-      "sacloud.gemma-4-31b-it-max",
-      "sacloud.qwen3.6-35b-a3b-high",
-      "sacloud.qwen3.6-35b-a3b-max",
-      "sacloud.kimi-k2.6-low",
-      "sacloud.kimi-k2.6-high",
-      "sacloud.kimi-k2.6-max"
-    ] - .) == []' \
+required_visible_model_ids="$(jq -c '.required_visible_model_ids' <<<"$desired")"
+jq -e --argjson required "$required_visible_model_ids" '($required - .) == []' \
   <<<"$model_order_list" >/dev/null
 
 api_request GET /api/v1/configs/models
@@ -529,25 +393,49 @@ for endpoint in base export; do
   api_request GET "/api/v1/models/$endpoint"
   expect_success "model $endpoint GET for Sakura icon verification"
   jq -e --argjson icons "$sakura_icons" \
-    'def sakura_icon: $icons[(.params.reasoning_effort // "default")];
+    'def sakura_icon: $icons[(.params.reasoning_effort // "default")] // $icons.default;
     all(.[] | select(.id | startswith("sacloud.")); .meta.profile_image_url == sakura_icon)' \
     <<<"$api_body" >/dev/null \
     || { printf 'Sakura model icon mismatch in %s\n' "$endpoint" >&2; exit 1; }
 done
 
-if [[ ! -f "$profile_marker" ]]; then
-  [[ -r "$profile_file" ]] || { printf 'Missing %s\n' "$profile_file" >&2; exit 1; }
-  profile_image_url="data:image/webp;base64,$(base64 <"$profile_file" | tr -d '\n')"
+profile_image_url="data:image/webp;base64,$(base64 <"$profile_file" | tr -d '\n')"
+profile_payload="$(jq -n \
+  --arg name "$WEBUI_ADMIN_USERNAME" \
+  --arg profile_image_url "$profile_image_url" \
+  --argjson current "$auth_response" \
+  '{
+    name: $name,
+    profile_image_url: $profile_image_url,
+    bio: ($current.bio // null),
+    gender: ($current.gender // null),
+    date_of_birth: ($current.date_of_birth // null)
+  }')"
 
-  profile_payload="$(jq -n \
-    --arg name "$WEBUI_ADMIN_USERNAME" \
-    --arg profile_image_url "$profile_image_url" \
-    '{name: $name, profile_image_url: $profile_image_url, bio: null, gender: null, date_of_birth: null}')"
+profile_matches() {
+  local response="$1"
+  local current_image
+  jq -e --arg name "$WEBUI_ADMIN_USERNAME" '.name == $name' <<<"$response" >/dev/null \
+    || return 1
+  current_image="$(jq -r '.profile_image_url // empty' <<<"$response")"
+  case "$current_image" in
+    data:image/webp\;base64,*) [[ "$current_image" == "$profile_image_url" ]] ;;
+    /api/v1/users/*/profile/image)
+      curl -fsS --connect-timeout 5 --max-time 60 \
+        --header "Authorization: Bearer $token" "$base_url$current_image" \
+        | cmp -s "$profile_file" -
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+profile_response="$auth_response"
+if ! profile_matches "$profile_response"; then
   api_request POST /api/v1/auths/update/profile "$profile_payload"
   expect_success 'profile update'
-  jq -e '.profile_image_url | startswith("data:image/webp;base64,")' <<<"$api_body" >/dev/null
-
-  touch "$profile_marker"
+  profile_response="$api_body"
 fi
+profile_matches "$profile_response" \
+  || { printf '%s\n' 'Profile projection mismatch' >&2; exit 1; }
 
 printf '%s\n' 'Open WebUI models, settings, Deep Research Skill, and profile are ready'
