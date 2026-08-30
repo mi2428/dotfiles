@@ -1,0 +1,78 @@
+{
+  "marker": "dotfiles:kimi-k2.7-deep-research",
+  "model": {
+    "id": "sacloud.kimi-k2.7-deep-research",
+    "base_model_id": "sacloud.preview/Kimi-K2.7-Code",
+    "name": "Kimi K2.7 Deep Research",
+    "meta": {
+      "profile_image_url": null,
+      "description": "複数のフォアグラウンド・サブエージェントで調査し、引用付きのNoteにまとめます。",
+      "capabilities": {
+        "file_context": true,
+        "vision": true,
+        "file_upload": true,
+        "web_search": true,
+        "image_generation": false,
+        "code_interpreter": false,
+        "terminal": false,
+        "citations": true,
+        "status_updates": true,
+        "usage": true,
+        "memory": false,
+        "builtin_tools": true
+      },
+      "knowledge": null,
+      "tags": [
+        {
+          "name": "Research"
+        }
+      ],
+      "defaultFeatureIds": [
+        "web_search"
+      ],
+      "builtinTools": {
+        "time": true,
+        "user_input": true,
+        "memory": false,
+        "chats": false,
+        "notes": true,
+        "knowledge": false,
+        "files": false,
+        "channels": false,
+        "notifications": false,
+        "web_search": true,
+        "image_generation": false,
+        "code_interpreter": false,
+        "tasks": true,
+        "automations": false,
+        "calendar": false,
+        "subagents": true
+      },
+      "skillIds": [
+        "deep-research"
+      ],
+      "hidden": false,
+      "provisioned_by": "dotfiles:kimi-k2.7-deep-research"
+    },
+    "params": {
+      "function_calling": "native",
+      "max_tokens": 32768,
+      "compact_token_threshold": 180000
+    },
+    "access_grants": [],
+    "is_active": true
+  },
+  "skill": {
+    "id": "deep-research",
+    "name": "Deep Research",
+    "description": "親エージェント専用。最新情報の確認、複数資料の比較、網羅的な調査、一次資料による検証、引用に基づく整理が必要な場合に、最初の検索前に読みます。サブエージェントや、直接回答できる短い質問では使いません。",
+    "meta": {
+      "tags": [
+        "Deep Research",
+        "dotfiles:kimi-k2.7-deep-research"
+      ]
+    },
+    "is_active": true,
+    "access_grants": []
+  }
+}
