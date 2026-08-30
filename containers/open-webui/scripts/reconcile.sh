@@ -194,8 +194,7 @@ managed_marker="$(jq -r '.marker' <<<"$desired")"
 desired_model="$(jq -c '.model' <<<"$desired")"
 desired_skill="$(jq -c '.skill' <<<"$desired")"
 desired_folder="$(jq -c '.folder' <<<"$desired")"
-desired_translation_parent="$(jq -c '.translation_folders.parent' <<<"$desired")"
-desired_translation_child="$(jq -c '.translation_folders.child' <<<"$desired")"
+desired_translation_folder="$(jq -c '.translation_folder' <<<"$desired")"
 model_id="$(jq -r '.id' <<<"$desired_model")"
 skill_id="$(jq -r '.id' <<<"$desired_skill")"
 desired_model_projection="$(model_projection "$desired_model")"
@@ -267,34 +266,69 @@ verify_folder() {
     || { printf 'Folder projection mismatch: %s\n' "$folder_name" >&2; exit 1; }
 }
 
+managed_folder_ids=()
+
+find_managed_folder_ids() {
+  local folder_marker="$1"
+  local folder_list folder_id
+  managed_folder_ids=()
+  api_request GET /api/v1/folders/
+  expect_success 'folder list'
+  folder_list="$api_body"
+  while IFS= read -r folder_id; do
+    api_request GET "/api/v1/folders/$(urlencode "$folder_id")"
+    expect_success 'folder GET for marker lookup'
+    if jq -e --arg owner "$owner_id" --arg marker "$folder_marker" \
+      '.user_id == $owner and .meta.provisioned_by == $marker' \
+      <<<"$api_body" >/dev/null; then
+      managed_folder_ids+=("$folder_id")
+    fi
+  done < <(jq -r '.[].id' <<<"$folder_list")
+}
+
 upsert_folder() {
   local desired_folder="$1"
-  local folder_name folder_marker parent_id folder_matches folder_id desired_folder_projection
+  local folder_name folder_marker parent_id folder_list folder_matches folder_id
+  local current_parent_id desired_folder_projection parent_payload
   folder_name="$(jq -r '.name' <<<"$desired_folder")"
   folder_marker="$(jq -r '.meta.provisioned_by' <<<"$desired_folder")"
   parent_id="$(jq -r '.parent_id // empty' <<<"$desired_folder")"
   desired_folder_projection="$(folder_projection "$desired_folder")"
 
+  find_managed_folder_ids "$folder_marker"
   api_request GET /api/v1/folders/
   expect_success 'folder list'
+  folder_list="$api_body"
   folder_matches="$(
     jq -c --arg name "$folder_name" --arg parent_id "$parent_id" \
       '[.[] | select(((.parent_id // "") == $parent_id)
         and (.name | ascii_downcase) == ($name | ascii_downcase))]' \
-      <<<"$api_body"
+      <<<"$folder_list"
   )"
 
-  case "$(jq 'length' <<<"$folder_matches")" in
+  case "${#managed_folder_ids[@]}" in
     0)
+      [[ "$(jq 'length' <<<"$folder_matches")" == 0 ]] \
+        || { printf 'Refusing unmanaged folder: %s\n' "$folder_name" >&2; exit 1; }
       api_request POST /api/v1/folders/ "$desired_folder"
       expect_success "folder create $folder_name"
       folder_id="$(jq -er '.id' <<<"$api_body")"
       ;;
     1)
-      folder_id="$(jq -er '.[0].id' <<<"$folder_matches")"
+      folder_id="${managed_folder_ids[0]}"
+      jq -e --arg id "$folder_id" '[.[] | select(.id != $id)] | length == 0' \
+        <<<"$folder_matches" >/dev/null \
+        || { printf 'Folder name is already in use: %s\n' "$folder_name" >&2; exit 1; }
       api_request GET "/api/v1/folders/$(urlencode "$folder_id")"
       expect_success "folder GET $folder_name"
       assert_folder_owner_and_marker "$api_body" "$folder_name" "$folder_marker"
+      current_parent_id="$(jq -r '.parent_id // empty' <<<"$api_body")"
+      if [[ "$current_parent_id" != "$parent_id" ]]; then
+        parent_payload="$(jq -nc --arg parent_id "$parent_id" \
+          '{parent_id: (if $parent_id == "" then null else $parent_id end)}')"
+        api_request POST "/api/v1/folders/$(urlencode "$folder_id")/update/parent" "$parent_payload"
+        expect_success "folder move $folder_name"
+      fi
       if [[ "$(folder_projection "$api_body")" != "$desired_folder_projection" ]]; then
         api_request POST "/api/v1/folders/$(urlencode "$folder_id")/update" \
           "$(jq -c 'del(.parent_id)' <<<"$desired_folder")"
@@ -302,14 +336,33 @@ upsert_folder() {
       fi
       ;;
     *)
-      printf 'Multiple folders named %s under parent %s\n' \
-        "$folder_name" "${parent_id:-root}" >&2
+      printf 'Multiple managed folders use marker: %s\n' "$folder_marker" >&2
       exit 1
       ;;
   esac
 
   verify_folder "$folder_id" "$desired_folder"
   upserted_folder_id="$folder_id"
+}
+
+delete_empty_managed_folder() {
+  local folder_marker="$1"
+  local folder_id folder_list
+  find_managed_folder_ids "$folder_marker"
+  case "${#managed_folder_ids[@]}" in
+    0) return ;;
+    1) folder_id="${managed_folder_ids[0]}" ;;
+    *) printf 'Multiple managed folders use marker: %s\n' "$folder_marker" >&2; exit 1 ;;
+  esac
+  api_request GET /api/v1/folders/
+  expect_success 'folder list before cleanup'
+  folder_list="$api_body"
+  jq -e --arg id "$folder_id" '[.[] | select(.parent_id == $id)] | length == 0' \
+    <<<"$folder_list" >/dev/null \
+    || { printf 'Refusing to delete a managed folder with children: %s\n' "$folder_id" >&2; exit 1; }
+  api_request DELETE "/api/v1/folders/$(urlencode "$folder_id")?delete_contents=false"
+  expect_success 'managed folder cleanup'
+  jq -e '. == true' <<<"$api_body" >/dev/null
 }
 
 api_request GET "/api/v1/skills/id/$(urlencode "$skill_id")"
@@ -354,12 +407,9 @@ verify_model
 upserted_folder_id=
 upsert_folder "$desired_folder"
 geoguessor_folder_id="$upserted_folder_id"
-upsert_folder "$desired_translation_parent"
-translation_parent_id="$upserted_folder_id"
-desired_translation_child="$(jq -c --arg parent_id "$translation_parent_id" \
-  '.parent_id = $parent_id' <<<"$desired_translation_child")"
-upsert_folder "$desired_translation_child"
-translation_child_id="$upserted_folder_id"
+upsert_folder "$desired_translation_folder"
+translation_folder_id="$upserted_folder_id"
+delete_empty_managed_folder dotfiles:translation-folder
 
 api_request GET /api/v1/models/export
 expect_success 'model export'
@@ -424,8 +474,7 @@ jq -e --argjson order "$model_order_list" '.MODEL_ORDER_LIST == $order' <<<"$api
 verify_model
 verify_skill
 verify_folder "$geoguessor_folder_id" "$desired_folder"
-verify_folder "$translation_parent_id" "$desired_translation_parent"
-verify_folder "$translation_child_id" "$desired_translation_child"
+verify_folder "$translation_folder_id" "$desired_translation_folder"
 for endpoint in base export; do
   api_request GET "/api/v1/models/$endpoint"
   expect_success "model $endpoint GET for Sakura icon verification"
