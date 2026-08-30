@@ -62,6 +62,7 @@ fi
 : "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
 : "${WEBUI_ADMIN_EMAIL:?set WEBUI_ADMIN_EMAIL}"
 : "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
+: "${RESEARCH_RUNTIME_API_KEY:?set RESEARCH_RUNTIME_API_KEY}"
 
 base_url="${OPEN_WEBUI_INTERNAL_URL:-http://127.0.0.1:${PORT:-8080}}"
 api_status=
@@ -114,6 +115,80 @@ auth_response="$({
 })"
 token="$(jq -er '.token' <<<"$auth_response")"
 owner_id="$(jq -er '.id' <<<"$auth_response")"
+
+research_server_id=deep-research
+research_server_marker=dotfiles:research-runtime
+desired_research_server="$(jq -nc \
+  --arg id "$research_server_id" \
+  --arg key "$RESEARCH_RUNTIME_API_KEY" \
+  --arg marker "$research_server_marker" \
+  --arg owner "$owner_id" \
+  '{
+    url: "http://research-runtime:8000",
+    path: "/openapi.json",
+    type: "openapi",
+    auth_type: "bearer",
+    headers: {
+      "X-OpenWebUI-Chat-Id": "{{CHAT_ID}}",
+      "X-OpenWebUI-Message-Id": "{{MESSAGE_ID}}"
+    },
+    key: $key,
+    config: {
+      enable: true,
+      access_grants: [{
+        principal_type: "user",
+        principal_id: $owner,
+        permission: "read"
+      }]
+    },
+    info: {
+      id: $id,
+      name: "Deep Research",
+      description: "One bounded call for autonomous multi-source research.",
+      provisioned_by: $marker
+    }
+  }')"
+
+api_request GET /api/v1/configs/tool_servers
+expect_success 'tool server config GET'
+research_server_matches="$(jq -c --arg id "$research_server_id" \
+  '[.TOOL_SERVER_CONNECTIONS[] | select(.info.id == $id)]' <<<"$api_body")"
+case "$(jq 'length' <<<"$research_server_matches")" in
+  0)
+    tool_server_connections="$(jq -c --argjson desired "$desired_research_server" \
+      '.TOOL_SERVER_CONNECTIONS + [$desired]' <<<"$api_body")"
+    ;;
+  1)
+    jq -e --arg marker "$research_server_marker" \
+      '.[0].info.provisioned_by == $marker' <<<"$research_server_matches" >/dev/null \
+      || { printf 'Refusing unmanaged tool server ID: %s\n' "$research_server_id" >&2; exit 1; }
+    tool_server_connections="$(jq -c \
+      --arg id "$research_server_id" \
+      --argjson desired "$desired_research_server" \
+      '.TOOL_SERVER_CONNECTIONS | map(if .info.id == $id then $desired else . end)' \
+      <<<"$api_body")"
+    ;;
+  *)
+    printf 'Multiple tool servers use ID: %s\n' "$research_server_id" >&2
+    exit 1
+    ;;
+esac
+if ! jq -e --argjson expected "$tool_server_connections" \
+  '.TOOL_SERVER_CONNECTIONS == $expected' <<<"$api_body" >/dev/null; then
+  api_request POST /api/v1/configs/tool_servers \
+    "$(jq -nc --argjson connections "$tool_server_connections" \
+      '{TOOL_SERVER_CONNECTIONS: $connections}')"
+  expect_success 'tool server config update'
+fi
+api_request GET /api/v1/configs/tool_servers
+expect_success 'tool server config verification'
+jq -e --argjson expected "$desired_research_server" \
+  '[.TOOL_SERVER_CONNECTIONS[] | select(.info.id == $expected.info.id)] == [$expected]' \
+  <<<"$api_body" >/dev/null
+api_request GET /api/v1/tools/
+expect_success 'tool list verification'
+jq -e --arg id "server:$research_server_id" \
+  '[.[] | select(.id == $id)] | length == 1' <<<"$api_body" >/dev/null
 
 # Only the prompt is an enforced user override; static UI defaults stay in Compose.
 api_request GET '/api/v1/users/user/settings?raw=true'
@@ -538,4 +613,4 @@ fi
 profile_matches "$profile_response" \
   || { printf '%s\n' 'Profile projection mismatch' >&2; exit 1; }
 
-printf '%s\n' 'Open WebUI models, settings, Deep Research Skill, and profile are ready'
+printf '%s\n' 'Open WebUI models, settings, Research Runtime tool, and profile are ready'
