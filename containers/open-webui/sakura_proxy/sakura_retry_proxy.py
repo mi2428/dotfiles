@@ -8,7 +8,6 @@ import logging
 import os
 import random
 import ssl
-import threading
 import time
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
@@ -85,7 +84,6 @@ class Settings:
     base_backoff: float = 2.0
     max_backoff: float = 120.0
     jitter: float = 1.0
-    chat_request_stagger: float = 0.0
 
     @classmethod
     def from_environment(cls) -> Settings:
@@ -98,11 +96,6 @@ class Settings:
             ),
             max_backoff=float(os.getenv("SAKURA_RETRY_MAX_SECONDS", cls.max_backoff)),
             jitter=float(os.getenv("SAKURA_RETRY_JITTER_SECONDS", cls.jitter)),
-            chat_request_stagger=float(
-                os.getenv(
-                    "SAKURA_CHAT_REQUEST_STAGGER_SECONDS", cls.chat_request_stagger
-                )
-            ),
         )
 
 
@@ -112,8 +105,6 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     settings = Settings()
     upstream: SplitResult = urlsplit(settings.upstream_url)
-    _chat_slot_lock = threading.Lock()
-    _next_chat_request_at = 0.0
 
     def do_GET(self) -> None:
         """Handle health checks and upstream GET requests."""
@@ -139,7 +130,6 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         timeout_retried = False
         while True:
             try:
-                self._wait_for_chat_slot()
                 connection, response = self._request_upstream(request_body)
             except TimeoutError as error:
                 fallback = None if timeout_retried else low_reasoning_body(request_body)
@@ -222,21 +212,6 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
 
             self._stream(connection, response, prefix)
             return
-
-    def _wait_for_chat_slot(self) -> None:
-        interval = self.settings.chat_request_stagger
-        if interval <= 0 or urlsplit(self.path).path != "/v1/chat/completions":
-            return
-        handler = type(self)
-        # Reserve slots globally so concurrent handlers reach Sakura at fixed intervals.
-        with handler._chat_slot_lock:
-            now = time.monotonic()
-            scheduled = max(now, handler._next_chat_request_at)
-            handler._next_chat_request_at = scheduled + interval
-        delay = scheduled - time.monotonic()
-        if delay > 0:
-            LOG.info("Delaying chat completion by %.1fs to pace upstream requests", delay)
-            time.sleep(delay)
 
     def _read_body(self) -> bytes | None:
         if self.headers.get("Transfer-Encoding"):
@@ -334,17 +309,10 @@ def make_server(
     upstream = urlsplit(settings.upstream_url)
     if upstream.scheme not in {"http", "https"} or not upstream.hostname:
         raise ValueError("SAKURA_UPSTREAM_URL must be an absolute HTTP(S) URL")
-    if settings.chat_request_stagger < 0:
-        raise ValueError("SAKURA_CHAT_REQUEST_STAGGER_SECONDS must not be negative")
     handler = type(
         "ConfiguredSakuraRetryProxyHandler",
         (SakuraRetryProxyHandler,),
-        {
-            "settings": settings,
-            "upstream": upstream,
-            "_chat_slot_lock": threading.Lock(),
-            "_next_chat_request_at": 0.0,
-        },
+        {"settings": settings, "upstream": upstream},
     )
     return ThreadingHTTPServer(address, handler)
 

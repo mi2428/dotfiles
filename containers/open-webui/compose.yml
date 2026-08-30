@@ -189,7 +189,6 @@ services:
   sakura-proxy:
     build: ./sakura_proxy
     environment:
-      SAKURA_CHAT_REQUEST_STAGGER_SECONDS: "10"
       SAKURA_RETRY_BASE_SECONDS: "2"
       SAKURA_RETRY_JITTER_SECONDS: "1"
       SAKURA_RETRY_MAX: "10"

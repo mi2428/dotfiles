@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 import unittest
-import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -16,15 +14,22 @@ from sakura_retry_proxy import Settings, make_server, retry_after_seconds
 class UpstreamHandler(BaseHTTPRequestHandler):
     attempts = 0
     mode = "rate_limit"
+    attempts_by_body: ClassVar[dict[bytes, int]] = {}
     request_bodies: ClassVar[list[bytes]] = []
-    request_times: ClassVar[list[float]] = []
 
     def do_POST(self) -> None:
         type(self).attempts += 1
-        type(self).request_times.append(time.monotonic())
         length = int(self.headers.get("Content-Length", "0"))
-        type(self).request_bodies.append(self.rfile.read(length))
-        if self.mode == "rate_limit" and self.attempts < 3:
+        body = self.rfile.read(length)
+        type(self).request_bodies.append(body)
+        type(self).attempts_by_body[body] = (
+            type(self).attempts_by_body.get(body, 0) + 1
+        )
+        if (self.mode == "rate_limit" and self.attempts < 3) or (
+            self.mode == "second_rate_limited"
+            and body == b"second"
+            and self.attempts_by_body[body] == 1
+        ):
             self.send_response(429)
             self.send_header("Retry-After", "0")
             self.send_header("Content-Length", "0")
@@ -55,8 +60,8 @@ class SakuraRetryProxyTest(unittest.TestCase):
     def setUp(self) -> None:
         UpstreamHandler.attempts = 0
         UpstreamHandler.mode = "rate_limit"
+        UpstreamHandler.attempts_by_body = {}
         UpstreamHandler.request_bodies = []
-        UpstreamHandler.request_times = []
         self.upstream = ThreadingHTTPServer(("127.0.0.1", 0), UpstreamHandler)
         upstream_port = self.upstream.server_address[1]
         self.proxy = make_server(
@@ -66,7 +71,6 @@ class SakuraRetryProxyTest(unittest.TestCase):
                 base_backoff=0.01,
                 max_backoff=0.01,
                 jitter=0,
-                chat_request_stagger=0.1,
             ),
             ("127.0.0.1", 0),
         )
@@ -142,34 +146,26 @@ class SakuraRetryProxyTest(unittest.TestCase):
         self.assertEqual(retry_after_seconds("2"), 2)
         self.assertIsNone(retry_after_seconds("invalid"))
 
-    def test_staggers_concurrent_chat_completions(self) -> None:
-        UpstreamHandler.mode = "success"
+    def test_concurrent_429_retries_only_affected_request(self) -> None:
+        UpstreamHandler.mode = "second_rate_limited"
         proxy_port = self.proxy.server_address[1]
 
-        def request(_: int) -> bytes:
+        def request(body: bytes) -> bytes:
             with urllib.request.urlopen(
                 urllib.request.Request(
                     f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
-                    data=b"{}",
+                    data=body,
                 )
             ) as response:
                 return response.read()
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            self.assertEqual(
-                list(executor.map(request, range(3))),
-                [b'{"ok":true}'] * 3,
-            )
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            responses = list(executor.map(request, (b"first", b"second")))
 
-        request_times = sorted(UpstreamHandler.request_times)
-        self.assertEqual(len(request_times), 3)
-        self.assertTrue(
-            all(
-                later - earlier >= 0.08
-                for earlier, later in zip(request_times, request_times[1:])
-            )
+        self.assertEqual(responses, [b'{"ok":true}'] * 2)
+        self.assertEqual(
+            UpstreamHandler.attempts_by_body, {b"first": 1, b"second": 2}
         )
-
 
 if __name__ == "__main__":
     unittest.main()
