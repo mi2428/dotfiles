@@ -9,16 +9,29 @@ geoguessor_system_file="$config_dir/config/geoguessor-system.md"
 skill_file="$config_dir/skills/deep-research/SKILL.md"
 profile_file="$config_dir/assets/profile.webp"
 sakura_icon_file="$config_dir/assets/sakura-ai-engine.png"
+sakura_icon_low_file="$config_dir/assets/sakura-ai-engine-low.png"
+sakura_icon_medium_file="$config_dir/assets/sakura-ai-engine-medium.png"
+sakura_icon_high_file="$config_dir/assets/sakura-ai-engine-high.png"
+sakura_icon_max_file="$config_dir/assets/sakura-ai-engine-max.png"
 
-for file in "$manifest_file" "$system_file" "$geoguessor_system_file" "$skill_file" "$sakura_icon_file"; do
+for file in \
+  "$manifest_file" "$system_file" "$geoguessor_system_file" "$skill_file" \
+  "$sakura_icon_file" "$sakura_icon_low_file" "$sakura_icon_medium_file" \
+  "$sakura_icon_high_file" "$sakura_icon_max_file"; do
   [[ -r "$file" ]] || { printf 'Missing %s\n' "$file" >&2; exit 1; }
 done
 
-sakura_icon="data:image/png;base64,$(base64 <"$sakura_icon_file" | tr -d '\n')"
+sakura_icons="$(jq -n \
+  --arg default "data:image/png;base64,$(base64 <"$sakura_icon_file" | tr -d '\n')" \
+  --arg low "data:image/png;base64,$(base64 <"$sakura_icon_low_file" | tr -d '\n')" \
+  --arg medium "data:image/png;base64,$(base64 <"$sakura_icon_medium_file" | tr -d '\n')" \
+  --arg high "data:image/png;base64,$(base64 <"$sakura_icon_high_file" | tr -d '\n')" \
+  --arg max "data:image/png;base64,$(base64 <"$sakura_icon_max_file" | tr -d '\n')" \
+  '{default: $default, low: $low, medium: $medium, high: $high, max: $max}')"
 
 desired="$({
   jq \
-    --arg sakura_icon "$sakura_icon" \
+    --argjson sakura_icons "$sakura_icons" \
     --rawfile system "$system_file" \
     --rawfile geoguessor_system "$geoguessor_system_file" \
     --rawfile content "$skill_file" \
@@ -26,12 +39,12 @@ desired="$({
       def require($condition; $message): if $condition then . else error($message) end;
       {
         marker: .marker,
-        model: (.model | .params.system = $system | .meta.profile_image_url = $sakura_icon),
+        model: (.model | .params.system = $system | .meta.profile_image_url = $sakura_icons.default),
         skill: (.skill | .content = $content),
         folder: {
           name: "GeoGuessor",
           parent_id: null,
-          meta: {provisioned_by: "dotfiles:geoguessor-folder"},
+          meta: {provisioned_by: "dotfiles:geoguessor-folder", icon: "earth_asia"},
           data: {system_prompt: $geoguessor_system, files: []}
         }
       }
@@ -44,7 +57,7 @@ desired="$({
       | require($desired.model.base_model_id == "sacloud.preview/Kimi-K2.7-Code"; "unexpected base model")
       | require($desired.model.params.function_calling == "native"; "native function calling is required")
       | require($desired.model.params.max_tokens == 32768; "max_tokens must be 32768")
-      | require(($desired.model.meta.profile_image_url | startswith("data:image/png;base64,")); "unexpected model icon")
+      | require(all($sakura_icons[]; startswith("data:image/png;base64,")); "unexpected model icons")
       | require(($desired.model.params | has("reasoning_effort") | not); "reasoning_effort is unsupported")
       | require($desired.model.meta.capabilities.web_search == true; "web search capability is required")
       | require($desired.model.meta.capabilities.code_interpreter == true; "code interpreter capability is required")
@@ -62,8 +75,9 @@ desired="$({
 })"
 
 # The Sakura subset represents the speed/accuracy Pareto frontier as of August 2026.
-legacy_models="$(jq -n --arg sakura_icon "$sakura_icon" \
-  'def model($id; $name): {
+legacy_models="$(jq -n --argjson sakura_icons "$sakura_icons" \
+  'def sakura_icon: $sakura_icons[(.params.reasoning_effort // "default")];
+  def model($id; $name): {
     id: $id,
     base_model_id: null,
     name: $name,
@@ -148,7 +162,7 @@ legacy_models="$(jq -n --arg sakura_icon "$sakura_icon" \
     + hidden_variants("sacloud.gpt-oss-120b"; "gpt-oss-120b"; "GPT-OSS 120B"; "GPT-OSS"; ["low", "medium", "high"])
   )} | .models |= map(
     if (.id | startswith("sacloud.")) then
-      .meta.profile_image_url = $sakura_icon
+      .meta.profile_image_url = sakura_icon
     else
       .
     end
@@ -227,11 +241,13 @@ for endpoint in base export; do
   api_request GET "/api/v1/models/$endpoint"
   expect_success "model $endpoint GET for Sakura icons"
   sakura_icon_patch="$(
-    jq -c --arg icon "$sakura_icon" '{models: [
+    jq -c --argjson icons "$sakura_icons" '
+      def sakura_icon: $icons[(.params.reasoning_effort // "default")];
+      {models: [
       .[]
       | select(.id | startswith("sacloud."))
-      | select(.meta.profile_image_url != $icon)
-      | .meta.profile_image_url = $icon
+      | select(.meta.profile_image_url != sakura_icon)
+      | .meta.profile_image_url = sakura_icon
     ]}' <<<"$api_body"
   )"
   if [[ "$(jq '.models | length' <<<"$sakura_icon_patch")" -gt 0 ]]; then
@@ -275,6 +291,7 @@ folder_projection() {
   jq -cS '{
     name,
     provisioned_by: .meta.provisioned_by,
+    icon: .meta.icon,
     system_prompt: .data.system_prompt,
     files: .data.files
   }' <<<"$1"
@@ -496,8 +513,9 @@ verify_folder
 for endpoint in base export; do
   api_request GET "/api/v1/models/$endpoint"
   expect_success "model $endpoint GET for Sakura icon verification"
-  jq -e --arg icon "$sakura_icon" \
-    'all(.[] | select(.id | startswith("sacloud.")); .meta.profile_image_url == $icon)' \
+  jq -e --argjson icons "$sakura_icons" \
+    'def sakura_icon: $icons[(.params.reasoning_effort // "default")];
+    all(.[] | select(.id | startswith("sacloud.")); .meta.profile_image_url == sakura_icon)' \
     <<<"$api_body" >/dev/null \
     || { printf 'Sakura model icon mismatch in %s\n' "$endpoint" >&2; exit 1; }
 done

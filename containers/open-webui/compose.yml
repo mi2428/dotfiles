@@ -120,6 +120,10 @@ services:
       - open-webui-data:/app/backend/data
       - ./assets/profile.webp:/app/backend/declarative/assets/profile.webp:ro
       - ./assets/sakura-ai-engine.png:/app/backend/declarative/assets/sakura-ai-engine.png:ro
+      - ./assets/sakura-ai-engine-low.png:/app/backend/declarative/assets/sakura-ai-engine-low.png:ro
+      - ./assets/sakura-ai-engine-medium.png:/app/backend/declarative/assets/sakura-ai-engine-medium.png:ro
+      - ./assets/sakura-ai-engine-high.png:/app/backend/declarative/assets/sakura-ai-engine-high.png:ro
+      - ./assets/sakura-ai-engine-max.png:/app/backend/declarative/assets/sakura-ai-engine-max.png:ro
       - ./config:/app/backend/declarative/config:ro
       - ./scripts:/app/backend/declarative-scripts:ro
       - ./skills:/app/backend/declarative/skills:ro

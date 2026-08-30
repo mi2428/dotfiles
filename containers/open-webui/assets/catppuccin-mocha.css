@@ -216,26 +216,12 @@ html.dark div:has(> img.assistant-message-profile-image) {
 			color-mix(in srgb, var(--ctp-model-accent) 55%, transparent),
 			color-mix(in srgb, var(--ctp-model-accent) 55%, transparent)
 		) center 1.75rem / 3px calc(100% - 1.75rem) no-repeat;
-	isolation: isolate;
-}
-
-html.dark div:has(> img.assistant-message-profile-image)::before {
-	position: absolute;
-	inset: 0 auto auto 0;
-	width: 1.5rem;
-	height: 1.5rem;
-	background: var(--ctp-model-accent);
-	border-radius: 0.5rem;
-	content: '';
 }
 
 html.dark img.assistant-message-profile-image {
-	position: relative;
-	z-index: 1;
 	width: 1.5rem;
 	height: 1.5rem;
-	border-radius: 0.5rem;
-	mix-blend-mode: multiply;
+	filter: brightness(0) invert(1);
 }
 
 html.dark #response-message-model-name {

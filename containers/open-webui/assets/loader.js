@@ -21,10 +21,10 @@
 		'--ctp-lavender'
 	];
 	const effortHues = {
-		low: '--ctp-green',
-		medium: '--ctp-sapphire',
-		high: '--ctp-mauve',
-		max: '--ctp-peach'
+		low: '--ctp-blue',
+		medium: '--ctp-teal',
+		high: '--ctp-peach',
+		max: '--ctp-red'
 	};
 	const familyHues = [
 		['sacloud.kimi-k2.6', '--ctp-mauve'],
