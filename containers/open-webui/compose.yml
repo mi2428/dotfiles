@@ -49,7 +49,7 @@ services:
       ENABLE_SUBAGENTS: "true"
       ENABLE_WEB_SEARCH: "true"
       OPENAI_API_BASE_URLS: >-
-        https://api.ai.sakura.ad.jp/v1;http://cptr:8000/v1
+        http://sakura-proxy:8080/v1;http://cptr:8000/v1
       OPENAI_API_CONFIGS: >-
         {
           "0": {
@@ -115,8 +115,32 @@ services:
         condition: service_started
       open-terminal:
         condition: service_healthy
+      sakura-proxy:
+        condition: service_healthy
       searxng:
         condition: service_healthy
+    restart: unless-stopped
+
+  sakura-proxy:
+    build: ./sakura_proxy
+    environment:
+      SAKURA_RETRY_BASE_SECONDS: "2"
+      SAKURA_RETRY_JITTER_SECONDS: "1"
+      SAKURA_RETRY_MAX: "10"
+      SAKURA_RETRY_MAX_SECONDS: "120"
+      SAKURA_UPSTREAM_TIMEOUT_SECONDS: "7200"
+      SAKURA_UPSTREAM_URL: "https://api.ai.sakura.ad.jp"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8080/health')
+      interval: 5s
+      timeout: 5s
+      retries: 12
     restart: unless-stopped
 
   cptr:
