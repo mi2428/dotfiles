@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="${1:?repository root is required}"
-profile_file="$repo_root/containers/open-webui/profile.webp"
+profile_file="$repo_root/containers/open-webui/assets/profile.webp"
 
 : "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
 : "${WEBUI_ADMIN_EMAIL:?set WEBUI_ADMIN_EMAIL}"

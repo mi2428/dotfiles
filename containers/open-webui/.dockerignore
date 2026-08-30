@@ -1,4 +1,4 @@
 *
 !Dockerfile
-!catppuccin-mocha.css
-!loader.js
+!assets/
+!assets/**

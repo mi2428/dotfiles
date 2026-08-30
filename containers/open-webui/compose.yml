@@ -90,7 +90,7 @@ services:
       timeout: 5s
       retries: 12
     volumes:
-      - ./searxng.yml:/etc/searxng/settings.yml:ro
+      - ./config/searxng.yml:/etc/searxng/settings.yml:ro
       - searxng-data:/var/cache/searxng
     restart: unless-stopped
 
