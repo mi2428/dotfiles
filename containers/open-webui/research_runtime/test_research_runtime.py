@@ -148,6 +148,10 @@ class ResearchRuntimeTests(unittest.TestCase):
         self.assertIn("HTTPBearer", spec["components"]["securitySchemes"])
         self.assertTrue(op["security"])
         self.assertNotIn("parameters", op)
+        self.assertEqual(
+            op["responses"]["200"]["content"]["text/plain"]["schema"]["type"],
+            "string",
+        )
 
     def test_response_schema_and_source_ids(self) -> None:
         response = rt.ResearchResponse(
@@ -433,6 +437,34 @@ class ResearchRuntimeTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 422)
                 response = await client.post("/research", headers=headers, json={"query": 1})
                 self.assertEqual(response.status_code, 422)
+
+                cached = rt.ResearchResponse(
+                    research_id="rid",
+                    answer_markdown='Exact Markdown with `_meta["key"]` [S1]',
+                    findings=[rt.CitationModel(claim="claim", source_ids=["S1"])],
+                    sources=[
+                        rt.SourceModel(
+                            id="S1",
+                            url="https://example.com",
+                            hash="a" * 64,
+                            relevance=1,
+                            source_quality=1,
+                        )
+                    ],
+                    limitations=[],
+                    stats={},
+                ).model_dump()
+                with patch.object(
+                    rt,
+                    "reserve_run",
+                    new=AsyncMock(return_value=("rid", "hash", cached, None)),
+                ):
+                    response = await client.post(
+                        "/research", headers=headers, json={"query": "cached"}
+                    )
+                self.assertEqual(response.text, cached["answer_markdown"])
+                self.assertTrue(response.headers["content-type"].startswith("text/plain"))
+                self.assertEqual(response.headers["x-openwebui-direct-output"], "true")
 
         asyncio.run(run())
 

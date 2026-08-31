@@ -26,6 +26,7 @@ import aiohttp
 import trafilatura
 from aiohttp.abc import AbstractResolver, ResolveResult
 from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.responses import PlainTextResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from openai import APIError, APITimeoutError
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
@@ -1816,30 +1817,40 @@ def build_app() -> FastAPI:
     @app.post(
         "/research",
         operation_id="deep_research",
-        response_model=ResearchResponse,
-        description="Plan, search, fetch, inspect, and submit one internal research pass.",
+        response_class=PlainTextResponse,
+        description=(
+            "Plan, search, fetch, inspect, and submit one internal research pass. "
+            "Returns only the final Markdown report as text/plain for exact passthrough."
+        ),
     )
     async def research_endpoint(
         request: Request,
         body: ResearchRequest,
         _: None = Depends(require_api_key),
-    ) -> ResearchResponse:
+    ) -> PlainTextResponse:
         runtime = get_runtime(app)
         key = normalize_idempotency_key(request.headers.get("x-openwebui-message-id"))
         research_id, _request_hash, cached, state_snapshot = await reserve_run(runtime, body, key)
         if cached is not None:
-            return ResearchResponse.model_validate(cached)
-        try:
-            return await run_research(runtime, request, body, research_id, key, state_snapshot)
-        except asyncio.CancelledError as exc:
-            raise HTTPException(status_code=499, detail="cancelled") from exc
-        except TimeoutError as exc:
-            raise HTTPException(status_code=504, detail="research timeout") from exc
-        except Exception as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="research failed",
-            ) from exc
+            response = ResearchResponse.model_validate(cached)
+        else:
+            try:
+                response = await run_research(
+                    runtime, request, body, research_id, key, state_snapshot
+                )
+            except asyncio.CancelledError as exc:
+                raise HTTPException(status_code=499, detail="cancelled") from exc
+            except TimeoutError as exc:
+                raise HTTPException(status_code=504, detail="research timeout") from exc
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="research failed",
+                ) from exc
+        return PlainTextResponse(
+            response.answer_markdown,
+            headers={"X-OpenWebUI-Direct-Output": "true"},
+        )
 
     return app
 
