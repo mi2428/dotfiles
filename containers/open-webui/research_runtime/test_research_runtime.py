@@ -182,6 +182,79 @@ class ResearchRuntimeTests(unittest.TestCase):
         )
         self.assertIn("[S1] Line 1 Line 2 — <https://example.com/a_(b)>", text)
 
+    def test_deep_report_requires_long_structured_ten_source_answer(self) -> None:
+        budget = rt.make_budget("deep")
+        evidence = [
+            rt.Evidence(
+                id=f"S{index}",
+                url=f"https://example.com/{index}",
+                title=f"Source {index}",
+                publisher="Publisher",
+                published_at="2026-01-01",
+                excerpt="Evidence",
+                hash=f"{index:064x}",
+                relevance=1.0,
+                source_quality=0.8,
+            )
+            for index in range(1, 11)
+        ]
+        state = rt.RunState(
+            evidence=evidence,
+            searched_queries=set(),
+            evidence_revision=10,
+            last_inspected_revision=10,
+            stats=rt.default_stats("deep", budget, rt.wall_budget_seconds("deep")),
+        )
+        citations = " ".join(f"[S{index}]" for index in range(1, 11))
+        findings = [
+            {"claim": "First finding", "source_ids": [f"S{index}" for index in range(1, 6)]},
+            {"claim": "Second finding", "source_ids": [f"S{index}" for index in range(6, 11)]},
+        ]
+
+        with self.assertRaisesRegex(ValueError, "deep report too short"):
+            rt.validate_submit_report(
+                "rid", state, 10, f"Short report {citations}", findings, ["none"], budget, "deep"
+            )
+
+        unstructured = ("Detailed comparison and evidence. " * 300) + citations
+        with self.assertRaisesRegex(ValueError, "at least five sections"):
+            rt.validate_submit_report(
+                "rid", state, 10, unstructured, findings, ["none"], budget, "deep"
+            )
+
+        sections = "\n\n".join(
+            [
+                "## 要約",
+                "## 調査方法",
+                "## 詳細分析",
+                "## 反証と不確実性",
+                "## 提言と限界",
+            ]
+        )
+        nine_citations = " ".join(f"[S{index}]" for index in range(1, 10))
+        nine_findings = [
+            {"claim": "First finding", "source_ids": [f"S{index}" for index in range(1, 6)]},
+            {"claim": "Second finding", "source_ids": [f"S{index}" for index in range(6, 10)]},
+        ]
+        with self.assertRaisesRegex(ValueError, "at least ten cited sources"):
+            rt.validate_submit_report(
+                "rid",
+                state,
+                10,
+                sections + "\n\n" + ("Detailed evidence. " * 500) + nine_citations,
+                nine_findings,
+                ["none"],
+                budget,
+                "deep",
+            )
+
+        answer = sections + "\n\n" + ("根拠を比較し、含意と不確実性を分析する。" * 500) + citations
+        response = rt.validate_submit_report(
+            "rid", state, 10, answer, findings, ["none"], budget, "deep"
+        )
+        self.assertGreaterEqual(len(response.answer_markdown), rt.DEEP_MIN_ANSWER_CHARS)
+        self.assertEqual(len(response.sources), rt.DEEP_MIN_CITED_SOURCES)
+
     def test_auth_and_validation(self) -> None:
         async def run() -> None:
             transport = httpx.ASGITransport(app=rt.app)

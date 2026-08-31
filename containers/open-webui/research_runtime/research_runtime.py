@@ -45,6 +45,9 @@ MAX_FINDING_SOURCE_IDS = 6
 MAX_SOURCES = 40
 MAX_DOC_BYTES = 1_500_000
 MAX_REDIRECTS = 3
+DEEP_MIN_ANSWER_CHARS = 8_000
+DEEP_MIN_CITED_SOURCES = 10
+DEEP_MIN_SECTIONS = 5
 SEARCH_TIMEOUT = 20
 DOC_TIMEOUT = 45
 BODY_BYTE_LIMIT = 1_000_000
@@ -57,7 +60,7 @@ DEFAULT_WALL_BUDGETS = {"quick": 1800, "standard": 5400, "deep": 6900}
 DEFAULT_DEPTH_BUDGETS = {
     "quick": {"searches": 8, "evidence": 10, "minimum_evidence": 2, "turns": 20},
     "standard": {"searches": 24, "evidence": 28, "minimum_evidence": 4, "turns": 40},
-    "deep": {"searches": 40, "evidence": 40, "minimum_evidence": 6, "turns": 60},
+    "deep": {"searches": 40, "evidence": 40, "minimum_evidence": 10, "turns": 60},
 }
 
 SourceId = Annotated[str, Field(pattern=r"^S\d+$")]
@@ -810,12 +813,18 @@ def validate_submit_report(
     findings: list[dict[str, Any]],
     limitations: list[str],
     budget: Budget,
+    depth: str,
 ) -> ResearchResponse:
     answer = answer_markdown.strip()
     if not answer:
         raise ValueError("answer_markdown must not be empty")
     if len(answer) > MAX_ANSWER_CHARS:
         raise ValueError("answer_markdown too long")
+    if depth == "deep" and len(answer) < DEEP_MIN_ANSWER_CHARS:
+        raise ValueError("deep report too short")
+    section_count = len(re.findall(r"^##\s+\S", answer, flags=re.MULTILINE))
+    if depth == "deep" and section_count < DEEP_MIN_SECTIONS:
+        raise ValueError("deep report needs at least five sections")
     if len(findings) == 0 or len(findings) > MAX_FINDINGS:
         raise ValueError("findings must contain 1 to 20 items")
     if len(state.evidence) < budget.minimum_evidence:
@@ -829,6 +838,8 @@ def validate_submit_report(
     cited_ids = citation_ids(answer)
     if not cited_ids:
         raise ValueError("answer_markdown must include inline citations")
+    if depth == "deep" and len(cited_ids) < DEEP_MIN_CITED_SOURCES:
+        raise ValueError("deep report needs at least ten cited sources")
     finding_ids = {source_id for item in validated_findings for source_id in item.source_ids}
     if finding_ids != cited_ids:
         raise ValueError("answer citations and finding source IDs must match exactly")
@@ -894,6 +905,14 @@ def build_system_prompt(research: ResearchRequest, budget: Budget) -> str:
             ),
             "Use inline citations like [S1] for every material claim.",
             "Audit contradictions and counter-evidence before submitting.",
+            (
+                "For deep research, submit at least 8000 characters citing at least 10 evidence "
+                "sources, with at least five level-2 Markdown sections covering an executive "
+                "summary, methodology, detailed findings, contradictions and uncertainties, "
+                "recommendations, and limitations; write headings in the answer language."
+                if research.depth == "deep"
+                else "Keep the report length and structure proportional to the requested depth."
+            ),
             (
                 "Submit only when coverage is sufficient, and do not write your own "
                 "Sources section because submit_report appends it deterministically."
@@ -1160,6 +1179,7 @@ def build_research_tools(
                 findings,
                 limitations,
                 make_budget(research.depth),
+                research.depth,
             )
             state.final_response = response.model_dump()
             await save("running")
