@@ -405,7 +405,17 @@ class ResearchRuntimeTests(unittest.TestCase):
                 "searched_queries": ["q"],
                 "evidence_revision": 1,
                 "last_inspected_revision": 1,
-                "stats": {"depth": "quick"},
+                "stats": {
+                    "depth": "stale",
+                    "wall_limit_s": 1,
+                    "search_budget": 1,
+                    "evidence_budget": 1,
+                    "minimum_evidence": 1,
+                    "model_turn_budget": 1,
+                    "searches": 1,
+                    "wall_exhausted": True,
+                    "stop_reason": "report_not_submitted",
+                },
                 "final_response": None,
             },
             depth="quick",
@@ -413,6 +423,12 @@ class ResearchRuntimeTests(unittest.TestCase):
             wall_limit=rt.wall_budget_seconds("quick"),
         )
         self.assertIsNone(loaded.last_inspected_revision)
+        self.assertEqual(loaded.stats["depth"], "quick")
+        self.assertEqual(loaded.stats["wall_limit_s"], rt.wall_budget_seconds("quick"))
+        self.assertEqual(loaded.stats["model_turn_budget"], budget.turns)
+        self.assertEqual(loaded.stats["searches"], 1)
+        self.assertFalse(loaded.stats["wall_exhausted"])
+        self.assertEqual(loaded.stats["stop_reason"], "")
 
     def test_html_text_preserves_source_metadata(self) -> None:
         text, metadata = rt.extract_html_text(

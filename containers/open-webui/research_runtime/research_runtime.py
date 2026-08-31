@@ -767,9 +767,19 @@ def load_run_state(
     evidence = [
         Evidence(**item) for item in cast(list[dict[str, Any]], snapshot.get("evidence_ledger", []))
     ]
-    stats = default_stats(depth, budget, wall_limit) | cast(
-        dict[str, Any], snapshot.get("stats", {})
-    )
+    fresh_stats = default_stats(depth, budget, wall_limit)
+    stats = fresh_stats | cast(dict[str, Any], snapshot.get("stats", {}))
+    for key in (
+        "depth",
+        "wall_limit_s",
+        "search_budget",
+        "evidence_budget",
+        "minimum_evidence",
+        "model_turn_budget",
+        "wall_exhausted",
+        "stop_reason",
+    ):
+        stats[key] = fresh_stats[key]
     stats["evidence"] = len(evidence)
     stats["evidence_revision"] = int(snapshot.get("evidence_revision", len(evidence)))
     final_response = cast(dict[str, Any] | None, snapshot.get("final_response"))
