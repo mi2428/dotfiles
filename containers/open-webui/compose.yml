@@ -242,7 +242,7 @@ services:
     restart: unless-stopped
 
   cptr:
-    image: ghcr.io/open-webui/computer:0.9.21-browser
+    image: ghcr.io/open-webui/computer:0.9.21-browser@sha256:bbcf59b541dba201ca91084a1f7857ca617b94aa0f770b0fd2dd279e2e56a7ce
     volumes:
       - cptr-data:/data
       - ./scripts/bootstrap_cptr.py:/usr/local/libexec/bootstrap_cptr.py:ro
@@ -251,7 +251,7 @@ services:
     restart: unless-stopped
 
   open-terminal:
-    image: ghcr.io/open-webui/open-terminal:0.12.3
+    image: ghcr.io/open-webui/open-terminal:0.12.3@sha256:8f6d2045aa69e348e39d89bf59e6b267773532335333eed14ff16bbc7c964b73
     environment:
       OPEN_TERMINAL_API_KEY: >-
         ${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}
@@ -277,7 +277,7 @@ services:
     restart: unless-stopped
 
   searxng:
-    image: ghcr.io/searxng/searxng:latest
+    image: ghcr.io/searxng/searxng:2026.8.29-d226b78bc@sha256:b36af7984b87191b595bc5301418ed6432c047668a4547ab531a7439b816fac3
     environment:
       SEARXNG_SECRET: "${SEARXNG_SECRET:?set SEARXNG_SECRET}"
     healthcheck:
