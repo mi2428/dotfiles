@@ -13,11 +13,8 @@ services:
       CONTEXT_COMPACTION_MODEL: "sacloud.preview/gemma-4-31B-it"
       CONTEXT_COMPACTION_PROMPT_TEMPLATE: >-
         あなたは長時間の調査を継続するための状態要約を作成する。
-        圧縮対象から、ユーザーの目的と制約、確認済みの事実と出典URL、
-        重要な推論と判断、失敗した方法、未解決事項、後続作業に必要な
-        ツール結果を日本語で保存する。事実・推論・不明点を区別し、
-        情報を創作しない。最近のメッセージと重複する細部は省くが、
-        数値、固有名詞、日付、決定理由は失わない。
+        圧縮対象から、ユーザーの目的と制約、確認済みの事実と出典URL、重要な推論と判断、失敗した方法、未解決事項、後続作業に必要なツール結果を日本語で保存する。
+        事実・推論・不明点を区別し、情報を創作しない。最近のメッセージと重複する細部は省くが、数値、固有名詞、日付、決定理由は失わない。
         圧縮対象: {{COMPACTED_MESSAGES}}
         最近のメッセージ: {{RECENT_MESSAGES}}
       CONTEXT_COMPACTION_TOKEN_CAP: "200000"
@@ -83,9 +80,8 @@ services:
       SUBAGENTS_MAX_OUTPUT: "16000"
       SUBAGENTS_SYSTEM_PROMPT: >-
         あなたは親エージェントから割り当てられた独立調査を担当する。
-        利用可能なツールで一次資料を優先して検証し、自然な日本語で、
-        結論、根拠と出典URL、反証または不確実性、親が次に確認すべき点を
-        簡潔に返す。割当範囲を越えて最終回答全体を作らない。
+        利用可能なツールで一次資料を優先して検証し、自然な日本語で、結論、根拠と出典URL、反証または不確実性、親が次に確認すべき点を簡潔に返す。
+        割当範囲を越えて最終回答全体を作らない。
       TASK_MODEL_EXTERNAL: "sacloud.preview/gemma-4-31B-it"
       TASK_MODEL_PARAMS: '{"max_tokens": 4096}'
       TERMINAL_SERVER_CONNECTIONS: >-
