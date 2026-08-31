@@ -17,17 +17,18 @@ import httpx
 from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands.tools.executors import SequentialToolExecutor
 
-os.environ.setdefault("RESEARCH_RUNTIME_API_KEY", "test-api-key")
-os.environ.setdefault("RESEARCH_LLM_BASE_URL", "http://llm.local/v1")
-os.environ.setdefault("RESEARCH_LLM_API_KEY", "llm-key")
-os.environ.setdefault("RESEARCH_MODEL", "preview/Kimi-K2.7-Code")
-os.environ.setdefault("RESEARCH_KIMI_TIMEOUT_SECONDS", "360")
+os.environ.setdefault("DEEP_RESEARCH_RUNTIME_API_KEY", "test-api-key")
+os.environ.setdefault("DEEP_RESEARCH_LLM_BASE_URL", "http://llm.local/v1")
+os.environ.setdefault("DEEP_RESEARCH_LLM_API_KEY", "llm-key")
+os.environ.setdefault("DEEP_RESEARCH_MODEL", "preview/Kimi-K2.7-Code")
+os.environ.setdefault("DEEP_RESEARCH_KIMI_TIMEOUT_SECONDS", "360")
 os.environ.setdefault("SEARXNG_URL", "http://searxng.local")
 os.environ.setdefault(
-    "RESEARCH_DB_PATH", str(Path(tempfile.gettempdir()) / "research-runtime-test.db")
+    "DEEP_RESEARCH_DB_PATH",
+    str(Path(tempfile.gettempdir()) / "deep-research-runtime-test.db"),
 )
 
-import research_runtime as rt
+import deep_research_runtime as rt
 
 
 class FakeRequest:
@@ -127,10 +128,10 @@ class TimedOutAgent:
         )
 
 
-class ResearchRuntimeTests(unittest.TestCase):
+class DeepResearchRuntimeTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmpdir = tempfile.TemporaryDirectory()
-        os.environ["RESEARCH_DB_PATH"] = str(Path(self.tmpdir.name) / "runtime.db")
+        os.environ["DEEP_RESEARCH_DB_PATH"] = str(Path(self.tmpdir.name) / "runtime.db")
         settings = rt.Settings.from_environment()
         self.runtime = rt.Runtime(settings, rt.open_db(settings.db_path), asyncio.Lock())
         rt.app.state.runtime = self.runtime

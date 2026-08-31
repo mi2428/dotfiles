@@ -158,19 +158,19 @@ class Settings:
     @classmethod
     def from_environment(cls) -> Settings:
         names = {
-            "api_key": "RESEARCH_RUNTIME_API_KEY",
-            "llm_base_url": "RESEARCH_LLM_BASE_URL",
-            "llm_api_key": "RESEARCH_LLM_API_KEY",
-            "model": "RESEARCH_MODEL",
+            "api_key": "DEEP_RESEARCH_RUNTIME_API_KEY",
+            "llm_base_url": "DEEP_RESEARCH_LLM_BASE_URL",
+            "llm_api_key": "DEEP_RESEARCH_LLM_API_KEY",
+            "model": "DEEP_RESEARCH_MODEL",
             "searxng_url": "SEARXNG_URL",
-            "db_path": "RESEARCH_DB_PATH",
+            "db_path": "DEEP_RESEARCH_DB_PATH",
         }
         values = {key: os.getenv(name, "").strip() for key, name in names.items()}
         missing = [name for key, name in names.items() if not values[key]]
         if missing:
             raise RuntimeError(f"missing env: {', '.join(missing)}")
         timeout_seconds = env_int(
-            "RESEARCH_KIMI_TIMEOUT_SECONDS",
+            "DEEP_RESEARCH_KIMI_TIMEOUT_SECONDS",
             DEFAULT_KIMI_TIMEOUT_SECONDS,
             minimum=1,
             maximum=DEFAULT_KIMI_TIMEOUT_SECONDS,
@@ -389,19 +389,19 @@ def make_budget(depth: str) -> Budget:
     upper = depth.upper()
     default = DEFAULT_DEPTH_BUDGETS[depth]
     return Budget(
-        searches=env_int(f"RESEARCH_SEARCH_BUDGET_{upper}", default["searches"]),
-        evidence=env_int(f"RESEARCH_EVIDENCE_BUDGET_{upper}", default["evidence"]),
+        searches=env_int(f"DEEP_RESEARCH_SEARCH_BUDGET_{upper}", default["searches"]),
+        evidence=env_int(f"DEEP_RESEARCH_EVIDENCE_BUDGET_{upper}", default["evidence"]),
         minimum_evidence=env_int(
-            f"RESEARCH_MIN_EVIDENCE_{upper}",
+            f"DEEP_RESEARCH_MIN_EVIDENCE_{upper}",
             default["minimum_evidence"],
         ),
-        turns=env_int(f"RESEARCH_MODEL_TURNS_{upper}", default["turns"]),
+        turns=env_int(f"DEEP_RESEARCH_MODEL_TURNS_{upper}", default["turns"]),
     )
 
 
 def wall_budget_seconds(depth: str) -> float:
     upper = depth.upper()
-    return float(env_int(f"RESEARCH_WALL_{upper}_SECONDS", DEFAULT_WALL_BUDGETS[depth]))
+    return float(env_int(f"DEEP_RESEARCH_WALL_{upper}_SECONDS", DEFAULT_WALL_BUDGETS[depth]))
 
 
 def recency_time_range(recency_days: int | None) -> str | None:
@@ -711,7 +711,7 @@ async def extract_evidence(
     connector = aiohttp.TCPConnector(
         resolver=SafeResolver(), ttl_dns_cache=0, limit=8, force_close=True
     )
-    headers = {"User-Agent": "research-runtime/1.0"}
+    headers = {"User-Agent": "deep-research-runtime/1.0"}
     async with aiohttp.ClientSession(
         timeout=timeout,
         connector=connector,
@@ -1798,7 +1798,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def build_app() -> FastAPI:
-    app = FastAPI(title="Research Runtime", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="Deep Research Runtime", version="1.0.0", lifespan=lifespan)
     bearer = HTTPBearer(auto_error=False)
 
     async def require_api_key(

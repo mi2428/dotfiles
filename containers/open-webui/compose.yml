@@ -70,8 +70,8 @@ services:
         SAKURA_AI_ACCOUNT_TOKEN};${CPTR_GATEWAY_API_KEY:-bootstrap}"
       RAG_TEXT_SPLITTER: "token"
       RAG_TOP_K: "5"
-      RESEARCH_RUNTIME_API_KEY: >-
-        ${RESEARCH_RUNTIME_API_KEY:?set RESEARCH_RUNTIME_API_KEY}
+      DEEP_RESEARCH_RUNTIME_API_KEY: >-
+        ${DEEP_RESEARCH_RUNTIME_API_KEY:?set DEEP_RESEARCH_RUNTIME_API_KEY}
       SEARXNG_LANGUAGE: "all"
       SEARXNG_QUERY_URL: "http://searxng:8080/search"
       SUBAGENTS_BACKGROUND_ENABLED: "false"
@@ -135,7 +135,7 @@ services:
         condition: service_started
       open-terminal:
         condition: service_healthy
-      research-runtime:
+      deep-research-runtime:
         condition: service_healthy
       sakura-proxy:
         condition: service_healthy
@@ -143,34 +143,34 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  research-runtime:
-    build: ./research_runtime
+  deep-research-runtime:
+    build: ./deep_research_runtime
     cap_drop:
       - ALL
     environment:
-      RESEARCH_DB_PATH: /data/research.sqlite3
-      RESEARCH_LLM_API_KEY: >-
+      DEEP_RESEARCH_DB_PATH: /data/deep-research.sqlite3
+      DEEP_RESEARCH_LLM_API_KEY: >-
         ${SAKURA_AI_ACCOUNT_TOKEN:?set SAKURA_AI_ACCOUNT_TOKEN}
-      RESEARCH_LLM_BASE_URL: http://sakura-proxy:8080/v1
-      RESEARCH_RUNTIME_API_KEY: >-
-        ${RESEARCH_RUNTIME_API_KEY:?set RESEARCH_RUNTIME_API_KEY}
-      RESEARCH_MODEL: preview/Kimi-K2.7-Code
-      RESEARCH_KIMI_TIMEOUT_SECONDS: "360"
-      RESEARCH_WALL_QUICK_SECONDS: "1800"
-      RESEARCH_WALL_STANDARD_SECONDS: "5400"
-      RESEARCH_WALL_DEEP_SECONDS: "6900"
-      RESEARCH_SEARCH_BUDGET_QUICK: "8"
-      RESEARCH_SEARCH_BUDGET_STANDARD: "24"
-      RESEARCH_SEARCH_BUDGET_DEEP: "40"
-      RESEARCH_EVIDENCE_BUDGET_QUICK: "10"
-      RESEARCH_EVIDENCE_BUDGET_STANDARD: "28"
-      RESEARCH_EVIDENCE_BUDGET_DEEP: "40"
-      RESEARCH_MIN_EVIDENCE_QUICK: "2"
-      RESEARCH_MIN_EVIDENCE_STANDARD: "4"
-      RESEARCH_MIN_EVIDENCE_DEEP: "10"
-      RESEARCH_MODEL_TURNS_QUICK: "20"
-      RESEARCH_MODEL_TURNS_STANDARD: "40"
-      RESEARCH_MODEL_TURNS_DEEP: "120"
+      DEEP_RESEARCH_LLM_BASE_URL: http://sakura-proxy:8080/v1
+      DEEP_RESEARCH_RUNTIME_API_KEY: >-
+        ${DEEP_RESEARCH_RUNTIME_API_KEY:?set DEEP_RESEARCH_RUNTIME_API_KEY}
+      DEEP_RESEARCH_MODEL: preview/Kimi-K2.7-Code
+      DEEP_RESEARCH_KIMI_TIMEOUT_SECONDS: "360"
+      DEEP_RESEARCH_WALL_QUICK_SECONDS: "1800"
+      DEEP_RESEARCH_WALL_STANDARD_SECONDS: "5400"
+      DEEP_RESEARCH_WALL_DEEP_SECONDS: "6900"
+      DEEP_RESEARCH_SEARCH_BUDGET_QUICK: "8"
+      DEEP_RESEARCH_SEARCH_BUDGET_STANDARD: "24"
+      DEEP_RESEARCH_SEARCH_BUDGET_DEEP: "40"
+      DEEP_RESEARCH_EVIDENCE_BUDGET_QUICK: "10"
+      DEEP_RESEARCH_EVIDENCE_BUDGET_STANDARD: "28"
+      DEEP_RESEARCH_EVIDENCE_BUDGET_DEEP: "40"
+      DEEP_RESEARCH_MIN_EVIDENCE_QUICK: "2"
+      DEEP_RESEARCH_MIN_EVIDENCE_STANDARD: "4"
+      DEEP_RESEARCH_MIN_EVIDENCE_DEEP: "10"
+      DEEP_RESEARCH_MODEL_TURNS_QUICK: "20"
+      DEEP_RESEARCH_MODEL_TURNS_STANDARD: "40"
+      DEEP_RESEARCH_MODEL_TURNS_DEEP: "120"
       SEARXNG_URL: http://searxng:8080
     healthcheck:
       test:
@@ -194,7 +194,7 @@ services:
     tmpfs:
       - /tmp
     volumes:
-      - research-runtime-data:/data
+      - deep-research-runtime-data:/data
     restart: unless-stopped
 
   sakura-proxy:
@@ -302,5 +302,5 @@ volumes:
   open-webui-data:
   cptr-data:
   open-terminal-data:
-  research-runtime-data:
+  deep-research-runtime-data:
   searxng-data:

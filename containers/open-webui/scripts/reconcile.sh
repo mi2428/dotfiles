@@ -62,7 +62,7 @@ fi
 : "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
 : "${WEBUI_ADMIN_EMAIL:?set WEBUI_ADMIN_EMAIL}"
 : "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
-: "${RESEARCH_RUNTIME_API_KEY:?set RESEARCH_RUNTIME_API_KEY}"
+: "${DEEP_RESEARCH_RUNTIME_API_KEY:?set DEEP_RESEARCH_RUNTIME_API_KEY}"
 
 base_url="${OPEN_WEBUI_INTERNAL_URL:-http://127.0.0.1:${PORT:-8080}}"
 api_status=
@@ -116,15 +116,15 @@ auth_response="$({
 token="$(jq -er '.token' <<<"$auth_response")"
 owner_id="$(jq -er '.id' <<<"$auth_response")"
 
-research_server_id=deep-research
-research_server_marker=dotfiles:research-runtime
-desired_research_server="$(jq -nc \
-  --arg id "$research_server_id" \
-  --arg key "$RESEARCH_RUNTIME_API_KEY" \
-  --arg marker "$research_server_marker" \
+deep_research_server_id=deep-research
+deep_research_server_marker=dotfiles:deep-research-runtime
+desired_deep_research_server="$(jq -nc \
+  --arg id "$deep_research_server_id" \
+  --arg key "$DEEP_RESEARCH_RUNTIME_API_KEY" \
+  --arg marker "$deep_research_server_marker" \
   --arg owner "$owner_id" \
   '{
-    url: "http://research-runtime:8000",
+    url: "http://deep-research-runtime:8000",
     path: "/openapi.json",
     type: "openapi",
     auth_type: "bearer",
@@ -151,25 +151,25 @@ desired_research_server="$(jq -nc \
 
 api_request GET /api/v1/configs/tool_servers
 expect_success 'tool server config GET'
-research_server_matches="$(jq -c --arg id "$research_server_id" \
+deep_research_server_matches="$(jq -c --arg id "$deep_research_server_id" \
   '[.TOOL_SERVER_CONNECTIONS[] | select(.info.id == $id)]' <<<"$api_body")"
-case "$(jq 'length' <<<"$research_server_matches")" in
+case "$(jq 'length' <<<"$deep_research_server_matches")" in
   0)
-    tool_server_connections="$(jq -c --argjson desired "$desired_research_server" \
+    tool_server_connections="$(jq -c --argjson desired "$desired_deep_research_server" \
       '.TOOL_SERVER_CONNECTIONS + [$desired]' <<<"$api_body")"
     ;;
   1)
-    jq -e --arg marker "$research_server_marker" \
-      '.[0].info.provisioned_by == $marker' <<<"$research_server_matches" >/dev/null \
-      || { printf 'Refusing unmanaged tool server ID: %s\n' "$research_server_id" >&2; exit 1; }
+    jq -e --arg marker "$deep_research_server_marker" \
+      '.[0].info.provisioned_by == $marker' <<<"$deep_research_server_matches" >/dev/null \
+      || { printf 'Refusing unmanaged tool server ID: %s\n' "$deep_research_server_id" >&2; exit 1; }
     tool_server_connections="$(jq -c \
-      --arg id "$research_server_id" \
-      --argjson desired "$desired_research_server" \
+      --arg id "$deep_research_server_id" \
+      --argjson desired "$desired_deep_research_server" \
       '.TOOL_SERVER_CONNECTIONS | map(if .info.id == $id then $desired else . end)' \
       <<<"$api_body")"
     ;;
   *)
-    printf 'Multiple tool servers use ID: %s\n' "$research_server_id" >&2
+    printf 'Multiple tool servers use ID: %s\n' "$deep_research_server_id" >&2
     exit 1
     ;;
 esac
@@ -182,12 +182,12 @@ if ! jq -e --argjson expected "$tool_server_connections" \
 fi
 api_request GET /api/v1/configs/tool_servers
 expect_success 'tool server config verification'
-jq -e --argjson expected "$desired_research_server" \
+jq -e --argjson expected "$desired_deep_research_server" \
   '[.TOOL_SERVER_CONNECTIONS[] | select(.info.id == $expected.info.id)] == [$expected]' \
   <<<"$api_body" >/dev/null
 api_request GET /api/v1/tools/
 expect_success 'tool list verification'
-jq -e --arg id "server:$research_server_id" \
+jq -e --arg id "server:$deep_research_server_id" \
   '[.[] | select(.id == $id)] | length == 1' <<<"$api_body" >/dev/null
 
 # Only the prompt is an enforced user override; static UI defaults stay in Compose.
@@ -613,4 +613,4 @@ fi
 profile_matches "$profile_response" \
   || { printf '%s\n' 'Profile projection mismatch' >&2; exit 1; }
 
-printf '%s\n' 'Open WebUI models, settings, Research Runtime tool, and profile are ready'
+printf '%s\n' 'Open WebUI models, settings, Deep Research Runtime tool, and profile are ready'

@@ -7,7 +7,7 @@ action="${2:?action is required}"
 encrypted_env="$repo_root/secrets/open-webui.env.age"
 age_identity="${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/key.txt"
 gateway_env_file="${XDG_STATE_HOME:-$HOME/.local/state}/open-webui/cptr-gateway.env"
-research_env_file="${XDG_STATE_HOME:-$HOME/.local/state}/open-webui/research-runtime.env"
+deep_research_env_file="${XDG_STATE_HOME:-$HOME/.local/state}/open-webui/deep-research-runtime.env"
 age_root="$(nix build --no-link --print-out-paths nixpkgs#age)"
 age_bin="$age_root/bin/age"
 
@@ -20,7 +20,7 @@ unset \
   CPTR_WORKSPACE_DIR \
   OPEN_TERMINAL_API_KEY \
   OPEN_WEBUI_PORT \
-  RESEARCH_RUNTIME_API_KEY \
+  DEEP_RESEARCH_RUNTIME_API_KEY \
   SAKURA_AI_ACCOUNT_TOKEN \
   SEARXNG_SECRET \
   CORS_ALLOW_ORIGIN \
@@ -36,16 +36,16 @@ decrypt_pid=$!
 set +a
 wait "$decrypt_pid"
 
-if [[ ! -s "$research_env_file" ]]; then
-  mkdir -p "$(dirname "$research_env_file")"
+if [[ ! -s "$deep_research_env_file" ]]; then
+  mkdir -p "$(dirname "$deep_research_env_file")"
   umask 077
-  research_key="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
-  printf 'RESEARCH_RUNTIME_API_KEY=%s\n' "$research_key" >"$research_env_file"
-  unset research_key
+  deep_research_key="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
+  printf 'DEEP_RESEARCH_RUNTIME_API_KEY=%s\n' "$deep_research_key" >"$deep_research_env_file"
+  unset deep_research_key
 fi
 set -a
 # shellcheck disable=SC1090
-source "$research_env_file"
+source "$deep_research_env_file"
 set +a
 
 : "${SAKURA_AI_ACCOUNT_TOKEN:?set SAKURA_AI_ACCOUNT_TOKEN}"
@@ -55,7 +55,7 @@ set +a
 : "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
 : "${CPTR_WORKSPACE_DIR:?set CPTR_WORKSPACE_DIR}"
 : "${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}"
-: "${RESEARCH_RUNTIME_API_KEY:?failed to initialize RESEARCH_RUNTIME_API_KEY}"
+: "${DEEP_RESEARCH_RUNTIME_API_KEY:?failed to initialize DEEP_RESEARCH_RUNTIME_API_KEY}"
 : "${SEARXNG_SECRET:?set SEARXNG_SECRET}"
 [[ -d "$CPTR_WORKSPACE_DIR" ]] || { printf 'CPTR_WORKSPACE_DIR is not a directory\n' >&2; exit 1; }
 

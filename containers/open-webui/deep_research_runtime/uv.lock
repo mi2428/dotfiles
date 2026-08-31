@@ -615,7 +615,7 @@ wheels = [
 ]
 
 [[package]]
-name = "open-webui-research-runtime"
+name = "open-webui-deep-research-runtime"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

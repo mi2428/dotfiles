@@ -22,11 +22,11 @@ COPY --from=uv /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-COPY research_runtime.py sakura_kimi_model.py ./
+COPY deep_research_runtime.py sakura_kimi_model.py ./
 
 USER 10001:10001
 
 EXPOSE 8000
 
 # A single worker owns the local SQLite connection.
-CMD ["uvicorn", "research_runtime:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["uvicorn", "deep_research_runtime:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
