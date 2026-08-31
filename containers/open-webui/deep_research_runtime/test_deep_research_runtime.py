@@ -153,6 +153,9 @@ class DeepResearchRuntimeTests(unittest.TestCase):
             op["responses"]["200"]["content"]["text/plain"]["schema"]["type"],
             "string",
         )
+        depth_schema = spec["components"]["schemas"]["ResearchRequest"]["properties"]["depth"]
+        self.assertEqual(depth_schema["default"], "deep")
+        self.assertIn("unless the user explicitly requests", depth_schema["description"])
 
     def test_response_schema_and_source_ids(self) -> None:
         response = rt.ResearchResponse(
@@ -377,6 +380,30 @@ class DeepResearchRuntimeTests(unittest.TestCase):
                 "deep",
                 "第三者ベンチマーク",
             )
+        with self.assertRaisesRegex(ValueError, "comparison table is missing"):
+            rt.validate_submit_report(
+                "rid",
+                state,
+                20,
+                answer.replace("## 詳細分析", "## 独立評価", 1),
+                findings,
+                limitations,
+                budget,
+                "deep",
+                "複数の基盤を比較してください",
+            )
+        with self.assertRaisesRegex(ValueError, "24-month roadmap"):
+            rt.validate_submit_report(
+                "rid",
+                state,
+                20,
+                answer,
+                findings,
+                limitations,
+                budget,
+                "deep",
+                "小規模チームの採用判断を支援してください",
+            )
         requested_answer = (
             answer.replace(
                 "## 比較表\n\n",
@@ -410,6 +437,18 @@ class DeepResearchRuntimeTests(unittest.TestCase):
             "比較表、第三者ベンチマーク、24か月ロードマップ",
         )
         self.assertIn("## 24か月ロードマップ", requested_response.answer_markdown)
+        natural_response = rt.validate_submit_report(
+            "rid",
+            state,
+            20,
+            requested_answer,
+            findings,
+            limitations,
+            budget,
+            "deep",
+            "複数の基盤を比較し、小規模チームの採用判断を支援してください",
+        )
+        self.assertIn("## 独立した第三者ベンチマーク", natural_response.answer_markdown)
         response = rt.validate_submit_report(
             "rid", state, 20, answer, findings, limitations, budget, "deep"
         )
@@ -749,6 +788,12 @@ class DeepResearchRuntimeTests(unittest.TestCase):
         self.assertIn("same language as the user's query", system_prompt)
         self.assertIn("ledger_revision", system_prompt)
         self.assertIn("statistics are cumulative", system_prompt)
+        default_request = rt.ResearchRequest(query="複数基盤の採用判断を支援してください")
+        self.assertEqual(default_request.depth, "deep")
+        deep_prompt = rt.build_system_prompt(default_request, rt.make_budget(default_request.depth))
+        self.assertIn("decision-focused comparison table", deep_prompt)
+        self.assertIn("24-month phased roadmap", deep_prompt)
+        self.assertIn("at least two independent studies", deep_prompt)
 
     def test_run_research_recovers_timeout_then_completes_via_section_submit(self) -> None:
         async def run() -> None:

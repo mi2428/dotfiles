@@ -87,7 +87,13 @@ class ResearchRequest(StrictModel):
     """Validated input for one bounded research run."""
 
     query: str = Field(min_length=1, max_length=MAX_QUERY_CHARS)
-    depth: Literal["quick", "standard", "deep"] = "standard"
+    depth: Literal["quick", "standard", "deep"] = Field(
+        default="deep",
+        description=(
+            "Use deep unless the user explicitly requests a shorter quick "
+            "or standard investigation."
+        ),
+    )
     language: str = Field(
         default="auto",
         min_length=2,
@@ -970,16 +976,32 @@ def validate_submit_report(
         raise ValueError(
             f"deep report sections must each contain at least {DEEP_MIN_SECTION_CHARS} characters"
         )
+    comparison_requested = bool(
+        re.search(r"比較|compare|comparison|versus|\bvs\.?\b", request_text, re.IGNORECASE)
+    )
+    decision_plan_requested = bool(
+        re.search(
+            r"採用|導入|実装計画|運用計画|adopt|adoption|implementation plan|deployment plan",
+            request_text,
+            re.IGNORECASE,
+        )
+    )
     if (
         depth == "deep"
-        and re.search(r"ベンチマーク|benchmark", request_text, re.IGNORECASE)
+        and (
+            comparison_requested
+            or re.search(r"ベンチマーク|benchmark", request_text, re.IGNORECASE)
+        )
         and not any(
             re.search(r"ベンチマーク|独立.{0,5}評価|empirical|benchmark", heading, re.IGNORECASE)
             for heading, _ in sections
         )
     ):
         raise ValueError("requested benchmark analysis needs a dedicated section")
-    if depth == "deep" and re.search(r"ロードマップ|roadmap", request_text, re.IGNORECASE):
+    roadmap_requested = decision_plan_requested or bool(
+        re.search(r"ロードマップ|roadmap", request_text, re.IGNORECASE)
+    )
+    if depth == "deep" and roadmap_requested:
         roadmap_headings = [
             heading
             for heading, _ in sections
@@ -987,12 +1009,18 @@ def validate_submit_report(
         ]
         if not roadmap_headings:
             raise ValueError("requested roadmap needs a dedicated section")
-        if re.search(r"24\s*(?:か月|ヶ月|カ月|months?)", request_text, re.IGNORECASE) and not any(
+        requested_horizon = re.search(
+            r"\d+\s*(?:か月|ヶ月|カ月|months?)", request_text, re.IGNORECASE
+        )
+        if (
+            requested_horizon is None
+            or re.match(r"24\s*", requested_horizon.group(), re.IGNORECASE)
+        ) and not any(
             re.search(r"24\s*(?:か月|ヶ月|カ月|months?)", heading, re.IGNORECASE)
             for heading in roadmap_headings
         ):
             raise ValueError("requested 24-month roadmap must identify its horizon in the heading")
-    if depth == "deep" and re.search(r"比較表|comparison\s+table", request_text, re.IGNORECASE):
+    if depth == "deep" and comparison_requested:
         comparison_bodies = [
             body
             for heading, body in sections
@@ -1138,9 +1166,10 @@ def build_system_prompt(research: ResearchRequest, budget: Budget) -> str:
             "Keep tables and their explanatory text mutually consistent.",
             "Every table row containing material claims must include inline citation IDs.",
             (
-                "When independent benchmarks are requested, dedicate a section to the available "
-                "empirical evidence, explain whether results are comparable, and state evidence "
-                "gaps rather than replacing measurements with vendor claims."
+                "For deep comparative or decision-support reports, dedicate a section to "
+                "independent empirical evidence, seek at least two independent studies or "
+                "benchmarks when available, explain whether results are comparable, and state "
+                "evidence gaps rather than replacing measurements with vendor claims."
             ),
             (
                 "Collect and cite multiple non-vendor sources for that section before drafting; "
@@ -1148,8 +1177,10 @@ def build_system_prompt(research: ResearchRequest, budget: Budget) -> str:
                 "while search budget remains."
             ),
             (
-                "When a phased roadmap is requested, dedicate a level-2 section to explicit time "
-                "ranges, milestones, evaluation gates, and exit criteria."
+                "For deep implementation, adoption, or decision-support reports, include a "
+                "recommended architecture and a dedicated 24-month phased roadmap with explicit "
+                "time ranges, milestones, evaluation gates, and exit criteria unless the user "
+                "specifies another horizon."
             ),
             (
                 "Write the report incrementally with write_report_section after research is "
@@ -1172,8 +1203,9 @@ def build_system_prompt(research: ResearchRequest, budget: Budget) -> str:
                 f"at least {DEEP_MIN_CITED_SOURCES} evidence sources, with at least "
                 f"{DEEP_MIN_SECTIONS} level-2 Markdown sections and "
                 f"{DEEP_MIN_FINDINGS} findings covering an executive "
-                "summary, methodology, detailed findings, contradictions and uncertainties, "
-                f"and recommendations; cite at least {DEEP_MIN_HIGH_QUALITY_SOURCES} ledger "
+                "summary, methodology, a decision-focused comparison table when alternatives are "
+                "involved, detailed findings, contradictions and uncertainties, and concrete "
+                f"recommendations; cite at least {DEEP_MIN_HIGH_QUALITY_SOURCES} ledger "
                 "sources with source_quality of 0.8 or higher, provide at least "
                 f"{DEEP_MIN_LIMITATIONS} limitations, and "
                 "write headings in the answer language."
