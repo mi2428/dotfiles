@@ -6,6 +6,7 @@ import os
 import tempfile
 import unittest
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace, TracebackType
 from typing import Any, cast
@@ -20,7 +21,7 @@ os.environ.setdefault("RESEARCH_RUNTIME_API_KEY", "test-api-key")
 os.environ.setdefault("RESEARCH_LLM_BASE_URL", "http://llm.local/v1")
 os.environ.setdefault("RESEARCH_LLM_API_KEY", "llm-key")
 os.environ.setdefault("RESEARCH_MODEL", "preview/Kimi-K2.7-Code")
-os.environ.setdefault("RESEARCH_KIMI_TIMEOUT_SECONDS", "290")
+os.environ.setdefault("RESEARCH_KIMI_TIMEOUT_SECONDS", "360")
 os.environ.setdefault("SEARXNG_URL", "http://searxng.local")
 os.environ.setdefault(
     "RESEARCH_DB_PATH", str(Path(tempfile.gettempdir()) / "research-runtime-test.db")
@@ -103,15 +104,26 @@ class FakeAgent:
         if "evidence" not in fetch_one or "evidence" not in fetch_two:
             raise AssertionError("missing evidence")
         inspected = parse_tool_payload(await self.tools["inspect_evidence_ledger"]())
+        await self.tools["write_report_section"](
+            inspected["ledger_revision"],
+            "Summary",
+            "Answer with citations [S1] [S2]",
+        )
         await self.tools["submit_report"](
             inspected["ledger_revision"],
-            "Answer with citations [S1] [S2]",
             [{"claim": "Claim", "source_ids": ["S1", "S2"]}],
             ["none"],
         )
         return SimpleNamespace(
             stop_reason="end_turn",
             message={"role": "assistant", "content": [{"text": "done"}]},
+        )
+
+
+class TimedOutAgent:
+    async def invoke_async(self, _prompt: str, **_kwargs: Any) -> SimpleNamespace:
+        raise rt.EventLoopException(
+            rt.APITimeoutError(httpx.Request("POST", "http://llm.local/v1/chat/completions"))
         )
 
 
@@ -163,6 +175,8 @@ class ResearchRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(rt.MAX_SOURCES, 40)
         self.assertEqual(rt.MAX_FINDINGS, 20)
+        self.assertEqual(rt.MAX_REPORT_SECTIONS, 16)
+        self.assertEqual(rt.MODEL_TIMEOUT_RECOVERIES, 3)
 
     def test_sources_section_normalizes_title_whitespace_and_wraps_url(self) -> None:
         text = rt.append_sources_section(
@@ -182,7 +196,30 @@ class ResearchRuntimeTests(unittest.TestCase):
         )
         self.assertIn("[S1] Line 1 Line 2 — <https://example.com/a_(b)>", text)
 
-    def test_deep_report_requires_long_structured_ten_source_answer(self) -> None:
+    def test_limitations_section_is_appended_once(self) -> None:
+        text = rt.append_limitations_section("Answer", ["Known constraint", "Open question"])
+        self.assertEqual(
+            text,
+            "Answer\n\n## Limitations\n- Known constraint\n- Open question",
+        )
+        with self.assertRaisesRegex(ValueError, "must not include"):
+            rt.append_limitations_section(text, ["Duplicate"])
+        with self.assertRaisesRegex(ValueError, "must not include"):
+            rt.append_limitations_section("## 制約と未解決事項\nDetails", ["Duplicate"])
+
+    def test_source_quality_recognizes_documentation_urls(self) -> None:
+        self.assertEqual(
+            rt.source_quality("https://developers.example.com/api/reference/items"), 0.8
+        )
+        self.assertEqual(rt.source_quality("https://docs.example.com/overview"), 0.8)
+        self.assertEqual(rt.source_quality("https://example.com/product/docs"), 0.8)
+        self.assertEqual(rt.source_quality("https://openai.github.io/openai-agents-python/"), 0.8)
+        self.assertEqual(rt.source_quality("https://www.anthropic.com/news/example"), 0.8)
+        self.assertEqual(rt.source_quality("https://aws.amazon.com/blogs/example"), 0.8)
+        self.assertEqual(rt.source_quality("https://arxiv.org/html/2505.23419"), 0.9)
+        self.assertEqual(rt.source_quality("https://example.com/blog/announcement"), 0.5)
+
+    def test_deep_report_requires_dense_structured_well_sourced_answer(self) -> None:
         budget = rt.make_budget("deep")
         self.assertEqual(budget.turns, 120)
         evidence = [
@@ -197,64 +234,187 @@ class ResearchRuntimeTests(unittest.TestCase):
                 relevance=1.0,
                 source_quality=0.8,
             )
-            for index in range(1, 11)
+            for index in range(1, 21)
         ]
         state = rt.RunState(
             evidence=evidence,
             searched_queries=set(),
-            evidence_revision=10,
-            last_inspected_revision=10,
+            evidence_revision=20,
+            last_inspected_revision=20,
             stats=rt.default_stats("deep", budget, rt.wall_budget_seconds("deep")),
         )
-        citations = " ".join(f"[S{index}]" for index in range(1, 11))
+        citations = " ".join(f"[S{index}]" for index in range(1, 21))
         findings = [
-            {"claim": "First finding", "source_ids": [f"S{index}" for index in range(1, 6)]},
-            {"claim": "Second finding", "source_ids": [f"S{index}" for index in range(6, 11)]},
+            {
+                "claim": f"Finding {index}",
+                "source_ids": [f"S{index * 2 - 1}", f"S{index * 2}"],
+            }
+            for index in range(1, 11)
         ]
+        limitations = [f"Limitation {index}" for index in range(1, 6)]
 
         with self.assertRaisesRegex(ValueError, "deep report too short"):
             rt.validate_submit_report(
-                "rid", state, 10, f"Short report {citations}", findings, ["none"], budget, "deep"
+                "rid", state, 20, f"Short report {citations}", findings, limitations, budget, "deep"
             )
 
-        unstructured = ("Detailed comparison and evidence. " * 300) + citations
-        with self.assertRaisesRegex(ValueError, "at least five sections"):
+        unstructured = ("Detailed comparison and evidence. " * 700) + citations
+        with self.assertRaisesRegex(ValueError, "at least 8 sections"):
             rt.validate_submit_report(
-                "rid", state, 10, unstructured, findings, ["none"], budget, "deep"
+                "rid", state, 20, unstructured, findings, limitations, budget, "deep"
             )
 
         sections = "\n\n".join(
-            [
-                "## 要約",
-                "## 調査方法",
-                "## 詳細分析",
-                "## 反証と不確実性",
-                "## 提言と限界",
+            f"## {heading}\n\n" + ("根拠・比較・含意・不確実性を詳述する。" * 50)
+            for heading in [
+                "要約",
+                "調査方法",
+                "比較表",
+                "詳細分析",
+                "セキュリティ",
+                "反証と不確実性",
+                "推奨事項",
+                "実装ロードマップ",
             ]
         )
-        nine_citations = " ".join(f"[S{index}]" for index in range(1, 10))
-        nine_findings = [
-            {"claim": "First finding", "source_ids": [f"S{index}" for index in range(1, 6)]},
-            {"claim": "Second finding", "source_ids": [f"S{index}" for index in range(6, 10)]},
-        ]
-        with self.assertRaisesRegex(ValueError, "at least ten cited sources"):
+        short_sections = "\n\n".join(f"## Section {index}" for index in range(rt.DEEP_MIN_SECTIONS))
+        with self.assertRaisesRegex(ValueError, "sections must each"):
             rt.validate_submit_report(
                 "rid",
                 state,
-                10,
-                sections + "\n\n" + ("Detailed evidence. " * 500) + nine_citations,
-                nine_findings,
-                ["none"],
+                20,
+                short_sections + "\n\n" + ("Detailed evidence. " * 900) + citations,
+                findings,
+                limitations,
+                budget,
+                "deep",
+            )
+        nineteen_citations = " ".join(f"[S{index}]" for index in range(1, 20))
+        nineteen_findings = [
+            *findings[:9],
+            {"claim": "Finding 10", "source_ids": ["S19"]},
+        ]
+        with self.assertRaisesRegex(ValueError, "at least 20 cited sources"):
+            rt.validate_submit_report(
+                "rid",
+                state,
+                20,
+                sections + "\n\n" + ("Detailed evidence. " * 900) + nineteen_citations,
+                nineteen_findings,
+                limitations,
                 budget,
                 "deep",
             )
 
         answer = sections + "\n\n" + ("根拠を比較し、含意と不確実性を分析する。" * 500) + citations
+        with self.assertRaisesRegex(ValueError, "at least 10 findings"):
+            rt.validate_submit_report(
+                "rid", state, 20, answer, findings[:9], limitations, budget, "deep"
+            )
+        with self.assertRaisesRegex(ValueError, "at least 5 limitations"):
+            rt.validate_submit_report(
+                "rid", state, 20, answer, findings, limitations[:4], budget, "deep"
+            )
+        low_relevance_state = replace(
+            state,
+            evidence=[replace(evidence[0], relevance=0.0), *evidence[1:]],
+        )
+        with self.assertRaisesRegex(ValueError, "unusable evidence"):
+            rt.validate_submit_report(
+                "rid",
+                low_relevance_state,
+                20,
+                answer,
+                findings,
+                limitations,
+                budget,
+                "deep",
+            )
+        low_quality_state = replace(
+            state,
+            evidence=[
+                replace(item, source_quality=0.5) if index < 9 else item
+                for index, item in enumerate(evidence)
+            ],
+        )
+        with self.assertRaisesRegex(ValueError, "at least 12 high-quality cited sources"):
+            rt.validate_submit_report(
+                "rid",
+                low_quality_state,
+                20,
+                answer,
+                findings,
+                limitations,
+                budget,
+                "deep",
+            )
+        with self.assertRaisesRegex(ValueError, "24-month roadmap"):
+            rt.validate_submit_report(
+                "rid",
+                state,
+                20,
+                answer,
+                findings,
+                limitations,
+                budget,
+                "deep",
+                "24か月ロードマップ",
+            )
+        with self.assertRaisesRegex(ValueError, "benchmark analysis"):
+            rt.validate_submit_report(
+                "rid",
+                state,
+                20,
+                answer,
+                findings,
+                limitations,
+                budget,
+                "deep",
+                "第三者ベンチマーク",
+            )
+        requested_answer = (
+            answer.replace(
+                "## 比較表\n\n",
+                "## 比較表\n\n| 基盤 | 評価 |\n|---|---|\n| 候補 | 根拠 [S1] |\n\n",
+                1,
+            )
+            .replace("## 詳細分析", "## 独立した第三者ベンチマーク", 1)
+            .replace("## 実装ロードマップ", "## 24か月ロードマップ", 1)
+        )
+        with self.assertRaisesRegex(ValueError, "every comparison table data row"):
+            rt.validate_submit_report(
+                "rid",
+                state,
+                20,
+                requested_answer.replace("根拠 [S1]", "根拠", 1),
+                findings,
+                limitations,
+                budget,
+                "deep",
+                "比較表",
+            )
+        requested_response = rt.validate_submit_report(
+            "rid",
+            state,
+            20,
+            requested_answer,
+            findings,
+            limitations,
+            budget,
+            "deep",
+            "比較表、第三者ベンチマーク、24か月ロードマップ",
+        )
+        self.assertIn("## 24か月ロードマップ", requested_response.answer_markdown)
         response = rt.validate_submit_report(
-            "rid", state, 10, answer, findings, ["none"], budget, "deep"
+            "rid", state, 20, answer, findings, limitations, budget, "deep"
         )
         self.assertGreaterEqual(len(response.answer_markdown), rt.DEEP_MIN_ANSWER_CHARS)
         self.assertEqual(len(response.sources), rt.DEEP_MIN_CITED_SOURCES)
+        self.assertIn("\n\n## Limitations\n- Limitation 1", response.answer_markdown)
+        self.assertLess(
+            response.answer_markdown.index("## Limitations"),
+            response.answer_markdown.index("## Sources"),
+        )
 
     def test_auth_and_validation(self) -> None:
         async def run() -> None:
@@ -435,9 +595,13 @@ class ResearchRuntimeTests(unittest.TestCase):
             b"""<html><head><title>Release notes</title>
             <meta property="og:site_name" content="Official Project">
             <meta property="article:published_time" content="2026-08-25T00:00:00Z">
-            </head><body><article><p>This release adds a documented feature
-            with enough text for extraction.</p>
-            <p>The details are factual source content.</p></article></body></html>"""
+             </head><body><article><p>This release adds a documented feature
+             with enough text for extraction. The implementation details explain the supported
+             behavior, compatibility requirements, operational constraints, and observable
+             outcomes for production users.</p>
+             <p>The details are factual source content and document how operators can verify the
+             feature without inferring behavior from the page title or URL.</p></article>
+             </body></html>"""
         )
         self.assertIn("documented feature", text)
         self.assertEqual(metadata["title"], "Release notes")
@@ -446,6 +610,29 @@ class ResearchRuntimeTests(unittest.TestCase):
         excerpt, relevance = rt.select_relevant_excerpt(text, "documented feature", None)
         self.assertTrue(rt.is_verbatim_excerpt(excerpt, text))
         self.assertGreaterEqual(relevance, 0.7)
+
+    def test_excerpt_quarantines_numeric_noise_and_scores_thin_content(self) -> None:
+        numeric_excerpt, numeric_relevance = rt.select_relevant_excerpt(
+            " ".join(str(index) for index in range(500)), "feature", None
+        )
+        self.assertTrue(numeric_excerpt.startswith("0 1 2"))
+        self.assertEqual(numeric_relevance, 0.0)
+        thin_excerpt, thin_relevance = rt.select_relevant_excerpt(
+            "This paragraph contains enough alphabetic characters to look substantive but "
+            "is too short to support a research claim.",
+            "research claim",
+            None,
+        )
+        self.assertLess(len(thin_excerpt), 200)
+        self.assertGreater(thin_relevance, 0.5)
+        _, unrelated_relevance = rt.select_relevant_excerpt(
+            "This substantive document is deliberately long enough for evidence extraction, "
+            "but its detailed operational discussion concerns a completely different topic "
+            "and therefore cannot support the requested factual proposition in a report.",
+            "unrelated-keyword",
+            None,
+        )
+        self.assertEqual(unrelated_relevance, 0.5)
 
     def test_search_and_fetch_type_errors_are_nonfatal_expected_failures(self) -> None:
         async def run() -> None:
@@ -518,6 +705,7 @@ class ResearchRuntimeTests(unittest.TestCase):
         model_config = cast(dict[str, Any], model.config)
         model_params = cast(dict[str, Any], model_config["params"])
         self.assertEqual(model.client_args["max_retries"], 0)
+        self.assertEqual(model.client_args["timeout"], rt.DEFAULT_KIMI_TIMEOUT_SECONDS)
         self.assertEqual(model_params["max_tokens"], rt.KIMI_MAX_TOKENS)
         self.assertEqual(agent._retry_strategy._max_attempts, 1)
         self.assertIsInstance(agent.tool_executor, SequentialToolExecutor)
@@ -527,8 +715,9 @@ class ResearchRuntimeTests(unittest.TestCase):
         self.assertIsNotNone(conversation_manager._compression_threshold)
         self.assertIn("same language as the user's query", system_prompt)
         self.assertIn("ledger_revision", system_prompt)
+        self.assertIn("statistics are cumulative", system_prompt)
 
-    def test_run_research_completes_via_search_fetch_inspect_submit(self) -> None:
+    def test_run_research_recovers_timeout_then_completes_via_section_submit(self) -> None:
         async def run() -> None:
             search_results = [
                 rt.SearchResult("http://example.com/1", "t1", "snippet 1", "engine"),
@@ -566,11 +755,18 @@ class ResearchRuntimeTests(unittest.TestCase):
                 self.assertEqual(focus, "f; support")
                 return evidence_items.pop(0)
 
+            attempts = 0
+
+            def fake_build_agent(*args: Any) -> TimedOutAgent | FakeAgent:
+                nonlocal attempts
+                attempts += 1
+                return TimedOutAgent() if attempts == 1 else FakeAgent(args[2])
+
             with (
                 patch.object(
                     rt,
                     "build_research_agent",
-                    side_effect=lambda *_args: FakeAgent(_args[2]),
+                    side_effect=fake_build_agent,
                 ),
                 patch.object(rt, "search_searxng", new=AsyncMock(return_value=search_results)),
                 patch.object(rt, "extract_evidence", new=AsyncMock(side_effect=fake_extract)),
@@ -586,6 +782,7 @@ class ResearchRuntimeTests(unittest.TestCase):
             self.assertIn("## Sources", result.answer_markdown)
             self.assertEqual(result.findings[0].source_ids, ["S1", "S2"])
             self.assertEqual([source.id for source in result.sources], ["S1", "S2"])
+            self.assertEqual(result.stats["model_timeout_recoveries"], 1)
             row = self.runtime.db.execute(
                 (
                     "SELECT status, state_json, response_json FROM research_runs "
@@ -674,11 +871,10 @@ class ResearchRuntimeTests(unittest.TestCase):
                 bad_purpose = await tool_map["fetch_source"]("http://example.com/1", "")
                 self.assertEqual(bad_purpose["status"], "error")
 
-                uninspected = await tool_map["submit_report"](
+                uninspected = await tool_map["write_report_section"](
                     2,
+                    "Summary",
                     "Claim [S1] [S2]",
-                    [{"claim": "Claim", "source_ids": ["S1", "S2"]}],
-                    ["none"],
                 )
                 self.assertEqual(uninspected["status"], "error")
 
@@ -687,17 +883,29 @@ class ResearchRuntimeTests(unittest.TestCase):
                 self.assertEqual(inspected_payload["revision"], 2)
                 self.assertEqual(inspected_payload["ledger_revision"], 2)
 
-                unknown = await tool_map["submit_report"](
+                unknown = await tool_map["write_report_section"](
                     2,
+                    "Unknown",
                     "Claim [S3]",
-                    [{"claim": "Claim", "source_ids": ["S3"]}],
-                    ["none"],
                 )
                 self.assertEqual(unknown["status"], "error")
 
+                reserved = await tool_map["write_report_section"](
+                    2,
+                    "制約と未解決事項",
+                    "Claim [S1] [S2]",
+                )
+                self.assertEqual(reserved["status"], "error")
+
+                section = await tool_map["write_report_section"](
+                    2,
+                    "Summary",
+                    "Claim [S1] [S2]",
+                )
+                self.assertEqual(section["status"], "success")
+
                 mismatch = await tool_map["submit_report"](
                     2,
-                    "Claim [S1] [S2]",
                     [{"claim": "Claim", "source_ids": ["S1"]}],
                     ["none"],
                 )
@@ -705,7 +913,6 @@ class ResearchRuntimeTests(unittest.TestCase):
 
                 stale_revision = await tool_map["submit_report"](
                     1,
-                    "Claim [S1] [S2]",
                     [{"claim": "Claim", "source_ids": ["S1", "S2"]}],
                     ["none"],
                 )
@@ -713,12 +920,56 @@ class ResearchRuntimeTests(unittest.TestCase):
 
                 accepted = await tool_map["submit_report"](
                     2,
-                    "Claim [S1] [S2]",
                     [{"claim": "Claim", "source_ids": ["S1", "S2"]}],
                     ["none"],
                 )
                 self.assertEqual(accepted["status"], "success")
                 self.assertFalse(fatal_errors)
+
+        asyncio.run(run())
+
+    def test_deep_drafting_waits_for_high_quality_sources(self) -> None:
+        async def run() -> None:
+            research = rt.ResearchRequest(query="q", depth="deep")
+            budget = rt.make_budget("deep")
+            state = rt.load_run_state(
+                None,
+                depth="deep",
+                budget=budget,
+                wall_limit=rt.wall_budget_seconds("deep"),
+            )
+            state.evidence = [
+                rt.Evidence(
+                    id=f"S{index}",
+                    url=f"https://example.com/{index}",
+                    title=f"Source {index}",
+                    publisher="Publisher",
+                    published_at="2026-01-01",
+                    excerpt="Evidence",
+                    hash=f"{index:064x}",
+                    relevance=1.0,
+                    source_quality=0.8,
+                )
+                for index in range(1, rt.DEEP_MIN_HIGH_QUALITY_SOURCES)
+            ]
+            state.evidence_revision = len(state.evidence)
+            state.last_inspected_revision = state.evidence_revision
+            tools, _allowlist, _fatal = rt.build_research_tools(
+                self.runtime,
+                research,
+                "rid",
+                "kid-quality",
+                rt.query_hash(research.model_dump()),
+                state,
+            )
+            tool_map = {tool.tool_name: tool for tool in tools}
+            result = await tool_map["write_report_section"](
+                state.evidence_revision,
+                "Summary",
+                "Substantive evidence. " * 50,
+            )
+            self.assertEqual(result["status"], "error")
+            self.assertIn("high-quality sources before drafting", str(result["content"]))
 
         asyncio.run(run())
 
@@ -744,6 +995,7 @@ class ResearchRuntimeTests(unittest.TestCase):
             state.last_inspected_revision = 1
             state.stats["evidence"] = 1
             state.stats["evidence_revision"] = 1
+            state.report_sections = [rt.ReportSection("Summary", "Claim [S1]", 1)]
             state.final_response = {"cached": True}
 
             with (
@@ -787,9 +1039,9 @@ class ResearchRuntimeTests(unittest.TestCase):
                 self.assertEqual(fetched["status"], "success")
                 self.assertIsNone(state.final_response)
                 self.assertIsNone(state.last_inspected_revision)
+                self.assertFalse(state.report_sections)
                 submit = await tool_map["submit_report"](
                     2,
-                    "Claim [S1] [S2]",
                     [{"claim": "Claim", "source_ids": ["S1", "S2"]}],
                     ["none"],
                 )

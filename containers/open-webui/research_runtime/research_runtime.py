@@ -17,7 +17,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol, cast
 from urllib.parse import urljoin, urlparse, urlunparse
@@ -27,11 +27,13 @@ import trafilatura
 from aiohttp.abc import AbstractResolver, ResolveResult
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from openai import APIError, APITimeoutError
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 from pypdf import PdfReader
 from strands import Agent, tool
 from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands.tools.executors import SequentialToolExecutor
+from strands.types.exceptions import EventLoopException
 
 from sakura_kimi_model import SakuraKimiModel
 
@@ -43,18 +45,25 @@ MAX_LIMITATION_CHARS = 500
 MAX_FINDINGS = 20
 MAX_FINDING_SOURCE_IDS = 6
 MAX_SOURCES = 40
+MAX_REPORT_SECTIONS = 16
+MAX_REPORT_SECTION_CHARS = 4_000
 MAX_DOC_BYTES = 1_500_000
 MAX_REDIRECTS = 3
-DEEP_MIN_ANSWER_CHARS = 8_000
-DEEP_MIN_CITED_SOURCES = 10
-DEEP_MIN_SECTIONS = 5
+DEEP_MIN_ANSWER_CHARS = 15_000
+DEEP_MIN_CITED_SOURCES = 20
+DEEP_MIN_SECTIONS = 8
+DEEP_MIN_SECTION_CHARS = 800
+DEEP_MIN_FINDINGS = 10
+DEEP_MIN_LIMITATIONS = 5
+DEEP_MIN_HIGH_QUALITY_SOURCES = 12
 SEARCH_TIMEOUT = 20
 DOC_TIMEOUT = 45
 BODY_BYTE_LIMIT = 1_000_000
 SEARCH_RESULT_LIMIT = 8
 TOOL_EXCERPT_CHARS = 1200
 KIMI_MAX_TOKENS = 32_768
-DEFAULT_KIMI_TIMEOUT_SECONDS = 290
+DEFAULT_KIMI_TIMEOUT_SECONDS = 360
+MODEL_TIMEOUT_RECOVERIES = 3
 
 DEFAULT_WALL_BUDGETS = {"quick": 1800, "standard": 5400, "deep": 6900}
 DEFAULT_DEPTH_BUDGETS = {
@@ -64,7 +73,7 @@ DEFAULT_DEPTH_BUDGETS = {
 }
 
 SourceId = Annotated[str, Field(pattern=r"^S\d+$")]
-Limitation = Annotated[str, Field(max_length=MAX_LIMITATION_CHARS)]
+Limitation = Annotated[str, Field(min_length=1, max_length=MAX_LIMITATION_CHARS)]
 
 
 class StrictModel(BaseModel):
@@ -212,6 +221,15 @@ class Evidence:
     id: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class ReportSection:
+    """One checkpointed level-2 report section."""
+
+    heading: str
+    body: str
+    ledger_revision: int
+
+
 @dataclass(slots=True)
 class RunState:
     """Checkpointable state that survives retries without preserving model history."""
@@ -221,6 +239,7 @@ class RunState:
     evidence_revision: int
     last_inspected_revision: int | None
     stats: dict[str, Any]
+    report_sections: list[ReportSection] = field(default_factory=list)
     final_response: dict[str, Any] | None = None
 
 
@@ -277,6 +296,37 @@ def env_int(name: str, default: int, *, minimum: int = 1, maximum: int | None = 
     if maximum is not None and value > maximum:
         raise RuntimeError(f"{name} must be <= {maximum}")
     return value
+
+
+def is_recoverable_model_timeout(error: BaseException) -> bool:
+    """Recognize provider/client timeouts wrapped by the Strands event loop."""
+
+    pending: list[BaseException] = [error]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, (APITimeoutError, TimeoutError)):
+            return True
+        if isinstance(current, APIError):
+            body = current.body if isinstance(current.body, dict) else {}
+            detail = body.get("error", body)
+            if not isinstance(detail, dict):
+                detail = {}
+            code = str(current.code or detail.get("code") or "").casefold()
+            message = str(detail.get("message") or current).strip().rstrip(".").casefold()
+            if code == "timeout" or message in {"request timed out", "upstream timeout"}:
+                return True
+        for nested in (
+            getattr(current, "original_exception", None),
+            current.__cause__,
+            current.__context__,
+        ):
+            if isinstance(nested, BaseException):
+                pending.append(nested)
+    return False
 
 
 def is_public_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -376,9 +426,20 @@ def is_verbatim_excerpt(excerpt: str, text: str) -> bool:
 
 
 def select_relevant_excerpt(text: str, query: str, focus: str | None) -> tuple[str, float]:
-    paragraphs = [part.strip() for part in re.split(r"\n+", text) if part.strip()]
-    if not paragraphs:
+    all_paragraphs = [part.strip() for part in re.split(r"\n+", text) if part.strip()]
+    if not all_paragraphs:
         raise ValueError("document has no text")
+    paragraphs = []
+    for paragraph in all_paragraphs:
+        compact = re.sub(r"\s+", "", paragraph)
+        alphabetic = sum(character.isalpha() for character in compact)
+        if alphabetic >= 40 and alphabetic / len(compact) >= 0.2:
+            paragraphs.append(paragraph)
+    if not paragraphs:
+        excerpt = "\n".join(all_paragraphs)[:1200].rstrip()
+        if not is_verbatim_excerpt(excerpt, text):
+            raise ValueError("could not select source excerpt")
+        return excerpt, 0.0
     terms = {term.casefold() for term in re.findall(r"[\w.-]{3,}", f"{query} {focus or ''}")}
     scores = [sum(term in paragraph.casefold() for term in terms) for paragraph in paragraphs]
     index = max(range(len(paragraphs)), key=lambda i: scores[i])
@@ -392,12 +453,35 @@ def source_quality(url: str) -> float:
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
     path = parsed.path.lower()
-    if host.endswith((".gov", ".edu")) or (
-        host in {"github.com", "gitlab.com"}
-        and any(part in path for part in ("/releases", "/tags", "changelog"))
+    if (
+        host.endswith((".gov", ".edu"))
+        or host == "arxiv.org"
+        or (
+            host in {"github.com", "gitlab.com"}
+            and any(part in path for part in ("/releases", "/tags", "changelog"))
+        )
     ):
         return 0.9
-    if any(part in path for part in ("/docs/", "/documentation/", "/release-notes")):
+    primary_domains = (
+        "openai.com",
+        "openai.github.io",
+        "anthropic.com",
+        "claude.com",
+        "google.com",
+        "google.dev",
+        "amazon.com",
+        "amazonaws.com",
+        "strandsagents.com",
+        "modelcontextprotocol.io",
+        "coalitionforsecureai.org",
+    )
+    path_parts = set(path.split("/"))
+    if (
+        any(host == domain or host.endswith("." + domain) for domain in primary_domains)
+        or host.startswith(("docs.", "developer.", "developers.", "api."))
+        or path_parts & {"docs", "documentation", "guides", "reference", "release-notes"}
+        or (host == "pypi.org" and path.startswith("/project/"))
+    ):
         return 0.8
     return 0.5
 
@@ -735,6 +819,9 @@ def default_stats(depth: str, budget: Budget, wall_limit: float) -> dict[str, An
         "wall_exhausted": False,
         "stop_reason": "",
         "evidence_revision": 0,
+        "report_sections": 0,
+        "report_chars": 0,
+        "model_timeout_recoveries": 0,
     }
 
 
@@ -745,6 +832,7 @@ def run_state_snapshot(state: RunState) -> dict[str, Any]:
         "evidence_revision": state.evidence_revision,
         "last_inspected_revision": state.last_inspected_revision,
         "stats": state.stats,
+        "report_sections": [asdict(item) for item in state.report_sections],
         "final_response": state.final_response,
     }
 
@@ -778,10 +866,17 @@ def load_run_state(
         "model_turn_budget",
         "wall_exhausted",
         "stop_reason",
+        "model_timeout_recoveries",
     ):
         stats[key] = fresh_stats[key]
     stats["evidence"] = len(evidence)
     stats["evidence_revision"] = int(snapshot.get("evidence_revision", len(evidence)))
+    report_sections = [
+        ReportSection(**item)
+        for item in cast(list[dict[str, Any]], snapshot.get("report_sections", []))
+    ]
+    stats["report_sections"] = len(report_sections)
+    stats["report_chars"] = len(assemble_report_sections(report_sections))
     final_response = cast(dict[str, Any] | None, snapshot.get("final_response"))
     return RunState(
         evidence=evidence,
@@ -793,6 +888,7 @@ def load_run_state(
             else None
         ),
         stats=stats,
+        report_sections=report_sections,
         final_response=final_response,
     )
 
@@ -802,13 +898,31 @@ def numeric_source_id(value: str) -> int:
 
 
 def append_sources_section(answer_markdown: str, sources: list[SourceModel]) -> str:
-    if re.search(r"^## Sources\s*$", answer_markdown, flags=re.MULTILINE):
+    if re.search(r"^##\s+Sources", answer_markdown, flags=re.IGNORECASE | re.MULTILINE):
         raise ValueError("answer_markdown must not include a Sources section")
     lines = [
         f"[{source.id}] {re.sub(r'\s+', ' ', source.title or source.url).strip()} — <{source.url}>"
         for source in sources
     ]
     return answer_markdown.rstrip() + "\n\n## Sources\n" + "\n".join(lines)
+
+
+def append_limitations_section(answer_markdown: str, limitations: list[str]) -> str:
+    if re.search(
+        r"^##\s+(?:Limitations|限界|制約)",
+        answer_markdown,
+        flags=re.IGNORECASE | re.MULTILINE,
+    ):
+        raise ValueError("answer_markdown must not include a Limitations section")
+    return (
+        answer_markdown.rstrip()
+        + "\n\n## Limitations\n"
+        + "\n".join(f"- {limitation}" for limitation in limitations)
+    )
+
+
+def assemble_report_sections(sections: list[ReportSection]) -> str:
+    return "\n\n".join(f"## {section.heading}\n\n{section.body}" for section in sections)
 
 
 def limitations_adapter() -> TypeAdapter[list[Limitation]]:
@@ -824,6 +938,7 @@ def validate_submit_report(
     limitations: list[str],
     budget: Budget,
     depth: str,
+    request_text: str = "",
 ) -> ResearchResponse:
     answer = answer_markdown.strip()
     if not answer:
@@ -834,9 +949,74 @@ def validate_submit_report(
         raise ValueError("deep report too short")
     section_count = len(re.findall(r"^##\s+\S", answer, flags=re.MULTILINE))
     if depth == "deep" and section_count < DEEP_MIN_SECTIONS:
-        raise ValueError("deep report needs at least five sections")
+        raise ValueError(f"deep report needs at least {DEEP_MIN_SECTIONS} sections")
+    section_matches = list(re.finditer(r"^##\s+\S.*$", answer, flags=re.MULTILINE))
+    sections = [
+        (
+            match.group().removeprefix("##").strip(),
+            answer[
+                match.end() : (
+                    section_matches[index + 1].start()
+                    if index + 1 < len(section_matches)
+                    else len(answer)
+                )
+            ].strip(),
+        )
+        for index, match in enumerate(section_matches)
+    ]
+    section_lengths = [len(body) for _, body in sections]
+    if depth == "deep" and any(length < DEEP_MIN_SECTION_CHARS for length in section_lengths):
+        raise ValueError(
+            f"deep report sections must each contain at least {DEEP_MIN_SECTION_CHARS} characters"
+        )
+    if (
+        depth == "deep"
+        and re.search(r"ベンチマーク|benchmark", request_text, re.IGNORECASE)
+        and not any(
+            re.search(r"ベンチマーク|独立.{0,5}評価|empirical|benchmark", heading, re.IGNORECASE)
+            for heading, _ in sections
+        )
+    ):
+        raise ValueError("requested benchmark analysis needs a dedicated section")
+    if depth == "deep" and re.search(r"ロードマップ|roadmap", request_text, re.IGNORECASE):
+        roadmap_headings = [
+            heading
+            for heading, _ in sections
+            if re.search(r"ロードマップ|roadmap", heading, re.IGNORECASE)
+        ]
+        if not roadmap_headings:
+            raise ValueError("requested roadmap needs a dedicated section")
+        if re.search(r"24\s*(?:か月|ヶ月|カ月|months?)", request_text, re.IGNORECASE) and not any(
+            re.search(r"24\s*(?:か月|ヶ月|カ月|months?)", heading, re.IGNORECASE)
+            for heading in roadmap_headings
+        ):
+            raise ValueError("requested 24-month roadmap must identify its horizon in the heading")
+    if depth == "deep" and re.search(r"比較表|comparison\s+table", request_text, re.IGNORECASE):
+        comparison_bodies = [
+            body
+            for heading, body in sections
+            if re.search(r"比較|comparison", heading, re.IGNORECASE)
+        ]
+        table_rows = [
+            line.strip()
+            for body in comparison_bodies
+            for index, line in enumerate(body.splitlines())
+            if line.strip().startswith("|")
+            and line.strip().endswith("|")
+            and not re.fullmatch(r"\|[\s:|-]+\|", line.strip())
+            and not (
+                index + 1 < len(body.splitlines())
+                and re.fullmatch(r"\|[\s:|-]+\|", body.splitlines()[index + 1].strip())
+            )
+        ]
+        if not table_rows:
+            raise ValueError("requested comparison table is missing")
+        if any(not citation_ids(row) for row in table_rows):
+            raise ValueError("every comparison table data row must include an inline citation")
     if len(findings) == 0 or len(findings) > MAX_FINDINGS:
         raise ValueError("findings must contain 1 to 20 items")
+    if depth == "deep" and len(findings) < DEEP_MIN_FINDINGS:
+        raise ValueError(f"deep report needs at least {DEEP_MIN_FINDINGS} findings")
     if len(state.evidence) < budget.minimum_evidence:
         raise ValueError("minimum evidence not reached")
     if ledger_revision != state.evidence_revision:
@@ -849,7 +1029,7 @@ def validate_submit_report(
     if not cited_ids:
         raise ValueError("answer_markdown must include inline citations")
     if depth == "deep" and len(cited_ids) < DEEP_MIN_CITED_SOURCES:
-        raise ValueError("deep report needs at least ten cited sources")
+        raise ValueError(f"deep report needs at least {DEEP_MIN_CITED_SOURCES} cited sources")
     finding_ids = {source_id for item in validated_findings for source_id in item.source_ids}
     if finding_ids != cited_ids:
         raise ValueError("answer citations and finding source IDs must match exactly")
@@ -858,13 +1038,32 @@ def validate_submit_report(
     unknown = sorted(cited_ids - evidence_by_id.keys(), key=numeric_source_id)
     if unknown:
         raise ValueError("unknown source IDs in report")
+    if any(evidence_by_id[source_name].relevance == 0 for source_name in cited_ids):
+        raise ValueError("report must not cite unusable evidence excerpts")
+    if (
+        depth == "deep"
+        and sum(evidence_by_id[source_name].source_quality >= 0.8 for source_name in cited_ids)
+        < DEEP_MIN_HIGH_QUALITY_SOURCES
+    ):
+        raise ValueError(
+            f"deep report needs at least {DEEP_MIN_HIGH_QUALITY_SOURCES} high-quality cited sources"
+        )
 
-    validated_limitations = limitations_adapter().validate_python(limitations)
+    validated_limitations = [
+        limitation.strip() for limitation in limitations_adapter().validate_python(limitations)
+    ]
+    if any(not limitation for limitation in validated_limitations):
+        raise ValueError("limitations must not be blank")
+    if depth == "deep" and len(validated_limitations) < DEEP_MIN_LIMITATIONS:
+        raise ValueError(f"deep report needs at least {DEEP_MIN_LIMITATIONS} limitations")
     sources = [
         source_from_evidence(evidence_by_id[source_name])
         for source_name in sorted(cited_ids, key=numeric_source_id)
     ]
-    full_answer = append_sources_section(answer, sources)
+    answer_with_limitations = append_limitations_section(answer, validated_limitations)
+    full_answer = append_sources_section(answer_with_limitations, sources)
+    if len(full_answer) > MAX_ANSWER_CHARS:
+        raise ValueError("answer_markdown with sources too long")
     return ResearchResponse(
         research_id=research_id,
         answer_markdown=full_answer,
@@ -902,35 +1101,93 @@ def build_system_prompt(research: ResearchRequest, budget: Budget) -> str:
             "Never reveal hidden reasoning.",
             (
                 "Use only these tools: search_web, fetch_source, "
-                "inspect_evidence_ledger, submit_report."
+                "inspect_evidence_ledger, write_report_section, submit_report."
             ),
             (
                 "Never fetch arbitrary URLs: only URLs returned by search_web or "
                 "already present in the evidence ledger are allowed."
             ),
-            "After any new evidence is added, call inspect_evidence_ledger before submit_report.",
+            (
+                "After any new evidence is added, call inspect_evidence_ledger before writing "
+                "or submitting the report."
+            ),
             (
                 "At the start of every run, call inspect_evidence_ledger exactly once "
                 "before planning new work."
             ),
+            (
+                "Checkpoint statistics are cumulative across model-timeout recovery. "
+                "Treat existing evidence and sections as work from the same research run; "
+                "do not describe a resumed agent invocation as if the overall research "
+                "began with an exhausted budget."
+            ),
             "Use inline citations like [S1] for every material claim.",
+            (
+                "Cite a source only when its ledger excerpt explicitly supports the claim. "
+                "Never infer source content from its title or URL, and do not cite malformed or "
+                "irrelevant excerpts."
+            ),
             "Audit contradictions and counter-evidence before submitting.",
             (
-                "For deep research, submit at least 8000 characters citing at least 10 evidence "
-                "sources, with at least five level-2 Markdown sections covering an executive "
+                "Before drafting, derive a checklist of every deliverable explicitly requested "
+                "by the user. Do not submit until each deliverable is substantively covered; "
+                "requested roadmaps, evaluation plans, and independent benchmark evidence must "
+                "not be folded into a vague recommendation paragraph."
+            ),
+            "Keep tables and their explanatory text mutually consistent.",
+            "Every table row containing material claims must include inline citation IDs.",
+            (
+                "When independent benchmarks are requested, dedicate a section to the available "
+                "empirical evidence, explain whether results are comparable, and state evidence "
+                "gaps rather than replacing measurements with vendor claims."
+            ),
+            (
+                "Collect and cite multiple non-vendor sources for that section before drafting; "
+                "do not claim this deliverable is complete merely because no benchmark was found "
+                "while search budget remains."
+            ),
+            (
+                "When a phased roadmap is requested, dedicate a level-2 section to explicit time "
+                "ranges, milestones, evaluation gates, and exit criteria."
+            ),
+            (
+                "Write the report incrementally with write_report_section after research is "
+                "complete. Call it exactly once per model turn with one level-2 section; never "
+                "batch multiple sections in one response."
+            ),
+            (
+                f"Each section body is at most {MAX_REPORT_SECTION_CHARS} characters and the "
+                f"assembled report is at most {MAX_ANSWER_CHARS} characters."
+            ),
+            (
+                f"For deep research, every checkpointed section must contain at least "
+                f"{DEEP_MIN_SECTION_CHARS} substantive characters. Omit filler sections and fold "
+                "source-provenance notes into methodology."
+                if research.depth == "deep"
+                else "Avoid filler sections."
+            ),
+            (
+                f"For deep research, submit at least {DEEP_MIN_ANSWER_CHARS} characters citing "
+                f"at least {DEEP_MIN_CITED_SOURCES} evidence sources, with at least "
+                f"{DEEP_MIN_SECTIONS} level-2 Markdown sections and "
+                f"{DEEP_MIN_FINDINGS} findings covering an executive "
                 "summary, methodology, detailed findings, contradictions and uncertainties, "
-                "recommendations, and limitations; write headings in the answer language."
+                f"and recommendations; cite at least {DEEP_MIN_HIGH_QUALITY_SOURCES} ledger "
+                "sources with source_quality of 0.8 or higher, provide at least "
+                f"{DEEP_MIN_LIMITATIONS} limitations, and "
+                "write headings in the answer language."
                 if research.depth == "deep"
                 else "Keep the report length and structure proportional to the requested depth."
             ),
             (
-                "Submit only when coverage is sufficient, and do not write your own "
-                "Sources section because submit_report appends it deterministically."
+                "Submit only when coverage is sufficient. Do not write your own Sources or "
+                "Limitations/制約/限界 section, or a source appendix, because submit_report "
+                "appends the reserved sections deterministically."
             ),
             (
-                "submit_report requires answer_markdown, findings as an array of "
-                "objects with claim and source_ids, limitations as an array of "
-                "strings, and ledger_revision equal to the latest inspect result."
+                "submit_report assembles the checkpointed sections and requires findings as an "
+                "array of objects with claim and source_ids, limitations as an array of strings, "
+                "and ledger_revision equal to the latest inspect result."
             ),
             (
                 f"Budget: at most {budget.searches} searches, {budget.evidence} evidence items, "
@@ -954,7 +1211,10 @@ def build_user_prompt(research: ResearchRequest) -> str:
                 "At the start of every run, call inspect_evidence_ledger exactly once "
                 "before planning new work."
             ),
-            "Use submit_report only after inspect_evidence_ledger returns the latest revision.",
+            (
+                "Use write_report_section and submit_report only after "
+                "inspect_evidence_ledger returns the latest revision."
+            ),
         ],
     }
     return json.dumps(payload, ensure_ascii=False)
@@ -1124,10 +1384,13 @@ def build_research_tools(
             state.evidence.append(evidence)
             state.evidence_revision += 1
             state.last_inspected_revision = None
+            state.report_sections.clear()
             state.final_response = None
             state.stats["documents"] += 1
             state.stats["evidence"] = len(state.evidence)
             state.stats["evidence_revision"] = state.evidence_revision
+            state.stats["report_sections"] = 0
+            state.stats["report_chars"] = 0
             await save("running")
             return tool_success(
                 {"ok": True, "evidence": serialize_evidence(evidence), "cached": False}
@@ -1162,6 +1425,7 @@ def build_research_tools(
                     "stats": state.stats,
                     "remaining_budget": remaining_budgets(state, make_budget(research.depth)),
                     "evidence": [serialize_evidence(item) for item in state.evidence],
+                    "report_sections": [asdict(item) for item in state.report_sections],
                 }
             )
         except Exception as exc:  # pragma: no cover - defensive fail-closed path
@@ -1172,24 +1436,114 @@ def build_research_tools(
             )
 
     @tool
+    async def write_report_section(
+        ledger_revision: int,
+        heading: str,
+        body_markdown: str,
+    ) -> dict[str, Any]:
+        """Checkpoint one H2 section per turn; heading <=200 and body <=4000 characters."""
+
+        try:
+            normalized_heading = heading.strip()
+            body = body_markdown.strip()
+            if ledger_revision != state.evidence_revision:
+                raise ValueError("ledger_revision must match the latest evidence revision")
+            if state.last_inspected_revision != state.evidence_revision:
+                raise ValueError("inspect_evidence_ledger must follow the latest evidence update")
+            if not normalized_heading or len(normalized_heading) > 200:
+                raise ValueError("heading must contain 1 to 200 characters")
+            if "\n" in normalized_heading or normalized_heading.startswith("#"):
+                raise ValueError("heading must be plain text without Markdown heading markers")
+            if re.match(
+                r"^(?:Sources|Limitations|限界|制約)", normalized_heading, flags=re.IGNORECASE
+            ):
+                raise ValueError("heading is reserved for deterministic report assembly")
+            if not body or len(body) > MAX_REPORT_SECTION_CHARS:
+                raise ValueError(
+                    f"body_markdown must contain 1 to {MAX_REPORT_SECTION_CHARS} characters"
+                )
+            if research.depth == "deep" and len(body) < DEEP_MIN_SECTION_CHARS:
+                raise ValueError(
+                    f"deep section body must contain at least {DEEP_MIN_SECTION_CHARS} characters"
+                )
+            if (
+                research.depth == "deep"
+                and sum(
+                    item.source_quality >= 0.8 and item.relevance > 0 for item in state.evidence
+                )
+                < DEEP_MIN_HIGH_QUALITY_SOURCES
+            ):
+                raise ValueError(
+                    f"collect at least {DEEP_MIN_HIGH_QUALITY_SOURCES} usable high-quality sources "
+                    "before drafting"
+                )
+            if re.search(r"^##\s+", body, flags=re.MULTILINE):
+                raise ValueError("body_markdown must not contain level-2 headings")
+            evidence_ids = {item.id for item in state.evidence}
+            unknown = sorted(citation_ids(body) - evidence_ids, key=numeric_source_id)
+            if unknown:
+                raise ValueError("unknown source IDs in report section")
+
+            section = ReportSection(normalized_heading, body, ledger_revision)
+            sections = list(state.report_sections)
+            existing = next(
+                (
+                    index
+                    for index, item in enumerate(sections)
+                    if item.heading.casefold() == normalized_heading.casefold()
+                ),
+                None,
+            )
+            if existing is None:
+                if len(sections) >= MAX_REPORT_SECTIONS:
+                    raise ValueError(f"report cannot exceed {MAX_REPORT_SECTIONS} sections")
+                sections.append(section)
+            else:
+                sections[existing] = section
+            answer = assemble_report_sections(sections)
+            if len(answer) > MAX_ANSWER_CHARS:
+                raise ValueError("assembled report too long")
+
+            state.report_sections = sections
+            state.final_response = None
+            state.stats["report_sections"] = len(sections)
+            state.stats["report_chars"] = len(answer)
+            await save("running")
+            return tool_success(
+                {
+                    "ok": True,
+                    "section_count": len(sections),
+                    "report_chars": len(answer),
+                    "headings": [item.heading for item in sections],
+                }
+            )
+        except ValueError as exc:
+            return tool_error("invalid_report_section", str(exc))
+        except Exception as exc:  # pragma: no cover - defensive fail-closed path
+            fatal_errors.append(exc)
+            return tool_error("internal_error", "section save failed due to an internal error")
+
+    @tool
     async def submit_report(
         ledger_revision: int,
-        answer_markdown: str,
         findings: list[dict[str, Any]],
         limitations: list[str],
     ) -> dict[str, Any]:
         """Validate and accept the final report only against the current authoritative ledger."""
 
         try:
+            if any(section.ledger_revision != ledger_revision for section in state.report_sections):
+                raise ValueError("report sections must match the latest evidence revision")
             response = validate_submit_report(
                 research_id,
                 state,
                 ledger_revision,
-                answer_markdown,
+                assemble_report_sections(state.report_sections),
                 findings,
                 limitations,
                 make_budget(research.depth),
                 research.depth,
+                f"{research.query}\n{research.focus or ''}",
             )
             state.final_response = response.model_dump()
             await save("running")
@@ -1207,7 +1561,7 @@ def build_research_tools(
             return tool_error("internal_error", "submit failed due to an internal runtime error")
 
     return (
-        [search_web, fetch_source, inspect_evidence_ledger, submit_report],
+        [search_web, fetch_source, inspect_evidence_ledger, write_report_section, submit_report],
         allowlisted_results,
         fatal_errors,
     )
@@ -1330,35 +1684,59 @@ async def run_research(
         request_hash,
         state,
     )
-    agent = build_research_agent(runtime.settings, research, tools)
-    cancel_signal = threading.Event()
-    agent_task = asyncio.create_task(
-        agent.invoke_async(
-            build_user_prompt(research),
-            limits={"turns": budget.turns},
-            cancel_signal=cancel_signal,
-        )
-    )
+    cancel_signal: threading.Event | None = None
+    agent_task: asyncio.Task[Any] | None = None
+    watch_task: asyncio.Task[None] | None = None
 
-    async def watch_disconnect() -> None:
+    async def watch_disconnect(signal: threading.Event) -> None:
         while not await request.is_disconnected():  # noqa: ASYNC110 - Starlette only polls.
             await asyncio.sleep(0.2)
-        cancel_signal.set()
+        signal.set()
 
-    watch_task = asyncio.create_task(watch_disconnect())
     try:
         async with asyncio.timeout(wall_limit):
-            done, _pending = await asyncio.wait(
-                {agent_task, watch_task},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            if watch_task in done:
-                cancel_signal.set()
-                agent_task.cancel()
-                await asyncio.shield(save("cancelled", error="cancelled"))
-                raise asyncio.CancelledError()
-            result = await agent_task
-            _ = result
+            while True:
+                agent = build_research_agent(runtime.settings, research, tools)
+                cancel_signal = threading.Event()
+                agent_task = asyncio.create_task(
+                    agent.invoke_async(
+                        build_user_prompt(research),
+                        limits={"turns": budget.turns},
+                        cancel_signal=cancel_signal,
+                    )
+                )
+                watch_task = asyncio.create_task(watch_disconnect(cancel_signal))
+                try:
+                    done, _pending = await asyncio.wait(
+                        {agent_task, watch_task},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if watch_task in done:
+                        cancel_signal.set()
+                        agent_task.cancel()
+                        raise asyncio.CancelledError()
+                    try:
+                        result = await agent_task
+                        _ = result
+                    except (EventLoopException, APIError) as exc:
+                        if fatal_errors:
+                            raise fatal_errors[0] from exc
+                        recoveries = int(state.stats["model_timeout_recoveries"])
+                        if (
+                            not is_recoverable_model_timeout(exc)
+                            or recoveries >= MODEL_TIMEOUT_RECOVERIES
+                        ):
+                            raise
+                        state.stats["model_timeout_recoveries"] = recoveries + 1
+                        state.stats["stop_reason"] = ""
+                        await save("running")
+                        continue
+                    break
+                finally:
+                    if watch_task is not None and not watch_task.done():
+                        watch_task.cancel()
+                    if watch_task is not None:
+                        await asyncio.gather(watch_task, return_exceptions=True)
         if fatal_errors:
             raise fatal_errors[0]
         if state.final_response is None:
@@ -1370,8 +1748,10 @@ async def run_research(
         await save("completed", response=response.model_dump())
         return response
     except TimeoutError:
-        cancel_signal.set()
-        agent_task.cancel()
+        if cancel_signal is not None:
+            cancel_signal.set()
+        if agent_task is not None:
+            agent_task.cancel()
         if time.monotonic() >= deadline:
             state.stats["wall_exhausted"] = True
             state.stats["stop_reason"] = "wall"
@@ -1381,22 +1761,27 @@ async def run_research(
         await asyncio.shield(save("failed", error="model timeout"))
         raise RuntimeError("model timeout") from None
     except asyncio.CancelledError:
-        cancel_signal.set()
-        agent_task.cancel()
+        if cancel_signal is not None:
+            cancel_signal.set()
+        if agent_task is not None:
+            agent_task.cancel()
         await asyncio.shield(save("cancelled", error="cancelled"))
         raise
     except Exception as exc:
-        cancel_signal.set()
-        agent_task.cancel()
+        if cancel_signal is not None:
+            cancel_signal.set()
+        if agent_task is not None:
+            agent_task.cancel()
         state.stats["stop_reason"] = state.stats.get("stop_reason") or type(exc).__name__
         await save("failed", error=str(exc)[:500])
         raise
     finally:
-        for task in (agent_task, watch_task):
+        tasks = [task for task in (agent_task, watch_task) if task is not None]
+        for task in tasks:
             if not task.done():
                 task.cancel()
         with suppress(asyncio.CancelledError):
-            await asyncio.gather(agent_task, watch_task, return_exceptions=True)
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @asynccontextmanager
