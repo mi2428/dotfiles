@@ -60,7 +60,7 @@ DEFAULT_WALL_BUDGETS = {"quick": 1800, "standard": 5400, "deep": 6900}
 DEFAULT_DEPTH_BUDGETS = {
     "quick": {"searches": 8, "evidence": 10, "minimum_evidence": 2, "turns": 20},
     "standard": {"searches": 24, "evidence": 28, "minimum_evidence": 4, "turns": 40},
-    "deep": {"searches": 40, "evidence": 40, "minimum_evidence": 10, "turns": 60},
+    "deep": {"searches": 40, "evidence": 40, "minimum_evidence": 10, "turns": 120},
 }
 
 SourceId = Annotated[str, Field(pattern=r"^S\d+$")]

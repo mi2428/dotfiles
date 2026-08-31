@@ -184,6 +184,7 @@ class ResearchRuntimeTests(unittest.TestCase):
 
     def test_deep_report_requires_long_structured_ten_source_answer(self) -> None:
         budget = rt.make_budget("deep")
+        self.assertEqual(budget.turns, 120)
         evidence = [
             rt.Evidence(
                 id=f"S{index}",
