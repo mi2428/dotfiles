@@ -13,8 +13,6 @@ import ddg_proxy
 
 @dataclass
 class FakeResponse:
-    """Minimal successful upstream response."""
-
     status_code: int = 200
     content: bytes = b'<a class="result__a">result</a>'
     headers: dict[str, str] = field(
@@ -26,20 +24,15 @@ class FakeClient:
     """Record forwarded forms without network access."""
 
     def __init__(self) -> None:
-        """Initialize the last submitted form."""
         self.data: dict[str, str] = {}
 
     def post(self, url: str, *, data: dict[str, str]) -> FakeResponse:
-        """Record a form and return a successful HTML response."""
         self.data = data
         return FakeResponse()
 
 
 class DdgProxyTest(unittest.TestCase):
-    """Exercise the proxy through its HTTP boundary."""
-
     def setUp(self) -> None:
-        """Start a proxy backed by the fake client."""
         self.client = FakeClient()
         self.original_client = ddg_proxy.CLIENT
         ddg_proxy.CLIENT = self.client
@@ -48,14 +41,12 @@ class DdgProxyTest(unittest.TestCase):
         self.thread.start()
 
     def tearDown(self) -> None:
-        """Restore the client and stop the proxy."""
         ddg_proxy.CLIENT = self.original_client
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=1)
 
     def test_forwards_valid_form(self) -> None:
-        """Forward a valid SearXNG form to the client."""
         request = urllib.request.Request(
             f"http://127.0.0.1:{self.server.server_address[1]}/html/",
             data=b"q=Python+3.14&b=&kl=wt-wt",
@@ -66,14 +57,25 @@ class DdgProxyTest(unittest.TestCase):
         self.assertEqual(self.client.data["q"], "Python 3.14")
 
     def test_rejects_other_paths(self) -> None:
-        """Reject paths outside the fixed DDG endpoint."""
         request = urllib.request.Request(
             f"http://127.0.0.1:{self.server.server_address[1]}/other",
             data=b"q=test",
         )
         with self.assertRaises(urllib.error.HTTPError) as error:
             urllib.request.urlopen(request)
+        error.exception.close()
         self.assertEqual(error.exception.code, 404)
+
+    def test_rejects_empty_queries_before_upstream(self) -> None:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.server.server_address[1]}/html/",
+            data=b"q=",
+        )
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(request)
+        error.exception.close()
+        self.assertEqual(error.exception.code, 400)
+        self.assertEqual(self.client.data, {})
 
 
 if __name__ == "__main__":

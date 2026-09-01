@@ -1,4 +1,8 @@
-"""Forward SearXNG's DuckDuckGo requests with a browser transport profile."""
+"""Forward SearXNG's fixed DuckDuckGo HTML endpoint through a browser profile.
+
+Only internal form searches are accepted, request bodies are bounded, and query-bearing
+access logs are suppressed. A lock serializes the shared primp client used by SearXNG.
+"""
 
 from __future__ import annotations
 
@@ -8,8 +12,6 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Protocol, cast
 from urllib.parse import parse_qsl, urlsplit
-
-import primp
 
 LOG = logging.getLogger("ddg-proxy")
 LISTEN_ADDRESS = ("0.0.0.0", 8081)
@@ -33,15 +35,22 @@ class Client(Protocol):
         ...
 
 
-CLIENT = cast(
-    Client,
-    primp.Client(
-        impersonate=os.getenv("DDG_IMPERSONATE", "chrome_151"),
-        impersonate_os=os.getenv("DDG_IMPERSONATE_OS", "macos"),
-        timeout=30,
-        follow_redirects=True,
-    ),
-)
+def make_client() -> Client:
+    """Create the image-only primp client without coupling unit tests to primp."""
+    import primp  # pyright: ignore[reportMissingImports]
+
+    return cast(
+        Client,
+        primp.Client(
+            impersonate=os.getenv("DDG_IMPERSONATE", "chrome_151"),
+            impersonate_os=os.getenv("DDG_IMPERSONATE_OS", "macos"),
+            timeout=30,
+            follow_redirects=True,
+        ),
+    )
+
+
+CLIENT: Client | None = None
 CLIENT_LOCK = threading.Lock()
 
 
@@ -66,6 +75,7 @@ class Handler(BaseHTTPRequestHandler):
         if form is None:
             return
 
+        assert CLIENT is not None
         try:
             with CLIENT_LOCK:
                 response = CLIENT.post(UPSTREAM_URL, data=form)
@@ -128,7 +138,10 @@ class Handler(BaseHTTPRequestHandler):
 def make_server(
     address: tuple[str, int] = LISTEN_ADDRESS,
 ) -> ThreadingHTTPServer:
-    """Build the threaded internal proxy server."""
+    """Build the server after initializing its shared production client."""
+    global CLIENT
+    if CLIENT is None:
+        CLIENT = make_client()
     return ThreadingHTTPServer(address, Handler)
 
 

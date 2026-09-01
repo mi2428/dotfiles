@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import threading
@@ -241,6 +242,22 @@ class SakuraRetryProxyTest(unittest.TestCase):
             self.assertRaisesRegex(ValueError, "must contain at least one token"),
         ):
             Settings.from_environment()
+
+    def test_rejects_negative_content_length_without_reading_a_body(self) -> None:
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", self.proxy.server_address[1], timeout=1
+        )
+        self.addCleanup(connection.close)
+        connection.putrequest("POST", "/v1/chat/completions")
+        connection.putheader("Content-Length", "-1")
+        connection.endheaders()
+
+        response = connection.getresponse()
+        self.assertEqual(response.status, 400)
+        self.assertEqual(
+            json.loads(response.read()),
+            {"error": {"message": "invalid content length"}},
+        )
 
     def test_concurrent_429_retries_only_affected_request(self) -> None:
         UpstreamHandler.mode = "second_rate_limited"

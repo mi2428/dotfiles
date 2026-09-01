@@ -360,6 +360,17 @@ class RuntimeContractTests(RuntimeTestCase):
                     FakeResponse(chunks=[b"a" * 5, b"b" * 5]),
                 )
                 await rt.read_bytes_with_cap(response, 5)
+            with self.assertRaises(ValueError):
+                session = cast(
+                    aiohttp.ClientSession,
+                    FakeSession(
+                        FakeResponse(
+                            status=302,
+                            headers={"Location": "http://127.0.0.1/private"},
+                        )
+                    ),
+                )
+                await rt.fetch_bytes(session, "https://example.com/public", 100)
 
         asyncio.run(run())
 

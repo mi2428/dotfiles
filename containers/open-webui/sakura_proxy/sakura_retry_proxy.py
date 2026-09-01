@@ -1,4 +1,9 @@
-"""Stream Sakura AI Engine responses and retry recoverable failures."""
+"""Serve the internal OpenAI-compatible gateway for Sakura AI Engine.
+
+The proxy replaces caller credentials with round-robin account tokens, preserves streaming,
+retries bounded 429 responses, and retries one timeout at low reasoning when the request
+explicitly permits that fallback. Open WebUI-only status events require its private header.
+"""
 
 from __future__ import annotations
 
@@ -279,6 +284,9 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
+            self._send_json(400, {"error": {"message": "invalid content length"}})
+            return None
+        if length < 0:
             self._send_json(400, {"error": {"message": "invalid content length"}})
             return None
         if length > MAX_REQUEST_BYTES:
