@@ -8,6 +8,7 @@ import logging
 import os
 import random
 import ssl
+import threading
 import time
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
@@ -31,6 +32,26 @@ HOP_BY_HOP_HEADERS = {
 }
 TIMEOUT_STATUSES = {408, 504}
 TIMEOUT_RETRY_EFFORTS = {"medium", "high", "max"}
+OPENWEBUI_MODE_HEADER = "X-OpenWebUI-Mode"
+RETRY_HEADER_NAMES = {
+    "x-sakura-retry-count",
+    "x-sakura-retry-reason",
+    "x-sakura-effective-reasoning-effort",
+}
+OPENWEBUI_LOW_RETRY_EVENT = (
+    "data: "
+    + json.dumps(
+        {
+            "event": {
+                "type": "status",
+                "data": {"description": "Lowで再試行しました", "done": True},
+            }
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    + "\n\n"
+).encode()
 
 
 def retry_after_seconds(value: str | None) -> float | None:
@@ -85,28 +106,40 @@ class Settings:
     base_backoff: float = 2.0
     max_backoff: float = 120.0
     jitter: float = 1.0
+    account_tokens: tuple[str, ...] = ()
 
     @classmethod
     def from_environment(cls) -> Settings:
         """Load overrides from the container environment."""
+        defaults = cls()
+        account_tokens = tuple(
+            token.strip()
+            for token in os.getenv("SAKURA_AI_ACCOUNT_TOKENS", "").split(",")
+            if token.strip()
+        )
+        if not account_tokens:
+            raise ValueError("SAKURA_AI_ACCOUNT_TOKENS must contain at least one token")
         return cls(
-            upstream_url=os.getenv("SAKURA_UPSTREAM_URL", cls.upstream_url),
-            max_retries=int(os.getenv("SAKURA_RETRY_MAX", cls.max_retries)),
+            upstream_url=os.getenv("SAKURA_UPSTREAM_URL", defaults.upstream_url),
+            max_retries=int(os.getenv("SAKURA_RETRY_MAX", defaults.max_retries)),
             base_backoff=float(
-                os.getenv("SAKURA_RETRY_BASE_SECONDS", cls.base_backoff)
+                os.getenv("SAKURA_RETRY_BASE_SECONDS", defaults.base_backoff)
             ),
-            max_backoff=float(os.getenv("SAKURA_RETRY_MAX_SECONDS", cls.max_backoff)),
-            jitter=float(os.getenv("SAKURA_RETRY_JITTER_SECONDS", cls.jitter)),
+            max_backoff=float(
+                os.getenv("SAKURA_RETRY_MAX_SECONDS", defaults.max_backoff)
+            ),
+            jitter=float(os.getenv("SAKURA_RETRY_JITTER_SECONDS", defaults.jitter)),
+            account_tokens=account_tokens,
         )
 
 
-def retry_delay_seconds(settings: Settings, attempt: int, retry_after: float | None) -> float:
+def retry_delay_seconds(
+    settings: Settings, attempt: int, retry_after: float | None
+) -> float:
     """Return capped exponential or provider-directed backoff with jitter."""
 
     delay = (
-        retry_after
-        if retry_after is not None
-        else settings.base_backoff * (2**attempt)
+        retry_after if retry_after is not None else settings.base_backoff * (2**attempt)
     )
     return min(settings.max_backoff, delay) + random.uniform(0.0, settings.jitter)
 
@@ -117,6 +150,8 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     settings = Settings()
     upstream: SplitResult = urlsplit(settings.upstream_url)
+    token_index = 0
+    token_lock = threading.Lock()
 
     def do_GET(self) -> None:
         """Handle health checks and upstream GET requests."""
@@ -140,6 +175,10 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         request_body = body
         rate_limit_attempt = 0
         timeout_retried = False
+        effective_reasoning_effort = None
+        openwebui_mode = (
+            self.headers.get(OPENWEBUI_MODE_HEADER, "").casefold() == "true"
+        )
         while True:
             try:
                 connection, response = self._request_upstream(request_body)
@@ -147,20 +186,31 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 fallback = None if timeout_retried else timeout_retry_body(request_body)
                 if fallback is not None:
                     LOG.warning("Upstream request timed out; retrying once")
+                    if fallback != request_body:
+                        effective_reasoning_effort = "low"
                     request_body = fallback
                     timeout_retried = True
                     rate_limit_attempt = 0
                     continue
                 LOG.warning("Upstream request timed out: %s", error)
                 self._send_json(
-                    504, {"error": {"code": "timeout", "message": "upstream timeout"}}
+                    504,
+                    {"error": {"code": "timeout", "message": "upstream timeout"}},
+                    self._retry_headers(timeout_retried, effective_reasoning_effort),
                 )
                 return
             except (OSError, http.client.HTTPException) as error:
                 LOG.warning("Upstream request failed: %s", error)
-                self._send_json(502, {"error": {"message": "upstream unavailable"}})
+                self._send_json(
+                    502,
+                    {"error": {"message": "upstream unavailable"}},
+                    self._retry_headers(timeout_retried, effective_reasoning_effort),
+                )
                 return
-            if response.status == 429 and rate_limit_attempt < self.settings.max_retries:
+            if (
+                response.status == 429
+                and rate_limit_attempt < self.settings.max_retries
+            ):
                 retry_after = retry_after_seconds(response.getheader("Retry-After"))
                 response.read()
                 connection.close()
@@ -185,13 +235,17 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 fallback = None if timeout_retried else timeout_retry_body(request_body)
                 if fallback is not None:
                     LOG.warning("Upstream response timed out; retrying once")
+                    if fallback != request_body:
+                        effective_reasoning_effort = "low"
                     request_body = fallback
                     timeout_retried = True
                     rate_limit_attempt = 0
                     continue
                 LOG.warning("Upstream response timed out: %s", error)
                 self._send_json(
-                    504, {"error": {"code": "timeout", "message": "upstream timeout"}}
+                    504,
+                    {"error": {"code": "timeout", "message": "upstream timeout"}},
+                    self._retry_headers(timeout_retried, effective_reasoning_effort),
                 )
                 return
 
@@ -202,12 +256,20 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 response.close()
                 connection.close()
                 LOG.warning("Upstream returned a timeout; retrying once")
+                if fallback != request_body:
+                    effective_reasoning_effort = "low"
                 request_body = fallback
                 timeout_retried = True
                 rate_limit_attempt = 0
                 continue
 
-            self._stream(connection, response, prefix)
+            self._stream(
+                connection,
+                response,
+                prefix,
+                self._retry_headers(timeout_retried, effective_reasoning_effort),
+                openwebui_mode and effective_reasoning_effort == "low",
+            )
             return
 
     def _read_body(self) -> bytes | None:
@@ -245,9 +307,14 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             name: value
             for name, value in self.headers.items()
             if name.lower() not in HOP_BY_HOP_HEADERS
-            and name.lower() not in {"host", "content-length"}
+            and name.lower()
+            not in {"host", "content-length", OPENWEBUI_MODE_HEADER.casefold()}
         }
         headers["Host"] = self.upstream.netloc
+        if self.headers.get(OPENWEBUI_MODE_HEADER, "").casefold() == "true":
+            headers["Accept-Encoding"] = "identity"
+        if token := self._next_account_token():
+            headers["Authorization"] = f"Bearer {token}"
         if body:
             headers["Content-Length"] = str(len(body))
         try:
@@ -262,19 +329,62 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             connection.close()
             raise
 
+    def _next_account_token(self) -> str | None:
+        tokens = self.settings.account_tokens
+        if not tokens:
+            return None
+        handler = type(self)
+        with handler.token_lock:
+            token = tokens[handler.token_index]
+            handler.token_index = (handler.token_index + 1) % len(tokens)
+        return token
+
+    @staticmethod
+    def _retry_headers(retried: bool, effective_effort: str | None) -> dict[str, str]:
+        if not retried:
+            return {}
+        headers = {
+            "X-Sakura-Retry-Count": "1",
+            "X-Sakura-Retry-Reason": "timeout",
+        }
+        if effective_effort:
+            headers["X-Sakura-Effective-Reasoning-Effort"] = effective_effort
+        return headers
+
     def _stream(
         self,
         connection: http.client.HTTPConnection,
         response: http.client.HTTPResponse,
         prefix: bytes = b"",
+        extra_headers: dict[str, str] | None = None,
+        openwebui_retry_status: bool = False,
     ) -> None:
+        extra_headers = extra_headers or {}
+        status_event = (
+            OPENWEBUI_LOW_RETRY_EVENT
+            if openwebui_retry_status
+            and response.getheader("Content-Type", "")
+            .casefold()
+            .startswith("text/event-stream")
+            else b""
+        )
         self.send_response(response.status, response.reason)
         for name, value in response.getheaders():
-            if name.lower() not in HOP_BY_HOP_HEADERS:
+            lower_name = name.lower()
+            if (
+                lower_name not in HOP_BY_HOP_HEADERS
+                and lower_name not in RETRY_HEADER_NAMES
+                and not (status_event and lower_name == "content-length")
+            ):
                 self.send_header(name, value)
+        for name, value in extra_headers.items():
+            self.send_header(name, value)
         self.send_header("Connection", "close")
         self.end_headers()
         try:
+            if status_event:
+                self.wfile.write(status_event)
+                self.wfile.flush()
             if prefix:
                 self.wfile.write(prefix)
                 self.wfile.flush()
@@ -288,11 +398,18 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             connection.close()
             self.close_connection = True
 
-    def _send_json(self, status: int, payload: dict[str, object]) -> None:
+    def _send_json(
+        self,
+        status: int,
+        payload: dict[str, object],
+        headers: dict[str, str] | None = None,
+    ) -> None:
         body = json.dumps(payload).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
@@ -309,7 +426,12 @@ def make_server(
     handler = type(
         "ConfiguredSakuraRetryProxyHandler",
         (SakuraRetryProxyHandler,),
-        {"settings": settings, "upstream": upstream},
+        {
+            "settings": settings,
+            "upstream": upstream,
+            "token_index": 0,
+            "token_lock": threading.Lock(),
+        },
     )
     return ThreadingHTTPServer(address, handler)
 

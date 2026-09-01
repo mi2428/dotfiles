@@ -50,6 +50,7 @@ services:
         {
           "0": {
             "enable": true,
+            "headers": {"X-OpenWebUI-Mode": "true"},
             "prefix_id": "sacloud",
             "provider": "llama.cpp",
             "tags": [{"name": "Sakura"}]
@@ -66,8 +67,7 @@ services:
             }
           }
         }
-      OPENAI_API_KEYS: "${SAKURA_AI_ACCOUNT_TOKEN:?set \
-        SAKURA_AI_ACCOUNT_TOKEN};${CPTR_GATEWAY_API_KEY:-bootstrap}"
+      OPENAI_API_KEYS: "sakura-proxy;${CPTR_GATEWAY_API_KEY:-bootstrap}"
       RAG_TEXT_SPLITTER: "token"
       RAG_TOP_K: "5"
       DEEP_RESEARCH_RUNTIME_API_KEY: >-
@@ -150,8 +150,7 @@ services:
       - ALL
     environment:
       DEEP_RESEARCH_DB_PATH: /data/deep-research.sqlite3
-      DEEP_RESEARCH_LLM_API_KEY: >-
-        ${SAKURA_AI_ACCOUNT_TOKEN:?set SAKURA_AI_ACCOUNT_TOKEN}
+      DEEP_RESEARCH_LLM_API_KEY: sakura-proxy
       DEEP_RESEARCH_LLM_BASE_URL: http://sakura-proxy:8080/v1
       DEEP_RESEARCH_RUNTIME_API_KEY: >-
         ${DEEP_RESEARCH_RUNTIME_API_KEY:?set DEEP_RESEARCH_RUNTIME_API_KEY}
@@ -201,6 +200,7 @@ services:
   sakura-proxy:
     build: ./sakura_proxy
     environment:
+      SAKURA_AI_ACCOUNT_TOKENS: "${SAKURA_AI_ACCOUNT_TOKENS:?set SAKURA_AI_ACCOUNT_TOKENS}"
       SAKURA_RETRY_BASE_SECONDS: "2"
       SAKURA_RETRY_JITTER_SECONDS: "1"
       SAKURA_RETRY_MAX: "10"
