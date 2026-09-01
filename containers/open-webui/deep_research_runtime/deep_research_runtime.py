@@ -1,4 +1,9 @@
-"""Run bounded web research behind one authenticated OpenAPI operation."""
+"""Run checkpointed Deep Research behind one authenticated OpenAPI operation.
+
+Open WebUI supplies its assistant message ID for idempotency. The runtime owns search,
+SSRF-safe fetching, evidence validation, bounded retries, and SQLite checkpoints, then
+returns exact Markdown marked for direct display instead of another model turn.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,9 @@
-"""Provision Open WebUI access to the local Computer gateway."""
+"""Provision Open WebUI access to the local Computer gateway.
+
+The host wrapper runs this inside the Computer container. Existing credentials produce no
+stdout; a rejected gateway key is replaced and the new key is printed as the script's only
+output so the wrapper can store it in machine-local state.
+"""
 
 from __future__ import annotations
 
@@ -85,6 +90,7 @@ def main() -> None:
     except urllib.error.HTTPError as error:
         if error.code != 401:
             raise
+        error.close()
 
     keys = client.request("/v1/keys")
     if not isinstance(keys, list):

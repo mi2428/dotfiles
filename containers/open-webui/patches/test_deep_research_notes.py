@@ -22,9 +22,7 @@ class FakeNotes:
         self.last_limit = limit
         return list(self.items)
 
-    async def insert_new_note(
-        self, user_id: str, form: Form
-    ) -> SimpleNamespace:
+    async def insert_new_note(self, user_id: str, form: Form) -> SimpleNamespace:
         note = SimpleNamespace(
             id="note-1",
             user_id=user_id,
@@ -49,8 +47,13 @@ class FakeNotes:
 
 class DeepResearchNotesTests(unittest.IsolatedAsyncioTestCase):
     def test_report_title_prefers_first_h1(self) -> None:
-        self.assertEqual(report_title("intro\n# Report title\nbody", "fallback"), "Report title")
-        self.assertEqual(report_title("## Section", "First request。More detail。"), "First request。")
+        self.assertEqual(
+            report_title("intro\n# Report title\nbody", "fallback"), "Report title"
+        )
+        self.assertEqual(
+            report_title("## Section", "First request。More detail。"),
+            "First request。",
+        )
 
     async def test_persistence_is_private_exact_and_idempotent(self) -> None:
         notes = FakeNotes()
@@ -64,8 +67,12 @@ class DeepResearchNotesTests(unittest.IsolatedAsyncioTestCase):
             "user_message": "Research request",
         }
 
-        note_id = await persist_deep_research_note(markdown="# First\nExact [S1]", **values)
-        same_id = await persist_deep_research_note(markdown="# Revised\nExact [S2]", **values)
+        note_id = await persist_deep_research_note(
+            markdown="# First\nExact [S1]", **values
+        )
+        same_id = await persist_deep_research_note(
+            markdown="# Revised\nExact [S2]", **values
+        )
 
         self.assertEqual(note_id, same_id)
         self.assertEqual(len(notes.items), 1)

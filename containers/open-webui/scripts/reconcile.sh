@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Render repository declarations into one desired state. Dry-run mode performs no API calls;
+# live mode updates only resources carrying this repository's ownership markers and fails
+# closed on unmanaged ID or name collisions before deleting or replacing anything.
 config_dir="${1:?configuration directory is required}"
 mode="${2:-reconcile}"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

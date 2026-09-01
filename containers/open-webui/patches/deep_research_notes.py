@@ -1,4 +1,9 @@
-"""Persist trusted Deep Research output as a private Open WebUI Note."""
+"""Persist trusted Deep Research output independently of its chat record.
+
+The patched Open WebUI middleware calls this before exposing direct tool output. The
+message ID makes retries update one private Note, and any save failure prevents the chat
+turn from being reported as successful.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +14,7 @@ ORIGIN = "dotfiles:deep-research-runtime"
 
 
 def report_title(markdown: str, user_message: str) -> str:
+    """Choose a short title from the report H1 or the first request sentence."""
     heading = next(
         (
             match.group(1).strip()
@@ -34,8 +40,11 @@ async def persist_deep_research_note(
     markdown: str,
     user_message: str,
 ) -> str:
+    """Create or update the private Note owned by one Open WebUI message."""
     if not user_id or not message_id or not markdown:
-        raise ValueError("user, message, and Markdown are required for Note persistence")
+        raise ValueError(
+            "user, message, and Markdown are required for Note persistence"
+        )
 
     meta = {
         "provisioned_by": ORIGIN,

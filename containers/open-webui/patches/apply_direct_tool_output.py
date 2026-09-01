@@ -1,24 +1,35 @@
+"""Patch pinned Open WebUI middleware for trusted direct research output.
+
+The upstream middleware normally feeds external tool results back to the model. Deep
+Research instead marks exact Markdown for direct display; this patch stores that report as
+a private Note and completes the assistant message without another model turn. Exact-match
+guards fail the image build when the pinned Open WebUI middleware changes unexpectedly.
+"""
+
 from pathlib import Path
 
-path = Path("/app/backend/open_webui/utils/middleware.py")
-source = path.read_text()
+REPLACEMENTS: list[tuple[str, str]] = []
 
 
-def replace_once(old: str, new: str) -> None:
-    global source
+def add_replacement(old: str, new: str) -> None:
+    REPLACEMENTS.append((old, new))
+
+
+def replace_once(source: str, old: str, new: str) -> str:
+    """Replace one pinned upstream fragment or fail closed on version drift."""
     if source.count(old) != 1:
         raise RuntimeError(f"OpenWebUI middleware patch guard failed: {old[:80]!r}")
-    source = source.replace(old, new)
+    return source.replace(old, new)
 
 
-replace_once(
+add_replacement(
     "from open_webui.models.notes import Notes",
     "from open_webui.models.notes import NoteForm, NoteUpdateForm, Notes\n"
     "from open_webui.utils.deep_research_notes import persist_deep_research_note",
 )
 
 
-replace_once(
+add_replacement(
     """                all_tool_call_sources = []  # Accumulated sources across all iterations
                 user_message = get_last_user_message(form_data['messages'])
 """,
@@ -27,7 +38,7 @@ replace_once(
                 user_message = get_last_user_message(form_data['messages'])
 """,
 )
-replace_once(
+add_replacement(
     """                        tool_function_params, tool_result, tool, tool_type, direct_tool = tool_results[id(tool_call)]
                         if tool_result is None:
 """,
@@ -48,7 +59,7 @@ replace_once(
                         if tool_result is None:
 """,
 )
-replace_once(
+add_replacement(
     """                                'content': tool_result_content(tool_result),
                                 **({'files': tool_result_files} if tool_result_files else {}),
 """,
@@ -57,7 +68,7 @@ replace_once(
                                 **({'files': tool_result_files} if tool_result_files else {}),
 """,
 )
-replace_once(
+add_replacement(
     """                    # Emit citation sources to the frontend for display
                     if citations_enabled:
 """,
@@ -108,7 +119,7 @@ replace_once(
                     if citations_enabled:
 """,
 )
-replace_once(
+add_replacement(
     """                            'done': True,
                             'output': current_output,
                             **({'usage': usage} if usage else {}),
@@ -120,5 +131,21 @@ replace_once(
 """,
 )
 
-compile(source, str(path), "exec")
-path.write_text(source)
+
+def patch_middleware(source: str) -> str:
+    """Apply all guarded changes to the pinned middleware source."""
+    for old, new in REPLACEMENTS:
+        source = replace_once(source, old, new)
+    return source
+
+
+def main() -> None:
+    """Patch and syntax-check the middleware in the Open WebUI image."""
+    path = Path("/app/backend/open_webui/utils/middleware.py")
+    source = patch_middleware(path.read_text())
+    compile(source, str(path), "exec")
+    path.write_text(source)
+
+
+if __name__ == "__main__":
+    main()

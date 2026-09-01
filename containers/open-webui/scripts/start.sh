@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Start Open WebUI, reconcile declarative resources after health succeeds, and publish the
+# marker consumed by the Compose health check. Any exit removes the marker and stops the child.
 ready_marker=/app/backend/data/.declarative-ready
 server_pid=
 
-# Invoked by the EXIT trap.
+# ShellCheck cannot infer invocation through the EXIT trap.
 # shellcheck disable=SC2329
 cleanup() {
   local status=$?

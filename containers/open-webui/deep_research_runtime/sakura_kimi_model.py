@@ -42,9 +42,7 @@ def _preserved_reasoning_content(message: Message) -> str | None:
 def _message_without_reasoning_content(message: Message) -> Message:
     return {
         **message,
-        "content": [
-            content for content in message["content"] if "reasoningContent" not in content
-        ],
+        "content": [content for content in message["content"] if "reasoningContent" not in content],
     }
 
 
