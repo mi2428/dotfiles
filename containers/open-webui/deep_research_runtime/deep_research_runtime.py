@@ -63,6 +63,7 @@ SEARCH_RESULT_LIMIT = 8
 TOOL_EXCERPT_CHARS = 1200
 KIMI_MAX_TOKENS = 32_768
 FINALIZER_MAX_TOKENS = 8_192
+FINALIZER_TIMEOUT_SECONDS = 600
 DEFAULT_KIMI_TIMEOUT_SECONDS = 1800
 MODEL_TRANSIENT_RECOVERIES = 20
 MODEL_RETRY_BASE_SECONDS = 2.0
@@ -2018,6 +2019,7 @@ async def run_research(
         turns: int,
         structured_output_model: type[BaseModel] | None = None,
         stop_event: asyncio.Event | None = None,
+        total_timeout: float | None = None,
     ) -> Any | None:
         nonlocal cancel_signal, agent_task, watch_task, stop_task
         cancel_signal = threading.Event()
@@ -2040,8 +2042,14 @@ async def run_research(
                 tasks.add(stop_task)
             done, _pending = await asyncio.wait(
                 tasks,
+                timeout=total_timeout or runtime.settings.kimi_timeout_seconds,
                 return_when=asyncio.FIRST_COMPLETED,
             )
+            if not done:
+                cancel_signal.set()
+                agent_task.cancel()
+                await asyncio.gather(agent_task, return_exceptions=True)
+                raise TimeoutError("model call total timeout")
             if watch_task in done:
                 cancel_signal.set()
                 agent_task.cancel()
@@ -2092,6 +2100,10 @@ async def run_research(
                     prompt,
                     turns=1,
                     structured_output_model=output_model,
+                    total_timeout=min(
+                        runtime.settings.kimi_timeout_seconds,
+                        FINALIZER_TIMEOUT_SECONDS,
+                    ),
                 )
             except (EventLoopException, APIError, TimeoutError) as exc:
                 if await recover_model_error(exc):

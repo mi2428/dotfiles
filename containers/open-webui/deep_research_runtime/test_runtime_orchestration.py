@@ -265,6 +265,62 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         asyncio.run(run())
 
+    def test_hung_finalizer_times_out_then_retries_same_checkpoint(self) -> None:
+        state = stable_quick_state()
+        cancelled = False
+
+        class HungFinalizer:
+            async def invoke_async(self, _prompt: str, **_kwargs: Any) -> SimpleNamespace:
+                nonlocal cancelled
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    cancelled = True
+                raise AssertionError("cancelled finalizer must not return")
+
+        structured = StructuredAgent(
+            [
+                rt.ReportSectionDraft(
+                    heading="Summary",
+                    body_markdown="Checkpoint-preserving response [S1] [S2]",
+                ),
+                rt.ReportSubmissionDraft(
+                    findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1", "S2"])],
+                    limitations=["Known constraint"],
+                ),
+            ]
+        )
+        builds = 0
+
+        def build_finalizer(*_args: Any) -> HungFinalizer | StructuredAgent:
+            nonlocal builds
+            builds += 1
+            return HungFinalizer() if builds == 1 else structured
+
+        async def run() -> None:
+            with (
+                patch.object(
+                    rt,
+                    "build_research_agent",
+                    side_effect=AssertionError("research must not restart"),
+                ),
+                patch.object(rt, "build_finalization_agent", side_effect=build_finalizer),
+                patch.object(rt, "FINALIZER_TIMEOUT_SECONDS", 0.01),
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    rt.ResearchRequest(query="Evidence", depth="quick"),
+                    "rid",
+                    "hung-finalizer-key",
+                    rt.run_state_snapshot(state),
+                )
+            self.assertTrue(cancelled)
+            self.assertIn("Checkpoint-preserving response", response.answer_markdown)
+            self.assertEqual(response.stats["model_transient_recoveries"], 1)
+
+        asyncio.run(run())
+
     def test_invalid_structured_output_stops_at_bound_and_keeps_checkpoint(self) -> None:
         state = stable_quick_state()
         structured = StructuredAgent(
