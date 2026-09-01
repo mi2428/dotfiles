@@ -2,7 +2,7 @@
   "marker": "dotfiles:kimi-k2.7-deep-research",
   "model": {
     "id": "sacloud.kimi-k2.7-deep-research",
-    "base_model_id": "sacloud.preview/Kimi-K2.7-Code",
+    "base_model_id": "sacloud.preview/Kimi-K2.6",
     "name": "Sakura Deep Research",
     "meta": {
       "profile_image_url": null,
@@ -59,7 +59,8 @@
     "params": {
       "function_calling": "native",
       "max_tokens": 32768,
-      "compact_token_threshold": 180000
+      "compact_token_threshold": 180000,
+      "reasoning_effort": "low"
     },
     "access_grants": [],
     "is_active": true

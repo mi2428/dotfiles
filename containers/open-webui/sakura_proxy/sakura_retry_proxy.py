@@ -46,16 +46,17 @@ def retry_after_seconds(value: str | None) -> float | None:
             return None
 
 
-def low_reasoning_body(body: bytes) -> bytes | None:
-    """Return a copy downgraded to low reasoning when retrying is safe."""
+def timeout_retry_body(body: bytes) -> bytes | None:
+    """Return one safe timeout retry, unchanged when effort is unspecified."""
     try:
         payload = json.loads(body)
     except (json.JSONDecodeError, UnicodeDecodeError):
         return None
-    if (
-        not isinstance(payload, dict)
-        or payload.get("reasoning_effort") not in TIMEOUT_RETRY_EFFORTS
-    ):
+    if not isinstance(payload, dict):
+        return None
+    if "reasoning_effort" not in payload:
+        return body
+    if payload.get("reasoning_effort") not in TIMEOUT_RETRY_EFFORTS:
         return None
     payload["reasoning_effort"] = "low"
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
@@ -132,12 +133,9 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             try:
                 connection, response = self._request_upstream(request_body)
             except TimeoutError as error:
-                fallback = None if timeout_retried else low_reasoning_body(request_body)
+                fallback = None if timeout_retried else timeout_retry_body(request_body)
                 if fallback is not None:
-                    LOG.warning(
-                        "Upstream request timed out; retrying once with "
-                        "reasoning_effort=low"
-                    )
+                    LOG.warning("Upstream request timed out; retrying once")
                     request_body = fallback
                     timeout_retried = True
                     rate_limit_attempt = 0
@@ -179,12 +177,9 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             except TimeoutError as error:
                 response.close()
                 connection.close()
-                fallback = None if timeout_retried else low_reasoning_body(request_body)
+                fallback = None if timeout_retried else timeout_retry_body(request_body)
                 if fallback is not None:
-                    LOG.warning(
-                        "Upstream response timed out; retrying once with "
-                        "reasoning_effort=low"
-                    )
+                    LOG.warning("Upstream response timed out; retrying once")
                     request_body = fallback
                     timeout_retried = True
                     rate_limit_attempt = 0
@@ -197,14 +192,11 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
 
             fallback = None
             if is_timeout_response(response.status, prefix) and not timeout_retried:
-                fallback = low_reasoning_body(request_body)
+                fallback = timeout_retry_body(request_body)
             if fallback is not None:
                 response.close()
                 connection.close()
-                LOG.warning(
-                    "Upstream returned a timeout; retrying once with "
-                    "reasoning_effort=low"
-                )
+                LOG.warning("Upstream returned a timeout; retrying once")
                 request_body = fallback
                 timeout_retried = True
                 rate_limit_attempt = 0

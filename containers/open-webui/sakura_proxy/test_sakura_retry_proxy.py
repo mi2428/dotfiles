@@ -118,6 +118,18 @@ class SakuraRetryProxyTest(unittest.TestCase):
             ["max", "low"],
         )
 
+    def test_retries_timeout_once_unchanged_without_reasoning_effort(self) -> None:
+        UpstreamHandler.mode = "timeout_then_success"
+        proxy_port = self.proxy.server_address[1]
+        body = json.dumps({"model": "test"}).encode()
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
+            data=body,
+        )
+        with urllib.request.urlopen(request) as response:
+            self.assertEqual(response.read(), b'{"ok":true}')
+        self.assertEqual(UpstreamHandler.request_bodies, [body, body])
+
     def test_retries_timeout_only_once(self) -> None:
         UpstreamHandler.mode = "always_timeout"
         proxy_port = self.proxy.server_address[1]
