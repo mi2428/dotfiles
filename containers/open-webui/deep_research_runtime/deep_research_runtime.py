@@ -15,7 +15,7 @@ import sqlite3
 import threading
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
@@ -68,6 +68,7 @@ TOOL_EXCERPT_CHARS = 1200
 KIMI_MAX_TOKENS = 32_768
 FINALIZER_MAX_TOKENS = 16_384
 FINALIZER_TIMEOUT_SECONDS = 600
+AGENT_CANCEL_GRACE_SECONDS = 5
 DEFAULT_KIMI_TIMEOUT_SECONDS = 1800
 MODEL_TRANSIENT_RECOVERIES = 20
 MODEL_RETRY_BASE_SECONDS = 2.0
@@ -2039,6 +2040,15 @@ async def run_research(
             await asyncio.sleep(0.2)
         signal.set()
 
+    async def cancel_tasks_bounded(tasks: Sequence[asyncio.Task[Any]]) -> None:
+        active = [task for task in tasks if not task.done()]
+        for task in active:
+            task.cancel()
+        if active:
+            done, _pending = await asyncio.wait(active, timeout=AGENT_CANCEL_GRACE_SECONDS)
+            if done:
+                await asyncio.gather(*done, return_exceptions=True)
+
     async def invoke_agent(
         agent: Agent,
         prompt: str,
@@ -2075,7 +2085,6 @@ async def run_research(
             if not done:
                 cancel_signal.set()
                 agent_task.cancel()
-                await asyncio.gather(agent_task, return_exceptions=True)
                 raise TimeoutError("model call total timeout")
             if watch_task in done:
                 cancel_signal.set()
@@ -2085,15 +2094,10 @@ async def run_research(
                 return await agent_task
             cancel_signal.set()
             agent_task.cancel()
-            await asyncio.gather(agent_task, return_exceptions=True)
             return None
         finally:
             tasks = [task for task in (agent_task, watch_task, stop_task) if task is not None]
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            for task in tasks:
-                await asyncio.gather(task, return_exceptions=True)
+            await cancel_tasks_bounded(tasks)
             cancel_signal = None
             agent_task = None
             watch_task = None
@@ -2334,12 +2338,8 @@ async def run_research(
         raise
     finally:
         tasks = [task for task in (agent_task, watch_task, stop_task) if task is not None]
-        for task in tasks:
-            if not task.done():
-                task.cancel()
         with suppress(asyncio.CancelledError):
-            for task in tasks:
-                await asyncio.gather(task, return_exceptions=True)
+            await cancel_tasks_bounded(tasks)
 
 
 @asynccontextmanager

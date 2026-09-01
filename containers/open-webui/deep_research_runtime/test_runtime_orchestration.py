@@ -274,8 +274,9 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 nonlocal cancelled
                 try:
                     await asyncio.Event().wait()
-                finally:
+                except asyncio.CancelledError:
                     cancelled = True
+                    await asyncio.sleep(10)
                 raise AssertionError("cancelled finalizer must not return")
 
         structured = StructuredAgent(
@@ -298,6 +299,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             return HungFinalizer() if builds == 1 else structured
 
         async def run() -> None:
+            started = asyncio.get_running_loop().time()
             with (
                 patch.object(
                     rt,
@@ -306,6 +308,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 ),
                 patch.object(rt, "build_finalization_agent", side_effect=build_finalizer),
                 patch.object(rt, "FINALIZER_TIMEOUT_SECONDS", 0.01),
+                patch.object(rt, "AGENT_CANCEL_GRACE_SECONDS", 0.01),
             ):
                 response = await rt.run_research(
                     self.runtime,
@@ -316,6 +319,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     rt.run_state_snapshot(state),
                 )
             self.assertTrue(cancelled)
+            self.assertLess(asyncio.get_running_loop().time() - started, 1)
             self.assertIn("Checkpoint-preserving response", response.answer_markdown)
             self.assertEqual(response.stats["model_transient_recoveries"], 1)
 
