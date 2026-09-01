@@ -119,7 +119,7 @@ def model_import: {
 ($manifest[0] | {
   marker: .marker,
   user_settings: {ui: {system: $chat_personality, title: {auto: true}}},
-  model: (.model | .params.system = $system | .meta.profile_image_url = sakura_icon),
+  model: (.model | .params.system = $system | .meta.profile_image_url = $sakura_icons.default),
   status_filter: {
     id: "deep_research_status",
     name: "Deep Research Status",
