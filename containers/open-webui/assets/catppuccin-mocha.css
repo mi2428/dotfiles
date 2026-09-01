@@ -209,6 +209,21 @@ html.dark [id^='message-']:has(img.assistant-message-profile-image) {
 	);
 }
 
+html.dark #chat-container div.flex.mt-1.mb-2:has(.markdown.line-clamp-2) {
+	max-width: 48rem;
+	width: 100%;
+}
+
+html.dark #chat-container div.flex.mt-1.mb-2:has(.markdown.line-clamp-2) > div,
+html.dark #chat-container div:has(> .markdown.line-clamp-2),
+html.dark #chat-container .markdown.line-clamp-2 {
+	width: 100% !important;
+}
+
+html.dark #chat-container .markdown.line-clamp-2 {
+	max-width: none !important;
+}
+
 html.dark div:has(> img.assistant-message-profile-image) {
 	position: relative;
 	width: 1.5rem;

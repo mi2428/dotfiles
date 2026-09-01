@@ -8,7 +8,7 @@ def model($id; $name): {
   id: $id,
   base_model_id: null,
   name: $name,
-  meta: {hidden: false},
+  meta: {hidden: false, skillIds: [], toolIds: []},
   params: {},
   access_grants: [],
   is_active: true
@@ -23,20 +23,20 @@ def variants($base; $slug; $name; $tag; $efforts):
     id: ($slug + "-" + $effort),
     base_model_id: $base,
     name: ($name + " " + (($effort[0:1] | ascii_upcase) + $effort[1:])),
-    meta: {hidden: false, tags: [{name: $tag}]},
+    meta: {hidden: false, tags: [{name: $tag}], skillIds: [], toolIds: []},
     params: {reasoning_effort: $effort},
     access_grants: [],
     is_active: true
   });
 
 def kimi_system($effort):
-  "あなたは日本語で高品質な分析と調査を行う。最終回答は自然な日本語だけで記述し、固有名詞、コード、URL、必要な直接引用を除いて中国語・英語・韓国語を混入させない。送信前に言語と文章の破損を点検する。事実、推論、不明点を区別し、必要に応じて説明的な見出し、箇条書き、表で構造化する。Web調査では現在日時を確認し、一次資料を優先し、重要な主張には出典URLを付け、資料間の矛盾と残る不確実性を明示する。" +
+  "あなたは日本語で高品質な分析と調査を行う。最終回答は自然な日本語だけで記述し、固有名詞、コード、URL、必要な直接引用を除いて中国語・英語・韓国語を混入させない。送信前に言語と文章の破損を点検する。回答前に現実の現在日時を確認する。事実、推論、不明点を区別し、必要に応じて説明的な見出し、箇条書き、表で構造化する。Web調査では一次資料を優先し、重要な主張には出典URLを付け、資料間の矛盾と残る不確実性を明示する。" +
   (if $effort == "low" then
      " 正確性を保つ最小限の分析を行い、明白でない重要主張を一度検証してから、要旨を先に簡潔に答える。サブエージェントは使わない。"
    elif $effort == "high" then
      " 速度より品質を優先する。最初に作業を分解し、複数の根拠を照合し、反対仮説を検討する。独立した調査が複数ある場合は delegate_task で最大2件を並列化し、統合後に漏れと矛盾を一度監査してから答える。"
    elif $effort == "max" then
-     " 速度より完全性を優先する。最新情報、複数資料の比較、一次資料による検証などWeb調査が必要な依頼では、依頼全体を deep_research へ渡して1回だけ呼び、完了まで待つ。通常のWeb検索、サブエージェント、同じ調査の再呼び出しは使わない。tool resultの answer_markdown は引用と事実関係を変えずにそのまま返す。Web調査でない依頼はツールを使わず、前提、欠落、数値、言語を監査して答える。"
+     " 速度や簡潔さより完全性と情報密度を優先する。単一の親セッションで作業を細かく分解し、独立した調査・検証を delegate_task で最大4件並列化する。親は各結果を比較統合し、欠落や矛盾があれば不足だけ追加検証して、前提、論点、根拠、反対仮説、具体例、限界まで展開する。別の外部エージェントループには委譲せず、利用可能な出力長を十分に使って詳細に答える。"
    else
      ""
    end);
@@ -50,9 +50,18 @@ def kimi_variants($base; $slug; $name; $tag; $efforts):
     meta: {
       hidden: false,
       tags: [{name: $tag}],
-      capabilities: {web_search: ($effort != "max")},
-      builtinTools: {subagents: ($effort != "max"), web_search: ($effort != "max")},
-      toolIds: (if $effort == "max" then ["server:deep-research"] else [] end)
+      description:
+        (if $effort == "low" then
+           "素早さを優先し、必要な確認を行いながら要点を簡潔に回答します。"
+         elif $effort == "high" then
+           "複数の観点と根拠を照合し、必要に応じて2件まで並行調査して回答します。"
+         else
+           "最大4件の調査を並行し、根拠・反証・具体例・限界まで掘り下げた詳細な回答を作成します。"
+         end),
+      capabilities: {web_search: true},
+      builtinTools: {subagents: ($effort != "low"), web_search: true},
+      skillIds: [],
+      toolIds: []
     },
     params: {
       reasoning_effort: $effort,
@@ -201,3 +210,18 @@ def model_import: {
     == ($desired.model_import.models | map(.id) | unique | length);
     "model import contains duplicate IDs"
   )
+| require(all($desired.model_import.models[]; .meta.skillIds == []); "regular models must not enable skills")
+| require(all($desired.model_import.models[]; .meta.toolIds == []); "regular models must not enable external tools")
+| ($desired.model_import.models[] | select(.id == "sacloud.kimi-k2.6-low")) as $kimi_low
+| ($desired.model_import.models[] | select(.id == "sacloud.kimi-k2.6-high")) as $kimi_high
+| ($desired.model_import.models[] | select(.id == "sacloud.kimi-k2.6-max")) as $kimi_max
+| require($kimi_low.meta.builtinTools.subagents == false; "Kimi Low must not enable sub-agents")
+| require(($kimi_low.meta.description | contains("簡潔")); "Kimi Low description must explain its concise behavior")
+| require($kimi_high.meta.builtinTools.subagents == true; "Kimi High must enable sub-agents")
+| require(($kimi_high.params.system | contains("最大2件")); "Kimi High must use at most two parallel sub-agents")
+| require(($kimi_high.meta.description | contains("2件")); "Kimi High description must explain its parallel behavior")
+| require($kimi_max.meta.capabilities.web_search == true; "Kimi Max must support web search")
+| require($kimi_max.meta.builtinTools.subagents == true; "Kimi Max must enable sub-agents")
+| require(($kimi_max.params.system | contains("最大4件")); "Kimi Max must use at most four parallel sub-agents")
+| require(($kimi_max.meta.description | contains("4件")); "Kimi Max description must explain its parallel behavior")
+| require(($kimi_max.params.system | contains("deep_research") | not); "Kimi Max must not delegate research")
