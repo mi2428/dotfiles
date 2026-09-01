@@ -22,6 +22,7 @@ unset \
   OPEN_WEBUI_PORT \
   DEEP_RESEARCH_RUNTIME_API_KEY \
   SAKURA_AI_ACCOUNT_TOKEN \
+  SAKURA_AI_ACCOUNT_TOKENS \
   SEARXNG_SECRET \
   CORS_ALLOW_ORIGIN \
   WEBUI_URL \
@@ -36,6 +37,8 @@ decrypt_pid=$!
 set +a
 wait "$decrypt_pid"
 
+export SAKURA_AI_ACCOUNT_TOKENS="${SAKURA_AI_ACCOUNT_TOKENS:-${SAKURA_AI_ACCOUNT_TOKEN:-}}"
+
 if [[ ! -s "$deep_research_env_file" ]]; then
   mkdir -p "$(dirname "$deep_research_env_file")"
   umask 077
@@ -48,7 +51,7 @@ set -a
 source "$deep_research_env_file"
 set +a
 
-: "${SAKURA_AI_ACCOUNT_TOKEN:?set SAKURA_AI_ACCOUNT_TOKEN}"
+: "${SAKURA_AI_ACCOUNT_TOKENS:?set SAKURA_AI_ACCOUNT_TOKENS}"
 : "${WEBUI_SECRET_KEY:?set WEBUI_SECRET_KEY}"
 : "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
 : "${WEBUI_ADMIN_EMAIL:?set WEBUI_ADMIN_EMAIL}"
