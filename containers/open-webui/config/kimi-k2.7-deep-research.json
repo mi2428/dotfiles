@@ -6,7 +6,7 @@
     "name": "Sakura Deep Research",
     "meta": {
       "profile_image_url": null,
-      "description": "外部Deep Research Runtimeで調査を完結し、根拠付きの回答を返します。",
+      "description": "複数の情報源を横断して深く調査し、根拠と出典を整理した詳細な回答を作成します。",
       "capabilities": {
         "file_context": true,
         "vision": true,

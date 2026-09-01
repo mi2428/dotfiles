@@ -359,14 +359,14 @@ html.dark #response-content-container .w-full.min-w-0 > div:has(> [role='button'
 	color: var(--ctp-sky) !important;
 }
 
-html.dark #response-content-container .markdown-prose,
+html.dark :is(#response-content-container .markdown-prose, #note-content-container .input-prose-sm),
 html.dark .user-message .chat-user .markdown-prose,
 html.dark .user-message .chat-user .whitespace-pre-wrap {
 	font-size: 0.875rem !important;
 	line-height: 1.5 !important;
 }
 
-html.dark #response-content-container .markdown-prose {
+html.dark :is(#response-content-container .markdown-prose, #note-content-container .input-prose-sm) {
 	--ctp-markdown-accent: color-mix(in srgb, var(--ctp-lavender) 68%, var(--ctp-base));
 	--tw-prose-bullets: var(--ctp-markdown-accent);
 	--tw-prose-counters: var(--ctp-markdown-accent);
@@ -377,38 +377,42 @@ html.dark #response-content-container .markdown-prose {
 	--tw-prose-td-borders: var(--ctp-surface-1);
 }
 
-html.dark #response-content-container .markdown-prose :is(h1, h2, h3, h4) {
+html.dark
+	:is(#response-content-container .markdown-prose, #note-content-container .input-prose-sm)
+	:is(h1, h2, h3, h4) {
 	color: var(--ctp-markdown-accent) !important;
 }
 
-html.dark #response-content-container .markdown-prose h1 {
+html.dark :is(#response-content-container .markdown-prose, #note-content-container .input-prose-sm) h1 {
 	font-size: 1.25rem !important;
 	font-weight: 700 !important;
 }
 
-html.dark #response-content-container .markdown-prose h2 {
+html.dark :is(#response-content-container .markdown-prose, #note-content-container .input-prose-sm) h2 {
 	border-block-end: 1px solid var(--ctp-surface-1);
 	font-size: 1.125rem !important;
 	font-weight: 600 !important;
 	padding-block-end: 0.25rem;
 }
 
-html.dark #response-content-container .markdown-prose h3 {
+html.dark :is(#response-content-container .markdown-prose, #note-content-container .input-prose-sm) h3 {
 	font-size: 1rem !important;
 	font-weight: 600 !important;
 }
 
-html.dark #response-content-container .markdown-prose h4 {
+html.dark :is(#response-content-container .markdown-prose, #note-content-container .input-prose-sm) h4 {
 	color: var(--ctp-subtext-1) !important;
 	font-size: 0.875rem !important;
 	font-weight: 400 !important;
 }
 
-html.dark #response-content-container .markdown-prose thead {
+html.dark
+	:is(#response-content-container .markdown-prose, #note-content-container .input-prose-sm)
+	thead {
 	background-color: color-mix(in srgb, var(--ctp-blue) 6%, var(--ctp-surface-0));
 }
 
-html.dark #response-content-container .markdown-prose th {
+html.dark :is(#response-content-container .markdown-prose, #note-content-container .input-prose-sm) th {
 	color: var(--ctp-markdown-accent) !important;
 	font-weight: 700 !important;
 	padding-block: 0.125rem !important;
@@ -499,7 +503,9 @@ html.dark .hljs {
 	color: var(--ctp-text) !important;
 }
 
-html.dark #response-content-container .markdown-prose :is(pre, code, .cm-editor, .cm-scroller) {
+html.dark
+	:is(#response-content-container .markdown-prose, #note-content-container .input-prose-sm)
+	:is(pre, code, .cm-editor, .cm-scroller) {
 	font-family: 'Summer Ghost', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
 }
 
