@@ -12,6 +12,7 @@ movie_akinator_system_file="$config_dir/config/movie-akinator-system.md"
 books_movies_subculture_system_file="$config_dir/config/books-movies-subculture-system.md"
 chat_personality_file="$config_dir/config/chat-personality.md"
 skill_file="$config_dir/skills/deep-research/SKILL.md"
+status_filter_file="$config_dir/functions/deep_research_status.py"
 renderer_file="$script_dir/render-declarations.jq"
 profile_file="$config_dir/assets/profile.webp"
 sakura_icon_file="$config_dir/assets/sakura-ai-engine.png"
@@ -24,7 +25,7 @@ for file in \
   "$manifest_file" "$system_file" "$geoguessor_system_file" "$github_oss_translation_system_file" \
   "$movie_akinator_system_file" \
   "$books_movies_subculture_system_file" \
-  "$chat_personality_file" "$skill_file" "$renderer_file" \
+  "$chat_personality_file" "$skill_file" "$status_filter_file" "$renderer_file" \
   "$sakura_icon_file" "$sakura_icon_low_file" "$sakura_icon_medium_file" \
   "$sakura_icon_high_file" "$sakura_icon_max_file"; do
   [[ -r "$file" ]] || { printf 'Missing %s\n' "$file" >&2; exit 1; }
@@ -48,6 +49,7 @@ desired="$(jq -n \
   --rawfile books_movies_subculture_system "$books_movies_subculture_system_file" \
   --rawfile chat_personality "$chat_personality_file" \
   --rawfile content "$skill_file" \
+  --rawfile status_filter_content "$status_filter_file" \
   -f "$renderer_file")"
 model_import="$(jq -c '.model_import' <<<"$desired")"
 
@@ -190,7 +192,7 @@ expect_success 'tool list verification'
 jq -e --arg id "server:$deep_research_server_id" \
   '[.[] | select(.id == $id)] | length == 1' <<<"$api_body" >/dev/null
 
-# Only the prompt is an enforced user override; static UI defaults stay in Compose.
+# Enforce user-specific prompt and title behavior; static UI defaults stay in Compose.
 api_request GET '/api/v1/users/user/settings?raw=true'
 expect_success 'raw user settings GET'
 user_settings="$(jq -c --argjson desired "$desired" \
@@ -202,7 +204,9 @@ fi
 api_request GET /api/v1/users/user/settings
 expect_success 'merged user settings GET'
 jq -e --argjson desired "$desired" \
-  '.ui.system == $desired.user_settings.ui.system and .ui.widescreenMode == true' \
+  '.ui.system == $desired.user_settings.ui.system
+    and .ui.title.auto == true
+    and .ui.widescreenMode == true' \
   <<<"$api_body" >/dev/null
 
 api_request POST /api/v1/models/import "$model_import"
@@ -274,14 +278,19 @@ folder_projection() {
 managed_marker="$(jq -r '.marker' <<<"$desired")"
 desired_model="$(jq -c '.model' <<<"$desired")"
 desired_skill="$(jq -c '.skill' <<<"$desired")"
+desired_status_filter="$(jq -c '.status_filter' <<<"$desired")"
 desired_folder="$(jq -c '.folder' <<<"$desired")"
 desired_translation_folder="$(jq -c '.translation_folder' <<<"$desired")"
 desired_movie_akinator_folder="$(jq -c '.movie_akinator_folder' <<<"$desired")"
 desired_books_movies_subculture_folder="$(jq -c '.books_movies_subculture_folder' <<<"$desired")"
 model_id="$(jq -r '.id' <<<"$desired_model")"
 skill_id="$(jq -r '.id' <<<"$desired_skill")"
+status_filter_id="$(jq -r '.id' <<<"$desired_status_filter")"
 desired_model_projection="$(model_projection "$desired_model")"
 desired_skill_projection="$(skill_projection "$desired_skill")"
+desired_status_filter_projection="$(
+  jq -cS '{id, name, type: "filter", content, meta}' <<<"$desired_status_filter"
+)"
 
 assert_model_owner_and_marker() {
   jq -e --arg owner "$owner_id" --arg marker "$managed_marker" \
@@ -323,6 +332,27 @@ verify_skill() {
   assert_skill_owner_and_marker "$skill_export_row"
   [[ "$(skill_projection "$skill_export_row")" == "$desired_skill_projection" ]] \
     || { printf 'Skill projection mismatch: %s\n' "$skill_id" >&2; exit 1; }
+}
+
+status_filter_projection() {
+  jq -cS '{id, name, type, content, meta: (.meta | del(.manifest))}' <<<"$1"
+}
+
+assert_status_filter_owner_and_marker() {
+  jq -e --arg owner "$owner_id" --arg marker "$managed_marker" \
+    '.user_id == $owner and .meta.provisioned_by == $marker' \
+    <<<"$1" >/dev/null \
+    || { printf 'Refusing unmanaged or foreign function ID: %s\n' "$status_filter_id" >&2; exit 1; }
+}
+
+verify_status_filter() {
+  api_request GET "/api/v1/functions/id/$(urlencode "$status_filter_id")"
+  expect_success "function GET $status_filter_id"
+  assert_status_filter_owner_and_marker "$api_body"
+  [[ "$(status_filter_projection "$api_body")" == "$desired_status_filter_projection" ]] \
+    || { printf 'Function projection mismatch: %s\n' "$status_filter_id" >&2; exit 1; }
+  jq -e '.is_active == true and .is_global == false' <<<"$api_body" >/dev/null \
+    || { printf 'Function activation mismatch: %s\n' "$status_filter_id" >&2; exit 1; }
 }
 
 assert_folder_owner_and_marker() {
@@ -468,6 +498,39 @@ case "$api_status" in
 esac
 verify_skill
 
+api_request GET "/api/v1/functions/id/$(urlencode "$status_filter_id")"
+case "$api_status" in
+  200)
+    assert_status_filter_owner_and_marker "$api_body"
+    if [[ "$(status_filter_projection "$api_body")" != "$desired_status_filter_projection" ]]; then
+      api_request POST "/api/v1/functions/id/$(urlencode "$status_filter_id")/update" \
+        "$desired_status_filter"
+      expect_success "function update $status_filter_id"
+    fi
+    ;;
+  401)
+    api_request POST /api/v1/functions/create "$desired_status_filter"
+    expect_success "function create $status_filter_id"
+    ;;
+  *)
+    expect_success "function GET $status_filter_id"
+    ;;
+esac
+api_request GET "/api/v1/functions/id/$(urlencode "$status_filter_id")"
+expect_success "function GET after upsert $status_filter_id"
+assert_status_filter_owner_and_marker "$api_body"
+if [[ "$(jq -r '.is_active' <<<"$api_body")" != true ]]; then
+  api_request POST "/api/v1/functions/id/$(urlencode "$status_filter_id")/toggle"
+  expect_success "function enable $status_filter_id"
+fi
+api_request GET "/api/v1/functions/id/$(urlencode "$status_filter_id")"
+expect_success "function GET before global verification $status_filter_id"
+if [[ "$(jq -r '.is_global' <<<"$api_body")" != false ]]; then
+  api_request POST "/api/v1/functions/id/$(urlencode "$status_filter_id")/toggle/global"
+  expect_success "function global disable $status_filter_id"
+fi
+verify_status_filter
+
 api_request GET "/api/v1/models/model?id=$(urlencode "$model_id")"
 case "$api_status" in
   200)
@@ -560,6 +623,7 @@ jq -e --argjson order "$model_order_list" '.MODEL_ORDER_LIST == $order' <<<"$api
 
 verify_model
 verify_skill
+verify_status_filter
 verify_folder "$geoguessor_folder_id" "$desired_folder"
 verify_folder "$translation_folder_id" "$desired_translation_folder"
 verify_folder "$movie_akinator_folder_id" "$desired_movie_akinator_folder"

@@ -28,6 +28,9 @@
         }
       ],
       "defaultFeatureIds": [],
+      "filterIds": [
+        "deep_research_status"
+      ],
       "builtinTools": {
         "time": false,
         "user_input": false,

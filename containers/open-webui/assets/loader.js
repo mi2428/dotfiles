@@ -27,6 +27,7 @@
 		max: '--ctp-red'
 	};
 	const familyHues = [
+		['sacloud.kimi-k2.7-deep-research', '--ctp-red'],
 		['sacloud.kimi-k2.6', '--ctp-mauve'],
 		['sacloud.kimi-k2.7-code', '--ctp-sapphire']
 	];

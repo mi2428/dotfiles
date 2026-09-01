@@ -116,6 +116,7 @@ services:
       - ./assets/sakura-ai-engine-high.png:/app/backend/declarative/assets/sakura-ai-engine-high.png:ro
       - ./assets/sakura-ai-engine-max.png:/app/backend/declarative/assets/sakura-ai-engine-max.png:ro
       - ./config:/app/backend/declarative/config:ro
+      - ./functions:/app/backend/declarative/functions:ro
       - ./scripts:/app/backend/declarative-scripts:ro
       - ./skills:/app/backend/declarative/skills:ro
     command: [bash, /app/backend/declarative-scripts/start.sh]

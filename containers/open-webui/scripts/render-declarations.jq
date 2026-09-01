@@ -109,8 +109,17 @@ def model_import: {
 
 ($manifest[0] | {
   marker: .marker,
-  user_settings: {ui: {system: $chat_personality}},
+  user_settings: {ui: {system: $chat_personality, title: {auto: true}}},
   model: (.model | .params.system = $system | .meta.profile_image_url = $sakura_icons.default),
+  status_filter: {
+    id: "deep_research_status",
+    name: "Deep Research Status",
+    content: $status_filter_content,
+    meta: {
+      description: "Deep Research開始直後の進捗を表示します。",
+      provisioned_by: .marker
+    }
+  },
   skill: (.skill | .content = $content),
   folder: {
     name: "GeoGuessor",
@@ -182,6 +191,7 @@ def model_import: {
 | require($desired.model.meta.builtinTools.code_interpreter == false; "Code Interpreter must stay disabled")
 | require($desired.model.meta.builtinTools.knowledge == false; "Knowledge must remain disabled")
 | require($desired.model.meta.defaultFeatureIds == []; "default features must stay disabled")
+| require($desired.model.meta.filterIds == ["deep_research_status"]; "unexpected Deep Research filters")
 | require($desired.model.meta.skillIds == []; "the outer model must not load an extra research skill")
 | require($desired.model.meta.toolIds == ["server:deep-research"]; "the external research tool must be the only default tool")
 | require(($desired.model.access_grants | length) == 0; "model must be owner-only")
