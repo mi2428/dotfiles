@@ -942,6 +942,81 @@ def assemble_report_sections(sections: list[ReportSection]) -> str:
     return "\n\n".join(f"## {section.heading}\n\n{section.body}" for section in sections)
 
 
+def store_report_section(
+    state: RunState,
+    research: ResearchRequest,
+    ledger_revision: int,
+    heading: str,
+    body_markdown: str,
+) -> dict[str, Any]:
+    """Validate and checkpoint one report section in memory."""
+
+    normalized_heading = heading.strip()
+    body = body_markdown.strip()
+    if ledger_revision != state.evidence_revision:
+        raise ValueError("ledger_revision must match the latest evidence revision")
+    if state.last_inspected_revision != state.evidence_revision:
+        raise ValueError("inspect_evidence_ledger must follow the latest evidence update")
+    if not normalized_heading or len(normalized_heading) > 200:
+        raise ValueError("heading must contain 1 to 200 characters")
+    if "\n" in normalized_heading or normalized_heading.startswith("#"):
+        raise ValueError("heading must be plain text without Markdown heading markers")
+    if re.match(r"^(?:Sources|Limitations|限界|制約)", normalized_heading, flags=re.IGNORECASE):
+        raise ValueError("heading is reserved for deterministic report assembly")
+    if not body or len(body) > MAX_REPORT_SECTION_CHARS:
+        raise ValueError(f"body_markdown must contain 1 to {MAX_REPORT_SECTION_CHARS} characters")
+    if research.depth == "deep" and len(body) < DEEP_MIN_SECTION_CHARS:
+        raise ValueError(
+            f"deep section body must contain at least {DEEP_MIN_SECTION_CHARS} characters"
+        )
+    if (
+        research.depth == "deep"
+        and sum(item.source_quality >= 0.8 and item.relevance > 0 for item in state.evidence)
+        < DEEP_MIN_HIGH_QUALITY_SOURCES
+    ):
+        raise ValueError(
+            f"collect at least {DEEP_MIN_HIGH_QUALITY_SOURCES} usable high-quality sources "
+            "before drafting"
+        )
+    if re.search(r"^##\s+", body, flags=re.MULTILINE):
+        raise ValueError("body_markdown must not contain level-2 headings")
+    evidence_ids = {item.id for item in state.evidence}
+    unknown = sorted(citation_ids(body) - evidence_ids, key=numeric_source_id)
+    if unknown:
+        raise ValueError("unknown source IDs in report section")
+
+    section = ReportSection(normalized_heading, body, ledger_revision)
+    sections = list(state.report_sections)
+    existing = next(
+        (
+            index
+            for index, item in enumerate(sections)
+            if item.heading.casefold() == normalized_heading.casefold()
+        ),
+        None,
+    )
+    if existing is None:
+        if len(sections) >= MAX_REPORT_SECTIONS:
+            raise ValueError(f"report cannot exceed {MAX_REPORT_SECTIONS} sections")
+        sections.append(section)
+    else:
+        sections[existing] = section
+    answer = assemble_report_sections(sections)
+    if len(answer) > MAX_ANSWER_CHARS:
+        raise ValueError("assembled report too long")
+
+    state.report_sections = sections
+    state.final_response = None
+    state.stats["report_sections"] = len(sections)
+    state.stats["report_chars"] = len(answer)
+    return {
+        "ok": True,
+        "section_count": len(sections),
+        "report_chars": len(answer),
+        "headings": [item.heading for item in sections],
+    }
+
+
 def limitations_adapter() -> TypeAdapter[list[Limitation]]:
     return TypeAdapter(list[Limitation])
 
@@ -1114,6 +1189,33 @@ def validate_submit_report(
         limitations=validated_limitations,
         stats=state.stats,
     )
+
+
+def accept_report(
+    research_id: str,
+    state: RunState,
+    research: ResearchRequest,
+    ledger_revision: int,
+    findings: list[dict[str, Any]],
+    limitations: list[str],
+) -> ResearchResponse:
+    """Validate and checkpoint the final response in memory."""
+
+    if any(section.ledger_revision != ledger_revision for section in state.report_sections):
+        raise ValueError("report sections must match the latest evidence revision")
+    response = validate_submit_report(
+        research_id,
+        state,
+        ledger_revision,
+        assemble_report_sections(state.report_sections),
+        findings,
+        limitations,
+        make_budget(research.depth),
+        research.depth,
+        f"{research.query}\n{research.focus or ''}",
+    )
+    state.final_response = response.model_dump()
+    return response
 
 
 def build_system_prompt(research: ResearchRequest, budget: Budget) -> str:
@@ -1503,79 +1605,9 @@ def build_research_tools(
         """Checkpoint one H2 section per turn; heading <=200 and body <=4000 characters."""
 
         try:
-            normalized_heading = heading.strip()
-            body = body_markdown.strip()
-            if ledger_revision != state.evidence_revision:
-                raise ValueError("ledger_revision must match the latest evidence revision")
-            if state.last_inspected_revision != state.evidence_revision:
-                raise ValueError("inspect_evidence_ledger must follow the latest evidence update")
-            if not normalized_heading or len(normalized_heading) > 200:
-                raise ValueError("heading must contain 1 to 200 characters")
-            if "\n" in normalized_heading or normalized_heading.startswith("#"):
-                raise ValueError("heading must be plain text without Markdown heading markers")
-            if re.match(
-                r"^(?:Sources|Limitations|限界|制約)", normalized_heading, flags=re.IGNORECASE
-            ):
-                raise ValueError("heading is reserved for deterministic report assembly")
-            if not body or len(body) > MAX_REPORT_SECTION_CHARS:
-                raise ValueError(
-                    f"body_markdown must contain 1 to {MAX_REPORT_SECTION_CHARS} characters"
-                )
-            if research.depth == "deep" and len(body) < DEEP_MIN_SECTION_CHARS:
-                raise ValueError(
-                    f"deep section body must contain at least {DEEP_MIN_SECTION_CHARS} characters"
-                )
-            if (
-                research.depth == "deep"
-                and sum(
-                    item.source_quality >= 0.8 and item.relevance > 0 for item in state.evidence
-                )
-                < DEEP_MIN_HIGH_QUALITY_SOURCES
-            ):
-                raise ValueError(
-                    f"collect at least {DEEP_MIN_HIGH_QUALITY_SOURCES} usable high-quality sources "
-                    "before drafting"
-                )
-            if re.search(r"^##\s+", body, flags=re.MULTILINE):
-                raise ValueError("body_markdown must not contain level-2 headings")
-            evidence_ids = {item.id for item in state.evidence}
-            unknown = sorted(citation_ids(body) - evidence_ids, key=numeric_source_id)
-            if unknown:
-                raise ValueError("unknown source IDs in report section")
-
-            section = ReportSection(normalized_heading, body, ledger_revision)
-            sections = list(state.report_sections)
-            existing = next(
-                (
-                    index
-                    for index, item in enumerate(sections)
-                    if item.heading.casefold() == normalized_heading.casefold()
-                ),
-                None,
-            )
-            if existing is None:
-                if len(sections) >= MAX_REPORT_SECTIONS:
-                    raise ValueError(f"report cannot exceed {MAX_REPORT_SECTIONS} sections")
-                sections.append(section)
-            else:
-                sections[existing] = section
-            answer = assemble_report_sections(sections)
-            if len(answer) > MAX_ANSWER_CHARS:
-                raise ValueError("assembled report too long")
-
-            state.report_sections = sections
-            state.final_response = None
-            state.stats["report_sections"] = len(sections)
-            state.stats["report_chars"] = len(answer)
+            result = store_report_section(state, research, ledger_revision, heading, body_markdown)
             await save("running")
-            return tool_success(
-                {
-                    "ok": True,
-                    "section_count": len(sections),
-                    "report_chars": len(answer),
-                    "headings": [item.heading for item in sections],
-                }
-            )
+            return tool_success(result)
         except ValueError as exc:
             return tool_error("invalid_report_section", str(exc))
         except Exception as exc:  # pragma: no cover - defensive fail-closed path
@@ -1591,20 +1623,9 @@ def build_research_tools(
         """Validate and accept the final report only against the current authoritative ledger."""
 
         try:
-            if any(section.ledger_revision != ledger_revision for section in state.report_sections):
-                raise ValueError("report sections must match the latest evidence revision")
-            response = validate_submit_report(
-                research_id,
-                state,
-                ledger_revision,
-                assemble_report_sections(state.report_sections),
-                findings,
-                limitations,
-                make_budget(research.depth),
-                research.depth,
-                f"{research.query}\n{research.focus or ''}",
+            response = accept_report(
+                research_id, state, research, ledger_revision, findings, limitations
             )
-            state.final_response = response.model_dump()
             await save("running")
             return tool_success(
                 {
