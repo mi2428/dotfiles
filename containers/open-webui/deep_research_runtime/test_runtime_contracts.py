@@ -225,6 +225,28 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertFalse(state.report_sections)
         self.assertIsNone(state.final_response)
 
+    def test_finalization_excludes_unusable_evidence_and_prunes_unsafe_sections(self) -> None:
+        state = make_state(2)
+        state.evidence[1] = replace(state.evidence[1], relevance=0)
+        state.report_sections = [
+            rt.ReportSection("Safe", "Supported claim [S1]", state.evidence_revision),
+            rt.ReportSection("Unsafe", "Unsupported claim [S2]", state.evidence_revision),
+        ]
+        state.stats["report_sections"] = 2
+
+        self.assertTrue(rt.prune_unusable_report_sections(state))
+        self.assertEqual([section.heading for section in state.report_sections], ["Safe"])
+        context = rt.finalization_context(rt.ResearchRequest(query="Evidence"), state)
+        self.assertEqual([item["id"] for item in context["evidence"]], ["S1"])
+        with self.assertRaisesRegex(ValueError, "unusable source IDs"):
+            rt.store_report_section(
+                state,
+                rt.ResearchRequest(query="Evidence"),
+                state.evidence_revision,
+                "Unsafe replacement",
+                "Unsupported claim [S2] " * 50,
+            )
+
     def test_extraction_persists_search_and_fetch_provenance(self) -> None:
         async def run() -> None:
             raw = b"""<html><head><title>Evidence</title></head><body><article><p>

@@ -1053,6 +1053,12 @@ def store_report_section(
     unknown = sorted(citation_ids(body) - evidence_ids, key=numeric_source_id)
     if unknown:
         raise ValueError("unknown source IDs in report section")
+    unusable = sorted(
+        citation_ids(body) - {item.id for item in state.evidence if item.relevance > 0},
+        key=numeric_source_id,
+    )
+    if unusable:
+        raise ValueError("unusable source IDs in report section")
 
     section = ReportSection(normalized_heading, body, ledger_revision)
     sections = list(state.report_sections)
@@ -1307,6 +1313,22 @@ def usable_evidence_count(state: RunState) -> int:
     return sum(item.relevance > 0 for item in state.evidence)
 
 
+def prune_unusable_report_sections(state: RunState) -> bool:
+    """Discard only checkpointed sections that cite evidence rejected by the ledger."""
+
+    usable_ids = {item.id for item in state.evidence if item.relevance > 0}
+    sections = [
+        section for section in state.report_sections if citation_ids(section.body) <= usable_ids
+    ]
+    if len(sections) == len(state.report_sections):
+        return False
+    state.report_sections = sections
+    state.final_response = None
+    state.stats["report_sections"] = len(sections)
+    state.stats["report_chars"] = len(assemble_report_sections(sections))
+    return True
+
+
 def evidence_ready_for_report(state: RunState, research: ResearchRequest, budget: Budget) -> bool:
     """Return whether normal or hard-limit salvage finalization is possible."""
 
@@ -1376,7 +1398,7 @@ def finalization_context(research: ResearchRequest, state: RunState) -> dict[str
             "minimum": make_budget(research.depth).minimum_evidence,
             "hard_limit_salvage": bool(state.stats.get("evidence_shortfall_salvage")),
         },
-        "evidence": [serialize_evidence(item) for item in state.evidence],
+        "evidence": [serialize_evidence(item) for item in state.evidence if item.relevance > 0],
         "completed_sections": [
             {"heading": section.heading, "body_markdown": section.body}
             for section in state.report_sections
@@ -1970,6 +1992,7 @@ async def run_research(
         wall_limit=wall_limit,
     )
     refresh_evidence_relevance(state, research)
+    prune_unusable_report_sections(state)
     started = time.monotonic()
 
     async def save(
