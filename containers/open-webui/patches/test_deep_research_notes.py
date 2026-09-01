@@ -46,12 +46,15 @@ class FakeNotes:
 
 
 class DeepResearchNotesTests(unittest.IsolatedAsyncioTestCase):
-    def test_report_title_prefers_first_h1(self) -> None:
+    def test_report_title_prefers_first_report_heading(self) -> None:
         self.assertEqual(
             report_title("intro\n# Report title\nbody", "fallback"), "Report title"
         )
         self.assertEqual(
-            report_title("## Section", "First request。More detail。"),
+            report_title("## Answer summary", "fallback"), "Answer summary"
+        )
+        self.assertEqual(
+            report_title("No headings", "First request。More detail。"),
             "First request。",
         )
 

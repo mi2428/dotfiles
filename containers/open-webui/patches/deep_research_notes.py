@@ -14,12 +14,12 @@ ORIGIN = "dotfiles:deep-research-runtime"
 
 
 def report_title(markdown: str, user_message: str) -> str:
-    """Choose a short title from the report H1 or the first request sentence."""
+    """Choose a short title from the report heading or the first request sentence."""
     heading = next(
         (
             match.group(1).strip()
             for line in markdown.splitlines()
-            if (match := re.match(r"^#\s+(.+)$", line.strip()))
+            if (match := re.match(r"^#{1,2}\s+(.+)$", line.strip()))
         ),
         "",
     )
