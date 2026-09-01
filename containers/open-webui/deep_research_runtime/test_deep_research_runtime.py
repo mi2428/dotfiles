@@ -129,11 +129,37 @@ class TransientStatusAgent:
         raise rt.EventLoopException(APIStatusError("provider error", response=response, body={}))
 
 
-class NoReportAgent:
+class ResearchOnlyAgent:
+    def __init__(self, tools: list[Any]) -> None:
+        self.tools = {tool.tool_name: tool for tool in tools}
+
     async def invoke_async(self, _prompt: str, **_kwargs: Any) -> SimpleNamespace:
+        search = parse_tool_payload(await self.tools["search_web"]("query one"))
+        for result in search["results"][:2]:
+            await self.tools["fetch_source"](result["url"], "support")
         return SimpleNamespace(
             stop_reason="end_turn",
             message={"role": "assistant", "content": [{"text": "done"}]},
+        )
+
+
+class StructuredAgent:
+    def __init__(self, outputs: list[rt.StrictModel | Exception]) -> None:
+        self.outputs = outputs
+        self.models: list[type[rt.StrictModel]] = []
+
+    async def invoke_async(self, _prompt: str, **kwargs: Any) -> SimpleNamespace:
+        model = cast(type[rt.StrictModel], kwargs["structured_output_model"])
+        output = self.outputs.pop(0)
+        self.models.append(model)
+        if isinstance(output, Exception):
+            raise output
+        if not isinstance(output, model):
+            raise AssertionError(f"expected {model.__name__}, got {type(output).__name__}")
+        return SimpleNamespace(
+            stop_reason="tool_use",
+            structured_output=output,
+            message={"role": "assistant", "content": []},
         )
 
 
@@ -195,6 +221,7 @@ class DeepResearchRuntimeTests(unittest.TestCase):
         self.assertEqual(rt.MAX_REPORT_SECTIONS, 16)
         self.assertEqual(rt.DEFAULT_KIMI_TIMEOUT_SECONDS, 1800)
         self.assertEqual(rt.MODEL_TRANSIENT_RECOVERIES, 20)
+        self.assertEqual(rt.STRUCTURED_OUTPUT_ATTEMPTS, 3)
 
     def test_sources_section_normalizes_title_whitespace_and_wraps_url(self) -> None:
         text = rt.append_sources_section(
@@ -239,7 +266,9 @@ class DeepResearchRuntimeTests(unittest.TestCase):
 
     def test_deep_report_requires_dense_structured_well_sourced_answer(self) -> None:
         budget = rt.make_budget("deep")
-        self.assertEqual(budget.turns, 120)
+        self.assertEqual(budget.searches, 64)
+        self.assertEqual(budget.minimum_evidence, 20)
+        self.assertEqual(budget.turns, 180)
         evidence = [
             rt.Evidence(
                 id=f"S{index}",
@@ -804,6 +833,11 @@ class DeepResearchRuntimeTests(unittest.TestCase):
         self.assertIn("decision-focused comparison table", deep_prompt)
         self.assertIn("24-month phased roadmap", deep_prompt)
         self.assertIn("at least two independent studies", deep_prompt)
+        finalizer = rt.build_finalization_agent(
+            self.runtime.settings,
+            rt.ResearchRequest(query="q", depth="quick"),
+        )
+        self.assertEqual(finalizer.tool_names, [])
 
     def test_model_retry_delay_recognizes_transient_statuses(self) -> None:
         def error(status_code: int) -> rt.EventLoopException:
@@ -822,7 +856,7 @@ class DeepResearchRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(rt.model_retry_delay(timeout, 0), 0)
 
-    def test_run_research_recovers_503_and_missing_submission(self) -> None:
+    def test_run_research_recovers_503_and_forces_structured_finalization(self) -> None:
         async def run() -> None:
             search_results = [
                 rt.SearchResult("http://example.com/1", "t1", "snippet 1", "engine"),
@@ -861,29 +895,39 @@ class DeepResearchRuntimeTests(unittest.TestCase):
                 return evidence_items.pop(0)
 
             attempts = 0
-            prompts: list[str] = []
-
-            class RecordingAgent(FakeAgent):
-                async def invoke_async(self, prompt: str, **kwargs: Any) -> SimpleNamespace:
-                    prompts.append(prompt)
-                    return await super().invoke_async(prompt, **kwargs)
+            structured_agent = StructuredAgent(
+                [
+                    rt.ReportSectionDraft(heading="Sources", body_markdown="invalid"),
+                    rt.ReportSectionDraft(
+                        heading="Summary",
+                        body_markdown="Answer with citations [S1] [S2]",
+                    ),
+                    rt.ReportSubmissionDraft(
+                        findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1", "S2"])],
+                        limitations=["none"],
+                    ),
+                ]
+            )
 
             def fake_build_agent(
                 *args: Any,
-            ) -> TransientStatusAgent | NoReportAgent | RecordingAgent:
+            ) -> TransientStatusAgent | ResearchOnlyAgent:
                 nonlocal attempts
                 attempts += 1
                 if attempts == 1:
                     return TransientStatusAgent()
-                if attempts == 2:
-                    return NoReportAgent()
-                return RecordingAgent(args[2])
+                return ResearchOnlyAgent(args[2])
 
             with (
                 patch.object(
                     rt,
                     "build_research_agent",
                     side_effect=fake_build_agent,
+                ),
+                patch.object(
+                    rt,
+                    "build_finalization_agent",
+                    return_value=structured_agent,
                 ),
                 patch.object(rt, "MODEL_RETRY_BASE_SECONDS", 0),
                 patch.object(rt, "search_searxng", new=AsyncMock(return_value=search_results)),
@@ -901,9 +945,13 @@ class DeepResearchRuntimeTests(unittest.TestCase):
             self.assertEqual(result.findings[0].source_ids, ["S1", "S2"])
             self.assertEqual([source.id for source in result.sources], ["S1", "S2"])
             self.assertEqual(result.stats["model_transient_recoveries"], 1)
-            self.assertEqual(result.stats["report_submission_recoveries"], 1)
+            self.assertEqual(result.stats["structured_output_retries"], 1)
+            self.assertEqual(result.stats["research_continuations"], 0)
             self.assertEqual(result.stats["agent_stop_reason"], "end_turn")
-            self.assertIn("previous pass ended", prompts[0])
+            self.assertEqual(
+                structured_agent.models,
+                [rt.ReportSectionDraft, rt.ReportSectionDraft, rt.ReportSubmissionDraft],
+            )
             row = self.runtime.db.execute(
                 (
                     "SELECT status, state_json, response_json FROM research_runs "
@@ -914,6 +962,144 @@ class DeepResearchRuntimeTests(unittest.TestCase):
             self.assertIsNotNone(row)
             self.assertEqual(row["status"], "completed")
             self.assertIn("## Sources", json.loads(row["response_json"])["answer_markdown"])
+            state = json.loads(row["state_json"])
+            self.assertEqual(len(state["report_sections"]), 1)
+            self.assertIsNotNone(state["final_response"])
+
+        asyncio.run(run())
+
+    def test_structured_finalization_resumes_checkpointed_sections(self) -> None:
+        async def run() -> None:
+            research = rt.ResearchRequest(query="q", depth="quick", language="auto", focus="f")
+            budget = rt.make_budget("quick")
+            state = rt.load_run_state(
+                None,
+                depth="quick",
+                budget=budget,
+                wall_limit=rt.wall_budget_seconds("quick"),
+            )
+            state.evidence = [
+                rt.Evidence(
+                    id=f"S{index}",
+                    url=f"http://example.com/{index}",
+                    title=f"Title {index}",
+                    publisher="Publisher",
+                    published_at="2026-01-01",
+                    excerpt=f"Excerpt {index}",
+                    hash=f"{index:064x}",
+                    relevance=0.9,
+                    source_quality=0.8,
+                )
+                for index in range(1, 3)
+            ]
+            state.evidence_revision = 2
+            state.report_sections = [rt.ReportSection("Summary", "Saved answer [S1] [S2]", 2)]
+            structured_agent = StructuredAgent(
+                [
+                    rt.ReportSubmissionDraft(
+                        findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1", "S2"])],
+                        limitations=["none"],
+                    )
+                ]
+            )
+
+            with (
+                patch.object(
+                    rt,
+                    "build_research_agent",
+                    side_effect=AssertionError("research must not restart"),
+                ),
+                patch.object(
+                    rt,
+                    "build_finalization_agent",
+                    return_value=structured_agent,
+                ),
+            ):
+                result = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid-resume",
+                    "kid-resume",
+                    rt.run_state_snapshot(state),
+                )
+
+            self.assertIn("Saved answer [S1] [S2]", result.answer_markdown)
+            self.assertEqual(structured_agent.models, [rt.ReportSubmissionDraft])
+            row = self.runtime.db.execute(
+                "SELECT status, state_json FROM research_runs WHERE idempotency_key = ?",
+                ("kid-resume",),
+            ).fetchone()
+            self.assertEqual(row["status"], "completed")
+            self.assertEqual(len(json.loads(row["state_json"])["report_sections"]), 1)
+
+        asyncio.run(run())
+
+    def test_structured_finalization_stops_after_invalid_sections(self) -> None:
+        async def run() -> None:
+            research = rt.ResearchRequest(query="q", depth="quick")
+            budget = rt.make_budget("quick")
+            state = rt.load_run_state(
+                None,
+                depth="quick",
+                budget=budget,
+                wall_limit=rt.wall_budget_seconds("quick"),
+            )
+            state.evidence = [
+                rt.Evidence(
+                    id=f"S{index}",
+                    url=f"http://example.com/{index}",
+                    title="Title",
+                    publisher="Publisher",
+                    published_at="2026-01-01",
+                    excerpt="Excerpt",
+                    hash=f"{index:064x}",
+                    relevance=0.9,
+                    source_quality=0.8,
+                )
+                for index in range(1, 3)
+            ]
+            state.evidence_revision = 2
+            structured_agent = StructuredAgent(
+                [
+                    rt.StructuredOutputException("invalid structured payload"),
+                    *[
+                        rt.ReportSectionDraft(heading="Sources", body_markdown="invalid")
+                        for _ in range(rt.STRUCTURED_OUTPUT_ATTEMPTS - 1)
+                    ],
+                ]
+            )
+
+            with (
+                patch.object(
+                    rt,
+                    "build_research_agent",
+                    side_effect=AssertionError("research must not restart"),
+                ),
+                patch.object(
+                    rt,
+                    "build_finalization_agent",
+                    return_value=structured_agent,
+                ),
+                self.assertRaisesRegex(ValueError, "structured section failed"),
+            ):
+                await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid-invalid",
+                    "kid-invalid",
+                    rt.run_state_snapshot(state),
+                )
+
+            row = self.runtime.db.execute(
+                "SELECT status, state_json FROM research_runs WHERE idempotency_key = ?",
+                ("kid-invalid",),
+            ).fetchone()
+            self.assertEqual(row["status"], "failed")
+            snapshot = json.loads(row["state_json"])
+            self.assertEqual(snapshot["stats"]["structured_output_retries"], 3)
+            self.assertFalse(snapshot["report_sections"])
 
         asyncio.run(run())
 
