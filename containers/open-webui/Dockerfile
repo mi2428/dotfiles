@@ -5,10 +5,12 @@ LABEL org.opencontainers.image.source="https://github.com/mi2428/dotfiles"
 RUN grep -Fq 'href="/static/custom.css"' /app/build/index.html \
  && grep -Fq 'src="/static/loader.js"' /app/build/index.html
 
+COPY patches/deep_research_notes.py /app/backend/open_webui/utils/deep_research_notes.py
 COPY patches/apply_direct_tool_output.py /tmp/apply_direct_tool_output.py
 RUN python /tmp/apply_direct_tool_output.py \
  && grep -Fq 'dotfiles: trusted external tool direct output' \
       /app/backend/open_webui/utils/middleware.py \
+ && python -m py_compile /app/backend/open_webui/utils/deep_research_notes.py \
  && rm /tmp/apply_direct_tool_output.py
 
 COPY assets/catppuccin-mocha.css /app/build/static/custom.css

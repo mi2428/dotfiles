@@ -1,4 +1,3 @@
-# ruff: noqa: E501
 from pathlib import Path
 
 path = Path("/app/backend/open_webui/utils/middleware.py")
@@ -10,6 +9,13 @@ def replace_once(old: str, new: str) -> None:
     if source.count(old) != 1:
         raise RuntimeError(f"OpenWebUI middleware patch guard failed: {old[:80]!r}")
     source = source.replace(old, new)
+
+
+replace_once(
+    "from open_webui.models.notes import Notes",
+    "from open_webui.models.notes import NoteForm, NoteUpdateForm, Notes\n"
+    "from open_webui.utils.deep_research_notes import persist_deep_research_note",
+)
 
 
 replace_once(
@@ -65,6 +71,23 @@ replace_once(
                         direct_tool_output = direct_results[0].get('content', '')
                         if not isinstance(direct_tool_output, str) or not direct_tool_output:
                             await emit_message_error('Direct tool output must be non-empty text.')
+                            tool_calls.clear()
+                            break
+                        try:
+                            await persist_deep_research_note(
+                                notes=Notes,
+                                note_form=NoteForm,
+                                note_update_form=NoteUpdateForm,
+                                user_id=user.id,
+                                message_id=str(metadata.get('message_id') or ''),
+                                chat_id=str(metadata.get('chat_id') or ''),
+                                markdown=direct_tool_output,
+                                user_message=str(user_message or ''),
+                            )
+                        except Exception:
+                            log.exception('Failed to persist Deep Research Note')
+                            direct_tool_output = None
+                            await emit_message_error('Deep ResearchのNote保存に失敗しました。')
                             tool_calls.clear()
                             break
                         content_parts[:] = [direct_tool_output]
