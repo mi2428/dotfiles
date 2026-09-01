@@ -228,6 +228,80 @@ html.dark #response-message-model-name {
 	color: var(--ctp-model-accent) !important;
 }
 
+@keyframes ctp-deep-research-flow {
+	from {
+		background-position: 0% 0%;
+	}
+
+	to {
+		background-position: 100% 100%;
+	}
+}
+
+html.dark [id^='message-']:has(
+		img.assistant-message-profile-image[src*='sacloud.kimi-k2.7-deep-research']
+	) {
+	--ctp-deep-research-gradient: linear-gradient(
+		135deg,
+		#5ba4ff,
+		#6867f7,
+		#fc5c83,
+		#6867f7,
+		#5ba4ff
+	);
+}
+
+html.dark [id^='message-']:has(
+		img.assistant-message-profile-image[src*='sacloud.kimi-k2.7-deep-research']
+	)
+	img.assistant-message-profile-image {
+	filter: none;
+}
+
+html.dark [id^='message-']:has(
+		img.assistant-message-profile-image[src*='sacloud.kimi-k2.7-deep-research']
+	)
+	#response-message-model-name {
+	animation: ctp-deep-research-flow 4s ease-in-out infinite alternate;
+	background: var(--ctp-deep-research-gradient) 0% 0% / 200% 200% no-repeat;
+	background-clip: text;
+	color: transparent !important;
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
+}
+
+html.dark [id^='message-']:has(
+		img.assistant-message-profile-image[src*='sacloud.kimi-k2.7-deep-research']
+	)
+	div:has(> img.assistant-message-profile-image) {
+	background: none;
+}
+
+html.dark [id^='message-']:has(
+		img.assistant-message-profile-image[src*='sacloud.kimi-k2.7-deep-research']
+	)
+	div:has(> img.assistant-message-profile-image)::after {
+	animation: ctp-deep-research-flow 4s ease-in-out infinite alternate;
+	background: var(--ctp-deep-research-gradient) 0% 0% / 200% 200% no-repeat;
+	content: '';
+	inset: 1.75rem calc(50% - 1.5px) 0;
+	pointer-events: none;
+	position: absolute;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html.dark [id^='message-']:has(
+			img.assistant-message-profile-image[src*='sacloud.kimi-k2.7-deep-research']
+		)
+		#response-message-model-name,
+	html.dark [id^='message-']:has(
+			img.assistant-message-profile-image[src*='sacloud.kimi-k2.7-deep-research']
+		)
+		div:has(> img.assistant-message-profile-image)::after {
+		animation: none;
+	}
+}
+
 html.dark #response-content-container .w-full.space-y-2 > button[aria-expanded] {
 	color: var(--ctp-overlay-2) !important;
 }
