@@ -63,8 +63,11 @@ BODY_BYTE_LIMIT = 1_000_000
 SEARCH_RESULT_LIMIT = 8
 TOOL_EXCERPT_CHARS = 1200
 KIMI_MAX_TOKENS = 32_768
-DEFAULT_KIMI_TIMEOUT_SECONDS = 360
-MODEL_TIMEOUT_RECOVERIES = 3
+DEFAULT_KIMI_TIMEOUT_SECONDS = 1800
+MODEL_TRANSIENT_RECOVERIES = 20
+MODEL_RETRY_BASE_SECONDS = 2.0
+MODEL_RETRY_MAX_SECONDS = 120.0
+REPORT_SUBMISSION_RECOVERIES = 1
 
 DEFAULT_WALL_BUDGETS = {"quick": 1800, "standard": 5400, "deep": 6900}
 DEFAULT_DEPTH_BUDGETS = {
@@ -305,8 +308,8 @@ def env_int(name: str, default: int, *, minimum: int = 1, maximum: int | None = 
     return value
 
 
-def is_recoverable_model_timeout(error: BaseException) -> bool:
-    """Recognize provider/client timeouts wrapped by the Strands event loop."""
+def model_retry_delay(error: BaseException, attempt: int) -> float | None:
+    """Return a backoff for retryable provider errors wrapped by Strands."""
 
     pending: list[BaseException] = [error]
     seen: set[int] = set()
@@ -316,7 +319,7 @@ def is_recoverable_model_timeout(error: BaseException) -> bool:
             continue
         seen.add(id(current))
         if isinstance(current, (APITimeoutError, TimeoutError)):
-            return True
+            return 0.0
         if isinstance(current, APIError):
             body = current.body if isinstance(current.body, dict) else {}
             detail = body.get("error", body)
@@ -325,7 +328,10 @@ def is_recoverable_model_timeout(error: BaseException) -> bool:
             code = str(current.code or detail.get("code") or "").casefold()
             message = str(detail.get("message") or current).strip().rstrip(".").casefold()
             if code == "timeout" or message in {"request timed out", "upstream timeout"}:
-                return True
+                return 0.0
+            status_code = getattr(current, "status_code", None)
+            if status_code == 429 or (isinstance(status_code, int) and 500 <= status_code < 600):
+                return min(MODEL_RETRY_MAX_SECONDS, MODEL_RETRY_BASE_SECONDS * (2**attempt))
         for nested in (
             getattr(current, "original_exception", None),
             current.__cause__,
@@ -333,7 +339,7 @@ def is_recoverable_model_timeout(error: BaseException) -> bool:
         ):
             if isinstance(nested, BaseException):
                 pending.append(nested)
-    return False
+    return None
 
 
 def is_public_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -828,7 +834,9 @@ def default_stats(depth: str, budget: Budget, wall_limit: float) -> dict[str, An
         "evidence_revision": 0,
         "report_sections": 0,
         "report_chars": 0,
-        "model_timeout_recoveries": 0,
+        "model_transient_recoveries": 0,
+        "report_submission_recoveries": 0,
+        "agent_stop_reason": "",
     }
 
 
@@ -873,7 +881,9 @@ def load_run_state(
         "model_turn_budget",
         "wall_exhausted",
         "stop_reason",
-        "model_timeout_recoveries",
+        "model_transient_recoveries",
+        "report_submission_recoveries",
+        "agent_stop_reason",
     ):
         stats[key] = fresh_stats[key]
     stats["evidence"] = len(evidence)
@@ -1145,7 +1155,7 @@ def build_system_prompt(research: ResearchRequest, budget: Budget) -> str:
                 "before planning new work."
             ),
             (
-                "Checkpoint statistics are cumulative across model-timeout recovery. "
+                "Checkpoint statistics are cumulative across transient model-error recovery. "
                 "Treat existing evidence and sections as work from the same research run; "
                 "do not describe a resumed agent invocation as if the overall research "
                 "began with an exhausted budget."
@@ -1250,6 +1260,22 @@ def build_user_prompt(research: ResearchRequest) -> str:
             ),
         ],
     }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def build_finalization_prompt(research: ResearchRequest) -> str:
+    """Resume from checkpointed evidence and force one report-submission pass."""
+
+    payload = json.loads(build_user_prompt(research))
+    payload["instructions"] = [
+        "A previous pass ended without submit_report; preserve all checkpointed progress.",
+        "Do not call search_web or fetch_source.",
+        (
+            "Call inspect_evidence_ledger once, write the required sections one per turn, "
+            "then call submit_report."
+        ),
+        "Do not end with prose outside tools; finish only after submit_report is accepted.",
+    ]
     return json.dumps(payload, ensure_ascii=False)
 
 
@@ -1720,6 +1746,7 @@ async def run_research(
     cancel_signal: threading.Event | None = None
     agent_task: asyncio.Task[Any] | None = None
     watch_task: asyncio.Task[None] | None = None
+    finalization_only = False
 
     async def watch_disconnect(signal: threading.Event) -> None:
         while not await request.is_disconnected():  # noqa: ASYNC110 - Starlette only polls.
@@ -1733,7 +1760,11 @@ async def run_research(
                 cancel_signal = threading.Event()
                 agent_task = asyncio.create_task(
                     agent.invoke_async(
-                        build_user_prompt(research),
+                        (
+                            build_finalization_prompt(research)
+                            if finalization_only
+                            else build_user_prompt(research)
+                        ),
                         limits={"turns": budget.turns},
                         cancel_signal=cancel_signal,
                     )
@@ -1754,15 +1785,25 @@ async def run_research(
                     except (EventLoopException, APIError) as exc:
                         if fatal_errors:
                             raise fatal_errors[0] from exc
-                        recoveries = int(state.stats["model_timeout_recoveries"])
-                        if (
-                            not is_recoverable_model_timeout(exc)
-                            or recoveries >= MODEL_TIMEOUT_RECOVERIES
-                        ):
+                        if state.final_response is not None:
+                            break
+                        recoveries = int(state.stats["model_transient_recoveries"])
+                        delay = model_retry_delay(exc, recoveries)
+                        if delay is None or recoveries >= MODEL_TRANSIENT_RECOVERIES:
                             raise
-                        state.stats["model_timeout_recoveries"] = recoveries + 1
+                        state.stats["model_transient_recoveries"] = recoveries + 1
                         state.stats["stop_reason"] = ""
                         await save("running")
+                        if delay:
+                            await asyncio.sleep(delay)
+                        continue
+                    state.stats["agent_stop_reason"] = str(result.stop_reason)
+                    recoveries = int(state.stats["report_submission_recoveries"])
+                    if state.final_response is None and recoveries < REPORT_SUBMISSION_RECOVERIES:
+                        state.stats["report_submission_recoveries"] = recoveries + 1
+                        state.stats["stop_reason"] = ""
+                        await save("running")
+                        finalization_only = True
                         continue
                     break
                 finally:

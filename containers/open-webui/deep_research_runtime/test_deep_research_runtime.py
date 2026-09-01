@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, patch
 
 import aiohttp
 import httpx
+from openai import APIStatusError
 from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands.tools.executors import SequentialToolExecutor
 
@@ -21,7 +22,7 @@ os.environ.setdefault("DEEP_RESEARCH_RUNTIME_API_KEY", "test-api-key")
 os.environ.setdefault("DEEP_RESEARCH_LLM_BASE_URL", "http://llm.local/v1")
 os.environ.setdefault("DEEP_RESEARCH_LLM_API_KEY", "llm-key")
 os.environ.setdefault("DEEP_RESEARCH_MODEL", "preview/Kimi-K2.7-Code")
-os.environ.setdefault("DEEP_RESEARCH_KIMI_TIMEOUT_SECONDS", "360")
+os.environ.setdefault("DEEP_RESEARCH_KIMI_TIMEOUT_SECONDS", "1800")
 os.environ.setdefault("SEARXNG_URL", "http://searxng.local")
 os.environ.setdefault(
     "DEEP_RESEARCH_DB_PATH",
@@ -121,10 +122,18 @@ class FakeAgent:
         )
 
 
-class TimedOutAgent:
+class TransientStatusAgent:
     async def invoke_async(self, _prompt: str, **_kwargs: Any) -> SimpleNamespace:
-        raise rt.EventLoopException(
-            rt.APITimeoutError(httpx.Request("POST", "http://llm.local/v1/chat/completions"))
+        request = httpx.Request("POST", "http://llm.local/v1/chat/completions")
+        response = httpx.Response(503, request=request)
+        raise rt.EventLoopException(APIStatusError("provider error", response=response, body={}))
+
+
+class NoReportAgent:
+    async def invoke_async(self, _prompt: str, **_kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(
+            stop_reason="end_turn",
+            message={"role": "assistant", "content": [{"text": "done"}]},
         )
 
 
@@ -184,7 +193,8 @@ class DeepResearchRuntimeTests(unittest.TestCase):
         self.assertEqual(rt.MAX_SOURCES, 40)
         self.assertEqual(rt.MAX_FINDINGS, 20)
         self.assertEqual(rt.MAX_REPORT_SECTIONS, 16)
-        self.assertEqual(rt.MODEL_TIMEOUT_RECOVERIES, 3)
+        self.assertEqual(rt.DEFAULT_KIMI_TIMEOUT_SECONDS, 1800)
+        self.assertEqual(rt.MODEL_TRANSIENT_RECOVERIES, 20)
 
     def test_sources_section_normalizes_title_whitespace_and_wraps_url(self) -> None:
         text = rt.append_sources_section(
@@ -777,7 +787,7 @@ class DeepResearchRuntimeTests(unittest.TestCase):
         model_config = cast(dict[str, Any], model.config)
         model_params = cast(dict[str, Any], model_config["params"])
         self.assertEqual(model.client_args["max_retries"], 0)
-        self.assertEqual(model.client_args["timeout"], rt.DEFAULT_KIMI_TIMEOUT_SECONDS)
+        self.assertEqual(model.client_args["timeout"], self.runtime.settings.kimi_timeout_seconds)
         self.assertEqual(model_params["max_tokens"], rt.KIMI_MAX_TOKENS)
         self.assertEqual(agent._retry_strategy._max_attempts, 1)
         self.assertIsInstance(agent.tool_executor, SequentialToolExecutor)
@@ -795,7 +805,24 @@ class DeepResearchRuntimeTests(unittest.TestCase):
         self.assertIn("24-month phased roadmap", deep_prompt)
         self.assertIn("at least two independent studies", deep_prompt)
 
-    def test_run_research_recovers_timeout_then_completes_via_section_submit(self) -> None:
+    def test_model_retry_delay_recognizes_transient_statuses(self) -> None:
+        def error(status_code: int) -> rt.EventLoopException:
+            request = httpx.Request("POST", "http://llm.local/v1/chat/completions")
+            response = httpx.Response(status_code, request=request)
+            return rt.EventLoopException(
+                APIStatusError("provider error", response=response, body={})
+            )
+
+        self.assertEqual(rt.model_retry_delay(error(429), 0), 2)
+        self.assertEqual(rt.model_retry_delay(error(503), 3), 16)
+        self.assertEqual(rt.model_retry_delay(error(503), 10), 120)
+        self.assertIsNone(rt.model_retry_delay(error(400), 0))
+        timeout = rt.EventLoopException(
+            rt.APITimeoutError(httpx.Request("POST", "http://llm.local/v1/chat/completions"))
+        )
+        self.assertEqual(rt.model_retry_delay(timeout, 0), 0)
+
+    def test_run_research_recovers_503_and_missing_submission(self) -> None:
         async def run() -> None:
             search_results = [
                 rt.SearchResult("http://example.com/1", "t1", "snippet 1", "engine"),
@@ -834,11 +861,23 @@ class DeepResearchRuntimeTests(unittest.TestCase):
                 return evidence_items.pop(0)
 
             attempts = 0
+            prompts: list[str] = []
 
-            def fake_build_agent(*args: Any) -> TimedOutAgent | FakeAgent:
+            class RecordingAgent(FakeAgent):
+                async def invoke_async(self, prompt: str, **kwargs: Any) -> SimpleNamespace:
+                    prompts.append(prompt)
+                    return await super().invoke_async(prompt, **kwargs)
+
+            def fake_build_agent(
+                *args: Any,
+            ) -> TransientStatusAgent | NoReportAgent | RecordingAgent:
                 nonlocal attempts
                 attempts += 1
-                return TimedOutAgent() if attempts == 1 else FakeAgent(args[2])
+                if attempts == 1:
+                    return TransientStatusAgent()
+                if attempts == 2:
+                    return NoReportAgent()
+                return RecordingAgent(args[2])
 
             with (
                 patch.object(
@@ -846,6 +885,7 @@ class DeepResearchRuntimeTests(unittest.TestCase):
                     "build_research_agent",
                     side_effect=fake_build_agent,
                 ),
+                patch.object(rt, "MODEL_RETRY_BASE_SECONDS", 0),
                 patch.object(rt, "search_searxng", new=AsyncMock(return_value=search_results)),
                 patch.object(rt, "extract_evidence", new=AsyncMock(side_effect=fake_extract)),
             ):
@@ -860,7 +900,10 @@ class DeepResearchRuntimeTests(unittest.TestCase):
             self.assertIn("## Sources", result.answer_markdown)
             self.assertEqual(result.findings[0].source_ids, ["S1", "S2"])
             self.assertEqual([source.id for source in result.sources], ["S1", "S2"])
-            self.assertEqual(result.stats["model_timeout_recoveries"], 1)
+            self.assertEqual(result.stats["model_transient_recoveries"], 1)
+            self.assertEqual(result.stats["report_submission_recoveries"], 1)
+            self.assertEqual(result.stats["agent_stop_reason"], "end_turn")
+            self.assertIn("previous pass ended", prompts[0])
             row = self.runtime.db.execute(
                 (
                     "SELECT status, state_json, response_json FROM research_runs "

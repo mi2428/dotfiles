@@ -100,6 +100,17 @@ class Settings:
         )
 
 
+def retry_delay_seconds(settings: Settings, attempt: int, retry_after: float | None) -> float:
+    """Return capped exponential or provider-directed backoff with jitter."""
+
+    delay = (
+        retry_after
+        if retry_after is not None
+        else settings.base_backoff * (2**attempt)
+    )
+    return min(settings.max_backoff, delay) + random.uniform(0.0, settings.jitter)
+
+
 class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
     """Forward OpenAI-compatible requests and retry recoverable failures."""
 
@@ -153,15 +164,9 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 retry_after = retry_after_seconds(response.getheader("Retry-After"))
                 response.read()
                 connection.close()
-                delay = (
-                    retry_after
-                    if retry_after is not None
-                    else min(
-                        self.settings.max_backoff,
-                        self.settings.base_backoff * (2**rate_limit_attempt),
-                    )
+                delay = retry_delay_seconds(
+                    self.settings, rate_limit_attempt, retry_after
                 )
-                delay += random.uniform(0.0, self.settings.jitter)
                 rate_limit_attempt += 1
                 LOG.warning(
                     "Upstream returned 429; retrying in %.1fs (%d/%d)",

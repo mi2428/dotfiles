@@ -8,7 +8,12 @@ from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar
 
-from sakura_retry_proxy import Settings, make_server, retry_after_seconds
+from sakura_retry_proxy import (
+    Settings,
+    make_server,
+    retry_after_seconds,
+    retry_delay_seconds,
+)
 
 
 class UpstreamHandler(BaseHTTPRequestHandler):
@@ -157,6 +162,10 @@ class SakuraRetryProxyTest(unittest.TestCase):
     def test_retry_after_parser(self) -> None:
         self.assertEqual(retry_after_seconds("2"), 2)
         self.assertIsNone(retry_after_seconds("invalid"))
+        self.assertEqual(
+            retry_delay_seconds(Settings(max_backoff=10, jitter=0), 0, 30),
+            10,
+        )
 
     def test_concurrent_429_retries_only_affected_request(self) -> None:
         UpstreamHandler.mode = "second_rate_limited"
