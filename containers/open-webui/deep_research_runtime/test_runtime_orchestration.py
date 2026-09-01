@@ -325,8 +325,8 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         state = stable_quick_state()
         structured = StructuredAgent(
             [
+                rt.MaxTokensReachedException("partial structured output"),
                 rt.StructuredOutputException("invalid payload"),
-                rt.ReportSectionDraft(heading="Sources", body_markdown="invalid"),
                 rt.ReportSectionDraft(heading="Limitations", body_markdown="invalid"),
             ]
         )

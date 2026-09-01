@@ -34,7 +34,11 @@ from pypdf import PdfReader
 from strands import Agent, tool
 from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands.tools.executors import SequentialToolExecutor
-from strands.types.exceptions import EventLoopException, StructuredOutputException
+from strands.types.exceptions import (
+    EventLoopException,
+    MaxTokensReachedException,
+    StructuredOutputException,
+)
 
 from sakura_kimi_model import SakuraKimiModel
 
@@ -62,7 +66,7 @@ BODY_BYTE_LIMIT = 1_000_000
 SEARCH_RESULT_LIMIT = 8
 TOOL_EXCERPT_CHARS = 1200
 KIMI_MAX_TOKENS = 32_768
-FINALIZER_MAX_TOKENS = 8_192
+FINALIZER_MAX_TOKENS = 16_384
 FINALIZER_TIMEOUT_SECONDS = 600
 DEFAULT_KIMI_TIMEOUT_SECONDS = 1800
 MODEL_TRANSIENT_RECOVERIES = 20
@@ -2166,7 +2170,12 @@ async def run_research(
                     validation_error = ""
                     stored = True
                     break
-                except (TypeError, ValueError, StructuredOutputException) as exc:
+                except (
+                    TypeError,
+                    ValueError,
+                    MaxTokensReachedException,
+                    StructuredOutputException,
+                ) as exc:
                     validation_error = str(exc)
                     state.stats["structured_output_retries"] += 1
                     await save("running")
@@ -2193,7 +2202,12 @@ async def run_research(
                 )
                 await save("running")
                 return
-            except (TypeError, ValueError, StructuredOutputException) as exc:
+            except (
+                TypeError,
+                ValueError,
+                MaxTokensReachedException,
+                StructuredOutputException,
+            ) as exc:
                 validation_error = str(exc)
                 state.stats["structured_output_retries"] += 1
                 await save("running")
