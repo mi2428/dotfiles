@@ -241,7 +241,7 @@ def emit_git_status(data: bytes) -> None:
             index += 1
 
         display = color(code, status_color(code), bold=True) + b"  " + path
-        emit(path, display)
+        emit(b":(top)" + path, display)
 
 
 def emit_history_display(data: bytes) -> None:
