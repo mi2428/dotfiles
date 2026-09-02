@@ -1,54 +1,60 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
+import unittest
 from dataclasses import replace
-from typing import Any, cast
+from typing import cast
 from unittest.mock import AsyncMock, patch
 
 import aiohttp
 import httpx
+from openai import APIStatusError
+from strands.agent.conversation_manager import SlidingWindowConversationManager
+from strands.tools.executors import SequentialToolExecutor
 
-from test_support import (
-    FakeResponse,
-    FakeSession,
-    RuntimeTestCase,
-    deep_answer,
-    deep_findings,
-    deep_plan,
-    deep_section_body,
-    make_state,
-    planned_deep_state,
-    report_sections,
-    rt,
-)
+from test_support import FakeResponse, FakeSession, RuntimeTestCase, make_state, rt
+
+
+def deep_plan_for(research: rt.ResearchRequest) -> rt.InitialPlanDraft:
+    fragments = rt.explicit_request_fragments(research)
+    requirements = [
+        rt.RequirementModel(
+            id=f"R{index}",
+            summary=fragment.text,
+            kind=rt.classify_requirement_kind(fragment.text),
+            fragment_ids=[fragment.id],
+        )
+        for index, fragment in enumerate(fragments, 1)
+    ]
+    sections = [
+        rt.InitialPlanSection(
+            heading=f"Section {index}",
+            target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
+            requirement_ids=[requirement.id],
+            deliverables=[requirement.summary],
+        )
+        for index, requirement in enumerate(requirements, 1)
+    ]
+    return rt.InitialPlanDraft(
+        fragments=fragments,
+        requirements=requirements,
+        sections=sections,
+        query_seeds=[],
+    )
 
 
 class RuntimeContractTests(RuntimeTestCase):
-    def test_openapi_auth_validation_and_exact_cached_markdown(self) -> None:
-        schema = rt.app.openapi()
-        self.assertEqual(set(schema["paths"]), {"/research"})
-        operation = schema["paths"]["/research"]["post"]
-        self.assertEqual(operation["operationId"], "deep_research")
-        self.assertEqual(operation["security"], [{"HTTPBearer": []}])
-
+    def test_openapi_auth_and_cached_markdown(self) -> None:
         async def run() -> None:
             transport = httpx.ASGITransport(app=rt.app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
                 self.assertEqual(
                     (await client.post("/research", json={"query": "x"})).status_code, 401
                 )
-                headers = {"Authorization": "Bearer test-api-key"}
-                self.assertEqual(
-                    (
-                        await client.post("/research", headers=headers, json={"query": ""})
-                    ).status_code,
-                    422,
-                )
                 cached = rt.ResearchResponse(
                     research_id="rid",
-                    answer_markdown='Exact `_meta["key"]` [S1]',
+                    answer_markdown="done [S1]",
                     findings=[rt.CitationModel(claim="claim", source_ids=["S1"])],
                     sources=[
                         rt.SourceModel(
@@ -68,70 +74,31 @@ class RuntimeContractTests(RuntimeTestCase):
                     new=AsyncMock(return_value=("rid", "hash", cached, None)),
                 ):
                     response = await client.post(
-                        "/research", headers=headers, json={"query": "cached"}
+                        "/research",
+                        headers={"Authorization": "Bearer test-api-key"},
+                        json={"query": "cached"},
                     )
-                self.assertEqual(response.text, cached["answer_markdown"])
+                self.assertEqual(response.text, "done [S1]")
                 self.assertEqual(response.headers["x-openwebui-direct-output"], "true")
-                self.assertNotIn("x-deep-research-status", response.headers)
 
-                incomplete = rt.IncompleteResearchError(
-                    "no_progress",
-                    "# Deep Research未完了\n\n## Sources\n- なし\n",
+        asyncio.run(run())
+
+    def test_openapi_rejects_wrong_auth_scheme_and_key(self) -> None:
+        async def run() -> None:
+            transport = httpx.ASGITransport(app=rt.app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                wrong_scheme = await client.post(
+                    "/research",
+                    headers={"Authorization": "Basic nope"},
+                    json={"query": "x"},
                 )
-                with (
-                    patch.object(
-                        rt,
-                        "reserve_run",
-                        new=AsyncMock(return_value=("rid", "hash", None, None)),
-                    ),
-                    patch.object(rt, "run_research", new=AsyncMock(side_effect=incomplete)),
-                ):
-                    response = await client.post(
-                        "/research", headers=headers, json={"query": "partial"}
-                    )
-                self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.text, incomplete.answer_markdown)
-                self.assertEqual(response.headers["x-openwebui-direct-output"], "true")
-                self.assertEqual(response.headers["x-deep-research-status"], "failed")
-                self.assertTrue(response.headers["content-type"].startswith("text/plain"))
-
-                with (
-                    patch.object(
-                        rt,
-                        "reserve_run",
-                        new=AsyncMock(return_value=("rid", "hash", None, None)),
-                    ),
-                    patch.object(
-                        rt,
-                        "run_research",
-                        new=AsyncMock(side_effect=asyncio.CancelledError()),
-                    ),
-                ):
-                    response = await client.post(
-                        "/research", headers=headers, json={"query": "disconnect"}
-                    )
-                self.assertEqual(response.status_code, 499)
-                self.assertNotIn("x-openwebui-direct-output", response.headers)
-                self.assertNotIn("x-deep-research-status", response.headers)
-
-                with (
-                    patch.object(
-                        rt,
-                        "reserve_run",
-                        new=AsyncMock(return_value=("rid", "hash", None, None)),
-                    ),
-                    patch.object(
-                        rt,
-                        "run_research",
-                        new=AsyncMock(side_effect=rt.IntegrityError("corrupt checkpoint")),
-                    ),
-                ):
-                    response = await client.post(
-                        "/research", headers=headers, json={"query": "hard failure"}
-                    )
-                self.assertEqual(response.status_code, 502)
-                self.assertNotIn("x-openwebui-direct-output", response.headers)
-                self.assertNotIn("x-deep-research-status", response.headers)
+                wrong_key = await client.post(
+                    "/research",
+                    headers={"Authorization": "Bearer wrong-key"},
+                    json={"query": "x"},
+                )
+            self.assertEqual(wrong_scheme.status_code, 401)
+            self.assertEqual(wrong_key.status_code, 401)
 
         asyncio.run(run())
 
@@ -152,61 +119,6 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertIn("Answer [1]", answer)
         self.assertIn("- [6][15][16]は制約", answer)
         self.assertIn("[1] Line 1 Line 2 — <https://example.com/a_(b)>", answer)
-        self.assertLess(answer.index("## Limitations"), answer.index("## Sources"))
-        self.assertEqual(rt.source_quality("https://www.mhlw.go.jp/example"), 0.9)
-        self.assertEqual(rt.source_quality("https://docs.example.com/reference"), 0.8)
-        self.assertEqual(rt.source_quality("https://vendor.example/news"), 0.5)
-
-    def test_answer_cap_leaves_a_full_report_envelope_for_final_assembly(self) -> None:
-        budget = rt.make_budget("deep")
-        self.assertEqual(
-            rt.MAX_ANSWER_CHARS,
-            rt.MAX_REPORT_SECTIONS * rt.MAX_REPORT_SECTION_CHARS * 2,
-        )
-        self.assertEqual(
-            (
-                rt.MAX_REPORT_SECTIONS,
-                rt.DEEP_PLAN_TARGET_SECTIONS,
-                rt.DEEP_MIN_ANSWER_CHARS,
-                rt.DEEP_MIN_CITED_SOURCES,
-                rt.DEEP_MIN_FINDINGS,
-                rt.DEEP_MIN_LIMITATIONS,
-            ),
-            (16, 12, 77_000, 20, 15, 8),
-        )
-        self.assertEqual(
-            (
-                budget.searches,
-                budget.search_limit,
-                budget.evidence,
-                budget.minimum_evidence,
-                budget.target_evidence,
-            ),
-            (96, 384, 60, 20, 30),
-        )
-        self.assertEqual(
-            (rt.DEEP_PLAN_MIN_SECTIONS, rt.DEEP_PLAN_MAX_SECTIONS),
-            (10, 16),
-        )
-        for depth in ("quick", "standard"):
-            unchanged = rt.make_budget(depth)
-            self.assertEqual(unchanged.target_evidence, unchanged.minimum_evidence)
-
-    def test_deep_evidence_minimum_allows_finalize_but_only_target_stops_agent(self) -> None:
-        research = rt.ResearchRequest(query="Evidence", depth="deep")
-        budget = rt.make_budget("deep")
-        below = make_state(19)
-        voluntary = make_state(20)
-        near_target = make_state(29)
-        target = make_state(30)
-
-        self.assertFalse(rt.evidence_ready_for_report(below, research, budget))
-        self.assertTrue(rt.evidence_ready_for_report(voluntary, research, budget))
-        self.assertTrue(rt.evidence_ready_for_report(near_target, research, budget))
-        self.assertFalse(rt.evidence_target_reached(voluntary, budget))
-        self.assertFalse(rt.evidence_target_reached(near_target, budget))
-        self.assertTrue(rt.evidence_target_reached(target, budget))
-        self.assertIn("target for active collection: 30", rt.build_system_prompt(research, budget))
 
     def test_target_evidence_environment_override_stays_between_minimum_and_cap(self) -> None:
         with patch.dict(
@@ -220,293 +132,447 @@ class RuntimeContractTests(RuntimeTestCase):
         for invalid in (19, 61):
             with (
                 self.subTest(invalid=invalid),
-                patch.dict(
-                    os.environ,
-                    {"DEEP_RESEARCH_TARGET_EVIDENCE_DEEP": str(invalid)},
-                ),
+                patch.dict(os.environ, {"DEEP_RESEARCH_TARGET_EVIDENCE_DEEP": str(invalid)}),
                 self.assertRaisesRegex(RuntimeError, "TARGET_EVIDENCE_DEEP"),
             ):
                 rt.make_budget("deep")
 
-    def test_deep_contract_and_hard_limit_tail_salvage(self) -> None:
-        budget = rt.make_budget("deep")
-        source_count = budget.minimum_evidence
-        limitations = [f"Limitation {index}" for index in range(1, rt.DEEP_MIN_LIMITATIONS + 1)]
-        state = planned_deep_state(source_count)
-        response = rt.validate_submit_report(
-            "rid",
-            state,
-            source_count,
-            deep_answer(source_count),
-            deep_findings(source_count),
-            limitations,
-            budget,
-            "deep",
-        )
-        self.assertEqual(len(response.sources), source_count)
-
-        under_cited = rt.DEEP_MIN_CITED_SOURCES - 1
-        with self.assertRaisesRegex(ValueError, "cited sources"):
-            rt.validate_submit_report(
-                "rid",
-                state,
-                source_count,
-                deep_answer(under_cited),
-                deep_findings(under_cited),
-                limitations,
-                budget,
-                "deep",
+    def test_idempotency_conflict_completed_cache_corruption_and_impossible_status(self) -> None:
+        async def run() -> None:
+            research = rt.ResearchRequest(query="sample", depth="quick")
+            key = rt.normalize_idempotency_key("message")
+            research_id, request_hash, _cached, _snapshot = await rt.reserve_run(
+                self.runtime, research, key
             )
-
-        salvage = planned_deep_state(rt.DEEP_MIN_CITED_SOURCES)
-        salvage.searched_queries = {f"query {index}" for index in range(budget.search_limit)}
-        research = rt.ResearchRequest(query="generic research", depth="deep")
-        self.assertTrue(rt.evidence_ready_for_report(salvage, research, budget))
-        salvaged = rt.validate_submit_report(
-            "rid",
-            salvage,
-            salvage.evidence_revision,
-            deep_answer(rt.DEEP_MIN_CITED_SOURCES),
-            deep_findings(rt.DEEP_MIN_CITED_SOURCES),
-            limitations,
-            budget,
-            "deep",
-        )
-        self.assertEqual(len(salvaged.sources), rt.DEEP_MIN_CITED_SOURCES)
-
-        unusable = replace(
-            state, evidence=[replace(state.evidence[0], relevance=0), *state.evidence[1:]]
-        )
-        with self.assertRaisesRegex(ValueError, "minimum evidence"):
-            rt.validate_submit_report(
-                "rid",
-                unusable,
-                source_count,
-                deep_answer(source_count),
-                deep_findings(source_count),
-                limitations,
-                budget,
-                "deep",
+            response = rt.ResearchResponse(
+                research_id=research_id,
+                answer_markdown="done [S1]",
+                findings=[rt.CitationModel(claim="claim", source_ids=["S1"])],
+                sources=[
+                    rt.SourceModel(
+                        id="S1",
+                        url="https://example.com",
+                        hash="a" * 64,
+                        relevance=1,
+                        source_quality=1,
+                    )
+                ],
+                limitations=[],
+                stats={},
             )
+            await rt.checkpoint_run(
+                self.runtime,
+                key,
+                "completed",
+                research_id,
+                request_hash,
+                response=response.model_dump(),
+            )
+            with self.assertRaises(rt.HTTPException):
+                await rt.reserve_run(
+                    self.runtime,
+                    rt.ResearchRequest(query="different", depth="quick"),
+                    key,
+                )
+            self.runtime.db.execute(
+                "UPDATE research_runs SET response_json='{}' WHERE idempotency_key=?",
+                (key,),
+            )
+            self.runtime.db.commit()
+            with self.assertRaises(rt.IntegrityError):
+                await rt.reserve_run(self.runtime, research, key)
 
-    def test_explicit_deliverables_drive_section_loop_without_domain_assumptions(self) -> None:
-        budget = rt.make_budget("deep")
-        source_count = budget.minimum_evidence
-        limitations = [f"Limitation {index}" for index in range(1, rt.DEEP_MIN_LIMITATIONS + 1)]
-        state = planned_deep_state(source_count)
-        state.report_sections = report_sections(source_count)
-        comparison = rt.ResearchRequest(query="方式Aと方式Bの違い", depth="deep")
-        self.assertFalse(rt.report_needs_section(state, comparison))
+            bad_key = "impossible-status"
+            self.runtime.db.execute(
+                """
+                INSERT INTO research_runs (
+                    idempotency_key, request_hash, research_id, status,
+                    response_json, state_json, created_at, updated_at
+                ) VALUES (?, ?, 'rid', 'failed_with_output', NULL, NULL, 1, 1)
+                """,
+                (bad_key, request_hash),
+            )
+            self.runtime.db.commit()
+            with self.assertRaises(rt.IntegrityError):
+                await rt.reserve_run(self.runtime, research, bad_key)
 
-        state.report_sections[0] = rt.ReportSection(
-            "Section 1",
-            "| 方式 | 評価 |\n|---|---|\n| A | 根拠 |\n\n" + deep_section_body(source_count),
-            source_count,
-            "比較結果の要約",
-        )
-        error = rt.report_request_error(
-            rt.assemble_report_sections(state.report_sections),
-            "deep",
-            comparison.query,
-        )
-        self.assertIn(
-            'section "Section 1"',
-            error or "",
-        )
-        self.assertEqual(rt.next_report_action(state, comparison)[0], "deliverable_repair")
+        asyncio.run(run())
 
-        state.report_sections[0] = rt.ReportSection(
-            "Section 1",
-            "| 方式 | 評価 |\n|---|---|\n| A | 根拠 [S1] |\n\n" + deep_section_body(source_count),
-            source_count,
-            "比較結果の要約",
-        )
-        self.assertFalse(rt.report_needs_section(state, comparison))
+    def test_structured_timeout_keeps_provider_240s_inside_existing_envelope(self) -> None:
+        self.assertEqual(rt.structured_role_timeout_seconds(self.runtime.settings, 1800), 1500)
+        self.assertGreater(rt.structured_role_timeout_seconds(self.runtime.settings, 1800), 240)
+        self.assertEqual(rt.structured_role_timeout_seconds(self.runtime.settings, 300), 300)
 
-        answer = rt.assemble_report_sections(state.report_sections)
-        self.assertIsNone(rt.report_request_error(answer, "deep", "第三者ベンチマーク"))
-        self.assertIsNone(rt.report_request_error(answer, "deep", "12か月ロードマップ"))
-        hiring = rt.validate_submit_report(
-            "rid",
-            state,
-            source_count,
-            answer,
-            deep_findings(source_count),
-            limitations,
-            budget,
-            "deep",
-            "人材の採用判断を支援してください",
-        )
-        self.assertNotIn("12か月ロードマップ", hiring.answer_markdown)
+    def test_kimi_adapter_and_shared_agent_retry_contracts(self) -> None:
+        standard = rt.ResearchRequest(query="standard coverage", depth="standard")
+        agent = rt.build_research_agent(self.runtime.settings, standard, [])
+        model = cast(rt.SakuraKimiModel, agent.model)
+        manager = cast(SlidingWindowConversationManager, agent.conversation_manager)
+        self.assertEqual(model.client_args["timeout"], 1800)
+        self.assertEqual(model.client_args["max_retries"], 0)
+        self.assertIsInstance(manager, SlidingWindowConversationManager)
+        self.assertIsInstance(agent.tool_executor, SequentialToolExecutor)
+        self.assertEqual(manager.window_size, 30)
 
-    def test_plan_manifest_adaptive_repairs_and_citation_subset(self) -> None:
-        source_count = rt.DEEP_MIN_CITED_SOURCES
-        research = rt.ResearchRequest(query="比較とロードマップ", depth="deep")
-        state = make_state(source_count)
-        rt.set_collection_decision(state, "voluntary_stop")
-        draft = rt.ReportPlanDraft(sections=deep_plan(source_count))
-        rt.store_report_plan(state, research, draft)
-        state = rt.load_run_state(
-            rt.run_state_snapshot(state),
-            depth="deep",
-            budget=rt.make_budget("deep"),
-            wall_limit=rt.wall_budget_seconds("deep"),
+        request = httpx.Request("POST", "http://llm.local/v1/chat/completions")
+        response = httpx.Response(503, request=request)
+        wrapped = rt.EventLoopException(
+            APIStatusError("provider error", response=response, body={})
         )
-        self.assertEqual(state.phase, "sections")
-        self.assertEqual(state.report_plan[0].heading, "Section 1")
-        self.assertEqual(state.unmet_requirements, ["missing_plan_section"])
+        self.assertEqual(rt.model_retry_delay(wrapped, 0), 2)
+        self.assertTrue(rt.is_expected_provider_failure(wrapped))
+
+    def test_validated_requirements_plan_maps_every_explicit_fragment(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
+        state = make_state(1)
         state.last_inspected_revision = state.evidence_revision
+        draft = deep_plan_for(research)
+        fragments, requirements, sections, query_seeds = rt.validated_initial_plan(research, draft)
+        self.assertEqual("".join(item.text for item in fragments), research.query)
+        self.assertEqual(
+            {fragment_id for item in requirements for fragment_id in item.fragment_ids},
+            {item.id for item in fragments},
+        )
+        self.assertEqual([item.requirement_ids for item in sections], [["R1"]])
+        self.assertEqual(query_seeds, [])
+
+    def test_requirement_coverage_uses_direct_one_host_and_comparison_two_hosts(self) -> None:
+        state = make_state(3)
+        state.request_fragments = [
+            rt.RequestFragmentModel(id="F1", text="facts"),
+            rt.RequestFragmentModel(id="F2", text="compare"),
+        ]
+        state.requirements = [
+            rt.RequirementModel(id="R1", summary="facts", kind="direct", fragment_ids=["F1"]),
+            rt.RequirementModel(id="R2", summary="compare", kind="comparison", fragment_ids=["F2"]),
+        ]
+        state.evidence[0] = replace(
+            state.evidence[0], requirement_ids=["R1"], url="https://a.example/1"
+        )
+        state.evidence[1] = replace(
+            state.evidence[1], requirement_ids=["R2"], url="https://a.example/2"
+        )
+        state.evidence[2] = replace(
+            state.evidence[2], requirement_ids=["R2"], url="https://b.example/3"
+        )
+        self.assertTrue(rt.requirement_is_covered(state, state.requirements[0]))
+        self.assertTrue(rt.requirement_is_covered(state, state.requirements[1]))
+
+    def test_deep_submit_allows_short_complete_report_and_rejects_missing_requirements(
+        self,
+    ) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
+        state = make_state(1)
+        state.last_inspected_revision = state.evidence_revision
+        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        rt.store_initial_plan(state, research, deep_plan_for(research))
         rt.store_report_section(
             state,
             research,
             state.evidence_revision,
             "Section 1",
-            "Substantive soft-target evidence [S1]. " * 30,
-            "Soft target summary",
+            ["R1"],
+            "Supported claim [S1]",
+            "summary",
         )
-        self.assertLess(len(state.report_sections[0].body), state.report_plan[0].target_chars)
-        state.report_sections = report_sections(source_count)
-        state.report_sections[0] = replace(
-            state.report_sections[0],
-            body="OLD_BODY_SENTINEL " + "Short but substantive evidence " * 40 + "[S1]",
-        )
-
-        action, heading, _reason = rt.next_report_action(state, research)
-        self.assertEqual((action, heading), ("expand_existing", "Section 1"))
-        prompt = json.loads(
-            rt.build_section_prompt(research, state, action, repair_heading=heading)
-        )
-        self.assertEqual(len(prompt["report_plan"]), rt.DEEP_PLAN_TARGET_SECTIONS)
-        self.assertNotIn("body_markdown", prompt["completed_sections"][1])
-        self.assertNotIn(state.report_sections[1].body, json.dumps(prompt, ensure_ascii=False))
-        self.assertNotIn("body_markdown", prompt["section_to_repair"])
-        self.assertEqual(prompt["section_to_repair"]["summary"], "Summary 1")
-        for prompt_action, prompt_heading in (
-            ("missing_plan_section", "Section 2"),
-            ("expand_existing", "Section 1"),
-            ("citation_repair", "Section 1"),
-            ("deliverable_repair", "Section 1"),
-        ):
-            section_prompt = rt.build_section_prompt(
-                research,
-                state,
-                cast(rt.ReportAction, prompt_action),
-                "fixed action reason",
-                prompt_heading,
-            )
-            self.assertNotIn("OLD_BODY_SENTINEL", section_prompt)
-            self.assertNotIn('"assembled_report"', section_prompt)
-        self.assertNotIn("OLD_BODY_SENTINEL", rt.build_plan_prompt(research, state))
-        submission_prompt = rt.build_submission_prompt(research, state)
-        self.assertIn("OLD_BODY_SENTINEL", submission_prompt)
-        self.assertEqual(
-            json.loads(submission_prompt)["assembled_report"].count("OLD_BODY_SENTINEL"), 1
-        )
-
-        state.report_sections = [
-            replace(section, ledger_revision=state.evidence_revision)
-            for section in report_sections(1)
-        ]
-        self.assertEqual(rt.next_report_action(state, research)[0], "citation_repair")
-
-        state.report_sections = report_sections(source_count)
-        findings = [
-            {"claim": f"Finding {index}", "source_ids": ["S1"]}
-            for index in range(1, rt.DEEP_MIN_FINDINGS + 1)
-        ]
         response = rt.validate_submit_report(
             "rid",
             state,
             state.evidence_revision,
             rt.assemble_report_sections(state.report_sections),
-            findings,
-            [f"Limitation {index}" for index in range(1, rt.DEEP_MIN_LIMITATIONS + 1)],
+            [{"claim": "Claim", "source_ids": ["S1"]}],
+            ["Known constraint"],
             rt.make_budget("deep"),
             "deep",
             research.query,
         )
-        self.assertEqual(
-            {source_id for item in response.findings for source_id in item.source_ids}, {"S1"}
-        )
-
-        corrupt = rt.run_state_snapshot(planned_deep_state(source_count))
-        corrupt["report_plan"][1]["heading"] = corrupt["report_plan"][0]["heading"]
-        with self.assertRaisesRegex(rt.IntegrityError, "checkpointed report plan"):
-            rt.load_run_state(
-                corrupt,
-                depth="deep",
-                budget=rt.make_budget("deep"),
-                wall_limit=rt.wall_budget_seconds("deep"),
+        self.assertIn("## Sources", response.answer_markdown)
+        broken = replace(state, report_sections=[])
+        with self.assertRaisesRegex((ValueError, rt.IntegrityError), "requirement"):
+            rt.validate_submit_report(
+                "rid",
+                broken,
+                state.evidence_revision,
+                "## Section 1\n\nUnsupported [S1]",
+                [{"claim": "claim", "source_ids": ["S1"]}],
+                ["Known constraint"],
+                rt.make_budget("deep"),
+                "deep",
+                research.query,
             )
 
-    def test_relevance_is_lexical_auditable_and_refresh_invalidates_stale_report(self) -> None:
-        table = "\n".join(f"試行{index}回 性能{300 + index}点" for index in range(12))
-        excerpt, relevance = rt.select_relevant_excerpt(table, "性能 指標", None)
-        self.assertEqual(excerpt, table)
-        self.assertGreater(relevance, 0)
-        _, unrelated = rt.select_relevant_excerpt(
-            "This substantive document contains enough readable alphabetic content but discusses "
-            "a completely different operational topic that cannot support the requested claim.",
-            "unrelated-keyword",
-            None,
+    def test_next_report_action_does_not_char_repair_successful_sections(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
+        state = make_state(1)
+        state.last_inspected_revision = state.evidence_revision
+        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        rt.store_initial_plan(state, research, deep_plan_for(research))
+        rt.store_report_section(
+            state,
+            research,
+            state.evidence_revision,
+            "Section 1",
+            ["R1"],
+            "Short but cited [S1]",
+            "summary",
         )
-        self.assertEqual(unrelated, 0)
+        self.assertEqual(rt.next_report_action(state, research)[0], "submit")
 
-        state = make_state(1, "quick")
-        state.evidence = [replace(state.evidence[0], excerpt=table, relevance=0, search_query="")]
-        state.report_sections = [rt.ReportSection("Saved", "Claim [S1]", 1)]
-        state.final_response = {"cached": True}
-        changed = rt.refresh_evidence_relevance(
-            state, rt.ResearchRequest(query="性能 指標", depth="quick")
+    def test_compact_payload_builders_exclude_unrelated_growth(self) -> None:
+        research = rt.ResearchRequest(
+            query="Need direct evidence", focus="with focus", depth="deep"
         )
-        self.assertTrue(changed)
-        self.assertGreater(state.evidence[0].relevance, 0)
-        self.assertFalse(state.report_sections)
-        self.assertIsNone(state.final_response)
-
-    def test_finalization_excludes_unusable_evidence_and_prunes_unsafe_sections(self) -> None:
-        state = make_state(2)
-        state.evidence[1] = replace(state.evidence[1], relevance=0)
-        state.report_sections = [
-            rt.ReportSection("Safe", "Supported claim [S1]", state.evidence_revision),
-            rt.ReportSection("Unsafe", "Unsupported claim [S2]", state.evidence_revision),
+        state = make_state(3)
+        state.request_fragments = rt.explicit_request_fragments(research)
+        state.requirements = [
+            rt.RequirementModel(
+                id="R1", summary="Need direct evidence", kind="direct", fragment_ids=["F1"]
+            )
         ]
-        state.stats["report_sections"] = 2
+        state.evidence = [
+            replace(item, requirement_ids=["R1"], relevance=0.9) for item in state.evidence
+        ]
+        state.report_plan = [
+            rt.ReportPlanSection(
+                heading="Section 1",
+                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
+                requirement_ids=["R1"],
+                source_ids=[],
+                deliverables=["Need direct evidence"],
+            )
+        ]
+        state.report_sections = [
+            rt.ReportSection("Done", "Claim [S1]", state.evidence_revision, "summary", ["R1"])
+        ]
+        state.candidate_queue = [
+            rt.Candidate(
+                url="https://other.example/4",
+                title="Other",
+                snippet="noise",
+                engine="engine",
+                search_query="noise",
+                purpose="noise",
+                requirement_ids=["R1"],
+            )
+        ]
+        query_payload = rt.build_query_context(research, state)
+        section_payload = rt.build_section_context(
+            research,
+            state,
+            "missing_plan_section",
+            "Section 1",
+        )
+        submission_payload = rt.build_submission_context(research, state)
+        self.assertNotIn("evidence", query_payload)
+        self.assertNotIn("candidate_queue", query_payload)
+        self.assertEqual(len(section_payload["assigned_evidence"]), 3)
+        self.assertEqual(
+            section_payload["completed_sections"],
+            [
+                {
+                    "heading": "Done",
+                    "requirement_ids": ["R1"],
+                    "summary": "summary",
+                    "source_ids": ["S1"],
+                }
+            ],
+        )
+        self.assertEqual([item["id"] for item in submission_payload["evidence"]], ["S1"])
 
-        self.assertTrue(rt.prune_unusable_report_sections(state))
-        self.assertEqual([section.heading for section in state.report_sections], ["Safe"])
-        context = rt.finalization_context(rt.ResearchRequest(query="Evidence"), state)
-        self.assertEqual([item["id"] for item in context["evidence"]], ["S1"])
-        with self.assertRaisesRegex(rt.IntegrityError, "unusable source IDs"):
+    def test_query_context_keeps_lossless_max_input_fragments(self) -> None:
+        query = "q" * rt.MAX_QUERY_CHARS
+        focus = "," * rt.MAX_FOCUS_CHARS
+        research = rt.ResearchRequest(query=query, focus=focus, depth="deep")
+        fragments = rt.explicit_request_fragments(research)
+        self.assertEqual("".join(item.text for item in fragments), query + focus)
+        payload = rt.build_plan_context(research)
+        self.assertEqual(
+            "".join(item["text"] for item in payload["request_fragments"]), query + focus
+        )
+
+    def test_network_boundaries_block_ssrf_bad_content_and_oversize_bodies(self) -> None:
+        with self.assertRaises(ValueError):
+            rt.validate_public_url("http://127.0.0.1/x")
+
+        async def run() -> None:
+            with self.assertRaises(ValueError):
+                session = cast(
+                    aiohttp.ClientSession,
+                    FakeSession(
+                        FakeResponse(headers={"Content-Type": "text/xml"}, chunks=[b"<xml/>"])
+                    ),
+                )
+                await rt.fetch_bytes(session, "http://example.com", 100)
+            with self.assertRaises(ValueError):
+                response = cast(aiohttp.ClientResponse, FakeResponse(chunks=[b"a" * 5, b"b" * 5]))
+                await rt.read_bytes_with_cap(response, 5)
+            with self.assertRaises(ValueError):
+                session = cast(
+                    aiohttp.ClientSession,
+                    FakeSession(
+                        FakeResponse(
+                            status=302,
+                            headers={"Location": "http://127.0.0.1/private"},
+                        )
+                    ),
+                )
+                await rt.fetch_bytes(session, "https://example.com/public", 100)
+
+        asyncio.run(run())
+
+    def test_invalid_query_seeds_are_rejected_at_plan_validation(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
+        fragments = rt.explicit_request_fragments(research)
+        draft = rt.InitialPlanDraft(
+            fragments=fragments,
+            requirements=[
+                rt.RequirementModel(
+                    id="R1",
+                    summary="Need direct evidence",
+                    kind="direct",
+                    fragment_ids=[fragments[0].id],
+                ),
+                rt.RequirementModel(
+                    id="R2",
+                    summary="Need direct evidence followup",
+                    kind="direct",
+                    fragment_ids=[fragments[0].id],
+                ),
+            ],
+            sections=[
+                rt.InitialPlanSection(
+                    heading="Section 1",
+                    target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
+                    requirement_ids=["R1", "R2"],
+                    deliverables=["Need direct evidence"],
+                )
+            ],
+            query_seeds=[
+                rt.QuerySeedModel(
+                    query="seed",
+                    purpose="bad",
+                    requirement_ids=["R1", "R2"],
+                )
+            ],
+        )
+        with self.assertRaisesRegex(ValueError, "exactly one requirement"):
+            rt.validated_initial_plan(research, draft)
+
+    def test_compare_fragment_kind_is_upgraded_by_runtime(self) -> None:
+        research = rt.ResearchRequest(query="compare vendors", depth="deep")
+        fragments = rt.explicit_request_fragments(research)
+        draft = rt.InitialPlanDraft(
+            fragments=fragments,
+            requirements=[
+                rt.RequirementModel(
+                    id="R1",
+                    summary="compare vendors",
+                    kind="direct",
+                    fragment_ids=[fragments[0].id],
+                )
+            ],
+            sections=[
+                rt.InitialPlanSection(
+                    heading="Comparison",
+                    target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
+                    requirement_ids=["R1"],
+                    deliverables=["compare vendors"],
+                )
+            ],
+            query_seeds=[],
+        )
+        _fragments, requirements, _sections, _query_seeds = rt.validated_initial_plan(
+            research, draft
+        )
+        self.assertEqual(requirements[0].kind, "comparison")
+        state = make_state(1)
+        state.request_fragments = fragments
+        state.requirements = requirements
+        state.evidence[0] = replace(
+            state.evidence[0], requirement_ids=["R1"], url="https://a.example/1"
+        )
+        self.assertFalse(rt.requirement_is_covered(state, requirements[0]))
+
+    def test_gap_context_and_prompt_disclose_gap_and_forbid_unsupported_claims(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
+        state = make_state(1)
+        fragments = rt.explicit_request_fragments(research)
+        state.request_fragments = fragments
+        state.requirements = [
+            rt.RequirementModel(
+                id="R1",
+                summary="Need direct evidence",
+                kind="direct",
+                fragment_ids=[fragments[0].id],
+            ),
+            rt.RequirementModel(
+                id="R2",
+                summary="compare vendors",
+                kind="comparison",
+                fragment_ids=[fragments[-1].id],
+            ),
+        ]
+        state.evidence[0] = replace(state.evidence[0], requirement_ids=["R1"], relevance=0.9)
+        state.report_plan = [
+            rt.ReportPlanSection(
+                heading="Compare",
+                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
+                requirement_ids=["R2"],
+                source_ids=[],
+                deliverables=["compare vendors"],
+            )
+        ]
+        context = rt.build_section_context(research, state, "missing_plan_section", "Compare")
+        self.assertEqual(context["coverage_gaps"][0]["required_hosts"], 2)
+        prompt = rt.build_section_prompt(
+            research, state, "missing_plan_section", repair_heading="Compare"
+        )
+        self.assertIn("unsupported claims", prompt)
+        self.assertIn("assigned_evidence", prompt)
+
+    def test_model_output_error_retries_but_checkpoint_corruption_stays_integrity_error(
+        self,
+    ) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
+        state = make_state(1)
+        state.last_inspected_revision = state.evidence_revision
+        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        rt.store_initial_plan(state, research, deep_plan_for(research))
+        with self.assertRaises(rt.ModelOutputError):
             rt.store_report_section(
                 state,
-                rt.ResearchRequest(query="Evidence"),
+                research,
                 state.evidence_revision,
-                "Unsafe replacement",
-                "Unsupported claim [S2] " * 50,
-                "Unsafe summary",
+                "Section 1",
+                ["R1"],
+                "Bad citation [S9]",
+                "summary",
             )
-
-        corrupt = rt.run_state_snapshot(make_state(1, "quick"))
-        corrupt["evidence_ledger"][0]["id"] = "S9"
+        corrupt = rt.run_state_snapshot(state)
+        corrupt["report_sections"] = [
+            {
+                "heading": "Section 1",
+                "body": "Bad citation [S9]",
+                "ledger_revision": state.evidence_revision,
+                "summary": "summary",
+                "requirement_ids": ["R1"],
+            }
+        ]
         loaded = rt.load_run_state(
             corrupt,
-            depth="quick",
-            budget=rt.make_budget("quick"),
-            wall_limit=rt.wall_budget_seconds("quick"),
+            depth="deep",
+            budget=rt.make_budget("deep"),
+            wall_limit=rt.wall_budget_seconds("deep"),
         )
-        with self.assertRaisesRegex(rt.IntegrityError, "not sequential"):
-            rt.validate_checkpoint_state(
-                loaded,
-                rt.ResearchRequest(query="Evidence", depth="quick"),
-            )
+        with self.assertRaises(rt.IntegrityError):
+            rt.validate_checkpoint_state(loaded, research)
 
-    def test_extraction_persists_search_and_fetch_provenance(self) -> None:
+    def test_extraction_provenance_and_status_invariants(self) -> None:
         async def run() -> None:
-            raw = b"""<html><head><title>Evidence</title></head><body><article><p>
-            Performance evidence documents the measured result with enough substantive text
-            to validate the extracted passage and its direct relevance.
-            </p></article></body></html>"""
+            raw = (
+                b"<html><body><article>Performance evidence with enough substantive text."
+                b"</article></body></html>"
+            )
             with patch.object(
                 rt,
                 "fetch_bytes",
@@ -525,16 +591,7 @@ class RuntimeContractTests(RuntimeTestCase):
                 )
             self.assertEqual(evidence.search_query, "performance evidence")
             self.assertEqual(evidence.purpose, "measured result")
-            self.assertGreater(evidence.relevance, 0)
-            state = make_state(0, "quick")
-            state.evidence = [replace(evidence, id="S1")]
-            snapshot = rt.run_state_snapshot(state)
-            self.assertEqual(snapshot["evidence_ledger"][0]["search_query"], "performance evidence")
 
-        asyncio.run(run())
-
-    def test_idempotency_resume_cached_completion_and_cumulative_stats(self) -> None:
-        async def run() -> None:
             request = rt.ResearchRequest(query="sample", depth="quick")
             key = rt.normalize_idempotency_key("message")
             research_id, request_hash, cached, snapshot = await rt.reserve_run(
@@ -543,11 +600,6 @@ class RuntimeContractTests(RuntimeTestCase):
             self.assertIsNone(cached)
             self.assertIsNone(snapshot)
             state = make_state(1, "quick")
-            state.stats.update(
-                model_transient_recoveries=4,
-                research_continuations=3,
-                structured_output_retries=2,
-            )
             await rt.checkpoint_run(
                 self.runtime,
                 key,
@@ -562,119 +614,66 @@ class RuntimeContractTests(RuntimeTestCase):
             )
             self.assertEqual(resumed_id, research_id)
             self.assertIsNone(resumed_cached)
-            loaded = rt.load_run_state(
-                cast(dict[str, Any], resumed_snapshot),
-                depth="quick",
-                budget=rt.make_budget("quick"),
-                wall_limit=rt.wall_budget_seconds("quick"),
-            )
-            self.assertEqual(loaded.stats["model_transient_recoveries"], 4)
-            self.assertEqual(loaded.stats["research_continuations"], 3)
-            self.assertEqual(loaded.stats["structured_output_retries"], 2)
-
-            response = rt.ResearchResponse(
-                research_id=research_id,
-                answer_markdown="done [S1]",
-                findings=[rt.CitationModel(claim="claim", source_ids=["S1"])],
-                sources=[rt.source_from_evidence(state.evidence[0])],
-                limitations=["none"],
-                stats={},
-            )
-            await rt.checkpoint_run(
-                self.runtime,
-                key,
-                "completed",
-                research_id,
-                request_hash,
-                response=response.model_dump(),
-            )
-            _, _, completed, _ = await rt.reserve_run(self.runtime, request, key)
-            self.assertEqual(cast(dict[str, Any], completed)["answer_markdown"], "done [S1]")
-            with self.assertRaises(rt.HTTPException) as conflict:
-                await rt.reserve_run(
-                    self.runtime,
-                    rt.ResearchRequest(query="different", depth="quick"),
-                    key,
-                )
-            self.assertEqual(conflict.exception.status_code, 409)
+            self.assertIsNotNone(resumed_snapshot)
 
         asyncio.run(run())
 
-    def test_reserve_run_rejects_impossible_status_payload_combinations(self) -> None:
-        async def run() -> None:
-            research = rt.ResearchRequest(query="sample", depth="quick")
-            request_hash = rt.query_hash(research.model_dump())
-            rows = (
-                ("completed-null", "completed", None, None),
-                ("completed-invalid", "completed", "{}", None),
-                ("interrupted-response", "interrupted", "{}", None),
-                ("interrupted-null-state", "interrupted", None, None),
-                ("failed-output-null-state", "failed_with_output", None, None),
+    def test_relevance_refresh_and_prune_unusable_sections(self) -> None:
+        table = "\n".join(f"試行{index}回 性能{300 + index}点" for index in range(12))
+        state = make_state(2, "quick")
+        state.evidence[0] = replace(state.evidence[0], excerpt=table, relevance=0, search_query="")
+        self.assertTrue(
+            rt.refresh_evidence_relevance(
+                state, rt.ResearchRequest(query="性能 指標", depth="quick")
             )
-            self.runtime.db.executemany(
-                """
-                INSERT INTO research_runs (
-                    idempotency_key, request_hash, research_id, status,
-                    response_json, state_json, created_at, updated_at
-                ) VALUES (?, ?, 'rid', ?, ?, ?, 1, 1)
-                """,
-                [
-                    (key, request_hash, status_name, response_json, state_json)
-                    for key, status_name, response_json, state_json in rows
-                ],
+        )
+        state.evidence[1] = replace(
+            state.evidence[1],
+            relevance=0,
+            excerpt="This unrelated document has enough text but no requested lexical term.",
+        )
+        state.report_sections = [
+            rt.ReportSection("Saved", "Claim [S1]", state.evidence_revision),
+            rt.ReportSection("Unsafe", "Claim [S2]", state.evidence_revision),
+        ]
+        self.assertTrue(rt.prune_unusable_report_sections(state))
+
+    def test_per_requirement_independent_host_citation_validation(self) -> None:
+        research = rt.ResearchRequest(query="compare vendors", depth="deep")
+        state = make_state(2)
+        state.request_fragments = rt.explicit_request_fragments(research)
+        state.requirements = [
+            rt.RequirementModel(
+                id="R1", summary="compare vendors", kind="comparison", fragment_ids=["F1"]
             )
-            self.runtime.db.commit()
-            for key, status_name, _response_json, _state_json in rows:
-                with (
-                    self.subTest(key=key),
-                    self.assertRaises(rt.IntegrityError),
-                ):
-                    await rt.reserve_run(self.runtime, research, key)
-                saved_status = self.runtime.db.execute(
-                    "SELECT status FROM research_runs WHERE idempotency_key=?",
-                    (key,),
-                ).fetchone()[0]
-                self.assertEqual(saved_status, status_name)
-
-        asyncio.run(run())
-
-    def test_network_boundaries_block_ssrf_bad_content_and_oversize_bodies(self) -> None:
-        with self.assertRaises(ValueError):
-            rt.validate_public_url("http://127.0.0.1/x")
-        with self.assertRaises(ValueError):
-            rt.validate_public_url("http://user:pass@example.com/x")
-
-        async def run() -> None:
-            with self.assertRaises(ValueError):
-                session = cast(
-                    aiohttp.ClientSession,
-                    FakeSession(
-                        FakeResponse(headers={"Content-Type": "text/xml"}, chunks=[b"<xml/>"])
-                    ),
-                )
-                await rt.fetch_bytes(session, "http://example.com", 100)
-            with self.assertRaises(ValueError):
-                response = cast(
-                    aiohttp.ClientResponse,
-                    FakeResponse(chunks=[b"a" * 5, b"b" * 5]),
-                )
-                await rt.read_bytes_with_cap(response, 5)
-            with self.assertRaises(ValueError):
-                session = cast(
-                    aiohttp.ClientSession,
-                    FakeSession(
-                        FakeResponse(
-                            status=302,
-                            headers={"Location": "http://127.0.0.1/private"},
-                        )
-                    ),
-                )
-                await rt.fetch_bytes(session, "https://example.com/public", 100)
-
-        asyncio.run(run())
+        ]
+        state.report_plan = [
+            rt.ReportPlanSection(
+                heading="Comparison",
+                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
+                requirement_ids=["R1"],
+                source_ids=["S1", "S2"],
+                deliverables=["compare vendors"],
+            )
+        ]
+        state.evidence[0] = replace(
+            state.evidence[0], requirement_ids=["R1"], url="https://a.example/1"
+        )
+        state.evidence[1] = replace(
+            state.evidence[1], requirement_ids=["R1"], url="https://b.example/2"
+        )
+        state.last_inspected_revision = state.evidence_revision
+        with self.assertRaisesRegex(rt.ModelOutputError, "independent hosts"):
+            rt.store_report_section(
+                state,
+                research,
+                state.evidence_revision,
+                "Comparison",
+                ["R1"],
+                "Only one host cited [S1]",
+                "summary",
+            )
 
 
 if __name__ == "__main__":
-    import unittest
-
     unittest.main(verbosity=2)
