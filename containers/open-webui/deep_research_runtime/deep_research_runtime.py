@@ -74,16 +74,18 @@ DOC_TIMEOUT = 45
 BODY_BYTE_LIMIT = 1_000_000
 SEARCH_RESULT_LIMIT = 8
 TOOL_EXCERPT_CHARS = 1200
-KIMI_MAX_TOKENS = 32_768
+KIMI_MAX_TOKENS = 16_384
 FINALIZER_MAX_TOKENS = 16_384
 FINALIZER_TIMEOUT_SECONDS = 1500
 TIMEOUT_SAFETY_MARGIN_SECONDS = 300
-FINALIZATION_RESERVE_SECONDS = 600
+# Deep finalization can require every planned section plus one submission call.
+FINALIZATION_RESERVE_SECONDS = 5_400
 DEEP_QUERY_BATCH_SIZE = 3
 DEEP_FETCH_BATCH_SIZE = 6
 AGENT_CANCEL_GRACE_SECONDS = 5
 DEFAULT_KIMI_TIMEOUT_SECONDS = 1800
-MODEL_TRANSIENT_RECOVERIES = 20
+# The proxy already performs bounded provider retries and shared cooldown waits.
+MODEL_TRANSIENT_RECOVERIES = 1
 MODEL_RETRY_BASE_SECONDS = 2.0
 MODEL_RETRY_MAX_SECONDS = 120.0
 STRUCTURED_OUTPUT_ATTEMPTS = 3
@@ -112,9 +114,9 @@ DEFAULT_DEPTH_BUDGETS = {
     },
     "deep": {
         "searches": 96,
-        "search_limit": 384,
+        "search_limit": 96,
         "evidence": 60,
-        "minimum_evidence": 20,
+        "minimum_evidence": 1,
         "target_evidence": 30,
         "turns": 270,
     },

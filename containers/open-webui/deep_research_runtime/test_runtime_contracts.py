@@ -129,7 +129,7 @@ class RuntimeContractTests(RuntimeTestCase):
             },
         ):
             self.assertEqual(rt.make_budget("deep").target_evidence, 25)
-        for invalid in (19, 61):
+        for invalid in (0, 61):
             with (
                 self.subTest(invalid=invalid),
                 patch.dict(os.environ, {"DEEP_RESEARCH_TARGET_EVIDENCE_DEEP": str(invalid)}),
