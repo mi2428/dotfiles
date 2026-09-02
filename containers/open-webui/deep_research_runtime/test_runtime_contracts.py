@@ -111,10 +111,32 @@ class RuntimeContractTests(RuntimeTestCase):
             (24, 24, 77_000, 20, 15, 8),
         )
         self.assertEqual(
-            (budget.searches, budget.search_limit, budget.evidence, budget.minimum_evidence),
-            (96, 384, 60, 20),
+            (
+                budget.searches,
+                budget.search_limit,
+                budget.evidence,
+                budget.minimum_evidence,
+                budget.target_evidence,
+            ),
+            (96, 384, 60, 20, 30),
         )
         self.assertLessEqual(rt.STRUCTURED_DEEP_SECTION_CHARS, rt.MAX_REPORT_SECTION_CHARS)
+
+    def test_deep_evidence_minimum_allows_finalize_but_only_target_stops_agent(self) -> None:
+        research = rt.ResearchRequest(query="Evidence", depth="deep")
+        budget = rt.make_budget("deep")
+        below = make_state(19)
+        voluntary = make_state(20)
+        near_target = make_state(29)
+        target = make_state(30)
+
+        self.assertFalse(rt.evidence_ready_for_report(below, research, budget))
+        self.assertTrue(rt.evidence_ready_for_report(voluntary, research, budget))
+        self.assertTrue(rt.evidence_ready_for_report(near_target, research, budget))
+        self.assertFalse(rt.evidence_target_reached(voluntary, budget))
+        self.assertFalse(rt.evidence_target_reached(near_target, budget))
+        self.assertTrue(rt.evidence_target_reached(target, budget))
+        self.assertIn("target for active collection: 30", rt.build_system_prompt(research, budget))
 
     def test_deep_contract_and_hard_limit_tail_salvage(self) -> None:
         budget = rt.make_budget("deep")

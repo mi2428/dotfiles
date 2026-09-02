@@ -26,6 +26,52 @@ from test_support import (
 
 
 class RuntimeOrchestrationTests(RuntimeTestCase):
+    def test_deep_collector_stop_event_waits_for_thirtieth_usable_source(self) -> None:
+        async def run() -> None:
+            research = rt.ResearchRequest(query="Evidence", depth="deep")
+            state = make_state(29)
+            reached = asyncio.Event()
+            extracted = rt.Evidence(
+                url="http://example.com/30",
+                title="Source 30",
+                publisher="Publisher",
+                published_at="2026-01-01",
+                excerpt="Evidence 30 directly supports the requested research claim.",
+                hash=f"{30:064x}",
+                relevance=0.8,
+                source_quality=0.5,
+            )
+            with (
+                patch.object(
+                    rt,
+                    "search_searxng",
+                    new=AsyncMock(
+                        return_value=[
+                            rt.SearchResult("http://example.com/30", "Thirty", "", "engine")
+                        ]
+                    ),
+                ),
+                patch.object(rt, "extract_evidence", new=AsyncMock(return_value=extracted)),
+            ):
+                tools, _allowlist, _fatal = rt.build_research_tools(
+                    self.runtime,
+                    research,
+                    "rid",
+                    "target-key",
+                    rt.query_hash(research.model_dump()),
+                    state,
+                    reached,
+                )
+                tool_map = {tool.tool_name: tool for tool in tools}
+                await tool_map["search_web"]("source thirty")
+                self.assertFalse(reached.is_set())
+                await tool_map["fetch_source"]("http://example.com/30", "support claim")
+
+            self.assertEqual(rt.usable_evidence_count(state), 30)
+            self.assertTrue(reached.is_set())
+
+        asyncio.run(run())
+
     def test_agent_configuration_and_retry_classification_are_bounded(self) -> None:
         request = rt.ResearchRequest(query="compare alternatives", depth="deep")
         agent = rt.build_research_agent(self.runtime.settings, request, [])

@@ -90,6 +90,7 @@ DEFAULT_DEPTH_BUDGETS = {
         "search_limit": 16,
         "evidence": 10,
         "minimum_evidence": 2,
+        "target_evidence": 2,
         "turns": 20,
     },
     "standard": {
@@ -97,6 +98,7 @@ DEFAULT_DEPTH_BUDGETS = {
         "search_limit": 48,
         "evidence": 28,
         "minimum_evidence": 4,
+        "target_evidence": 4,
         "turns": 40,
     },
     "deep": {
@@ -104,6 +106,7 @@ DEFAULT_DEPTH_BUDGETS = {
         "search_limit": 384,
         "evidence": 60,
         "minimum_evidence": 20,
+        "target_evidence": 30,
         "turns": 270,
     },
 }
@@ -241,6 +244,7 @@ class Budget:
     search_limit: int
     evidence: int
     minimum_evidence: int
+    target_evidence: int
     turns: int
 
 
@@ -458,10 +462,19 @@ def make_budget(depth: str) -> Budget:
             f"DEEP_RESEARCH_MIN_EVIDENCE_{upper}",
             default["minimum_evidence"],
         ),
+        target_evidence=env_int(
+            f"DEEP_RESEARCH_EVIDENCE_TARGET_{upper}",
+            default["target_evidence"],
+        ),
         turns=env_int(f"DEEP_RESEARCH_MODEL_TURNS_{upper}", default["turns"]),
     )
     if budget.search_limit < budget.searches:
         raise RuntimeError(f"DEEP_RESEARCH_SEARCH_LIMIT_{upper} must be >= search target")
+    if not budget.minimum_evidence <= budget.target_evidence <= budget.evidence:
+        raise RuntimeError(
+            f"DEEP_RESEARCH_MIN_EVIDENCE_{upper} <= DEEP_RESEARCH_EVIDENCE_TARGET_{upper} "
+            f"<= DEEP_RESEARCH_EVIDENCE_BUDGET_{upper} is required"
+        )
     return budget
 
 
@@ -845,6 +858,7 @@ def remaining_budgets(state: RunState, budget: Budget) -> dict[str, int]:
         "searches": max(0, budget.search_limit - len(state.searched_queries)),
         "evidence": max(0, budget.evidence - len(state.evidence)),
         "minimum_evidence": max(0, budget.minimum_evidence - usable_evidence_count(state)),
+        "target_evidence": max(0, budget.target_evidence - usable_evidence_count(state)),
     }
 
 
@@ -872,6 +886,7 @@ def default_stats(depth: str, budget: Budget, wall_limit: float) -> dict[str, An
         "search_budget": budget.search_limit,
         "evidence_budget": budget.evidence,
         "minimum_evidence": budget.minimum_evidence,
+        "target_evidence": budget.target_evidence,
         "model_turn_budget": budget.turns,
         "searches": 0,
         "documents": 0,
@@ -935,6 +950,7 @@ def load_run_state(
         "search_budget",
         "evidence_budget",
         "minimum_evidence",
+        "target_evidence",
         "model_turn_budget",
         "wall_exhausted",
         "stop_reason",
@@ -1367,6 +1383,12 @@ def evidence_ready_for_report(state: RunState, research: ResearchRequest, budget
     )
 
 
+def evidence_target_reached(state: RunState, budget: Budget) -> bool:
+    """Return whether an active collector must stop immediately."""
+
+    return usable_evidence_count(state) >= budget.target_evidence
+
+
 def report_needs_section(state: RunState, research: ResearchRequest) -> bool:
     """Return whether another section is required before structured submission."""
 
@@ -1406,7 +1428,8 @@ def build_research_continuation_prompt(
     payload["instructions"] = [
         "Resume the checkpointed research and collect the missing usable evidence.",
         "Do not draft or submit the report in this continuation.",
-        "Stop when the minimum usable-evidence requirement is satisfied.",
+        "Continue toward the usable-evidence target; the minimum only permits finalization if "
+        "the agent ends voluntarily.",
     ]
     return json.dumps(payload, ensure_ascii=False)
 
@@ -1423,6 +1446,7 @@ def finalization_context(research: ResearchRequest, state: RunState) -> dict[str
         "evidence_contract": {
             "usable": usable_evidence_count(state),
             "minimum": make_budget(research.depth).minimum_evidence,
+            "target": make_budget(research.depth).target_evidence,
             "hard_limit_salvage": bool(state.stats.get("evidence_shortfall_salvage")),
         },
         "evidence": [serialize_evidence(item) for item in state.evidence if item.relevance > 0],
@@ -1585,7 +1609,7 @@ def build_system_prompt(research: ResearchRequest, budget: Budget) -> str:
                 "collect evidence for that deliverable and its requested horizon."
             ),
             (
-                "Stop immediately without drafting a report once the usable-evidence minimum is "
+                "Stop immediately without drafting a report once the usable-evidence target is "
                 "met; the runtime owns finalization."
             ),
             (
@@ -1594,6 +1618,7 @@ def build_system_prompt(research: ResearchRequest, budget: Budget) -> str:
                 f"{budget.evidence}; model-turn limit: {budget.turns}."
             ),
             f"Minimum evidence before finalization: {budget.minimum_evidence}.",
+            f"Usable-evidence target for active collection: {budget.target_evidence}.",
             f"Recency days: {recency}.",
         ]
     )
@@ -1845,8 +1870,8 @@ def build_research_tools(
             state.stats["report_sections"] = 0
             state.stats["report_chars"] = 0
             await save("running")
-            if evidence_ready is not None and evidence_ready_for_report(
-                state, research, make_budget(research.depth)
+            if evidence_ready is not None and evidence_target_reached(
+                state, make_budget(research.depth)
             ):
                 evidence_ready.set()
             return tool_success(
