@@ -18,7 +18,9 @@ from test_support import (
     deep_findings,
     deep_plan,
     deep_section_body,
+    deep_structured_outputs,
     make_state,
+    mixed_deep_state,
     parse_tool_payload,
     planned_deep_state,
     report_sections,
@@ -71,6 +73,212 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
             self.assertEqual(rt.usable_evidence_count(state), 30)
             self.assertTrue(reached.is_set())
+            self.assertEqual(state.collection_decision, "target_reached")
+            self.assertEqual(state.phase, "evidence_complete")
+
+        asyncio.run(run())
+
+    def test_resume_with_twenty_five_sources_continues_without_a_saved_decision(self) -> None:
+        class InterruptedCollector:
+            async def invoke_async(self, _prompt: str, **_kwargs: Any) -> SimpleNamespace:
+                raise TimeoutError("provider interrupted")
+
+        async def run() -> None:
+            state = mixed_deep_state(25, 25)
+            with (
+                patch.object(
+                    rt, "build_research_agent", return_value=InterruptedCollector()
+                ) as build,
+                patch.object(
+                    rt,
+                    "build_finalization_agent",
+                    side_effect=AssertionError("resume must collect before finalization"),
+                ),
+                patch.object(rt, "MODEL_TRANSIENT_RECOVERIES", 0),
+                self.assertRaisesRegex(rt.IncompleteResearchError, "provider_failure"),
+            ):
+                await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    rt.ResearchRequest(query="Evidence", depth="deep"),
+                    "rid",
+                    "resume-25-key",
+                    rt.run_state_snapshot(state),
+                )
+            self.assertEqual(build.call_count, 1)
+            snapshot = json.loads(
+                self.runtime.db.execute(
+                    "SELECT state_json FROM research_runs WHERE idempotency_key='resume-25-key'"
+                ).fetchone()[0]
+            )
+            self.assertIsNone(snapshot["collection_decision"])
+
+        asyncio.run(run())
+
+    def test_voluntary_stop_below_minimum_starts_one_continuation(self) -> None:
+        class EarlyStopCollector:
+            async def invoke_async(self, _prompt: str, **_kwargs: Any) -> SimpleNamespace:
+                return SimpleNamespace(stop_reason="end_turn", message={"content": []})
+
+        async def run() -> None:
+            with (
+                patch.object(
+                    rt, "build_research_agent", return_value=EarlyStopCollector()
+                ) as build,
+                patch.object(
+                    rt,
+                    "build_finalization_agent",
+                    side_effect=AssertionError("nineteen sources must not finalize"),
+                ),
+                self.assertRaisesRegex(rt.IncompleteResearchError, "no_progress"),
+            ):
+                await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    rt.ResearchRequest(query="Evidence", depth="deep"),
+                    "rid",
+                    "below-minimum-key",
+                    rt.run_state_snapshot(mixed_deep_state(19, 19)),
+                )
+            self.assertEqual(build.call_count, 2)
+
+        asyncio.run(run())
+
+    def test_sixtieth_stored_source_sets_stop_event_for_both_cap_decisions(self) -> None:
+        async def run() -> None:
+            for usable_before, relevance, expected in (
+                (24, 0.8, "evidence_cap_reached"),
+                (19, 0.0, "evidence_cap_exhausted"),
+            ):
+                with self.subTest(expected=expected):
+                    state = mixed_deep_state(59, usable_before)
+                    reached = asyncio.Event()
+                    extracted = rt.Evidence(
+                        url=f"http://example.com/cap-{usable_before}",
+                        title="Cap source",
+                        publisher="Publisher",
+                        published_at="2026-01-01",
+                        excerpt="Cap evidence content",
+                        hash=f"{usable_before + 100:064x}",
+                        relevance=relevance,
+                        source_quality=0.5,
+                    )
+                    with (
+                        patch.object(
+                            rt,
+                            "search_searxng",
+                            new=AsyncMock(
+                                return_value=[
+                                    rt.SearchResult(
+                                        extracted.url,
+                                        "Cap source",
+                                        "",
+                                        "engine",
+                                    )
+                                ]
+                            ),
+                        ),
+                        patch.object(
+                            rt,
+                            "extract_evidence",
+                            new=AsyncMock(return_value=extracted),
+                        ),
+                    ):
+                        tools, _allowlist, _fatal = rt.build_research_tools(
+                            self.runtime,
+                            rt.ResearchRequest(query="Evidence", depth="deep"),
+                            "rid",
+                            f"cap-event-{usable_before}",
+                            "hash",
+                            state,
+                            reached,
+                        )
+                        tool_map = {tool.tool_name: tool for tool in tools}
+                        await tool_map["search_web"](f"cap query {usable_before}")
+                        await tool_map["fetch_source"](extracted.url, "cap evidence")
+                    self.assertTrue(reached.is_set())
+                    self.assertEqual(state.collection_decision, expected)
+
+        asyncio.run(run())
+
+    def test_voluntary_stop_between_minimum_and_target_checkpoints_finalization(self) -> None:
+        class VoluntaryCollector:
+            async def invoke_async(self, _prompt: str, **_kwargs: Any) -> SimpleNamespace:
+                return SimpleNamespace(stop_reason="end_turn", message={"content": []})
+
+        structured = StructuredAgent(deep_structured_outputs(25))
+
+        async def run() -> None:
+            state = mixed_deep_state(25, 25)
+            with (
+                patch.object(
+                    rt, "build_research_agent", return_value=VoluntaryCollector()
+                ) as build,
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    rt.ResearchRequest(query="Evidence", depth="deep"),
+                    "rid",
+                    "voluntary-25-key",
+                    rt.run_state_snapshot(state),
+                )
+            self.assertEqual(build.call_count, 1)
+            self.assertEqual(response.stats["collection_decision"], "voluntary_stop")
+
+        asyncio.run(run())
+
+    def test_evidence_cap_finalizes_with_twenty_five_but_not_nineteen_usable(self) -> None:
+        async def run() -> None:
+            eligible = mixed_deep_state(60, 25)
+            structured = StructuredAgent(deep_structured_outputs(25))
+            with (
+                patch.object(
+                    rt,
+                    "build_research_agent",
+                    side_effect=AssertionError("cap checkpoint must decide before collection"),
+                ),
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    rt.ResearchRequest(query="Evidence", depth="deep"),
+                    "eligible-cap-rid",
+                    "eligible-cap-key",
+                    rt.run_state_snapshot(eligible),
+                )
+            self.assertEqual(response.stats["collection_decision"], "evidence_cap_reached")
+
+            exhausted = mixed_deep_state(60, 19)
+            with (
+                patch.object(
+                    rt,
+                    "build_research_agent",
+                    side_effect=AssertionError("cap checkpoint must not restart collection"),
+                ),
+                patch.object(
+                    rt,
+                    "build_finalization_agent",
+                    side_effect=AssertionError("ineligible cap must not finalize"),
+                ),
+                self.assertRaisesRegex(rt.IncompleteResearchError, "evidence_exhausted"),
+            ):
+                await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    rt.ResearchRequest(query="Evidence", depth="deep"),
+                    "exhausted-cap-rid",
+                    "exhausted-cap-key",
+                    rt.run_state_snapshot(exhausted),
+                )
+            snapshot = json.loads(
+                self.runtime.db.execute(
+                    "SELECT state_json FROM research_runs WHERE idempotency_key='exhausted-cap-key'"
+                ).fetchone()[0]
+            )
+            self.assertEqual(snapshot["collection_decision"], "evidence_cap_exhausted")
 
         asyncio.run(run())
 
@@ -419,6 +627,47 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         asyncio.run(run())
 
+    def test_invalid_plan_semantics_retry_three_times_with_shared_validation(self) -> None:
+        duplicate = deep_plan(rt.DEEP_MIN_CITED_SOURCES)
+        duplicate[1] = duplicate[1].model_copy(update={"heading": duplicate[0].heading})
+        short = [item.model_copy(update={"target_chars": 5_000}) for item in deep_plan(20)]
+        structured = StructuredAgent(
+            [
+                rt.ReportPlanDraft(sections=duplicate),
+                rt.ReportPlanDraft(sections=short),
+                *deep_structured_outputs(20),
+            ]
+        )
+
+        async def run() -> None:
+            state = planned_deep_state(20)
+            state.report_plan.clear()
+            state.stats["report_plan_sections"] = 0
+            state.stats["report_plan_target_chars"] = 0
+            state.phase = "evidence_complete"
+            state.unmet_requirements.clear()
+            with (
+                patch.object(
+                    rt,
+                    "build_research_agent",
+                    side_effect=AssertionError("collection decision must be resumed"),
+                ),
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    rt.ResearchRequest(query="Evidence", depth="deep"),
+                    "rid",
+                    "plan-retries-key",
+                    rt.run_state_snapshot(state),
+                )
+            self.assertEqual(structured.models[:3], [rt.ReportPlanDraft] * 3)
+            self.assertEqual(response.stats["plan_calls"], 3)
+            self.assertEqual(response.stats["structured_output_retries"], 2)
+
+        asyncio.run(run())
+
     def test_finalizer_uses_adaptive_deliverable_repair_without_adding_a_section(self) -> None:
         source_count = rt.make_budget("deep").minimum_evidence
         state = planned_deep_state(source_count)
@@ -477,6 +726,127 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 structured.models,
                 [rt.ReportSectionDraft, rt.ReportSubmissionDraft],
             )
+
+        asyncio.run(run())
+
+    def test_successful_noop_repairs_are_bounded_and_checkpointed_by_reason(self) -> None:
+        research = rt.ResearchRequest(query="compare Evidence alternatives", depth="deep")
+
+        async def fail_noop(
+            action: rt.ReportAction,
+            state: rt.RunState,
+            key: str,
+        ) -> dict[str, Any]:
+            actual, heading, _reason = rt.next_report_action(state, research)
+            self.assertEqual(actual, action)
+            section = next(item for item in state.report_sections if item.heading == heading)
+            structured = StructuredAgent(
+                [
+                    rt.ReportSectionDraft(
+                        heading=section.heading,
+                        body_markdown=section.body,
+                        summary=section.summary,
+                    )
+                ]
+            )
+            with (
+                patch.object(
+                    rt,
+                    "build_research_agent",
+                    side_effect=AssertionError("completed collection must not restart"),
+                ),
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+                self.assertRaisesRegex(rt.IncompleteResearchError, "normal_contract_unmet"),
+            ):
+                await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    key,
+                    rt.run_state_snapshot(state),
+                )
+            self.assertEqual(structured.models, [rt.ReportSectionDraft])
+            row = self.runtime.db.execute(
+                "SELECT state_json FROM research_runs WHERE idempotency_key=?",
+                (key,),
+            ).fetchone()
+            snapshot = cast(dict[str, Any], json.loads(row["state_json"]))
+            self.assertEqual(snapshot["repair_noop_counts"][action], 1)
+            self.assertEqual(len(snapshot["repair_noop_fingerprints"]), 1)
+            self.assertEqual(len(snapshot["report_sections"]), len(state.report_sections))
+            return snapshot
+
+        async def run() -> None:
+            expand = planned_deep_state(20)
+            expand.report_sections = report_sections(20)
+            expand.report_sections[0] = rt.ReportSection(
+                "Section 1",
+                ("Short but substantive evidence [S1]. " * 30).strip(),
+                expand.evidence_revision,
+                "Short section",
+            )
+            expand_snapshot = await fail_noop("expand_existing", expand, "noop-expand")
+
+            citation = planned_deep_state(20)
+            citation.report_sections = [
+                rt.ReportSection(
+                    section.heading,
+                    section.body,
+                    citation.evidence_revision,
+                    section.summary,
+                )
+                for section in report_sections(1)
+            ]
+            await fail_noop("citation_repair", citation, "noop-citation")
+
+            source_ids = [f"S{index}" for index in range(1, 21)]
+            max_plan = [
+                rt.ReportPlanSection(
+                    heading=f"Max Section {index}",
+                    target_chars=5_000,
+                    source_ids=source_ids,
+                    deliverables=[f"Deliverable {index}"],
+                )
+                for index in range(1, rt.DEEP_PLAN_MAX_SECTIONS + 1)
+            ]
+            deliverable = planned_deep_state(20)
+            deliverable.report_plan = max_plan
+            body = deep_section_body(20)
+            deliverable.report_sections = [
+                rt.ReportSection(
+                    item.heading,
+                    body,
+                    deliverable.evidence_revision,
+                    f"Summary {index}",
+                )
+                for index, item in enumerate(max_plan, 1)
+            ]
+            deliverable.report_sections[0] = rt.ReportSection(
+                "Max Section 1",
+                "| Option | Result |\n|---|---|\n| A | uncited |\n\n" + body,
+                deliverable.evidence_revision,
+                "Comparison summary",
+            )
+            await fail_noop("deliverable_repair", deliverable, "noop-deliverable")
+            self.assertEqual(len(deliverable.report_sections), rt.DEEP_PLAN_MAX_SECTIONS)
+
+            with (
+                patch.object(
+                    rt,
+                    "build_finalization_agent",
+                    side_effect=AssertionError("checkpointed no-op must not be retried"),
+                ),
+                self.assertRaisesRegex(rt.IncompleteResearchError, "normal_contract_unmet"),
+            ):
+                await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    "noop-expand",
+                    expand_snapshot,
+                )
 
         asyncio.run(run())
 
@@ -582,6 +952,48 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertEqual(snapshot["stats"]["structured_output_retries"], 3)
             self.assertFalse(snapshot["report_sections"])
             self.assertIn("## Sources", failure.exception.answer_markdown)
+
+        asyncio.run(run())
+
+    def test_incomplete_diagnostics_bound_long_headings_and_hide_raw_inputs(self) -> None:
+        long_heading = "機" * 200
+        state = planned_deep_state(20)
+        state.report_plan[0] = state.report_plan[0].model_copy(update={"heading": long_heading})
+        structured = StructuredAgent(
+            [rt.MaxTokensReachedException("DRAFT_SECRET_SENTINEL") for _ in range(3)]
+        )
+
+        async def run() -> None:
+            with (
+                patch.object(
+                    rt,
+                    "build_research_agent",
+                    side_effect=AssertionError("collection decision must be preserved"),
+                ),
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+                self.assertRaisesRegex(
+                    rt.IncompleteResearchError, "structured_section_attempts"
+                ) as failure,
+            ):
+                await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    rt.ResearchRequest(query="REQUEST_SECRET_SENTINEL", depth="deep"),
+                    "rid",
+                    "safe-diagnostics-key",
+                    rt.run_state_snapshot(state),
+                )
+            output = failure.exception.answer_markdown
+            self.assertNotIn(long_heading, output)
+            self.assertNotIn("REQUEST_SECRET_SENTINEL", output)
+            self.assertNotIn("DRAFT_SECRET_SENTINEL", output)
+            snapshot = json.loads(
+                self.runtime.db.execute(
+                    "SELECT state_json FROM research_runs "
+                    "WHERE idempotency_key='safe-diagnostics-key'"
+                ).fetchone()[0]
+            )
+            self.assertTrue(all(len(item) <= 200 for item in snapshot["unmet_requirements"]))
 
         asyncio.run(run())
 
@@ -808,6 +1220,71 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertFalse(model["stats"]["wall_exhausted"])
             self.assertEqual(model["stats"]["model_transient_recoveries"], 2)
             self.assertIn("モデル提供者", model_failure.exception.answer_markdown)
+
+        asyncio.run(run())
+
+    def test_fatal_tool_error_wins_timeout_wall_and_structured_failure_races(self) -> None:
+        async def run() -> None:
+            fatal = [rt.IntegrityError("fatal tool integrity")]
+
+            class ProviderConflict:
+                async def invoke_async(self, _prompt: str, **_kwargs: Any) -> SimpleNamespace:
+                    raise TimeoutError("provider timeout")
+
+            with (
+                patch.object(rt, "build_research_tools", return_value=([], {}, fatal)),
+                patch.object(rt, "build_research_agent", return_value=ProviderConflict()),
+                self.assertRaisesRegex(rt.IntegrityError, "fatal tool integrity"),
+            ):
+                await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    rt.ResearchRequest(query="Evidence", depth="quick"),
+                    "provider-rid",
+                    "fatal-provider-key",
+                )
+
+            class WallConflict:
+                async def invoke_async(self, _prompt: str, **_kwargs: Any) -> SimpleNamespace:
+                    await asyncio.sleep(1)
+                    raise AssertionError("wall timeout must cancel")
+
+            with (
+                patch.object(rt, "wall_budget_seconds", return_value=0.01),
+                patch.object(rt, "build_research_tools", return_value=([], {}, fatal)),
+                patch.object(rt, "build_research_agent", return_value=WallConflict()),
+                self.assertRaisesRegex(rt.IntegrityError, "fatal tool integrity"),
+            ):
+                await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    rt.ResearchRequest(query="Evidence", depth="quick"),
+                    "wall-rid",
+                    "fatal-wall-key",
+                )
+
+            class StructuredConflict:
+                async def invoke_async(self, _prompt: str, **_kwargs: Any) -> SimpleNamespace:
+                    raise rt.MaxTokensReachedException("structured exhausted")
+
+            with (
+                patch.object(rt, "build_research_tools", return_value=([], {}, fatal)),
+                patch.object(
+                    rt,
+                    "build_research_agent",
+                    side_effect=AssertionError("completed collection must not restart"),
+                ),
+                patch.object(rt, "build_finalization_agent", return_value=StructuredConflict()),
+                self.assertRaisesRegex(rt.IntegrityError, "fatal tool integrity"),
+            ):
+                await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    rt.ResearchRequest(query="Evidence", depth="quick"),
+                    "structured-rid",
+                    "fatal-structured-key",
+                    rt.run_state_snapshot(stable_quick_state()),
+                )
 
         asyncio.run(run())
 

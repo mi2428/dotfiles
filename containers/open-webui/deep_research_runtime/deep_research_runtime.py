@@ -54,7 +54,7 @@ MAX_LIMITATION_CHARS = 500
 MAX_FINDINGS = 30
 MAX_FINDING_SOURCE_IDS = 6
 MAX_SOURCES = 60
-MAX_REPORT_SECTIONS = 24
+MAX_REPORT_SECTIONS = 16
 MAX_REPORT_SECTION_CHARS = 10_000
 # Leave another full report envelope for headings, sources, and limitations.
 MAX_ANSWER_CHARS = MAX_REPORT_SECTIONS * MAX_REPORT_SECTION_CHARS * 2
@@ -85,6 +85,11 @@ MODEL_TRANSIENT_RECOVERIES = 20
 MODEL_RETRY_BASE_SECONDS = 2.0
 MODEL_RETRY_MAX_SECONDS = 120.0
 STRUCTURED_OUTPUT_ATTEMPTS = 3
+REPAIR_NOOP_LIMITS = {
+    "expand_existing": 1,
+    "citation_repair": 1,
+    "deliverable_repair": 1,
+}
 
 DEFAULT_WALL_BUDGETS = {"quick": 1800, "standard": 5400, "deep": 10_350}
 DEFAULT_DEPTH_BUDGETS = {
@@ -116,6 +121,12 @@ DEFAULT_DEPTH_BUDGETS = {
 
 SourceId = Annotated[str, Field(pattern=r"^S\d+$")]
 Limitation = Annotated[str, Field(min_length=1, max_length=MAX_LIMITATION_CHARS)]
+CollectionDecision = Literal[
+    "voluntary_stop",
+    "target_reached",
+    "evidence_cap_reached",
+    "evidence_cap_exhausted",
+]
 
 
 class StrictModel(BaseModel):
@@ -354,6 +365,9 @@ class RunState:
     report_sections: list[ReportSection] = field(default_factory=list)
     phase: str = "research"
     unmet_requirements: list[str] = field(default_factory=list)
+    collection_decision: CollectionDecision | None = None
+    repair_noop_fingerprints: set[str] = field(default_factory=set)
+    repair_noop_counts: dict[str, int] = field(default_factory=dict)
     final_response: dict[str, Any] | None = None
 
 
@@ -513,7 +527,7 @@ def make_budget(depth: str) -> Budget:
             default["minimum_evidence"],
         ),
         target_evidence=env_int(
-            f"DEEP_RESEARCH_EVIDENCE_TARGET_{upper}",
+            f"DEEP_RESEARCH_TARGET_EVIDENCE_{upper}",
             default["target_evidence"],
         ),
         turns=env_int(f"DEEP_RESEARCH_MODEL_TURNS_{upper}", default["turns"]),
@@ -522,7 +536,7 @@ def make_budget(depth: str) -> Budget:
         raise RuntimeError(f"DEEP_RESEARCH_SEARCH_LIMIT_{upper} must be >= search target")
     if not budget.minimum_evidence <= budget.target_evidence <= budget.evidence:
         raise RuntimeError(
-            f"DEEP_RESEARCH_MIN_EVIDENCE_{upper} <= DEEP_RESEARCH_EVIDENCE_TARGET_{upper} "
+            f"DEEP_RESEARCH_MIN_EVIDENCE_{upper} <= DEEP_RESEARCH_TARGET_EVIDENCE_{upper} "
             f"<= DEEP_RESEARCH_EVIDENCE_BUDGET_{upper} is required"
         )
     return budget
@@ -966,6 +980,8 @@ def default_stats(depth: str, budget: Budget, wall_limit: float) -> dict[str, An
         "section_calls": 0,
         "submission_calls": 0,
         "repair_actions": {},
+        "collection_decision": "",
+        "repair_noop_counts": {},
         "agent_stop_reason": "",
     }
 
@@ -981,6 +997,9 @@ def run_state_snapshot(state: RunState) -> dict[str, Any]:
         "report_sections": [asdict(item) for item in state.report_sections],
         "phase": state.phase,
         "unmet_requirements": state.unmet_requirements,
+        "collection_decision": state.collection_decision,
+        "repair_noop_fingerprints": sorted(state.repair_noop_fingerprints),
+        "repair_noop_counts": state.repair_noop_counts,
         "final_response": state.final_response,
     }
 
@@ -1001,10 +1020,10 @@ def load_run_state(
             stats=default_stats(depth, budget, wall_limit),
         )
     evidence = [
-        Evidence(**item) for item in cast(list[dict[str, Any]], snapshot.get("evidence_ledger", []))
+        Evidence(**item) for item in cast(list[dict[str, Any]], snapshot["evidence_ledger"])
     ]
     fresh_stats = default_stats(depth, budget, wall_limit)
-    stats = fresh_stats | cast(dict[str, Any], snapshot.get("stats", {}))
+    stats = fresh_stats | cast(dict[str, Any], snapshot["stats"])
     for key in (
         "depth",
         "wall_limit_s",
@@ -1021,26 +1040,26 @@ def load_run_state(
         stats[key] = fresh_stats[key]
     stats["evidence"] = len(evidence)
     stats["usable_evidence"] = sum(item.relevance > 0 for item in evidence)
-    stats["evidence_revision"] = int(snapshot.get("evidence_revision", len(evidence)))
+    stats["evidence_revision"] = int(snapshot["evidence_revision"])
     report_plan = [
         ReportPlanSection.model_validate(item)
         for item in cast(list[dict[str, Any]], snapshot["report_plan"])
     ]
     report_sections = [
-        ReportSection(**item)
-        for item in cast(list[dict[str, Any]], snapshot.get("report_sections", []))
+        ReportSection(**item) for item in cast(list[dict[str, Any]], snapshot["report_sections"])
     ]
     stats["report_sections"] = len(report_sections)
     stats["report_chars"] = len(assemble_report_sections(report_sections))
     stats["report_plan_sections"] = len(report_plan)
     stats["report_plan_target_chars"] = sum(item.target_chars for item in report_plan)
-    final_response = cast(dict[str, Any] | None, snapshot.get("final_response"))
-    return RunState(
+    final_response = cast(dict[str, Any] | None, snapshot["final_response"])
+    collection_decision = cast(CollectionDecision | None, snapshot["collection_decision"])
+    state = RunState(
         evidence=evidence,
-        searched_queries=set(cast(list[str], snapshot.get("searched_queries", []))),
-        evidence_revision=int(snapshot.get("evidence_revision", len(evidence))),
+        searched_queries=set(cast(list[str], snapshot["searched_queries"])),
+        evidence_revision=int(snapshot["evidence_revision"]),
         last_inspected_revision=(
-            cast(int | None, snapshot.get("last_inspected_revision"))
+            cast(int | None, snapshot["last_inspected_revision"])
             if final_response is not None
             else None
         ),
@@ -1049,8 +1068,21 @@ def load_run_state(
         report_sections=report_sections,
         phase=str(snapshot["phase"]),
         unmet_requirements=list(cast(list[str], snapshot["unmet_requirements"])),
+        collection_decision=collection_decision,
+        repair_noop_fingerprints=set(cast(list[str], snapshot["repair_noop_fingerprints"])),
+        repair_noop_counts=dict(cast(dict[str, int], snapshot["repair_noop_counts"])),
         final_response=final_response,
     )
+    if report_plan:
+        try:
+            normalized_plan = validated_report_plan(state, depth, report_plan)
+        except IntegrityError:
+            raise
+        except ValueError as exc:
+            raise IntegrityError("checkpointed report plan is invalid") from exc
+        if normalized_plan != report_plan:
+            raise IntegrityError("checkpointed report plan is not normalized")
+    return state
 
 
 def refresh_evidence_relevance(state: RunState, research: ResearchRequest) -> bool:
@@ -1078,11 +1110,16 @@ def refresh_evidence_relevance(state: RunState, research: ResearchRequest) -> bo
     state.report_sections.clear()
     state.phase = "research"
     state.unmet_requirements.clear()
+    state.collection_decision = None
+    state.repair_noop_fingerprints.clear()
+    state.repair_noop_counts.clear()
     state.final_response = None
     state.stats["evidence_revision"] = state.evidence_revision
     state.stats["usable_evidence"] = usable_evidence_count(state)
     state.stats["report_plan_sections"] = 0
     state.stats["report_plan_target_chars"] = 0
+    state.stats["collection_decision"] = ""
+    state.stats["repair_noop_counts"] = {}
     state.stats["report_sections"] = 0
     state.stats["report_chars"] = 0
     return True
@@ -1142,11 +1179,66 @@ def validated_report_heading(heading: str) -> str:
     return normalized
 
 
+def validated_report_plan(
+    state: RunState,
+    depth: str,
+    sections: list[ReportPlanSection],
+) -> list[ReportPlanSection]:
+    """Apply the same semantic plan contract to generation and resume."""
+
+    if depth != "deep":
+        raise ValueError("report planning is only used for deep research")
+    if not DEEP_PLAN_MIN_SECTIONS <= len(sections) <= DEEP_PLAN_MAX_SECTIONS:
+        raise ValueError(
+            f"report plan must contain {DEEP_PLAN_MIN_SECTIONS} to "
+            f"{DEEP_PLAN_MAX_SECTIONS} sections"
+        )
+    headings: set[str] = set()
+    usable_ids = {item.id for item in state.evidence if item.relevance > 0}
+    normalized: list[ReportPlanSection] = []
+    for item in sections:
+        heading = validated_report_heading(item.heading)
+        folded = heading.casefold()
+        if folded in headings:
+            raise ValueError("report plan headings must be unique")
+        headings.add(folded)
+        if not DEEP_PLAN_MIN_SECTION_CHARS <= item.target_chars <= DEEP_PLAN_MAX_SECTION_CHARS:
+            raise ValueError("report plan section target is out of range")
+        source_ids = list(dict.fromkeys(item.source_ids))
+        if unknown := set(source_ids) - usable_ids:
+            raise IntegrityError(
+                f"report plan contains unknown or unusable source IDs: {sorted(unknown)}"
+            )
+        deliverables = [deliverable.strip() for deliverable in item.deliverables]
+        if any(
+            not deliverable or len(deliverable) > MAX_FOCUS_CHARS for deliverable in deliverables
+        ):
+            raise ValueError("report plan deliverables must contain 1 to 500 characters")
+        normalized.append(
+            item.model_copy(
+                update={
+                    "heading": heading,
+                    "source_ids": source_ids,
+                    "deliverables": deliverables,
+                }
+            )
+        )
+    if sum(item.target_chars for item in normalized) < DEEP_MIN_ANSWER_CHARS:
+        raise ValueError(
+            f"report plan targets must total at least {DEEP_MIN_ANSWER_CHARS} characters"
+        )
+    planned_sources = {source_name for item in normalized for source_name in item.source_ids}
+    if len(planned_sources) < DEEP_MIN_CITED_SOURCES:
+        raise ValueError(f"report plan must allocate at least {DEEP_MIN_CITED_SOURCES} source IDs")
+    return normalized
+
+
 def validate_checkpoint_state(state: RunState, research: ResearchRequest) -> None:
     """Fail closed when a resumable snapshot violates runtime-owned invariants."""
 
     if state.phase not in {
         "research",
+        "evidence_complete",
         "planning",
         "sections",
         "submission",
@@ -1174,32 +1266,51 @@ def validate_checkpoint_state(state: RunState, research: ResearchRequest) -> Non
         state.last_inspected_revision > state.evidence_revision
     ):
         raise IntegrityError("inspected evidence revision is invalid")
+    budget = make_budget(research.depth)
+    if len(state.evidence) > budget.evidence:
+        raise IntegrityError("evidence ledger exceeds the storage cap")
+    decision = state.collection_decision
+    usable_count = usable_evidence_count(state)
+    if decision not in {
+        None,
+        "voluntary_stop",
+        "target_reached",
+        "evidence_cap_reached",
+        "evidence_cap_exhausted",
+    }:
+        raise IntegrityError("invalid collection decision")
+    if decision == "target_reached" and usable_count < budget.target_evidence:
+        raise IntegrityError("target decision is not supported by the evidence ledger")
+    if decision in {"evidence_cap_reached", "evidence_cap_exhausted"} and (
+        len(state.evidence) < budget.evidence
+    ):
+        raise IntegrityError("evidence cap decision is not supported by the ledger")
+    if decision == "evidence_cap_reached" and not (
+        budget.minimum_evidence <= usable_count < budget.target_evidence
+    ):
+        raise IntegrityError("eligible evidence cap decision is outside its evidence range")
+    if decision == "evidence_cap_exhausted" and usable_count >= budget.minimum_evidence:
+        raise IntegrityError("exhausted evidence cap decision reached the minimum")
+    if decision == "voluntary_stop" and not (
+        budget.minimum_evidence <= usable_count < budget.target_evidence
+    ):
+        raise IntegrityError("voluntary stop decision is outside its evidence range")
+    if decision is not None and state.stats.get("collection_decision") != decision:
+        raise IntegrityError("collection decision stats do not match the checkpoint")
+    if decision is None and state.stats.get("collection_decision") not in {None, ""}:
+        raise IntegrityError("collection decision stats are stale")
+    if decision is None and (state.report_plan or state.report_sections or state.final_response):
+        raise IntegrityError("report work exists without a collection decision")
     usable_ids = {item.id for item in state.evidence if item.relevance > 0}
-    if research.depth != "deep" and state.report_plan:
-        raise IntegrityError("non-deep checkpoint contains a report plan")
     if state.report_plan:
-        headings = [item.heading.casefold() for item in state.report_plan]
-        if len(headings) != len(set(headings)):
-            raise IntegrityError("report plan headings are not unique")
-        if any(
-            validated_report_heading(item.heading) != item.heading for item in state.report_plan
-        ):
-            raise IntegrityError("report plan heading is not normalized")
-        if any(set(item.source_ids) - usable_ids for item in state.report_plan):
-            raise IntegrityError("report plan cites unknown or unusable evidence")
-        planned_sources = {
-            source_name for item in state.report_plan for source_name in item.source_ids
-        }
-        if len(planned_sources) < DEEP_MIN_CITED_SOURCES:
-            raise IntegrityError("report plan has insufficient source coverage")
-        if any(
-            not deliverable.strip()
-            for item in state.report_plan
-            for deliverable in item.deliverables
-        ):
-            raise IntegrityError("report plan has an empty deliverable")
-        if sum(item.target_chars for item in state.report_plan) < DEEP_MIN_ANSWER_CHARS:
-            raise IntegrityError("report plan target is below the deep contract")
+        try:
+            validated = validated_report_plan(state, research.depth, state.report_plan)
+        except IntegrityError:
+            raise
+        except ValueError as exc:
+            raise IntegrityError("checkpointed report plan is invalid") from exc
+        if validated != state.report_plan:
+            raise IntegrityError("checkpointed report plan is not normalized")
     section_headings = [item.heading.casefold() for item in state.report_sections]
     if len(section_headings) != len(set(section_headings)):
         raise IntegrityError("checkpointed report section headings are not unique")
@@ -1216,7 +1327,12 @@ def validate_checkpoint_state(state: RunState, research: ResearchRequest) -> Non
             raise IntegrityError("checkpointed report section has invalid citations")
         if not item.body or len(item.body) > MAX_REPORT_SECTION_CHARS:
             raise IntegrityError("checkpointed report section has an invalid length")
-        if re.search(r"^##\s+", item.body, flags=re.MULTILINE) or len(item.summary) > 500:
+        if (
+            item.body != item.body.strip()
+            or item.summary != item.summary.strip()
+            or re.search(r"^##\s+", item.body, flags=re.MULTILINE)
+            or len(item.summary) > 500
+        ):
             raise IntegrityError("checkpointed report section structure is invalid")
         if research.depth == "deep" and (
             len(item.body) < DEEP_MIN_SECTION_CHARS or not item.summary
@@ -1224,6 +1340,18 @@ def validate_checkpoint_state(state: RunState, research: ResearchRequest) -> Non
             raise IntegrityError("checkpointed deep section is incomplete")
     if any(not item or len(item) > 200 for item in state.unmet_requirements):
         raise IntegrityError("checkpoint unmet requirements are invalid")
+    if any(not re.fullmatch(r"[0-9a-f]{64}", item) for item in state.repair_noop_fingerprints):
+        raise IntegrityError("checkpoint repair fingerprint is invalid")
+    if any(
+        action not in REPAIR_NOOP_LIMITS
+        or type(count) is not int
+        or count < 0
+        or count > REPAIR_NOOP_LIMITS[action]
+        for action, count in state.repair_noop_counts.items()
+    ):
+        raise IntegrityError("checkpoint repair no-op counts are invalid")
+    if state.stats.get("repair_noop_counts") != state.repair_noop_counts:
+        raise IntegrityError("checkpoint repair no-op stats do not match")
     if state.final_response is not None:
         ResearchResponse.model_validate(state.final_response)
 
@@ -1237,51 +1365,22 @@ def store_report_plan(
 
     if research.depth != "deep":
         raise ValueError("report planning is only used for deep research")
+    if not collection_allows_finalization(state):
+        raise IntegrityError("report planning requires a collection decision")
     if state.last_inspected_revision != state.evidence_revision:
         raise IntegrityError("inspect_evidence_ledger must follow the latest evidence update")
-    headings: set[str] = set()
-    usable_ids = {item.id for item in state.evidence if item.relevance > 0}
-    normalized: list[ReportPlanSection] = []
-    for item in draft.sections:
-        heading = validated_report_heading(item.heading)
-        folded = heading.casefold()
-        if folded in headings:
-            raise ValueError("report plan headings must be unique")
-        headings.add(folded)
-        source_ids = list(dict.fromkeys(item.source_ids))
-        if unknown := set(source_ids) - usable_ids:
-            raise IntegrityError(
-                f"report plan contains unknown or unusable source IDs: {sorted(unknown)}"
-            )
-        deliverables = [deliverable.strip() for deliverable in item.deliverables]
-        if any(
-            not deliverable or len(deliverable) > MAX_FOCUS_CHARS for deliverable in deliverables
-        ):
-            raise ValueError("report plan deliverables must contain 1 to 500 characters")
-        normalized.append(
-            item.model_copy(
-                update={
-                    "heading": heading,
-                    "source_ids": source_ids,
-                    "deliverables": deliverables,
-                }
-            )
-        )
-    if sum(item.target_chars for item in normalized) < DEEP_MIN_ANSWER_CHARS:
-        raise ValueError(
-            f"report plan targets must total at least {DEEP_MIN_ANSWER_CHARS} characters"
-        )
-    planned_sources = {source_id for item in normalized for source_id in item.source_ids}
-    if len(planned_sources) < DEEP_MIN_CITED_SOURCES:
-        raise ValueError(f"report plan must allocate at least {DEEP_MIN_CITED_SOURCES} source IDs")
+    normalized = validated_report_plan(state, research.depth, draft.sections)
     state.report_plan = normalized
     state.report_sections.clear()
+    state.repair_noop_fingerprints.clear()
+    state.repair_noop_counts.clear()
     state.phase = "sections"
     state.unmet_requirements = ["missing_plan_section"]
     state.stats["report_plan_sections"] = len(normalized)
     state.stats["report_plan_target_chars"] = sum(item.target_chars for item in normalized)
     state.stats["report_sections"] = 0
     state.stats["report_chars"] = 0
+    state.stats["repair_noop_counts"] = {}
 
 
 def incomplete_requirements(
@@ -1291,7 +1390,16 @@ def incomplete_requirements(
 ) -> list[str]:
     """Derive deterministic unmet items from a valid checkpoint."""
 
-    unmet = list(state.unmet_requirements)
+    labels = {
+        "report_plan": "レポート計画",
+        "missing_plan_section": "計画済みレポート節",
+        "expand_existing": "本文文字数",
+        "citation_repair": "引用ソース範囲",
+        "deliverable_repair": "明示された成果物",
+        "findings": "findings",
+        "limitations": "limitations",
+    }
+    unmet = [labels.get(item, "未達のruntime契約") for item in state.unmet_requirements]
     usable = usable_evidence_count(state)
     if usable < budget.minimum_evidence:
         unmet.append(f"使用可能な証拠: {usable}/{budget.minimum_evidence}")
@@ -1300,11 +1408,11 @@ def incomplete_requirements(
             unmet.append("レポート計画")
         else:
             completed = {item.heading.casefold() for item in state.report_sections}
-            unmet.extend(
-                f"未完成の計画節: {item.heading}"
-                for item in state.report_plan
-                if item.heading.casefold() not in completed
+            missing_count = sum(
+                item.heading.casefold() not in completed for item in state.report_plan
             )
+            if missing_count:
+                unmet.append(f"未完成の計画節: {missing_count}件")
         answer = assemble_report_sections(state.report_sections)
         if len(answer) < DEEP_MIN_ANSWER_CHARS:
             unmet.append(f"本文文字数: {len(answer)}/{DEEP_MIN_ANSWER_CHARS}")
@@ -1312,8 +1420,8 @@ def incomplete_requirements(
         if cited < DEEP_MIN_CITED_SOURCES:
             unmet.append(f"本文中の引用ソース: {cited}/{DEEP_MIN_CITED_SOURCES}")
     if state.phase == "submission":
-        unmet.extend(["findings", "limitations"])
-    return list(dict.fromkeys(unmet)) or ["最終提出"]
+        unmet.extend(["主要な知見", "制約事項"])
+    return [item[:200] for item in dict.fromkeys(unmet)] or ["最終提出"]
 
 
 def safe_source_line(evidence: Evidence) -> str:
@@ -1350,6 +1458,11 @@ def build_incomplete_markdown(
         if state.report_sections and cited_ids
         else usable
     )
+    unmet = (
+        state.unmet_requirements
+        if state.phase == "incomplete"
+        else incomplete_requirements(state, research, budget)
+    )
     lines = [
         "# Deep Research未完了",
         "",
@@ -1359,7 +1472,7 @@ def build_incomplete_markdown(
         f"- 本文文字数: {len(answer)}文字",
         "",
         "## 未達",
-        *(f"- {item}" for item in incomplete_requirements(state, research, budget)),
+        *(f"- {item}" for item in unmet),
         "",
         "## 終了理由",
         reason_labels.get(reason, "調査を安全に完了できませんでした。"),
@@ -1681,6 +1794,37 @@ def evidence_target_reached(state: RunState, budget: Budget) -> bool:
     return usable_evidence_count(state) >= budget.target_evidence
 
 
+def evidence_limit_decision(state: RunState, budget: Budget) -> CollectionDecision | None:
+    """Return the decision that must stop an active collector, if any."""
+
+    usable = usable_evidence_count(state)
+    if usable >= budget.target_evidence:
+        return "target_reached"
+    if len(state.evidence) >= budget.evidence:
+        return (
+            "evidence_cap_reached"
+            if usable >= budget.minimum_evidence
+            else "evidence_cap_exhausted"
+        )
+    return None
+
+
+def set_collection_decision(state: RunState, decision: CollectionDecision) -> None:
+    if state.collection_decision is not None and state.collection_decision != decision:
+        raise IntegrityError("conflicting evidence collection decisions")
+    state.collection_decision = decision
+    state.phase = "evidence_complete"
+    state.stats["collection_decision"] = decision
+
+
+def collection_allows_finalization(state: RunState) -> bool:
+    return state.collection_decision in {
+        "voluntary_stop",
+        "target_reached",
+        "evidence_cap_reached",
+    }
+
+
 ReportAction = Literal[
     "missing_plan_section",
     "expand_existing",
@@ -1749,6 +1893,40 @@ def report_needs_section(state: RunState, research: ResearchRequest) -> bool:
     return next_report_action(state, research)[0] != "submit"
 
 
+def repair_fingerprint(action: ReportAction, heading: str, report: str) -> str:
+    return hashlib.sha256(f"{action}\0{heading}\0{report}".encode()).hexdigest()
+
+
+def repair_retry_blocked(state: RunState, action: ReportAction, heading: str) -> bool:
+    limit = REPAIR_NOOP_LIMITS.get(action)
+    if limit is None:
+        return False
+    fingerprint = repair_fingerprint(
+        action,
+        heading,
+        assemble_report_sections(state.report_sections),
+    )
+    return (
+        fingerprint in state.repair_noop_fingerprints
+        or state.repair_noop_counts.get(action, 0) >= limit
+    )
+
+
+def record_repair_noop(
+    state: RunState,
+    action: ReportAction,
+    heading: str,
+    report_before: str,
+) -> bool:
+    limit = REPAIR_NOOP_LIMITS.get(action)
+    if limit is None or assemble_report_sections(state.report_sections) != report_before:
+        return False
+    state.repair_noop_fingerprints.add(repair_fingerprint(action, heading, report_before))
+    state.repair_noop_counts[action] = state.repair_noop_counts.get(action, 0) + 1
+    state.stats["repair_noop_counts"] = dict(state.repair_noop_counts)
+    return state.repair_noop_counts[action] >= limit
+
+
 def build_research_continuation_prompt(
     research: ResearchRequest, state: RunState, budget: Budget
 ) -> str:
@@ -1778,6 +1956,7 @@ def finalization_context(research: ResearchRequest, state: RunState) -> dict[str
         "depth": research.depth,
         "language": research.language,
         "ledger_revision": state.evidence_revision,
+        "collection_decision": state.collection_decision,
         "evidence_contract": {
             "usable": usable_evidence_count(state),
             "minimum": make_budget(research.depth).minimum_evidence,
@@ -1868,7 +2047,12 @@ def build_section_prompt(
             "repair_heading": repair_heading,
             "planned_section": planned.model_dump() if planned is not None else None,
             "section_to_repair": (
-                {"heading": existing.heading, "body_markdown": existing.body}
+                {
+                    "heading": existing.heading,
+                    "summary": existing.summary,
+                    "source_ids": sorted(citation_ids(existing.body), key=numeric_source_id),
+                    "chars": len(existing.body),
+                }
                 if existing is not None
                 else None
             ),
@@ -2152,6 +2336,11 @@ def build_research_tools(
     allowlisted_results: dict[str, SearchResult] = {}
     fatal_errors: list[Exception] = []
 
+    def record_fatal(exc: Exception) -> None:
+        fatal_errors.append(exc)
+        if evidence_ready is not None:
+            evidence_ready.set()
+
     async def save(
         status_name: str,
         *,
@@ -2224,7 +2413,7 @@ def build_research_tools(
             await save("running")
             return tool_error("search_failed", str(exc))
         except Exception as exc:  # pragma: no cover - defensive fail-closed path
-            fatal_errors.append(exc)
+            record_fatal(exc)
             return tool_error("internal_error", "search failed due to an internal runtime error")
 
     @tool
@@ -2249,7 +2438,15 @@ def build_research_tools(
                     "url_not_allowlisted",
                     "url must come from search_web or the evidence ledger",
                 )
-            if len(state.evidence) >= make_budget(research.depth).evidence:
+            budget = make_budget(research.depth)
+            if len(state.evidence) >= budget.evidence:
+                decision = evidence_limit_decision(state, budget)
+                if decision is None:
+                    raise IntegrityError("evidence cap reached without a collection decision")
+                set_collection_decision(state, decision)
+                await save("running")
+                if evidence_ready is not None:
+                    evidence_ready.set()
                 return tool_error("evidence_budget", "evidence budget exhausted")
             extracted = await extract_evidence(result, research.query, combined_focus)
             for item in state.evidence:
@@ -2266,6 +2463,9 @@ def build_research_tools(
             state.report_sections.clear()
             state.phase = "research"
             state.unmet_requirements.clear()
+            state.collection_decision = None
+            state.repair_noop_fingerprints.clear()
+            state.repair_noop_counts.clear()
             state.final_response = None
             state.stats["documents"] += 1
             state.stats["evidence"] = len(state.evidence)
@@ -2275,14 +2475,20 @@ def build_research_tools(
             state.stats["report_plan_target_chars"] = 0
             state.stats["report_sections"] = 0
             state.stats["report_chars"] = 0
+            state.stats["collection_decision"] = ""
+            state.stats["repair_noop_counts"] = {}
+            decision = evidence_limit_decision(state, budget)
+            if decision is not None:
+                set_collection_decision(state, decision)
             await save("running")
-            if evidence_ready is not None and evidence_target_reached(
-                state, make_budget(research.depth)
-            ):
+            if evidence_ready is not None and decision is not None:
                 evidence_ready.set()
             return tool_success(
                 {"ok": True, "evidence": serialize_evidence(evidence), "cached": False}
             )
+        except IntegrityError as exc:
+            record_fatal(exc)
+            return tool_error("integrity_error", "evidence checkpoint integrity failure")
         except (
             aiohttp.ClientError,
             OSError,
@@ -2295,7 +2501,7 @@ def build_research_tools(
             state.stats["source_skips"] += 1
             return tool_error("fetch_failed", str(exc))
         except Exception as exc:  # pragma: no cover - defensive fail-closed path
-            fatal_errors.append(exc)
+            record_fatal(exc)
             return tool_error("internal_error", "fetch failed due to an internal runtime error")
 
     @tool
@@ -2325,7 +2531,7 @@ def build_research_tools(
                 }
             )
         except Exception as exc:  # pragma: no cover - defensive fail-closed path
-            fatal_errors.append(exc)
+            record_fatal(exc)
             return tool_error(
                 "internal_error",
                 "inspection failed due to an internal runtime error",
@@ -2344,12 +2550,12 @@ def build_research_tools(
             await save("running")
             return tool_success(result)
         except IntegrityError as exc:
-            fatal_errors.append(exc)
+            record_fatal(exc)
             return tool_error("integrity_error", "section checkpoint integrity failure")
         except ValueError as exc:
             return tool_error("invalid_report_section", str(exc))
         except Exception as exc:  # pragma: no cover - defensive fail-closed path
-            fatal_errors.append(exc)
+            record_fatal(exc)
             return tool_error("internal_error", "section save failed due to an internal error")
 
     @tool
@@ -2373,12 +2579,12 @@ def build_research_tools(
                 }
             )
         except IntegrityError as exc:
-            fatal_errors.append(exc)
+            record_fatal(exc)
             return tool_error("integrity_error", "report checkpoint integrity failure")
         except ValueError as exc:
             return tool_error("invalid_report", str(exc))
         except Exception as exc:  # pragma: no cover - defensive fail-closed path
-            fatal_errors.append(exc)
+            record_fatal(exc)
             return tool_error("internal_error", "submit failed due to an internal runtime error")
 
     return (
@@ -2419,19 +2625,50 @@ async def reserve_run(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="idempotency key conflict",
                 )
-            if row["response_json"]:
-                cached = json.loads(row["response_json"])
+            status_name = str(row["status"])
+            response_json = cast(str | None, row["response_json"])
+            if status_name == "completed":
+                if response_json is None:
+                    raise IntegrityError("completed run has no cached response")
+                try:
+                    cached = json.loads(response_json)
+                    ResearchResponse.model_validate(cached)
+                except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                    raise IntegrityError("completed run has an invalid cached response") from exc
                 if not isinstance(cached, dict):
-                    raise ValueError("invalid cached response")
+                    raise IntegrityError("completed run cache is not an object")
                 return row["research_id"], request_hash, cached, None
-            if row["status"] == "running":
+            if response_json is not None:
+                raise IntegrityError("non-completed run contains a cached response")
+            if status_name not in {
+                "running",
+                "interrupted",
+                "cancelled",
+                "failed",
+                "failed_with_output",
+            }:
+                raise IntegrityError("research run has an invalid status")
+            if status_name == "running":
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="research in progress",
                 )
-            state_json = json.loads(row["state_json"]) if row["state_json"] else None
-            if state_json is not None and not isinstance(state_json, dict):
-                raise ValueError("invalid state snapshot")
+            raw_state = cast(str | None, row["state_json"])
+            if raw_state is None:
+                raise IntegrityError("resumable run has no checkpoint")
+            try:
+                state_json = json.loads(raw_state)
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise IntegrityError("research run has invalid checkpoint JSON") from exc
+            if not isinstance(state_json, dict):
+                raise IntegrityError("research run checkpoint is not an object")
+            checkpoint = load_run_state(
+                state_json,
+                depth=research.depth,
+                budget=make_budget(research.depth),
+                wall_limit=wall_budget_seconds(research.depth),
+            )
+            validate_checkpoint_state(checkpoint, research)
             runtime.db.execute(
                 """
                 UPDATE research_runs
@@ -2495,6 +2732,8 @@ async def run_research(
         )
 
     async def incomplete_failure(reason: str) -> IncompleteResearchError:
+        if fatal_errors:
+            raise fatal_errors[0]
         state.stats["stop_reason"] = reason
         state.unmet_requirements = incomplete_requirements(state, research, budget)
         state.phase = "incomplete"
@@ -2614,6 +2853,8 @@ async def run_research(
 
     async def invoke_structured(prompt: str, output_model: type[BaseModel]) -> BaseModel:
         while True:
+            if fatal_errors:
+                raise fatal_errors[0]
             agent = build_finalization_agent(runtime.settings, research)
             try:
                 result = await invoke_agent(
@@ -2632,14 +2873,20 @@ async def run_research(
                 raise ExpectedResearchFailure("provider_failure") from exc
             if result is None:
                 raise ExpectedResearchFailure("provider_failure")
+            if fatal_errors:
+                raise fatal_errors[0]
             output = result.structured_output
             if not isinstance(output, output_model):
                 raise ValueError("structured finalizer returned no validated output")
             return output
 
     async def finalize_structured_report() -> None:
+        if fatal_errors:
+            raise fatal_errors[0]
+        if not collection_allows_finalization(state):
+            raise IntegrityError("report finalization requires a collection decision")
         if not evidence_ready_for_report(state, research, budget):
-            raise ExpectedResearchFailure("evidence_exhausted")
+            raise IntegrityError("collection decision does not satisfy finalization eligibility")
         state.stats["evidence_shortfall_salvage"] = (
             usable_evidence_count(state) < budget.minimum_evidence
         )
@@ -2649,26 +2896,38 @@ async def run_research(
         if research.depth == "deep" and not state.report_plan:
             state.phase = "planning"
             state.unmet_requirements = ["report_plan"]
-            state.stats["plan_calls"] += 1
             await save("running")
-            try:
-                draft = cast(
-                    ReportPlanDraft,
-                    await invoke_structured(build_plan_prompt(research, state), ReportPlanDraft),
-                )
-                store_report_plan(state, research, draft)
-            except IntegrityError:
-                raise
-            except ExpectedResearchFailure:
-                raise
-            except (
-                TypeError,
-                ValueError,
-                MaxTokensReachedException,
-                StructuredOutputException,
-            ) as exc:
-                raise ExpectedResearchFailure("structured_plan_invalid") from exc
-            await save("running")
+            planned = False
+            for _attempt in range(STRUCTURED_OUTPUT_ATTEMPTS):
+                try:
+                    state.stats["plan_calls"] += 1
+                    draft = cast(
+                        ReportPlanDraft,
+                        await invoke_structured(
+                            build_plan_prompt(research, state),
+                            ReportPlanDraft,
+                        ),
+                    )
+                    store_report_plan(state, research, draft)
+                    await save("running")
+                    planned = True
+                    break
+                except IntegrityError:
+                    raise
+                except ExpectedResearchFailure:
+                    raise
+                except (
+                    TypeError,
+                    ValueError,
+                    MaxTokensReachedException,
+                    StructuredOutputException,
+                ) as exc:
+                    if fatal_errors:
+                        raise fatal_errors[0] from exc
+                    state.stats["structured_output_retries"] += 1
+                    await save("running")
+            if not planned:
+                raise ExpectedResearchFailure("structured_plan_invalid")
 
         state.phase = "sections"
         section_attempts = 0
@@ -2678,6 +2937,8 @@ async def run_research(
             if action == "submit":
                 break
             state.unmet_requirements = [action]
+            if repair_heading is not None and repair_retry_blocked(state, action, repair_heading):
+                raise ExpectedResearchFailure("normal_contract_unmet")
             repairs = cast(dict[str, int], state.stats["repair_actions"])
             repairs[action] = repairs.get(action, 0) + 1
             stored = False
@@ -2686,6 +2947,7 @@ async def run_research(
                 if section_attempts > MAX_REPORT_SECTIONS * STRUCTURED_OUTPUT_ATTEMPTS:
                     raise ExpectedResearchFailure("normal_contract_unmet")
                 try:
+                    report_before = assemble_report_sections(state.report_sections)
                     state.stats["section_calls"] += 1
                     draft = cast(
                         ReportSectionDraft,
@@ -2710,7 +2972,15 @@ async def run_research(
                     )
                     next_action = next_report_action(state, research)[0]
                     state.unmet_requirements = [] if next_action == "submit" else [next_action]
+                    noop_limit_reached = repair_heading is not None and record_repair_noop(
+                        state,
+                        action,
+                        repair_heading,
+                        report_before,
+                    )
                     await save("running")
+                    if noop_limit_reached:
+                        raise ExpectedResearchFailure("normal_contract_unmet")
                     validation_error = ""
                     stored = True
                     break
@@ -2722,6 +2992,8 @@ async def run_research(
                     MaxTokensReachedException,
                     StructuredOutputException,
                 ) as exc:
+                    if fatal_errors:
+                        raise fatal_errors[0] from exc
                     validation_error = str(exc)
                     state.stats["structured_output_retries"] += 1
                     await save("running")
@@ -2762,6 +3034,8 @@ async def run_research(
                 MaxTokensReachedException,
                 StructuredOutputException,
             ) as exc:
+                if fatal_errors:
+                    raise fatal_errors[0] from exc
                 validation_error = str(exc)
                 state.stats["structured_output_retries"] += 1
                 await save("running")
@@ -2771,9 +3045,14 @@ async def run_research(
         async with asyncio.timeout(wall_limit):
             continuation = False
             no_progress_continuations = 0
-            while state.final_response is None and not evidence_ready_for_report(
-                state, research, budget
-            ):
+            while state.final_response is None and state.collection_decision is None:
+                decision = evidence_limit_decision(state, budget)
+                if decision is not None:
+                    set_collection_decision(state, decision)
+                    await save("running")
+                    if decision == "evidence_cap_exhausted":
+                        raise ExpectedResearchFailure("evidence_exhausted")
+                    break
                 if remaining_budgets(state, budget)["searches"] <= 0:
                     raise ExpectedResearchFailure("evidence_exhausted")
                 progress_before = (len(state.searched_queries), len(state.evidence))
@@ -2791,7 +3070,9 @@ async def run_research(
                         stop_event=evidence_ready,
                     )
                 except (EventLoopException, APIError, TimeoutError) as exc:
-                    if not fatal_errors and evidence_ready_for_report(state, research, budget):
+                    if fatal_errors:
+                        raise fatal_errors[0] from exc
+                    if collection_allows_finalization(state):
                         state.stats["research_salvages"] += 1
                         state.stats["agent_stop_reason"] = type(exc).__name__
                         state.stats["stop_reason"] = "research_salvaged"
@@ -2800,15 +3081,28 @@ async def run_research(
                     if await recover_model_error(exc):
                         continue
                     raise ExpectedResearchFailure("provider_failure") from exc
+                if fatal_errors:
+                    raise fatal_errors[0]
                 if result is None:
                     state.stats["agent_stop_reason"] = "evidence_ready"
                     state.stats["stop_reason"] = ""
                     await save("running")
+                    if state.collection_decision == "evidence_cap_exhausted":
+                        raise ExpectedResearchFailure("evidence_exhausted")
+                    if not collection_allows_finalization(state):
+                        raise IntegrityError("collector stop event has no eligible decision")
                     break
                 state.stats["agent_stop_reason"] = str(result.stop_reason)
-                if state.final_response is not None or evidence_ready_for_report(
-                    state, research, budget
-                ):
+                if state.final_response is not None:
+                    break
+                if state.collection_decision == "evidence_cap_exhausted":
+                    raise ExpectedResearchFailure("evidence_exhausted")
+                if collection_allows_finalization(state):
+                    await save("running")
+                    break
+                if evidence_ready_for_report(state, research, budget):
+                    set_collection_decision(state, "voluntary_stop")
+                    await save("running")
                     break
                 if progress_before == (len(state.searched_queries), len(state.evidence)):
                     if no_progress_continuations >= 1:
@@ -2823,6 +3117,10 @@ async def run_research(
                 await save("running")
                 continuation = True
 
+            if fatal_errors:
+                raise fatal_errors[0]
+            if state.collection_decision == "evidence_cap_exhausted":
+                raise ExpectedResearchFailure("evidence_exhausted")
             if state.final_response is None:
                 await finalize_structured_report()
         if fatal_errors:
@@ -2921,31 +3219,35 @@ def build_app() -> FastAPI:
     ) -> PlainTextResponse:
         runtime = get_runtime(app)
         key = normalize_idempotency_key(request.headers.get("x-openwebui-message-id"))
-        research_id, _request_hash, cached, state_snapshot = await reserve_run(runtime, body, key)
-        if cached is not None:
-            response = ResearchResponse.model_validate(cached)
-        else:
-            try:
+        try:
+            research_id, _request_hash, cached, state_snapshot = await reserve_run(
+                runtime, body, key
+            )
+            if cached is not None:
+                response = ResearchResponse.model_validate(cached)
+            else:
                 response = await run_research(
                     runtime, request, body, research_id, key, state_snapshot
                 )
-            except asyncio.CancelledError as exc:
-                raise HTTPException(status_code=499, detail="cancelled") from exc
-            except IncompleteResearchError as exc:
-                return PlainTextResponse(
-                    exc.answer_markdown,
-                    headers={
-                        "X-OpenWebUI-Direct-Output": "true",
-                        "X-Deep-Research-Status": "failed",
-                    },
-                )
-            except TimeoutError as exc:
-                raise HTTPException(status_code=504, detail="research timeout") from exc
-            except Exception as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail="research failed",
-                ) from exc
+        except asyncio.CancelledError as exc:
+            raise HTTPException(status_code=499, detail="cancelled") from exc
+        except IncompleteResearchError as exc:
+            return PlainTextResponse(
+                exc.answer_markdown,
+                headers={
+                    "X-OpenWebUI-Direct-Output": "true",
+                    "X-Deep-Research-Status": "failed",
+                },
+            )
+        except TimeoutError as exc:
+            raise HTTPException(status_code=504, detail="research timeout") from exc
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="research failed",
+            ) from exc
         return PlainTextResponse(
             response.answer_markdown,
             headers={"X-OpenWebUI-Direct-Output": "true"},

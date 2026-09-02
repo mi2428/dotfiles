@@ -209,11 +209,50 @@ def deep_plan(source_count: int) -> list[rt.ReportPlanSection]:
 def planned_deep_state(count: int) -> rt.RunState:
     state = make_state(count)
     state.evidence = [replace(item, relevance=0.9) for item in state.evidence]
+    rt.set_collection_decision(state, "voluntary_stop")
     state.report_plan = deep_plan(count)
     state.phase = "sections"
     state.stats["report_plan_sections"] = len(state.report_plan)
     state.stats["report_plan_target_chars"] = sum(item.target_chars for item in state.report_plan)
     return state
+
+
+def mixed_deep_state(stored: int, usable: int) -> rt.RunState:
+    state = make_state(stored)
+    unrelated = (
+        "This substantive document has enough alphabetic content but discusses an unrelated "
+        "topic without the requested lexical term."
+    )
+    state.evidence = [
+        replace(item, relevance=0.9)
+        if index < usable
+        else replace(item, relevance=0, excerpt=unrelated, search_query="needle", purpose="")
+        for index, item in enumerate(state.evidence)
+    ]
+    state.stats["usable_evidence"] = usable
+    return state
+
+
+def deep_structured_outputs(
+    source_count: int,
+    plan: list[rt.ReportPlanSection] | None = None,
+) -> list[rt.StrictModel | Exception]:
+    sections = plan or deep_plan(source_count)
+    return [
+        rt.ReportPlanDraft(sections=sections),
+        *[
+            rt.ReportSectionDraft(
+                heading=item.heading,
+                body_markdown=f"Unique {item.heading}. " + deep_section_body(source_count),
+                summary=f"Summary {index}",
+            )
+            for index, item in enumerate(sections, 1)
+        ],
+        rt.ReportSubmissionDraft(
+            findings=[rt.SubmitFinding(**item) for item in deep_findings(source_count)],
+            limitations=[f"Limitation {index}" for index in range(1, rt.DEEP_MIN_LIMITATIONS + 1)],
+        ),
+    ]
 
 
 def stable_quick_state(count: int = 2) -> rt.RunState:
@@ -222,4 +261,6 @@ def stable_quick_state(count: int = 2) -> rt.RunState:
         replace(item, relevance=0.6, search_query="Evidence", purpose="") for item in state.evidence
     ]
     state.stats["usable_evidence"] = count
+    if count >= rt.make_budget("quick").target_evidence:
+        rt.set_collection_decision(state, "target_reached")
     return state

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from dataclasses import replace
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
@@ -92,6 +93,7 @@ class RuntimeContractTests(RuntimeTestCase):
                 self.assertEqual(response.text, incomplete.answer_markdown)
                 self.assertEqual(response.headers["x-openwebui-direct-output"], "true")
                 self.assertEqual(response.headers["x-deep-research-status"], "failed")
+                self.assertTrue(response.headers["content-type"].startswith("text/plain"))
 
                 with (
                     patch.object(
@@ -109,6 +111,8 @@ class RuntimeContractTests(RuntimeTestCase):
                         "/research", headers=headers, json={"query": "disconnect"}
                     )
                 self.assertEqual(response.status_code, 499)
+                self.assertNotIn("x-openwebui-direct-output", response.headers)
+                self.assertNotIn("x-deep-research-status", response.headers)
 
                 with (
                     patch.object(
@@ -126,6 +130,8 @@ class RuntimeContractTests(RuntimeTestCase):
                         "/research", headers=headers, json={"query": "hard failure"}
                     )
                 self.assertEqual(response.status_code, 502)
+                self.assertNotIn("x-openwebui-direct-output", response.headers)
+                self.assertNotIn("x-deep-research-status", response.headers)
 
         asyncio.run(run())
 
@@ -166,7 +172,7 @@ class RuntimeContractTests(RuntimeTestCase):
                 rt.DEEP_MIN_FINDINGS,
                 rt.DEEP_MIN_LIMITATIONS,
             ),
-            (24, 12, 77_000, 20, 15, 8),
+            (16, 12, 77_000, 20, 15, 8),
         )
         self.assertEqual(
             (
@@ -182,6 +188,9 @@ class RuntimeContractTests(RuntimeTestCase):
             (rt.DEEP_PLAN_MIN_SECTIONS, rt.DEEP_PLAN_MAX_SECTIONS),
             (10, 16),
         )
+        for depth in ("quick", "standard"):
+            unchanged = rt.make_budget(depth)
+            self.assertEqual(unchanged.target_evidence, unchanged.minimum_evidence)
 
     def test_deep_evidence_minimum_allows_finalize_but_only_target_stops_agent(self) -> None:
         research = rt.ResearchRequest(query="Evidence", depth="deep")
@@ -198,6 +207,26 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertFalse(rt.evidence_target_reached(near_target, budget))
         self.assertTrue(rt.evidence_target_reached(target, budget))
         self.assertIn("target for active collection: 30", rt.build_system_prompt(research, budget))
+
+    def test_target_evidence_environment_override_stays_between_minimum_and_cap(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DEEP_RESEARCH_TARGET_EVIDENCE_DEEP": "25",
+                "DEEP_RESEARCH_EVIDENCE_TARGET_DEEP": "40",
+            },
+        ):
+            self.assertEqual(rt.make_budget("deep").target_evidence, 25)
+        for invalid in (19, 61):
+            with (
+                self.subTest(invalid=invalid),
+                patch.dict(
+                    os.environ,
+                    {"DEEP_RESEARCH_TARGET_EVIDENCE_DEEP": str(invalid)},
+                ),
+                self.assertRaisesRegex(RuntimeError, "TARGET_EVIDENCE_DEEP"),
+            ):
+                rt.make_budget("deep")
 
     def test_deep_contract_and_hard_limit_tail_salvage(self) -> None:
         budget = rt.make_budget("deep")
@@ -314,6 +343,7 @@ class RuntimeContractTests(RuntimeTestCase):
         source_count = rt.DEEP_MIN_CITED_SOURCES
         research = rt.ResearchRequest(query="比較とロードマップ", depth="deep")
         state = make_state(source_count)
+        rt.set_collection_decision(state, "voluntary_stop")
         draft = rt.ReportPlanDraft(sections=deep_plan(source_count))
         rt.store_report_plan(state, research, draft)
         state = rt.load_run_state(
@@ -338,7 +368,7 @@ class RuntimeContractTests(RuntimeTestCase):
         state.report_sections = report_sections(source_count)
         state.report_sections[0] = replace(
             state.report_sections[0],
-            body="Short but substantive evidence " * 40 + "[S1]",
+            body="OLD_BODY_SENTINEL " + "Short but substantive evidence " * 40 + "[S1]",
         )
 
         action, heading, _reason = rt.next_report_action(state, research)
@@ -349,8 +379,28 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertEqual(len(prompt["report_plan"]), rt.DEEP_PLAN_TARGET_SECTIONS)
         self.assertNotIn("body_markdown", prompt["completed_sections"][1])
         self.assertNotIn(state.report_sections[1].body, json.dumps(prompt, ensure_ascii=False))
+        self.assertNotIn("body_markdown", prompt["section_to_repair"])
+        self.assertEqual(prompt["section_to_repair"]["summary"], "Summary 1")
+        for prompt_action, prompt_heading in (
+            ("missing_plan_section", "Section 2"),
+            ("expand_existing", "Section 1"),
+            ("citation_repair", "Section 1"),
+            ("deliverable_repair", "Section 1"),
+        ):
+            section_prompt = rt.build_section_prompt(
+                research,
+                state,
+                cast(rt.ReportAction, prompt_action),
+                "fixed action reason",
+                prompt_heading,
+            )
+            self.assertNotIn("OLD_BODY_SENTINEL", section_prompt)
+            self.assertNotIn('"assembled_report"', section_prompt)
+        self.assertNotIn("OLD_BODY_SENTINEL", rt.build_plan_prompt(research, state))
+        submission_prompt = rt.build_submission_prompt(research, state)
+        self.assertIn("OLD_BODY_SENTINEL", submission_prompt)
         self.assertEqual(
-            prompt["section_to_repair"]["body_markdown"], state.report_sections[0].body
+            json.loads(submission_prompt)["assembled_report"].count("OLD_BODY_SENTINEL"), 1
         )
 
         state.report_sections = [
@@ -378,6 +428,16 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertEqual(
             {source_id for item in response.findings for source_id in item.source_ids}, {"S1"}
         )
+
+        corrupt = rt.run_state_snapshot(planned_deep_state(source_count))
+        corrupt["report_plan"][1]["heading"] = corrupt["report_plan"][0]["heading"]
+        with self.assertRaisesRegex(rt.IntegrityError, "checkpointed report plan"):
+            rt.load_run_state(
+                corrupt,
+                depth="deep",
+                budget=rt.make_budget("deep"),
+                wall_limit=rt.wall_budget_seconds("deep"),
+            )
 
     def test_relevance_is_lexical_auditable_and_refresh_invalidates_stale_report(self) -> None:
         table = "\n".join(f"試行{index}回 性能{300 + index}点" for index in range(12))
@@ -537,6 +597,44 @@ class RuntimeContractTests(RuntimeTestCase):
                     key,
                 )
             self.assertEqual(conflict.exception.status_code, 409)
+
+        asyncio.run(run())
+
+    def test_reserve_run_rejects_impossible_status_payload_combinations(self) -> None:
+        async def run() -> None:
+            research = rt.ResearchRequest(query="sample", depth="quick")
+            request_hash = rt.query_hash(research.model_dump())
+            rows = (
+                ("completed-null", "completed", None, None),
+                ("completed-invalid", "completed", "{}", None),
+                ("interrupted-response", "interrupted", "{}", None),
+                ("interrupted-null-state", "interrupted", None, None),
+                ("failed-output-null-state", "failed_with_output", None, None),
+            )
+            self.runtime.db.executemany(
+                """
+                INSERT INTO research_runs (
+                    idempotency_key, request_hash, research_id, status,
+                    response_json, state_json, created_at, updated_at
+                ) VALUES (?, ?, 'rid', ?, ?, ?, 1, 1)
+                """,
+                [
+                    (key, request_hash, status_name, response_json, state_json)
+                    for key, status_name, response_json, state_json in rows
+                ],
+            )
+            self.runtime.db.commit()
+            for key, status_name, _response_json, _state_json in rows:
+                with (
+                    self.subTest(key=key),
+                    self.assertRaises(rt.IntegrityError),
+                ):
+                    await rt.reserve_run(self.runtime, research, key)
+                saved_status = self.runtime.db.execute(
+                    "SELECT status FROM research_runs WHERE idempotency_key=?",
+                    (key,),
+                ).fetchone()[0]
+                self.assertEqual(saved_status, status_name)
 
         asyncio.run(run())
 
