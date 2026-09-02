@@ -347,6 +347,41 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         asyncio.run(run())
 
+    def test_finalization_provider_failure_uses_extractive_report(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
+        state = make_state(1)
+        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        rt.store_initial_plan(state, research, plan_for(research))
+        rt.set_collection_decision(state, "voluntary_stop")
+        request = httpx.Request("POST", "http://llm.local/v1/chat/completions")
+        structured = StructuredAgent(
+            [
+                APIError("Internal server error.", request=request, body=None),
+                APIError("Internal server error.", request=request, body=None),
+            ]
+        )
+
+        async def run() -> None:
+            with (
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+                patch.object(rt, "MODEL_RETRY_BASE_SECONDS", 0.0),
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    "extractive-finalization-key",
+                    rt.run_state_snapshot(state),
+                )
+            self.assertTrue(response.stats["extractive_finalization"])
+            self.assertEqual(response.stats["extractive_finalization_reason"], "provider_failure")
+            self.assertIn("検証済み証拠台帳から抽出的に構成", response.answer_markdown)
+            self.assertIn("Runtime coverage gap", response.answer_markdown)
+            self.assertEqual(len(response.sources), 1)
+
+        asyncio.run(run())
+
     def test_deep_uses_candidate_queue_past_thirty_until_requirement_done(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
         state = make_state(30)
@@ -851,7 +886,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_expected_exhaustion_below_twenty_still_returns_typed_output(self) -> None:
+    def test_expected_exhaustion_below_twenty_uses_extractive_finalization(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
         state = make_state(1)
         state.last_inspected_revision = state.evidence_revision
@@ -891,11 +926,8 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     side_effect=AssertionError("deep must not use tool agent"),
                 ),
                 patch.object(rt, "build_finalization_agent", return_value=structured),
-                self.assertRaisesRegex(
-                    rt.IncompleteResearchError, "structured_section_attempts"
-                ) as failure,
             ):
-                await rt.run_research(
+                response = await rt.run_research(
                     self.runtime,
                     FakeRequest(),
                     research,
@@ -903,8 +935,12 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "exhaustion-key",
                     rt.run_state_snapshot(state),
                 )
-            self.assertIn("# Deep Research未完了", failure.exception.answer_markdown)
-            self.assertIn("## 完成済み節", failure.exception.answer_markdown)
+            self.assertTrue(response.stats["extractive_finalization"])
+            self.assertEqual(
+                response.stats["extractive_finalization_reason"], "structured_section_attempts"
+            )
+            self.assertNotIn("# Deep Research未完了", response.answer_markdown)
+            self.assertEqual(len(response.sources), 1)
 
         asyncio.run(run())
 

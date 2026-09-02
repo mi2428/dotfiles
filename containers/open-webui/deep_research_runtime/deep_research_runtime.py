@@ -1135,6 +1135,8 @@ def default_stats(depth: str, budget: Budget, wall_limit: float) -> dict[str, An
         "research_continuations": 0,
         "research_salvages": 0,
         "evidence_shortfall_salvage": False,
+        "extractive_finalization": False,
+        "extractive_finalization_reason": "",
         "structured_output_retries": 0,
         "plan_validation_error": "",
         "plan_calls": 0,
@@ -1908,6 +1910,88 @@ def build_incomplete_markdown(
     if not source_items:
         lines.append("- なし")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def safe_extractive_text(value: str, limit: int = 500) -> str:
+    """Return bounded plain text copied from untrusted evidence."""
+
+    text = re.sub(r"\s+", " ", value).strip()
+    return re.sub(r"[*_`#<>\[\]]", "", text)[:limit].strip()
+
+
+def finalize_extractively(
+    research_id: str,
+    state: RunState,
+    research: ResearchRequest,
+    reason: str,
+) -> ResearchResponse:
+    """Finish a source-grounded report when its generative finalizer is unavailable."""
+
+    if research.depth != "deep" or not state.report_plan or usable_evidence_count(state) == 0:
+        raise ExpectedResearchFailure(reason)
+    state.stats["extractive_finalization"] = True
+    state.stats["extractive_finalization_reason"] = reason
+    state.phase = "sections"
+    existing_headings = {item.heading.casefold() for item in state.report_sections}
+    evidence_groups = evidence_by_requirement(state)
+    for planned in state.report_plan:
+        if planned.heading.casefold() in existing_headings:
+            continue
+        lines = ["生成モデル中断後に、検証済み証拠台帳から抽出的に構成した節です。"]
+        for requirement_id in planned.requirement_ids:
+            requirement = requirement_by_id(state)[requirement_id]
+            summary = safe_extractive_text(requirement.summary, 300)
+            seen_hosts: set[str] = set()
+            evidence_items = []
+            for evidence in evidence_groups.get(requirement_id, []):
+                host = urlparse(evidence.url).hostname or evidence.url
+                if host in seen_hosts:
+                    continue
+                seen_hosts.add(host)
+                evidence_items.append(evidence)
+                if len(evidence_items) >= required_independent_hosts(requirement.kind):
+                    break
+            lines.extend(["", f"**{summary}**"])
+            if not evidence_items:
+                lines.append("- 検証可能な根拠を取得できませんでした。")
+                continue
+            for evidence in evidence_items:
+                excerpt = safe_extractive_text(evidence.excerpt)
+                lines.append(f"- {excerpt} [{evidence.id}]")
+        store_report_section(
+            state,
+            research,
+            state.evidence_revision,
+            planned.heading,
+            planned.requirement_ids,
+            "\n".join(lines),
+            "検証済み証拠台帳からの抽出要約",
+        )
+    cited_ids = sorted(
+        citation_ids(assemble_report_sections(state.report_sections)), key=numeric_source_id
+    )
+    evidence_map = {item.id: item for item in state.evidence if item.relevance > 0}
+    if not cited_ids:
+        raise ExpectedResearchFailure(reason)
+    findings = [
+        {
+            "claim": safe_extractive_text(evidence_map[source_id].excerpt, 1_000),
+            "source_ids": [source_id],
+        }
+        for source_id in cited_ids[:MAX_FINDINGS]
+    ]
+    state.phase = "submission"
+    response = accept_report(
+        research_id,
+        state,
+        research,
+        state.evidence_revision,
+        findings,
+        ["モデル提供者が生成処理を中断したため、未生成部分は検証済み証拠の抽出要約です。"],
+    )
+    state.phase = "completed"
+    state.unmet_requirements.clear()
+    return response
 
 
 def store_report_section(
@@ -4068,7 +4152,22 @@ async def run_research(
             if state.collection_decision == "evidence_cap_exhausted":
                 raise ExpectedResearchFailure("evidence_exhausted")
             if state.final_response is None:
-                await finalize_structured_report()
+                try:
+                    await finalize_structured_report()
+                except ExpectedResearchFailure as exc:
+                    if (
+                        exc.reason
+                        not in {
+                            "provider_failure",
+                            "structured_section_attempts",
+                            "normal_contract_unmet",
+                        }
+                        or usable_evidence_count(state) == 0
+                        or not collection_allows_finalization(state)
+                    ):
+                        raise
+                    finalize_extractively(research_id, state, research, exc.reason)
+                    await save("running")
         if fatal_errors:
             raise fatal_errors[0]
         if state.final_response is None:
