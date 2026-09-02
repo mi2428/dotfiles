@@ -14,6 +14,7 @@ from test_support import (
     RuntimeTestCase,
     deep_answer,
     deep_findings,
+    deep_section_body,
     make_state,
     report_sections,
     rt,
@@ -93,35 +94,54 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertEqual(rt.source_quality("https://vendor.example/news"), 0.5)
 
     def test_answer_cap_leaves_a_full_report_envelope_for_final_assembly(self) -> None:
+        budget = rt.make_budget("deep")
         self.assertEqual(
             rt.MAX_ANSWER_CHARS,
             rt.MAX_REPORT_SECTIONS * rt.MAX_REPORT_SECTION_CHARS * 2,
         )
+        self.assertEqual(
+            (
+                rt.MAX_REPORT_SECTIONS,
+                rt.DEEP_MIN_SECTIONS,
+                rt.DEEP_MIN_ANSWER_CHARS,
+                rt.DEEP_MIN_CITED_SOURCES,
+                rt.DEEP_MIN_FINDINGS,
+                rt.DEEP_MIN_LIMITATIONS,
+            ),
+            (24, 24, 77_000, 26, 15, 8),
+        )
+        self.assertEqual(
+            (budget.searches, budget.search_limit, budget.evidence, budget.minimum_evidence),
+            (96, 192, 60, 30),
+        )
+        self.assertLessEqual(rt.STRUCTURED_DEEP_SECTION_CHARS, rt.MAX_REPORT_SECTION_CHARS)
 
     def test_deep_contract_and_hard_limit_tail_salvage(self) -> None:
         budget = rt.make_budget("deep")
-        state = make_state(20)
+        source_count = budget.minimum_evidence
+        limitations = [f"Limitation {index}" for index in range(1, rt.DEEP_MIN_LIMITATIONS + 1)]
+        state = make_state(source_count)
         response = rt.validate_submit_report(
             "rid",
             state,
-            20,
-            deep_answer(20),
-            deep_findings(20),
-            [f"Limitation {index}" for index in range(1, 6)],
+            source_count,
+            deep_answer(source_count),
+            deep_findings(source_count),
+            limitations,
             budget,
             "deep",
         )
-        self.assertEqual(len(response.sources), 20)
+        self.assertEqual(len(response.sources), source_count)
 
         under_cited = rt.DEEP_MIN_CITED_SOURCES - 1
         with self.assertRaisesRegex(ValueError, "cited sources"):
             rt.validate_submit_report(
                 "rid",
                 state,
-                20,
+                source_count,
                 deep_answer(under_cited),
                 deep_findings(under_cited),
-                [f"Limitation {index}" for index in range(1, 6)],
+                limitations,
                 budget,
                 "deep",
             )
@@ -136,7 +156,7 @@ class RuntimeContractTests(RuntimeTestCase):
             salvage.evidence_revision,
             deep_answer(rt.DEEP_MIN_CITED_SOURCES),
             deep_findings(rt.DEEP_MIN_CITED_SOURCES),
-            [f"Limitation {index}" for index in range(1, 6)],
+            limitations,
             budget,
             "deep",
         )
@@ -149,27 +169,27 @@ class RuntimeContractTests(RuntimeTestCase):
             rt.validate_submit_report(
                 "rid",
                 unusable,
-                20,
-                deep_answer(20),
-                deep_findings(20),
-                [f"Limitation {index}" for index in range(1, 6)],
+                source_count,
+                deep_answer(source_count),
+                deep_findings(source_count),
+                limitations,
                 budget,
                 "deep",
             )
 
     def test_explicit_deliverables_drive_section_loop_without_domain_assumptions(self) -> None:
         budget = rt.make_budget("deep")
-        state = make_state(20)
-        state.report_sections = report_sections(20)
+        source_count = budget.minimum_evidence
+        limitations = [f"Limitation {index}" for index in range(1, rt.DEEP_MIN_LIMITATIONS + 1)]
+        state = make_state(source_count)
+        state.report_sections = report_sections(source_count)
         comparison = rt.ResearchRequest(query="方式Aと方式Bの違い", depth="deep")
         self.assertTrue(rt.report_needs_section(state, comparison))
 
         state.report_sections[0] = rt.ReportSection(
             "方式の比較",
-            "| 方式 | 評価 |\n|---|---|\n| A | 根拠 |\n\n"
-            + ("Detailed evidence and analysis. " * 65)
-            + " ".join(f"[S{index}]" for index in range(1, 21)),
-            20,
+            "| 方式 | 評価 |\n|---|---|\n| A | 根拠 |\n\n" + deep_section_body(source_count),
+            source_count,
         )
         error = rt.report_request_error(
             rt.assemble_report_sections(state.report_sections),
@@ -183,10 +203,8 @@ class RuntimeContractTests(RuntimeTestCase):
 
         state.report_sections[0] = rt.ReportSection(
             "方式の比較",
-            "| 方式 | 評価 |\n|---|---|\n| A | 根拠 [S1] |\n\n"
-            + ("Detailed evidence and analysis. " * 65)
-            + " ".join(f"[S{index}]" for index in range(1, 21)),
-            20,
+            "| 方式 | 評価 |\n|---|---|\n| A | 根拠 [S1] |\n\n" + deep_section_body(source_count),
+            source_count,
         )
         self.assertFalse(rt.report_needs_section(state, comparison))
 
@@ -195,10 +213,10 @@ class RuntimeContractTests(RuntimeTestCase):
             rt.validate_submit_report(
                 "rid",
                 state,
-                20,
+                source_count,
                 answer,
-                deep_findings(20),
-                [f"Limitation {index}" for index in range(1, 6)],
+                deep_findings(source_count),
+                limitations,
                 budget,
                 "deep",
                 "第三者ベンチマーク",
@@ -207,10 +225,10 @@ class RuntimeContractTests(RuntimeTestCase):
             rt.validate_submit_report(
                 "rid",
                 state,
-                20,
+                source_count,
                 answer.replace("## Section 2", "## ロードマップ", 1),
-                deep_findings(20),
-                [f"Limitation {index}" for index in range(1, 6)],
+                deep_findings(source_count),
+                limitations,
                 budget,
                 "deep",
                 "12か月ロードマップ",
@@ -218,10 +236,10 @@ class RuntimeContractTests(RuntimeTestCase):
         hiring = rt.validate_submit_report(
             "rid",
             state,
-            20,
+            source_count,
             answer,
-            deep_findings(20),
-            [f"Limitation {index}" for index in range(1, 6)],
+            deep_findings(source_count),
+            limitations,
             budget,
             "deep",
             "人材の採用判断を支援してください",

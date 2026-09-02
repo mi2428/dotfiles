@@ -154,9 +154,8 @@ def make_state(count: int, depth: str = "deep") -> rt.RunState:
 
 
 def deep_answer(source_count: int) -> str:
-    citations = " ".join(f"[S{index}]" for index in range(1, source_count + 1))
     return "\n\n".join(
-        f"## Section {index}\n\n" + ("Detailed evidence and analysis. " * 70) + citations
+        f"## Section {index}\n\n{deep_section_body(source_count)}"
         for index in range(1, rt.DEEP_MIN_SECTIONS + 1)
     )
 
@@ -172,15 +171,18 @@ def deep_findings(source_count: int) -> list[dict[str, Any]]:
 
 
 def report_sections(source_count: int) -> list[rt.ReportSection]:
-    citations = " ".join(f"[S{index}]" for index in range(1, source_count + 1))
+    body = deep_section_body(source_count)
     return [
-        rt.ReportSection(
-            f"Section {index}",
-            ("Detailed evidence and analysis. " * 70) + citations,
-            source_count,
-        )
+        rt.ReportSection(f"Section {index}", body, source_count)
         for index in range(1, rt.DEEP_MIN_SECTIONS + 1)
     ]
+
+
+def deep_section_body(source_count: int) -> str:
+    citations = " ".join(f"[S{index}]" for index in range(1, source_count + 1))
+    sentence = "Detailed evidence and analysis. "
+    repetitions = (rt.STRUCTURED_DEEP_SECTION_CHARS + len(sentence) - 1) // len(sentence)
+    return sentence * repetitions + citations
 
 
 def stable_quick_state(count: int = 2) -> rt.RunState:

@@ -16,6 +16,7 @@ from test_support import (
     RuntimeTestCase,
     StructuredAgent,
     deep_findings,
+    deep_section_body,
     make_state,
     parse_tool_payload,
     report_sections,
@@ -272,16 +273,16 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         asyncio.run(run())
 
     def test_finalizer_repairs_an_existing_section_at_the_section_limit(self) -> None:
-        state = make_state(20)
+        source_count = rt.make_budget("deep").minimum_evidence
+        state = make_state(source_count)
         research = rt.ResearchRequest(query="compare Evidence alternatives", depth="deep")
         self.assertTrue(rt.refresh_evidence_relevance(state, research))
         revision = state.evidence_revision
-        citations = " ".join(f"[S{index}]" for index in range(1, 21))
-        body = ("Detailed evidence and analysis. " * 70) + citations
+        body = deep_section_body(source_count)
         state.report_sections = [
             rt.ReportSection(section.heading, section.body, revision)
-            for section in report_sections(20)
-        ] + [rt.ReportSection(f"Section {index}", body, revision) for index in range(9, 17)]
+            for section in report_sections(source_count)
+        ]
         state.report_sections[0] = rt.ReportSection(
             "Comparison",
             "| Option | Evaluation |\n|---|---|\n| A | Evidence |\n\n" + body,
@@ -295,8 +296,10 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     + body,
                 ),
                 rt.ReportSubmissionDraft(
-                    findings=[rt.SubmitFinding(**item) for item in deep_findings(20)],
-                    limitations=[f"Limitation {index}" for index in range(1, 6)],
+                    findings=[rt.SubmitFinding(**item) for item in deep_findings(source_count)],
+                    limitations=[
+                        f"Limitation {index}" for index in range(1, rt.DEEP_MIN_LIMITATIONS + 1)
+                    ],
                 ),
             ]
         )

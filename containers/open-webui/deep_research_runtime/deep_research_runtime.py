@@ -51,21 +51,21 @@ MAX_QUERY_CHARS = 2000
 MAX_FOCUS_CHARS = 500
 MAX_LANGUAGE_CHARS = 16
 MAX_LIMITATION_CHARS = 500
-MAX_FINDINGS = 20
+MAX_FINDINGS = 30
 MAX_FINDING_SOURCE_IDS = 6
-MAX_SOURCES = 40
-MAX_REPORT_SECTIONS = 16
+MAX_SOURCES = 60
+MAX_REPORT_SECTIONS = 24
 MAX_REPORT_SECTION_CHARS = 4_000
 # Leave another full report envelope for headings, sources, and limitations.
 MAX_ANSWER_CHARS = MAX_REPORT_SECTIONS * MAX_REPORT_SECTION_CHARS * 2
 MAX_DOC_BYTES = 1_500_000
 MAX_REDIRECTS = 3
-DEEP_MIN_ANSWER_CHARS = 15_000
-DEEP_MIN_CITED_SOURCES = 12
-DEEP_MIN_SECTIONS = 8
+DEEP_MIN_ANSWER_CHARS = 77_000
+DEEP_MIN_CITED_SOURCES = 26
+DEEP_MIN_SECTIONS = 24
 DEEP_MIN_SECTION_CHARS = 800
-DEEP_MIN_FINDINGS = 10
-DEEP_MIN_LIMITATIONS = 5
+DEEP_MIN_FINDINGS = 15
+DEEP_MIN_LIMITATIONS = 8
 SEARCH_TIMEOUT = 20
 DOC_TIMEOUT = 45
 BODY_BYTE_LIMIT = 1_000_000
@@ -83,7 +83,7 @@ MODEL_RETRY_MAX_SECONDS = 120.0
 STRUCTURED_OUTPUT_ATTEMPTS = 3
 STRUCTURED_DEEP_SECTION_CHARS = (DEEP_MIN_ANSWER_CHARS + DEEP_MIN_SECTIONS - 1) // DEEP_MIN_SECTIONS
 
-DEFAULT_WALL_BUDGETS = {"quick": 1800, "standard": 5400, "deep": 6900}
+DEFAULT_WALL_BUDGETS = {"quick": 1800, "standard": 5400, "deep": 10_350}
 DEFAULT_DEPTH_BUDGETS = {
     "quick": {
         "searches": 8,
@@ -100,11 +100,11 @@ DEFAULT_DEPTH_BUDGETS = {
         "turns": 40,
     },
     "deep": {
-        "searches": 64,
-        "search_limit": 128,
-        "evidence": 40,
-        "minimum_evidence": 20,
-        "turns": 180,
+        "searches": 96,
+        "search_limit": 192,
+        "evidence": 60,
+        "minimum_evidence": 30,
+        "turns": 270,
     },
 }
 
@@ -1454,6 +1454,10 @@ def build_section_prompt(
                 "Do not include a level-2 heading, Sources, or Limitations inside body_markdown.",
                 "Use inline evidence citations such as [S1] for every material claim.",
                 "Cover an explicit user deliverable not yet covered and keep sections coherent.",
+                (
+                    "Maintain information density: every section must add non-redundant evidence, "
+                    "data analysis, comparison, or implications."
+                ),
                 (
                     "If the query requests comparison, include a dedicated comparison table with "
                     "citations in every material row. Add empirical benchmark analysis only when "
