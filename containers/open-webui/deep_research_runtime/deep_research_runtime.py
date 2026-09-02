@@ -1163,27 +1163,30 @@ def report_request_error(answer: str, depth: str, request_text: str) -> str | No
             )
 
     if comparison_requested:
-        comparison_bodies = [
-            body
-            for heading, body in sections
-            if re.search(r"比較|comparison|差|違い", heading, re.IGNORECASE)
-        ]
-        table_rows = [
-            line.strip()
-            for body in comparison_bodies
-            for index, line in enumerate(body.splitlines())
-            if line.strip().startswith("|")
-            and line.strip().endswith("|")
-            and not re.fullmatch(r"\|[\s:|-]+\|", line.strip())
-            and not (
-                index + 1 < len(body.splitlines())
-                and re.fullmatch(r"\|[\s:|-]+\|", body.splitlines()[index + 1].strip())
-            )
-        ]
-        if not table_rows:
+        table_found = False
+        for heading, body in sections:
+            if not re.search(r"比較|comparison|差|違い", heading, re.IGNORECASE):
+                continue
+            lines = body.splitlines()
+            table_rows = [
+                line.strip()
+                for index, line in enumerate(lines)
+                if line.strip().startswith("|")
+                and line.strip().endswith("|")
+                and not re.fullmatch(r"\|[\s:|-]+\|", line.strip())
+                and not (
+                    index + 1 < len(lines)
+                    and re.fullmatch(r"\|[\s:|-]+\|", lines[index + 1].strip())
+                )
+            ]
+            table_found = table_found or bool(table_rows)
+            if any(not citation_ids(row) for row in table_rows):
+                return (
+                    f'comparison table data rows in section "{heading}" need inline citations; '
+                    "repair this section using its exact heading"
+                )
+        if not table_found:
             return "requested comparison table is missing"
-        if any(not citation_ids(row) for row in table_rows):
-            return "every comparison table data row must include an inline citation"
     return None
 
 

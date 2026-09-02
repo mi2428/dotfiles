@@ -161,6 +161,23 @@ class RuntimeContractTests(RuntimeTestCase):
 
         state.report_sections[0] = rt.ReportSection(
             "方式の比較",
+            "| 方式 | 評価 |\n|---|---|\n| A | 根拠 |\n\n"
+            + ("Detailed evidence and analysis. " * 65)
+            + " ".join(f"[S{index}]" for index in range(1, 21)),
+            20,
+        )
+        error = rt.report_request_error(
+            rt.assemble_report_sections(state.report_sections),
+            "deep",
+            comparison.query,
+        )
+        self.assertIn(
+            'section "方式の比較"',
+            error or "",
+        )
+
+        state.report_sections[0] = rt.ReportSection(
+            "方式の比較",
             "| 方式 | 評価 |\n|---|---|\n| A | 根拠 [S1] |\n\n"
             + ("Detailed evidence and analysis. " * 65)
             + " ".join(f"[S{index}]" for index in range(1, 21)),
