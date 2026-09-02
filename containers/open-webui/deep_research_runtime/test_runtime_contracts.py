@@ -87,6 +87,12 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertEqual(rt.source_quality("https://docs.example.com/reference"), 0.8)
         self.assertEqual(rt.source_quality("https://vendor.example/news"), 0.5)
 
+    def test_answer_cap_leaves_a_full_report_envelope_for_final_assembly(self) -> None:
+        self.assertEqual(
+            rt.MAX_ANSWER_CHARS,
+            rt.MAX_REPORT_SECTIONS * rt.MAX_REPORT_SECTION_CHARS * 2,
+        )
+
     def test_deep_contract_and_hard_limit_tail_salvage(self) -> None:
         budget = rt.make_budget("deep")
         state = make_state(20)
