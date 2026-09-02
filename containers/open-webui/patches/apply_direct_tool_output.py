@@ -40,32 +40,37 @@ add_replacement(
 )
 add_replacement(
     """                        tool_function_params, tool_result, tool, tool_type, direct_tool = tool_results[id(tool_call)]
-                        if tool_result is None:
+                         if tool_result is None:
 """,
     """                        tool_function_params, tool_result, tool, tool_type, direct_tool = tool_results[id(tool_call)]
-                        tool_response_headers = (
-                            tool_result[1]
-                            if tool_type == 'external'
-                            and isinstance(tool_result, tuple)
-                            and len(tool_result) == 2
-                            else None
-                        )
-                        return_direct = bool(
-                            tool_response_headers is not None
-                            and str(tool_response_headers.get('X-OpenWebUI-Direct-Output', '')).casefold()
-                            == 'true'
-                            and str(tool_response_headers.get('Content-Type', '')).casefold().startswith('text/plain')
-                        )
-                        if tool_result is None:
+                         tool_response_headers = (
+                             tool_result[1]
+                             if tool_type == 'external'
+                             and isinstance(tool_result, tuple)
+                             and len(tool_result) == 2
+                             else None
+                         )
+                         tool_response_header_items = (
+                             {str(key).casefold(): str(value) for key, value in tool_response_headers.items()}
+                             if tool_response_headers is not None
+                             else {}
+                         )
+                         return_direct = bool(
+                             tool_response_header_items.get('x-openwebui-direct-output', '').casefold() == 'true'
+                             and tool_response_header_items.get('content-type', '').casefold().startswith('text/plain')
+                         )
+                         deep_research_status = tool_response_header_items.get('x-deep-research-status', '').casefold()
+                         if tool_result is None:
 """,
 )
 add_replacement(
     """                                'content': tool_result_content(tool_result),
-                                **({'files': tool_result_files} if tool_result_files else {}),
+                                 **({'files': tool_result_files} if tool_result_files else {}),
 """,
     """                                'content': tool_result_content(tool_result),
-                                'return_direct': return_direct,
-                                **({'files': tool_result_files} if tool_result_files else {}),
+                                 'return_direct': return_direct,
+                                 'deep_research_status': deep_research_status,
+                                 **({'files': tool_result_files} if tool_result_files else {}),
 """,
 )
 add_replacement(
@@ -84,23 +89,24 @@ add_replacement(
                             await emit_message_error('Direct tool output must be non-empty text.')
                             tool_calls.clear()
                             break
-                        try:
-                            await persist_deep_research_note(
-                                notes=Notes,
-                                note_form=NoteForm,
-                                note_update_form=NoteUpdateForm,
-                                user_id=user.id,
-                                message_id=str(metadata.get('message_id') or ''),
-                                chat_id=str(metadata.get('chat_id') or ''),
-                                markdown=direct_tool_output,
-                                user_message=str(user_message or ''),
-                            )
-                        except Exception:
-                            log.exception('Failed to persist Deep Research Note')
-                            direct_tool_output = None
-                            await emit_message_error('Deep ResearchのNote保存に失敗しました。')
-                            tool_calls.clear()
-                            break
+                        if direct_results[0].get('deep_research_status') != 'failed':
+                            try:
+                                await persist_deep_research_note(
+                                    notes=Notes,
+                                    note_form=NoteForm,
+                                    note_update_form=NoteUpdateForm,
+                                    user_id=user.id,
+                                    message_id=str(metadata.get('message_id') or ''),
+                                    chat_id=str(metadata.get('chat_id') or ''),
+                                    markdown=direct_tool_output,
+                                    user_message=str(user_message or ''),
+                                )
+                            except Exception:
+                                log.exception('Failed to persist Deep Research Note')
+                                direct_tool_output = None
+                                await emit_message_error('Deep ResearchのNote保存に失敗しました。')
+                                tool_calls.clear()
+                                break
                         content_parts[:] = [direct_tool_output]
                         output[:] = [item for item in output if item.get('type') != 'message']
                         output.append(
