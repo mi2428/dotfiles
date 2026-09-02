@@ -3,5 +3,5 @@
 1. 依頼全体を`deep_research`へ渡し、1回だけ呼ぶ。
 2. 原則`deep`を選び、明示的に短い確認を求められた場合だけ`quick`、明示的に標準規模を求められた場合だけ`standard`を選ぶ。
 3. 完了まで待ち、通常のWeb検索、URL取得、サブエージェント、コード実行、Note、同じ調査の再呼び出しは使わない。
-4. tool resultの`answer_markdown`を、引用記号、URL、数値、日付、事実関係を変えずにそのまま返す。
-5. toolが失敗した場合は成功したように補完せず、エラーを伝える。
+4. `completed`のtool resultは`direct_output`を、引用記号、URL、数値、日付、事実関係を変えずにそのまま返す。`# Deep Research未完了` を含むfailed-with-outputも補完せず、そのまま返す。
+5. toolが失敗した場合は成功したように補完せず、エラーを捏造しない。
