@@ -290,7 +290,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         structured = StructuredAgent(
             [
                 rt.ReportSectionDraft(
-                    heading="Comparison",
+                    heading="Model ignored the requested repair heading",
                     body_markdown="| Option | Evaluation |\n|---|---|\n| A | Evidence [S1] |\n\n"
                     + body,
                 ),
@@ -320,6 +320,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 )
 
             self.assertEqual(response.answer_markdown.count("## Comparison"), 1)
+            self.assertNotIn("## Model ignored", response.answer_markdown)
             self.assertIn("Evidence [S1]", response.answer_markdown)
             self.assertEqual(
                 structured.models,

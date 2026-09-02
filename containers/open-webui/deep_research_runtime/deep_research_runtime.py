@@ -1421,6 +1421,7 @@ def build_section_prompt(
     research: ResearchRequest,
     state: RunState,
     validation_error: str = "",
+    repair_heading: str | None = None,
 ) -> str:
     """Request one new or corrected report section as forced structured output."""
 
@@ -1428,11 +1429,11 @@ def build_section_prompt(
     payload.update(
         {
             "task": "Generate exactly one new or corrected level-2 report section.",
+            "repair_heading": repair_heading,
             "requirements": [
                 (
-                    "If previous_validation_error is present, repair the relevant existing "
-                    "section by reusing its exact heading when possible; otherwise use a "
-                    "distinct plain-text heading."
+                    "If repair_heading is present, repair that existing section and return its "
+                    "exact heading; otherwise use a distinct plain-text heading."
                 ),
                 "Do not include a level-2 heading, Sources, or Limitations inside body_markdown.",
                 "Use inline evidence citations such as [S1] for every material claim.",
@@ -2171,15 +2172,24 @@ async def run_research(
         await save("running")
 
         section_attempts = 0
-        validation_error = (
-            report_request_error(
-                assemble_report_sections(state.report_sections),
-                research.depth,
-                f"{research.query}\n{research.focus or ''}",
-            )
-            or ""
-        )
+        validation_error = ""
         while report_needs_section(state, research):
+            validation_error = (
+                report_request_error(
+                    assemble_report_sections(state.report_sections),
+                    research.depth,
+                    f"{research.query}\n{research.focus or ''}",
+                )
+                or validation_error
+            )
+            repair_heading = next(
+                (
+                    section.heading
+                    for section in state.report_sections
+                    if f'"{section.heading}"' in validation_error
+                ),
+                None,
+            )
             stored = False
             for _attempt in range(STRUCTURED_OUTPUT_ATTEMPTS):
                 section_attempts += 1
@@ -2189,7 +2199,12 @@ async def run_research(
                     draft = cast(
                         ReportSectionDraft,
                         await invoke_structured(
-                            build_section_prompt(research, state, validation_error),
+                            build_section_prompt(
+                                research,
+                                state,
+                                validation_error,
+                                repair_heading,
+                            ),
                             ReportSectionDraft,
                         ),
                     )
@@ -2204,7 +2219,7 @@ async def run_research(
                         state,
                         research,
                         state.evidence_revision,
-                        draft.heading,
+                        repair_heading or draft.heading,
                         draft.body_markdown,
                     )
                     await save("running")
