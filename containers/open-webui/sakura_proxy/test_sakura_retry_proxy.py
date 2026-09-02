@@ -51,9 +51,7 @@ class UpstreamHandler(BaseHTTPRequestHandler):
         type(self).attempts_by_authorization[authorization] = (
             type(self).attempts_by_authorization.get(authorization, 0) + 1
         )
-        type(self).attempts_by_body[body] = (
-            type(self).attempts_by_body.get(body, 0) + 1
-        )
+        type(self).attempts_by_body[body] = type(self).attempts_by_body.get(body, 0) + 1
         with type(self).state_lock:
             type(self).active_requests += 1
             type(self).max_active_requests = max(
@@ -72,7 +70,9 @@ class UpstreamHandler(BaseHTTPRequestHandler):
         try:
             if self.mode in {"serialized_hold", "parallel_hold"}:
                 type(self).hold_event.wait(timeout=1)
-            if (self.mode in {"rate_limit", "rate_limit_slow"} and self.attempts < 3) or (
+            if (
+                self.mode in {"rate_limit", "rate_limit_slow"} and self.attempts < 3
+            ) or (
                 self.mode == "second_rate_limited"
                 and body == b"second"
                 and self.attempts_by_body[body] == 1
@@ -132,7 +132,9 @@ class UpstreamHandler(BaseHTTPRequestHandler):
 
 class SakuraRetryProxyTest(unittest.TestCase):
     def unsafe_settings(self, **changes: object) -> Settings:
-        base = cast(type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass).settings
+        base = cast(
+            type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass
+        ).settings
         settings = object.__new__(Settings)
         for field in Settings.__dataclass_fields__:
             object.__setattr__(settings, field, getattr(base, field))
@@ -200,7 +202,9 @@ class SakuraRetryProxyTest(unittest.TestCase):
             ["Bearer token-a", "Bearer token-b", "Bearer token-a", "Bearer token-b"],
         )
 
-    def test_shared_cooldown_keeps_following_request_off_the_limited_token(self) -> None:
+    def test_shared_cooldown_keeps_following_request_off_the_limited_token(
+        self,
+    ) -> None:
         UpstreamHandler.mode = "token_a_once_rate_limited"
         proxy_port = self.proxy.server_address[1]
         request = urllib.request.Request(
@@ -221,7 +225,9 @@ class SakuraRetryProxyTest(unittest.TestCase):
     def test_same_token_never_allows_two_in_flight_upstream_requests(self) -> None:
         single_token_proxy = make_server(
             replace(
-                cast(type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass).settings,
+                cast(
+                    type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass
+                ).settings,
                 account_tokens=("token-a",),
             ),
             ("127.0.0.1", 0),
@@ -253,7 +259,9 @@ class SakuraRetryProxyTest(unittest.TestCase):
             self.assertEqual(first.result(timeout=1), b'{"ok":true}')
             self.assertEqual(second.result(timeout=1), b'{"ok":true}')
 
-        self.assertEqual(UpstreamHandler.max_active_by_authorization["Bearer token-a"], 1)
+        self.assertEqual(
+            UpstreamHandler.max_active_by_authorization["Bearer token-a"], 1
+        )
 
     def test_different_tokens_can_run_upstream_in_parallel(self) -> None:
         UpstreamHandler.mode = "parallel_hold"
@@ -272,7 +280,9 @@ class SakuraRetryProxyTest(unittest.TestCase):
             futures = [executor.submit(request) for _ in range(2)]
             self.assertTrue(UpstreamHandler.two_requests_started_event.wait(timeout=1))
             UpstreamHandler.hold_event.set()
-            self.assertEqual([future.result(timeout=1) for future in futures], [b'{"ok":true}'] * 2)
+            self.assertEqual(
+                [future.result(timeout=1) for future in futures], [b'{"ok":true}'] * 2
+            )
 
         self.assertGreaterEqual(UpstreamHandler.max_active_requests, 2)
         self.assertEqual(
@@ -283,9 +293,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
     def test_deadline_without_lease_never_reaches_upstream(self) -> None:
         single_token_proxy = make_server(
             Settings(
-                upstream_url=(
-                    f"http://127.0.0.1:{self.upstream.server_address[1]}"
-                ),
+                upstream_url=(f"http://127.0.0.1:{self.upstream.server_address[1]}"),
                 max_retries=3,
                 base_backoff=0.01,
                 max_backoff=0.01,
@@ -299,7 +307,9 @@ class SakuraRetryProxyTest(unittest.TestCase):
         self.addCleanup(thread.join, 1)
         self.addCleanup(single_token_proxy.server_close)
         self.addCleanup(single_token_proxy.shutdown)
-        handler = cast(type[SakuraRetryProxyHandler], single_token_proxy.RequestHandlerClass)
+        handler = cast(
+            type[SakuraRetryProxyHandler], single_token_proxy.RequestHandlerClass
+        )
         handler.settings = self.unsafe_settings(
             upstream_url=f"http://127.0.0.1:{self.upstream.server_address[1]}",
             account_tokens=("token-a",),
@@ -334,9 +344,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         UpstreamHandler.authorization_headers = []
         no_token_proxy = make_server(
             Settings(
-                upstream_url=(
-                    f"http://127.0.0.1:{self.upstream.server_address[1]}"
-                ),
+                upstream_url=(f"http://127.0.0.1:{self.upstream.server_address[1]}"),
                 max_retries=3,
                 base_backoff=0.01,
                 max_backoff=0.01,
@@ -504,9 +512,10 @@ class SakuraRetryProxyTest(unittest.TestCase):
             data=b"{}",
         )
 
-        with self.assertLogs("sakura-retry-proxy", level="INFO") as captured, urllib.request.urlopen(
-            request
-        ) as response:
+        with (
+            self.assertLogs("sakura-retry-proxy", level="INFO") as captured,
+            urllib.request.urlopen(request) as response,
+        ):
             self.assertEqual(response.read(), b'{"ok":true}')
 
         aggregate_logs = [line for line in captured.output if "correlation=" in line]

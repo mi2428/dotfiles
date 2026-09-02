@@ -197,10 +197,7 @@ class SharedTokenCooldown:
                 now = time.monotonic()
                 for offset in range(len(self._tokens)):
                     slot = (self._next_index + offset) % len(self._tokens)
-                    if (
-                        not self._in_flight[slot]
-                        and self._cooldown_until[slot] <= now
-                    ):
+                    if not self._in_flight[slot] and self._cooldown_until[slot] <= now:
                         self._in_flight[slot] = True
                         self._next_index = (slot + 1) % len(self._tokens)
                         return TokenLease(slot, self._tokens[slot]), waited
