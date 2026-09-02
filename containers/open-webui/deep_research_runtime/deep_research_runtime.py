@@ -3585,6 +3585,7 @@ async def run_research(
         *,
         remaining: float,
     ) -> BaseModel:
+        nonlocal model_recoveries
         while True:
             if fatal_errors:
                 raise fatal_errors[0]
@@ -3610,6 +3611,7 @@ async def run_research(
             output = result.structured_output
             if not isinstance(output, output_model):
                 raise ValueError("structured finalizer returned no validated output")
+            model_recoveries = 0
             return output
 
     async def ensure_deep_plan() -> None:

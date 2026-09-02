@@ -229,8 +229,10 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         state.last_inspected_revision = state.evidence_revision
         state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
         rt.store_initial_plan(state, research, plan_for(research))
+        request = httpx.Request("POST", "http://llm.local/v1/chat/completions")
         structured = StructuredAgent(
             [
+                APIError("Internal server error.", request=request, body=None),
                 rt.SearchBatchDraft(
                     queries=[
                         rt.SearchBatchEntry(query="dup", purpose="r2", requirement_ids=["R2"]),
@@ -238,6 +240,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                         rt.SearchBatchEntry(query="ok", purpose="r2 ok", requirement_ids=["R2"]),
                     ]
                 ),
+                APIError("Internal server error.", request=request, body=None),
                 rt.SearchBatchDraft(
                     queries=[
                         rt.SearchBatchEntry(
@@ -278,6 +281,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 patch.object(rt, "build_research_agent", side_effect=AssertionError("deep only")),
                 patch.object(rt, "build_finalization_agent", return_value=structured),
                 patch.object(rt, "search_searxng", new=AsyncMock(side_effect=fake_search)),
+                patch.object(rt, "MODEL_RETRY_BASE_SECONDS", 0.0),
             ):
                 response = await rt.run_research(
                     self.runtime,
@@ -288,6 +292,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     rt.run_state_snapshot(state),
                 )
             self.assertEqual(calls, ["dup", "ok", "idle-2"])
+            self.assertEqual(response.stats["model_transient_recoveries"], 2)
             self.assertTrue(response.stats["evidence_shortfall_salvage"])
 
         asyncio.run(run())
