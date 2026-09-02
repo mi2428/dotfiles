@@ -15,8 +15,10 @@ from test_support import (
     FakeRequest,
     RuntimeTestCase,
     StructuredAgent,
+    deep_findings,
     make_state,
     parse_tool_payload,
+    report_sections,
     rt,
     stable_quick_state,
 )
@@ -266,6 +268,63 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 )
             self.assertIn("Saved answer", response.answer_markdown)
             self.assertEqual(structured.models, [rt.ReportSubmissionDraft])
+
+        asyncio.run(run())
+
+    def test_finalizer_repairs_an_existing_section_at_the_section_limit(self) -> None:
+        state = make_state(20)
+        research = rt.ResearchRequest(query="compare Evidence alternatives", depth="deep")
+        self.assertTrue(rt.refresh_evidence_relevance(state, research))
+        revision = state.evidence_revision
+        citations = " ".join(f"[S{index}]" for index in range(1, 21))
+        body = ("Detailed evidence and analysis. " * 70) + citations
+        state.report_sections = [
+            rt.ReportSection(section.heading, section.body, revision)
+            for section in report_sections(20)
+        ] + [rt.ReportSection(f"Section {index}", body, revision) for index in range(9, 17)]
+        state.report_sections[0] = rt.ReportSection(
+            "Comparison",
+            "| Option | Evaluation |\n|---|---|\n| A | Evidence |\n\n" + body,
+            revision,
+        )
+        structured = StructuredAgent(
+            [
+                rt.ReportSectionDraft(
+                    heading="Comparison",
+                    body_markdown="| Option | Evaluation |\n|---|---|\n| A | Evidence [S1] |\n\n"
+                    + body,
+                ),
+                rt.ReportSubmissionDraft(
+                    findings=[rt.SubmitFinding(**item) for item in deep_findings(20)],
+                    limitations=[f"Limitation {index}" for index in range(1, 6)],
+                ),
+            ]
+        )
+
+        async def run() -> None:
+            with (
+                patch.object(
+                    rt,
+                    "build_research_agent",
+                    side_effect=AssertionError("research must not restart"),
+                ),
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    "repair-key",
+                    rt.run_state_snapshot(state),
+                )
+
+            self.assertEqual(response.answer_markdown.count("## Comparison"), 1)
+            self.assertIn("Evidence [S1]", response.answer_markdown)
+            self.assertEqual(
+                structured.models,
+                [rt.ReportSectionDraft, rt.ReportSubmissionDraft],
+            )
 
         asyncio.run(run())
 

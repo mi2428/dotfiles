@@ -1419,14 +1419,18 @@ def build_section_prompt(
     state: RunState,
     validation_error: str = "",
 ) -> str:
-    """Request exactly one next report section as forced structured output."""
+    """Request one new or corrected report section as forced structured output."""
 
     payload = finalization_context(research, state)
     payload.update(
         {
-            "task": "Generate exactly one new level-2 report section.",
+            "task": "Generate exactly one new or corrected level-2 report section.",
             "requirements": [
-                "Use a distinct plain-text heading not already present.",
+                (
+                    "If previous_validation_error is present, repair the relevant existing "
+                    "section by reusing its exact heading when possible; otherwise use a "
+                    "distinct plain-text heading."
+                ),
                 "Do not include a level-2 heading, Sources, or Limitations inside body_markdown.",
                 "Use inline evidence citations such as [S1] for every material claim.",
                 "Cover an explicit user deliverable not yet covered and keep sections coherent.",
@@ -2164,10 +2168,15 @@ async def run_research(
         await save("running")
 
         section_attempts = 0
-        validation_error = ""
+        validation_error = (
+            report_request_error(
+                assemble_report_sections(state.report_sections),
+                research.depth,
+                f"{research.query}\n{research.focus or ''}",
+            )
+            or ""
+        )
         while report_needs_section(state, research):
-            if len(state.report_sections) >= MAX_REPORT_SECTIONS:
-                raise ValueError("report requirements not met before the section limit")
             stored = False
             for _attempt in range(STRUCTURED_OUTPUT_ATTEMPTS):
                 section_attempts += 1
@@ -2181,11 +2190,6 @@ async def run_research(
                             ReportSectionDraft,
                         ),
                     )
-                    if any(
-                        item.heading.casefold() == draft.heading.strip().casefold()
-                        for item in state.report_sections
-                    ):
-                        raise ValueError("structured finalizer must add a distinct section")
                     if (
                         research.depth == "deep"
                         and len(draft.body_markdown.strip()) < STRUCTURED_DEEP_SECTION_CHARS
