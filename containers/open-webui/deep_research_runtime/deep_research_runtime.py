@@ -60,16 +60,15 @@ MAX_REPORT_SECTION_CHARS = 10_000
 MAX_ANSWER_CHARS = MAX_REPORT_SECTIONS * MAX_REPORT_SECTION_CHARS * 2
 MAX_DOC_BYTES = 1_500_000
 MAX_REDIRECTS = 3
-DEEP_MIN_ANSWER_CHARS = 77_000
-DEEP_MIN_CITED_SOURCES = 20
-DEEP_MIN_SECTION_CHARS = 800
-DEEP_PLAN_TARGET_SECTIONS = 12
-DEEP_PLAN_MIN_SECTIONS = 10
+MAX_REQUEST_FRAGMENT_CHARS = 500
+MAX_REQUEST_FRAGMENTS = 8
+MAX_PAYLOAD_EVIDENCE_EXCERPTS = 12
+MAX_SECTION_REQUIREMENTS = MAX_PAYLOAD_EVIDENCE_EXCERPTS // 2
+MAX_PAYLOAD_SEARCHED_QUERIES = 12
+DEEP_PLAN_TARGET_SECTIONS = 10
 DEEP_PLAN_MAX_SECTIONS = 16
-DEEP_PLAN_MIN_SECTION_CHARS = 5_000
+DEEP_PLAN_MIN_SECTION_CHARS = 400
 DEEP_PLAN_MAX_SECTION_CHARS = 8_000
-DEEP_MIN_FINDINGS = 15
-DEEP_MIN_LIMITATIONS = 8
 SEARCH_TIMEOUT = 20
 DOC_TIMEOUT = 45
 BODY_BYTE_LIMIT = 1_000_000
@@ -79,6 +78,9 @@ KIMI_MAX_TOKENS = 32_768
 FINALIZER_MAX_TOKENS = 16_384
 FINALIZER_TIMEOUT_SECONDS = 1500
 TIMEOUT_SAFETY_MARGIN_SECONDS = 300
+FINALIZATION_RESERVE_SECONDS = 600
+DEEP_QUERY_BATCH_SIZE = 3
+DEEP_FETCH_BATCH_SIZE = 6
 AGENT_CANCEL_GRACE_SECONDS = 5
 DEFAULT_KIMI_TIMEOUT_SECONDS = 1800
 MODEL_TRANSIENT_RECOVERIES = 20
@@ -86,7 +88,6 @@ MODEL_RETRY_BASE_SECONDS = 2.0
 MODEL_RETRY_MAX_SECONDS = 120.0
 STRUCTURED_OUTPUT_ATTEMPTS = 3
 REPAIR_NOOP_LIMITS = {
-    "expand_existing": 1,
     "citation_repair": 1,
     "deliverable_repair": 1,
 }
@@ -120,13 +121,17 @@ DEFAULT_DEPTH_BUDGETS = {
 }
 
 SourceId = Annotated[str, Field(pattern=r"^S\d+$")]
+FragmentId = Annotated[str, Field(pattern=r"^F\d+$")]
+RequirementId = Annotated[str, Field(pattern=r"^R\d+$")]
 Limitation = Annotated[str, Field(min_length=1, max_length=MAX_LIMITATION_CHARS)]
 CollectionDecision = Literal[
     "voluntary_stop",
     "target_reached",
     "evidence_cap_reached",
     "evidence_cap_exhausted",
+    "coverage_complete",
 ]
+RequirementKind = Literal["direct", "comparison", "benchmark", "causal"]
 
 
 class StrictModel(BaseModel):
@@ -205,6 +210,10 @@ class ReportSectionDraft(StrictModel):
     """One forced structured-output section awaiting runtime validation."""
 
     heading: str = Field(min_length=1, max_length=200)
+    requirement_ids: list[RequirementId] = Field(
+        default_factory=list,
+        max_length=MAX_SECTION_REQUIREMENTS,
+    )
     body_markdown: str = Field(min_length=1, max_length=MAX_REPORT_SECTION_CHARS)
     summary: str = Field(default="", max_length=500)
 
@@ -217,17 +226,66 @@ class ReportPlanSection(StrictModel):
         ge=DEEP_PLAN_MIN_SECTION_CHARS,
         le=DEEP_PLAN_MAX_SECTION_CHARS,
     )
-    source_ids: list[SourceId] = Field(min_length=1, max_length=MAX_SOURCES)
+    requirement_ids: list[RequirementId] = Field(
+        default_factory=list,
+        max_length=MAX_SECTION_REQUIREMENTS,
+    )
+    source_ids: list[SourceId] = Field(default_factory=list, max_length=MAX_SOURCES)
     deliverables: list[str] = Field(min_length=1, max_length=8)
 
 
-class ReportPlanDraft(StrictModel):
-    """One structured deep-report plan produced after evidence collection."""
+class RequestFragmentModel(StrictModel):
+    id: FragmentId
+    text: str = Field(min_length=1, max_length=MAX_REQUEST_FRAGMENT_CHARS)
 
-    sections: list[ReportPlanSection] = Field(
-        min_length=DEEP_PLAN_MIN_SECTIONS,
+
+class RequirementModel(StrictModel):
+    id: RequirementId
+    summary: str = Field(min_length=1, max_length=300)
+    kind: RequirementKind
+    fragment_ids: list[FragmentId] = Field(min_length=1, max_length=8)
+
+
+class InitialPlanSection(StrictModel):
+    heading: str = Field(min_length=1, max_length=200)
+    target_chars: int = Field(
+        ge=DEEP_PLAN_MIN_SECTION_CHARS,
+        le=DEEP_PLAN_MAX_SECTION_CHARS,
+    )
+    requirement_ids: list[RequirementId] = Field(
+        min_length=1,
+        max_length=MAX_SECTION_REQUIREMENTS,
+    )
+    deliverables: list[str] = Field(min_length=1, max_length=8)
+
+
+class QuerySeedModel(StrictModel):
+    query: str = Field(min_length=1, max_length=MAX_QUERY_CHARS)
+    purpose: str = Field(min_length=1, max_length=MAX_FOCUS_CHARS)
+    requirement_ids: list[RequirementId] = Field(min_length=1, max_length=4)
+
+
+class InitialPlanDraft(StrictModel):
+    fragments: list[RequestFragmentModel] = Field(min_length=1, max_length=MAX_REQUEST_FRAGMENTS)
+    requirements: list[RequirementModel] = Field(min_length=1, max_length=16)
+    sections: list[InitialPlanSection] = Field(
+        min_length=1,
         max_length=DEEP_PLAN_MAX_SECTIONS,
     )
+    query_seeds: list[QuerySeedModel] = Field(
+        default_factory=list,
+        max_length=DEEP_QUERY_BATCH_SIZE,
+    )
+
+
+class SearchBatchEntry(StrictModel):
+    query: str = Field(min_length=1, max_length=MAX_QUERY_CHARS)
+    purpose: str = Field(min_length=1, max_length=MAX_FOCUS_CHARS)
+    requirement_ids: list[RequirementId] = Field(min_length=1, max_length=4)
+
+
+class SearchBatchDraft(StrictModel):
+    queries: list[SearchBatchEntry] = Field(min_length=1, max_length=DEEP_QUERY_BATCH_SIZE)
 
 
 class ReportSubmissionDraft(StrictModel):
@@ -256,6 +314,10 @@ class IncompleteResearchError(Exception):
         super().__init__(reason)
         self.reason = reason
         self.answer_markdown = answer_markdown
+
+
+class ModelOutputError(ValueError):
+    """Untrusted structured model output failed runtime semantic validation."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -340,6 +402,27 @@ class Evidence:
     id: str = ""
     search_query: str = ""
     purpose: str = ""
+    requirement_ids: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class Candidate:
+    """One durable fetch candidate discovered from a search batch."""
+
+    url: str
+    title: str
+    snippet: str
+    engine: str
+    search_query: str
+    purpose: str
+    requirement_ids: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class FailedCandidate:
+    url: str
+    reason: str
+    stage: Literal["search", "fetch"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -350,6 +433,7 @@ class ReportSection:
     body: str
     ledger_revision: int
     summary: str = ""
+    requirement_ids: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -361,8 +445,13 @@ class RunState:
     evidence_revision: int
     last_inspected_revision: int | None
     stats: dict[str, Any]
+    request_fragments: list[RequestFragmentModel] = field(default_factory=list)
+    requirements: list[RequirementModel] = field(default_factory=list)
     report_plan: list[ReportPlanSection] = field(default_factory=list)
     report_sections: list[ReportSection] = field(default_factory=list)
+    query_seed_queue: list[QuerySeedModel] = field(default_factory=list)
+    candidate_queue: list[Candidate] = field(default_factory=list)
+    failed_candidates: list[FailedCandidate] = field(default_factory=list)
     phase: str = "research"
     unmet_requirements: list[str] = field(default_factory=list)
     collection_decision: CollectionDecision | None = None
@@ -638,6 +727,52 @@ def source_quality(url: str) -> float:
 
 def citation_ids(text: str) -> set[str]:
     return set(re.findall(r"\[(S\d+)\]", text))
+
+
+def explicit_request_fragments(research: ResearchRequest) -> list[RequestFragmentModel]:
+    def chunk(text: str) -> list[str]:
+        normalized = re.sub(r"\s+", " ", text).strip()
+        if not normalized:
+            return []
+        pieces: list[str] = []
+        start = 0
+        while start < len(normalized):
+            end = min(start + MAX_REQUEST_FRAGMENT_CHARS, len(normalized))
+            pieces.append(normalized[start:end])
+            start = end
+        return pieces
+
+    fragments = [
+        *chunk(research.query),
+        *chunk(research.focus or ""),
+    ]
+    if not fragments:
+        fragments = [research.query.strip()]
+    return [
+        RequestFragmentModel(id=f"F{index}", text=text) for index, text in enumerate(fragments, 1)
+    ]
+
+
+def classify_requirement_kind(text: str) -> RequirementKind:
+    lowered = text.casefold()
+    if re.search(r"比較|compare|comparison|versus|\bvs\.?\b|違い|差", lowered, re.I):
+        return "comparison"
+    if re.search(r"benchmark|ベンチマーク|性能|latency|throughput|accuracy", lowered, re.I):
+        return "benchmark"
+    if re.search(r"because|cause|causal|why|なぜ|原因|影響|effect", lowered, re.I):
+        return "causal"
+    return "direct"
+
+
+def stronger_requirement_kind(
+    current: RequirementKind, inferred: RequirementKind
+) -> RequirementKind:
+    order = {"direct": 0, "comparison": 1, "benchmark": 1, "causal": 1}
+    return inferred if order[inferred] > order[current] else current
+
+
+def required_independent_hosts(kind: RequirementKind) -> int:
+    return 2 if kind in {"comparison", "benchmark", "causal"} else 1
 
 
 def normalize_idempotency_key(value: str | None) -> str:
@@ -954,6 +1089,7 @@ def serialize_evidence(evidence: Evidence) -> dict[str, Any]:
         "source_quality": evidence.source_quality,
         "search_query": evidence.search_query[:MAX_QUERY_CHARS],
         "purpose": evidence.purpose[:MAX_FOCUS_CHARS],
+        "requirement_ids": evidence.requirement_ids,
         "excerpt": evidence.excerpt[:TOOL_EXCERPT_CHARS],
     }
 
@@ -973,6 +1109,10 @@ def default_stats(depth: str, budget: Budget, wall_limit: float) -> dict[str, An
         "evidence": 0,
         "usable_evidence": 0,
         "search_failures": 0,
+        "candidates_discovered": 0,
+        "candidates_attempted": 0,
+        "candidates_skipped": 0,
+        "candidates_failed": 0,
         "source_skips": 0,
         "duplicate_queries": 0,
         "duplicate_sources": 0,
@@ -990,12 +1130,16 @@ def default_stats(depth: str, budget: Budget, wall_limit: float) -> dict[str, An
         "evidence_shortfall_salvage": False,
         "structured_output_retries": 0,
         "plan_calls": 0,
+        "query_batch_calls": 0,
         "section_calls": 0,
         "submission_calls": 0,
+        "requirements_calls": 0,
         "repair_actions": {},
         "collection_decision": "",
         "repair_noop_counts": {},
         "agent_stop_reason": "",
+        "finalization_reserved": False,
+        "requirement_coverage": {},
     }
 
 
@@ -1006,8 +1150,13 @@ def run_state_snapshot(state: RunState) -> dict[str, Any]:
         "evidence_revision": state.evidence_revision,
         "last_inspected_revision": state.last_inspected_revision,
         "stats": state.stats,
+        "request_fragments": [item.model_dump() for item in state.request_fragments],
+        "requirements": [item.model_dump() for item in state.requirements],
         "report_plan": [item.model_dump() for item in state.report_plan],
         "report_sections": [asdict(item) for item in state.report_sections],
+        "query_seed_queue": [item.model_dump() for item in state.query_seed_queue],
+        "candidate_queue": [asdict(item) for item in state.candidate_queue],
+        "failed_candidates": [asdict(item) for item in state.failed_candidates],
         "phase": state.phase,
         "unmet_requirements": state.unmet_requirements,
         "collection_decision": state.collection_decision,
@@ -1054,12 +1203,32 @@ def load_run_state(
     stats["evidence"] = len(evidence)
     stats["usable_evidence"] = sum(item.relevance > 0 for item in evidence)
     stats["evidence_revision"] = int(snapshot["evidence_revision"])
+    request_fragments = [
+        RequestFragmentModel.model_validate(item)
+        for item in cast(list[dict[str, Any]], snapshot.get("request_fragments", []))
+    ]
+    requirements = [
+        RequirementModel.model_validate(item)
+        for item in cast(list[dict[str, Any]], snapshot.get("requirements", []))
+    ]
     report_plan = [
         ReportPlanSection.model_validate(item)
         for item in cast(list[dict[str, Any]], snapshot["report_plan"])
     ]
     report_sections = [
         ReportSection(**item) for item in cast(list[dict[str, Any]], snapshot["report_sections"])
+    ]
+    query_seed_queue = [
+        QuerySeedModel.model_validate(item)
+        for item in cast(list[dict[str, Any]], snapshot.get("query_seed_queue", []))
+    ]
+    candidate_queue = [
+        Candidate(**item)
+        for item in cast(list[dict[str, Any]], snapshot.get("candidate_queue", []))
+    ]
+    failed_candidates = [
+        FailedCandidate(**item)
+        for item in cast(list[dict[str, Any]], snapshot.get("failed_candidates", []))
     ]
     stats["report_sections"] = len(report_sections)
     stats["report_chars"] = len(assemble_report_sections(report_sections))
@@ -1073,12 +1242,17 @@ def load_run_state(
         evidence_revision=int(snapshot["evidence_revision"]),
         last_inspected_revision=(
             cast(int | None, snapshot["last_inspected_revision"])
-            if final_response is not None
+            if snapshot.get("last_inspected_revision") is not None
             else None
         ),
         stats=stats,
+        request_fragments=request_fragments,
+        requirements=requirements,
         report_plan=report_plan,
         report_sections=report_sections,
+        query_seed_queue=query_seed_queue,
+        candidate_queue=candidate_queue,
+        failed_candidates=failed_candidates,
         phase=str(snapshot["phase"]),
         unmet_requirements=list(cast(list[str], snapshot["unmet_requirements"])),
         collection_decision=collection_decision,
@@ -1201,13 +1375,9 @@ def validated_report_plan(
 
     if depth != "deep":
         raise ValueError("report planning is only used for deep research")
-    if not DEEP_PLAN_MIN_SECTIONS <= len(sections) <= DEEP_PLAN_MAX_SECTIONS:
-        raise ValueError(
-            f"report plan must contain {DEEP_PLAN_MIN_SECTIONS} to "
-            f"{DEEP_PLAN_MAX_SECTIONS} sections"
-        )
     headings: set[str] = set()
     usable_ids = {item.id for item in state.evidence if item.relevance > 0}
+    known_requirements = {item.id for item in state.requirements}
     normalized: list[ReportPlanSection] = []
     for item in sections:
         heading = validated_report_heading(item.heading)
@@ -1217,6 +1387,11 @@ def validated_report_plan(
         headings.add(folded)
         if not DEEP_PLAN_MIN_SECTION_CHARS <= item.target_chars <= DEEP_PLAN_MAX_SECTION_CHARS:
             raise ValueError("report plan section target is out of range")
+        requirement_ids = list(dict.fromkeys(item.requirement_ids))
+        if unknown_requirements := set(requirement_ids) - known_requirements:
+            raise IntegrityError(
+                f"report plan contains unknown requirement IDs: {sorted(unknown_requirements)}"
+            )
         source_ids = list(dict.fromkeys(item.source_ids))
         if unknown := set(source_ids) - usable_ids:
             raise IntegrityError(
@@ -1231,19 +1406,234 @@ def validated_report_plan(
             item.model_copy(
                 update={
                     "heading": heading,
+                    "requirement_ids": requirement_ids,
                     "source_ids": source_ids,
                     "deliverables": deliverables,
                 }
             )
         )
-    if sum(item.target_chars for item in normalized) < DEEP_MIN_ANSWER_CHARS:
-        raise ValueError(
-            f"report plan targets must total at least {DEEP_MIN_ANSWER_CHARS} characters"
-        )
-    planned_sources = {source_name for item in normalized for source_name in item.source_ids}
-    if len(planned_sources) < DEEP_MIN_CITED_SOURCES:
-        raise ValueError(f"report plan must allocate at least {DEEP_MIN_CITED_SOURCES} source IDs")
+    covered_requirements = {
+        requirement_id for item in normalized for requirement_id in item.requirement_ids
+    }
+    if covered_requirements != known_requirements:
+        raise ValueError("report plan must cover every requirement exactly once or more")
     return normalized
+
+
+def validated_initial_plan(
+    research: ResearchRequest,
+    draft: InitialPlanDraft,
+) -> tuple[
+    list[RequestFragmentModel],
+    list[RequirementModel],
+    list[ReportPlanSection],
+    list[QuerySeedModel],
+]:
+    fragments = explicit_request_fragments(research)
+    provided_fragments = [RequestFragmentModel.model_validate(item) for item in draft.fragments]
+    if [item.text for item in provided_fragments] != [item.text for item in fragments]:
+        raise ValueError("report plan fragments must match the explicit request fragments")
+    expected_fragment_ids = {item.id for item in fragments}
+    requirements = [RequirementModel.model_validate(item) for item in draft.requirements]
+    requirement_ids = [item.id for item in requirements]
+    if len(requirement_ids) != len(set(requirement_ids)):
+        raise ValueError("report plan requirement IDs must be unique")
+    mapped_fragments = {fragment_id for item in requirements for fragment_id in item.fragment_ids}
+    if mapped_fragments != expected_fragment_ids:
+        raise ValueError("report plan must map every explicit fragment to a requirement")
+    fragment_map = {item.id: item.text for item in fragments}
+    normalized_requirements = []
+    for item in requirements:
+        inferred_kind = classify_requirement_kind(
+            " ".join(
+                [item.summary, *(fragment_map[fragment_id] for fragment_id in item.fragment_ids)]
+            )
+        )
+        normalized_requirements.append(
+            item.model_copy(update={"kind": stronger_requirement_kind(item.kind, inferred_kind)})
+        )
+    requirement_id_set = set(requirement_ids)
+    headings: set[str] = set()
+    sections: list[ReportPlanSection] = []
+    for item in draft.sections:
+        heading = validated_report_heading(item.heading)
+        folded = heading.casefold()
+        if folded in headings:
+            raise ValueError("report plan headings must be unique")
+        headings.add(folded)
+        section_requirement_ids = list(dict.fromkeys(item.requirement_ids))
+        if unknown := set(section_requirement_ids) - requirement_id_set:
+            raise IntegrityError(f"report plan contains unknown requirement IDs: {sorted(unknown)}")
+        deliverables = [deliverable.strip() for deliverable in item.deliverables]
+        if any(
+            not deliverable or len(deliverable) > MAX_FOCUS_CHARS for deliverable in deliverables
+        ):
+            raise ValueError("report plan deliverables must contain 1 to 500 characters")
+        sections.append(
+            ReportPlanSection(
+                heading=heading,
+                target_chars=item.target_chars,
+                requirement_ids=section_requirement_ids,
+                source_ids=[],
+                deliverables=deliverables,
+            )
+        )
+    covered_requirements = {
+        requirement_id for item in sections for requirement_id in item.requirement_ids
+    }
+    if covered_requirements != requirement_id_set:
+        raise ValueError("report plan must cover every requirement exactly once or more")
+    query_seeds = [QuerySeedModel.model_validate(item) for item in draft.query_seeds]
+    for item in query_seeds:
+        if set(item.requirement_ids) - requirement_id_set:
+            raise IntegrityError("query seeds contain unknown requirement IDs")
+        if len(set(item.requirement_ids)) != 1:
+            raise ValueError("query entry must target exactly one requirement")
+    return fragments, normalized_requirements, sections, query_seeds
+
+
+def assigned_source_ids_for_requirements(
+    state: RunState, requirement_ids: Sequence[str]
+) -> list[str]:
+    evidence_groups = evidence_by_requirement(state)
+    assigned: list[str] = []
+    for requirement_id in requirement_ids:
+        assigned.extend(item.id for item in evidence_groups.get(requirement_id, []))
+    return sorted(dict.fromkeys(assigned), key=numeric_source_id)
+
+
+def section_evidence_ids(state: RunState, requirement_ids: Sequence[str]) -> list[str]:
+    requirement_map = requirement_by_id(state)
+    balanced: list[str] = []
+    for requirement_id in requirement_ids:
+        requirement = requirement_map.get(requirement_id)
+        if requirement is None:
+            continue
+        evidence_items = evidence_by_requirement(state).get(requirement_id, [])
+        hosts: set[str] = set()
+        for item in evidence_items:
+            host = urlparse(item.url).hostname or item.url
+            if host in hosts:
+                continue
+            balanced.append(item.id)
+            hosts.add(host)
+            if len(hosts) >= required_independent_hosts(requirement.kind):
+                break
+    assigned = assigned_source_ids_for_requirements(state, requirement_ids)
+    for source_id in assigned:
+        if source_id not in balanced and len(balanced) < MAX_PAYLOAD_EVIDENCE_EXCERPTS:
+            balanced.append(source_id)
+    return balanced[:MAX_PAYLOAD_EVIDENCE_EXCERPTS]
+
+
+def assign_report_plan_sources(state: RunState) -> None:
+    if not state.report_plan:
+        return
+    state.report_plan = [
+        item.model_copy(
+            update={"source_ids": assigned_source_ids_for_requirements(state, item.requirement_ids)}
+        )
+        for item in state.report_plan
+    ]
+
+
+def requirement_by_id(state: RunState) -> dict[str, RequirementModel]:
+    return {item.id: item for item in state.requirements}
+
+
+def evidence_by_requirement(state: RunState) -> dict[str, list[Evidence]]:
+    grouped = {item.id: [] for item in state.requirements}
+    for evidence in state.evidence:
+        if evidence.relevance <= 0:
+            continue
+        for requirement_id in evidence.requirement_ids:
+            if requirement_id in grouped:
+                grouped[requirement_id].append(evidence)
+    return grouped
+
+
+def requirement_is_covered(state: RunState, requirement: RequirementModel) -> bool:
+    supporting = evidence_by_requirement(state).get(requirement.id, [])
+    if not supporting:
+        return False
+    hosts = {urlparse(item.url).hostname or item.url for item in supporting}
+    return len(hosts) >= required_independent_hosts(requirement.kind)
+
+
+def evidence_hosts_for_requirement(state: RunState, requirement_id: str) -> set[str]:
+    return {
+        urlparse(item.url).hostname or item.url
+        for item in evidence_by_requirement(state).get(requirement_id, [])
+    }
+
+
+def cited_evidence_for_requirement(
+    state: RunState,
+    requirement_id: str,
+    cited_ids: set[str],
+) -> list[Evidence]:
+    return [
+        item
+        for item in evidence_by_requirement(state).get(requirement_id, [])
+        if item.id in cited_ids
+    ]
+
+
+def requirement_citation_error(
+    state: RunState,
+    requirement_id: str,
+    cited_ids: set[str],
+) -> str | None:
+    requirement = requirement_by_id(state).get(requirement_id)
+    if requirement is None:
+        return "unknown requirement"
+    cited = cited_evidence_for_requirement(state, requirement_id, cited_ids)
+    if not cited:
+        return f"missing cited evidence for {requirement_id}"
+    hosts = {urlparse(item.url).hostname or item.url for item in cited}
+    required_hosts = required_independent_hosts(requirement.kind)
+    if len(hosts) < required_hosts:
+        return f"insufficient independent hosts for {requirement_id}"
+    return None
+
+
+def requirement_gap_error(state: RunState, requirement_id: str) -> str | None:
+    requirement = requirement_by_id(state).get(requirement_id)
+    if requirement is None:
+        return None
+    hosts = evidence_hosts_for_requirement(state, requirement_id)
+    required_hosts = required_independent_hosts(requirement.kind)
+    if len(hosts) >= required_hosts:
+        return None
+    if not hosts:
+        return f"{requirement_id}: supporting evidence unavailable"
+    return f"{requirement_id}: only {len(hosts)}/{required_hosts} independent hosts available"
+
+
+def allows_gap_finalization(state: RunState, depth: str) -> bool:
+    return depth == "deep" and bool(state.stats.get("evidence_shortfall_salvage"))
+
+
+def runtime_gap_limitations(state: RunState) -> list[str]:
+    limitations = []
+    for requirement in state.requirements:
+        gap = requirement_gap_error(state, requirement.id)
+        if gap is not None:
+            limitations.append(f"Runtime coverage gap: {requirement.summary} ({gap})")
+    return limitations
+
+
+def candidate_requirement_summaries(state: RunState, candidate: Candidate) -> list[str]:
+    requirements = requirement_by_id(state)
+    return [requirements[rid].summary for rid in candidate.requirement_ids if rid in requirements]
+
+
+def uncovered_requirement_ids(state: RunState) -> list[str]:
+    return [item.id for item in state.requirements if not requirement_is_covered(state, item)]
+
+
+def all_requirements_covered(state: RunState) -> bool:
+    return bool(state.requirements) and not uncovered_requirement_ids(state)
 
 
 def validate_checkpoint_state(state: RunState, research: ResearchRequest) -> None:
@@ -1290,31 +1680,39 @@ def validate_checkpoint_state(state: RunState, research: ResearchRequest) -> Non
         "target_reached",
         "evidence_cap_reached",
         "evidence_cap_exhausted",
+        "coverage_complete",
     }:
         raise IntegrityError("invalid collection decision")
     if decision == "target_reached" and usable_count < budget.target_evidence:
         raise IntegrityError("target decision is not supported by the evidence ledger")
+    if decision == "coverage_complete" and not all_requirements_covered(state):
+        raise IntegrityError("coverage decision is not supported by the evidence ledger")
     if decision in {"evidence_cap_reached", "evidence_cap_exhausted"} and (
         len(state.evidence) < budget.evidence
     ):
         raise IntegrityError("evidence cap decision is not supported by the ledger")
-    if decision == "evidence_cap_reached" and not (
-        budget.minimum_evidence <= usable_count < budget.target_evidence
-    ):
-        raise IntegrityError("eligible evidence cap decision is outside its evidence range")
-    if decision == "evidence_cap_exhausted" and usable_count >= budget.minimum_evidence:
-        raise IntegrityError("exhausted evidence cap decision reached the minimum")
-    if decision == "voluntary_stop" and not (
-        budget.minimum_evidence <= usable_count < budget.target_evidence
-    ):
-        raise IntegrityError("voluntary stop decision is outside its evidence range")
     if decision is not None and state.stats.get("collection_decision") != decision:
         raise IntegrityError("collection decision stats do not match the checkpoint")
     if decision is None and state.stats.get("collection_decision") not in {None, ""}:
         raise IntegrityError("collection decision stats are stale")
-    if decision is None and (state.report_plan or state.report_sections or state.final_response):
+    if decision is None and (state.report_sections or state.final_response):
         raise IntegrityError("report work exists without a collection decision")
+    fragment_ids = {item.id for item in state.request_fragments}
+    if state.requirements and not state.request_fragments:
+        raise IntegrityError("requirements require explicit fragments")
+    requirement_ids = {item.id for item in state.requirements}
+    if any(set(item.fragment_ids) - fragment_ids for item in state.requirements):
+        raise IntegrityError("requirement fragment mapping is invalid")
     usable_ids = {item.id for item in state.evidence if item.relevance > 0}
+    for candidate in state.candidate_queue:
+        if set(candidate.requirement_ids) - requirement_ids:
+            raise IntegrityError("candidate queue requirement IDs are invalid")
+    for item in state.query_seed_queue:
+        if set(item.requirement_ids) - requirement_ids:
+            raise IntegrityError("query seed queue requirement IDs are invalid")
+    for evidence in state.evidence:
+        if set(evidence.requirement_ids) - requirement_ids:
+            raise IntegrityError("evidence requirement IDs are invalid")
     if state.report_plan:
         try:
             validated = validated_report_plan(state, research.depth, state.report_plan)
@@ -1334,6 +1732,8 @@ def validate_checkpoint_state(state: RunState, research: ResearchRequest) -> Non
     for item in state.report_sections:
         if validated_report_heading(item.heading) != item.heading:
             raise IntegrityError("checkpointed report heading is not normalized")
+        if set(item.requirement_ids) - requirement_ids:
+            raise IntegrityError("checkpointed report requirement IDs are invalid")
         if item.ledger_revision != state.evidence_revision:
             raise IntegrityError("checkpointed report section has a stale ledger revision")
         if citation_ids(item.body) - usable_ids:
@@ -1347,10 +1747,6 @@ def validate_checkpoint_state(state: RunState, research: ResearchRequest) -> Non
             or len(item.summary) > 500
         ):
             raise IntegrityError("checkpointed report section structure is invalid")
-        if research.depth == "deep" and (
-            len(item.body) < DEEP_MIN_SECTION_CHARS or not item.summary
-        ):
-            raise IntegrityError("checkpointed deep section is incomplete")
     if any(not item or len(item) > 200 for item in state.unmet_requirements):
         raise IntegrityError("checkpoint unmet requirements are invalid")
     if any(not re.fullmatch(r"[0-9a-f]{64}", item) for item in state.repair_noop_fingerprints):
@@ -1369,31 +1765,32 @@ def validate_checkpoint_state(state: RunState, research: ResearchRequest) -> Non
         ResearchResponse.model_validate(state.final_response)
 
 
-def store_report_plan(
+def store_initial_plan(
     state: RunState,
     research: ResearchRequest,
-    draft: ReportPlanDraft,
+    draft: InitialPlanDraft,
 ) -> None:
-    """Validate and checkpoint the single deep-report plan in memory."""
+    """Validate and checkpoint the deep skeleton before evidence collection."""
 
     if research.depth != "deep":
         raise ValueError("report planning is only used for deep research")
-    if not collection_allows_finalization(state):
-        raise IntegrityError("report planning requires a collection decision")
-    if state.last_inspected_revision != state.evidence_revision:
-        raise IntegrityError("inspect_evidence_ledger must follow the latest evidence update")
-    normalized = validated_report_plan(state, research.depth, draft.sections)
+    fragments, requirements, normalized, query_seeds = validated_initial_plan(research, draft)
+    state.request_fragments = fragments
+    state.requirements = requirements
     state.report_plan = normalized
+    assign_report_plan_sources(state)
+    state.query_seed_queue = list(query_seeds)
     state.report_sections.clear()
     state.repair_noop_fingerprints.clear()
     state.repair_noop_counts.clear()
-    state.phase = "sections"
-    state.unmet_requirements = ["missing_plan_section"]
+    state.phase = "research"
+    state.unmet_requirements = uncovered_requirement_ids(state)
     state.stats["report_plan_sections"] = len(normalized)
     state.stats["report_plan_target_chars"] = sum(item.target_chars for item in normalized)
     state.stats["report_sections"] = 0
     state.stats["report_chars"] = 0
     state.stats["repair_noop_counts"] = {}
+    state.stats["requirement_coverage"] = requirement_coverage_snapshot(state)
 
 
 def incomplete_requirements(
@@ -1406,7 +1803,6 @@ def incomplete_requirements(
     labels = {
         "report_plan": "レポート計画",
         "missing_plan_section": "計画済みレポート節",
-        "expand_existing": "本文文字数",
         "citation_repair": "引用ソース範囲",
         "deliverable_repair": "明示された成果物",
         "findings": "findings",
@@ -1414,9 +1810,10 @@ def incomplete_requirements(
     }
     unmet = [labels.get(item, "未達のruntime契約") for item in state.unmet_requirements]
     usable = usable_evidence_count(state)
-    if usable < budget.minimum_evidence:
-        unmet.append(f"使用可能な証拠: {usable}/{budget.minimum_evidence}")
     if research.depth == "deep":
+        uncovered = uncovered_requirement_ids(state)
+        if uncovered:
+            unmet.append(f"未被覆要件: {', '.join(uncovered[:6])}")
         if not state.report_plan:
             unmet.append("レポート計画")
         else:
@@ -1426,12 +1823,8 @@ def incomplete_requirements(
             )
             if missing_count:
                 unmet.append(f"未完成の計画節: {missing_count}件")
-        answer = assemble_report_sections(state.report_sections)
-        if len(answer) < DEEP_MIN_ANSWER_CHARS:
-            unmet.append(f"本文文字数: {len(answer)}/{DEEP_MIN_ANSWER_CHARS}")
-        cited = len(citation_ids(answer))
-        if cited < DEEP_MIN_CITED_SOURCES:
-            unmet.append(f"本文中の引用ソース: {cited}/{DEEP_MIN_CITED_SOURCES}")
+        if usable == 0:
+            unmet.append("使用可能な証拠: 0件")
     if state.phase == "submission":
         unmet.extend(["主要な知見", "制約事項"])
     return [item[:200] for item in dict.fromkeys(unmet)] or ["最終提出"]
@@ -1517,6 +1910,7 @@ def store_report_section(
     research: ResearchRequest,
     ledger_revision: int,
     heading: str,
+    requirement_ids: list[str],
     body_markdown: str,
     summary: str = "",
 ) -> dict[str, Any]:
@@ -1531,28 +1925,54 @@ def store_report_section(
         raise IntegrityError("inspect_evidence_ledger must follow the latest evidence update")
     if not body or len(body) > MAX_REPORT_SECTION_CHARS:
         raise ValueError(f"body_markdown must contain 1 to {MAX_REPORT_SECTION_CHARS} characters")
-    if research.depth == "deep" and len(body) < DEEP_MIN_SECTION_CHARS:
-        raise ValueError(
-            f"deep section body must contain at least {DEEP_MIN_SECTION_CHARS} characters"
-        )
     if research.depth == "deep" and not compact_summary:
         raise ValueError("deep report sections require a compact summary")
     if len(compact_summary) > 500:
         raise ValueError("section summary must not exceed 500 characters")
     if re.search(r"^##\s+", body, flags=re.MULTILINE):
         raise ValueError("body_markdown must not contain level-2 headings")
+    known_requirements = requirement_by_id(state)
+    normalized_requirements = list(dict.fromkeys(requirement_ids))
+    if research.depth == "deep" and (
+        not normalized_requirements or set(normalized_requirements) - known_requirements.keys()
+    ):
+        raise ModelOutputError("unknown requirement IDs in report section")
     evidence_ids = {item.id for item in state.evidence}
     unknown = sorted(citation_ids(body) - evidence_ids, key=numeric_source_id)
     if unknown:
-        raise IntegrityError("unknown source IDs in report section")
+        raise ModelOutputError("unknown source IDs in report section")
     unusable = sorted(
         citation_ids(body) - {item.id for item in state.evidence if item.relevance > 0},
         key=numeric_source_id,
     )
     if unusable:
-        raise IntegrityError("unusable source IDs in report section")
+        raise ModelOutputError("unusable source IDs in report section")
 
-    section = ReportSection(normalized_heading, body, ledger_revision, compact_summary)
+    if research.depth == "deep":
+        allowed = set()
+        for requirement_id in normalized_requirements:
+            allowed.update(
+                item.id for item in evidence_by_requirement(state).get(requirement_id, [])
+            )
+        cited_ids = citation_ids(body)
+        if cited_ids - allowed:
+            raise ModelOutputError("report section citations are not assigned to its requirements")
+        for requirement_id in normalized_requirements:
+            if (
+                allows_gap_finalization(state, research.depth)
+                and requirement_gap_error(state, requirement_id) is not None
+            ):
+                continue
+            if error := requirement_citation_error(state, requirement_id, cited_ids):
+                raise ModelOutputError(error)
+
+    section = ReportSection(
+        normalized_heading,
+        body,
+        ledger_revision,
+        compact_summary,
+        normalized_requirements,
+    )
     sections = list(state.report_sections)
     existing = next(
         (
@@ -1641,8 +2061,6 @@ def validate_submit_report(
         raise ValueError("answer_markdown must not be empty")
     if len(answer) > MAX_ANSWER_CHARS:
         raise ValueError("answer_markdown too long")
-    if depth == "deep" and len(answer) < DEEP_MIN_ANSWER_CHARS:
-        raise ValueError("deep report too short")
     section_matches = list(re.finditer(r"^##\s+\S.*$", answer, flags=re.MULTILINE))
     sections = [
         (
@@ -1657,14 +2075,18 @@ def validate_submit_report(
         )
         for index, match in enumerate(section_matches)
     ]
-    section_lengths = [len(body) for _, body in sections]
-    if depth == "deep" and any(length < DEEP_MIN_SECTION_CHARS for length in section_lengths):
-        raise ValueError(
-            f"deep report sections must each contain at least {DEEP_MIN_SECTION_CHARS} characters"
-        )
     if depth == "deep":
         if not state.report_plan:
             raise ValueError("deep report requires a checkpointed report plan")
+        if not all_requirements_covered(state) and not allows_gap_finalization(state, depth):
+            raise ValueError("deep report is missing requirement coverage")
+        section_requirement_ids = {
+            requirement_id
+            for section in state.report_sections
+            for requirement_id in section.requirement_ids
+        }
+        if section_requirement_ids != {item.id for item in state.requirements}:
+            raise ModelOutputError("deep report sections do not cover every requirement ID")
         answer_headings = {heading.casefold() for heading, _body in sections}
         missing_headings = [
             item.heading
@@ -1673,19 +2095,23 @@ def validate_submit_report(
         ]
         if missing_headings:
             raise ValueError("deep report is missing planned sections")
+        for section in state.report_sections:
+            cited_ids = citation_ids(section.body)
+            for requirement_id in section.requirement_ids:
+                gap_allowed = (
+                    allows_gap_finalization(state, depth)
+                    and requirement_gap_error(state, requirement_id) is not None
+                )
+                if gap_allowed:
+                    continue
+                if error := requirement_citation_error(state, requirement_id, cited_ids):
+                    raise ModelOutputError(error)
     if requirement_error := report_request_error(answer, depth, request_text):
         raise ValueError(requirement_error)
     if len(findings) == 0 or len(findings) > MAX_FINDINGS:
         raise ValueError(f"findings must contain 1 to {MAX_FINDINGS} items")
-    if depth == "deep" and len(findings) < DEEP_MIN_FINDINGS:
-        raise ValueError(f"deep report needs at least {DEEP_MIN_FINDINGS} findings")
     usable_count = usable_evidence_count(state)
-    shortfall_salvage = (
-        depth == "deep"
-        and len(state.searched_queries) >= budget.search_limit
-        and usable_count >= DEEP_MIN_CITED_SOURCES
-    )
-    if usable_count < budget.minimum_evidence and not shortfall_salvage:
+    if usable_count < 1:
         raise ValueError("minimum evidence not reached")
     if ledger_revision != state.evidence_revision:
         raise IntegrityError("ledger_revision must match the latest evidence revision")
@@ -1698,25 +2124,21 @@ def validate_submit_report(
     cited_ids = citation_ids(answer)
     if not cited_ids:
         raise ValueError("answer_markdown must include inline citations")
-    if depth == "deep" and len(cited_ids) < DEEP_MIN_CITED_SOURCES:
-        raise ValueError(f"deep report needs at least {DEEP_MIN_CITED_SOURCES} cited sources")
     finding_ids = {source_id for item in validated_findings for source_id in item.source_ids}
     if not finding_ids or not finding_ids <= cited_ids:
-        raise IntegrityError("finding source IDs must be a non-empty subset of answer citations")
+        raise ModelOutputError("finding source IDs must be a non-empty subset of answer citations")
 
     evidence_by_id = {item.id: item for item in state.evidence}
     unknown = sorted(cited_ids - evidence_by_id.keys(), key=numeric_source_id)
     if unknown:
-        raise IntegrityError("unknown source IDs in report")
+        raise ModelOutputError("unknown source IDs in report")
     if any(evidence_by_id[source_name].relevance == 0 for source_name in cited_ids):
-        raise IntegrityError("report must not cite unusable evidence excerpts")
+        raise ModelOutputError("report must not cite unusable evidence excerpts")
     validated_limitations = [
         limitation.strip() for limitation in limitations_adapter().validate_python(limitations)
     ]
     if any(not limitation for limitation in validated_limitations):
         raise ValueError("limitations must not be blank")
-    if depth == "deep" and len(validated_limitations) < DEEP_MIN_LIMITATIONS:
-        raise ValueError(f"deep report needs at least {DEEP_MIN_LIMITATIONS} limitations")
     sources = [
         source_from_evidence(evidence_by_id[source_name])
         for source_name in sorted(cited_ids, key=numeric_source_id)
@@ -1761,7 +2183,7 @@ def accept_report(
         ledger_revision,
         assemble_report_sections(state.report_sections),
         findings,
-        limitations,
+        [*limitations, *runtime_gap_limitations(state)],
         make_budget(research.depth),
         research.depth,
         f"{research.query}\n{research.focus or ''}",
@@ -1793,31 +2215,25 @@ def prune_unusable_report_sections(state: RunState) -> bool:
 def evidence_ready_for_report(state: RunState, research: ResearchRequest, budget: Budget) -> bool:
     """Return whether normal or hard-limit salvage finalization is possible."""
 
-    usable_count = usable_evidence_count(state)
-    return usable_count >= budget.minimum_evidence or (
-        research.depth == "deep"
-        and len(state.searched_queries) >= budget.search_limit
-        and usable_count >= DEEP_MIN_CITED_SOURCES
+    return usable_evidence_count(state) > 0 and (
+        research.depth != "deep"
+        or state.collection_decision == "voluntary_stop"
+        or all_requirements_covered(state)
+        or len(state.searched_queries) >= budget.search_limit
+        or state.stats.get("finalization_reserved") is True
     )
-
-
-def evidence_target_reached(state: RunState, budget: Budget) -> bool:
-    """Return whether an active collector must stop immediately."""
-
-    return usable_evidence_count(state) >= budget.target_evidence
 
 
 def evidence_limit_decision(state: RunState, budget: Budget) -> CollectionDecision | None:
     """Return the decision that must stop an active collector, if any."""
 
-    usable = usable_evidence_count(state)
-    if usable >= budget.target_evidence:
+    if not state.requirements and usable_evidence_count(state) >= budget.target_evidence:
         return "target_reached"
+    if all_requirements_covered(state):
+        return "coverage_complete"
     if len(state.evidence) >= budget.evidence:
         return (
-            "evidence_cap_reached"
-            if usable >= budget.minimum_evidence
-            else "evidence_cap_exhausted"
+            "evidence_cap_reached" if usable_evidence_count(state) > 0 else "evidence_cap_exhausted"
         )
     return None
 
@@ -1834,13 +2250,13 @@ def collection_allows_finalization(state: RunState) -> bool:
     return state.collection_decision in {
         "voluntary_stop",
         "target_reached",
+        "coverage_complete",
         "evidence_cap_reached",
     }
 
 
 ReportAction = Literal[
     "missing_plan_section",
-    "expand_existing",
     "citation_repair",
     "deliverable_repair",
     "submit",
@@ -1878,27 +2294,32 @@ def next_report_action(
             state.report_sections[0].heading,
         )
         return "deliverable_repair", repair_heading, requirement_error
-    if len(answer) < DEEP_MIN_ANSWER_CHARS:
-        planned_by_heading = {item.heading.casefold(): item for item in state.report_plan}
-        section = min(
-            state.report_sections,
-            key=lambda item: (
-                len(item.body) / planned_by_heading[item.heading.casefold()].target_chars
-            ),
-        )
-        return (
-            "expand_existing",
-            section.heading,
-            f"expand the assembled report from {len(answer)} to at least "
-            f"{DEEP_MIN_ANSWER_CHARS} chars",
-        )
-    if len(citation_ids(answer)) < DEEP_MIN_CITED_SOURCES:
-        section = min(state.report_sections, key=lambda item: len(citation_ids(item.body)))
-        return (
-            "citation_repair",
-            section.heading,
-            f"broaden inline citation coverage to {DEEP_MIN_CITED_SOURCES} usable sources",
-        )
+    for section in state.report_sections:
+        if not citation_ids(section.body) and not (
+            research.depth == "deep"
+            and all(
+                allows_gap_finalization(state, research.depth)
+                and requirement_gap_error(state, requirement_id) is not None
+                for requirement_id in section.requirement_ids
+            )
+        ):
+            return "citation_repair", section.heading, "add valid assigned citations"
+    requirement_map = {
+        item.heading.casefold(): set(item.requirement_ids) for item in state.report_plan
+    }
+    for section in state.report_sections:
+        planned = requirement_map.get(section.heading.casefold(), set())
+        if set(section.requirement_ids) != planned:
+            return "deliverable_repair", section.heading, "restore the planned requirement mapping"
+        cited_ids = citation_ids(section.body)
+        for requirement_id in section.requirement_ids:
+            if (
+                allows_gap_finalization(state, research.depth)
+                and requirement_gap_error(state, requirement_id) is not None
+            ):
+                continue
+            if error := requirement_citation_error(state, requirement_id, cited_ids):
+                return "citation_repair", section.heading, error
     return "submit", None, ""
 
 
@@ -1960,32 +2381,126 @@ def build_research_continuation_prompt(
     return json.dumps(payload, ensure_ascii=False)
 
 
-def finalization_context(research: ResearchRequest, state: RunState) -> dict[str, Any]:
-    """Return the authoritative, checkpointable context for one structured output call."""
+def compact_evidence_payload(evidence: Evidence) -> dict[str, Any]:
+    return {
+        "id": evidence.id,
+        "url": evidence.url,
+        "title": evidence.title,
+        "publisher": evidence.publisher,
+        "published_at": evidence.published_at,
+        "excerpt": evidence.excerpt[:TOOL_EXCERPT_CHARS],
+    }
 
+
+def build_plan_context(research: ResearchRequest) -> dict[str, Any]:
     return {
         "query": research.query,
         "focus": research.focus,
         "depth": research.depth,
         "language": research.language,
+        "request_fragments": [item.model_dump() for item in explicit_request_fragments(research)],
+    }
+
+
+def build_query_context(research: ResearchRequest, state: RunState) -> dict[str, Any]:
+    uncovered = uncovered_requirement_ids(state)
+    coverage = requirement_coverage_snapshot(state)
+    searched = sorted(state.searched_queries)[-MAX_PAYLOAD_SEARCHED_QUERIES:]
+    return {
+        "depth": research.depth,
+        "language": research.language,
+        "uncovered_requirement_ids": uncovered,
+        "requirements": [
+            item.model_dump() for item in state.requirements if item.id in set(uncovered)
+        ],
+        "coverage_summary": {key: coverage[key] for key in uncovered if key in coverage},
+        "searched_queries": searched,
+    }
+
+
+def build_section_context(
+    research: ResearchRequest,
+    state: RunState,
+    action: str,
+    repair_heading: str | None,
+) -> dict[str, Any]:
+    assign_report_plan_sources(state)
+    planned = next((item for item in state.report_plan if item.heading == repair_heading), None)
+    existing = next(
+        (item for item in state.report_sections if item.heading == repair_heading), None
+    )
+    requirement_ids = planned.requirement_ids if planned is not None else []
+    assigned_ids = section_evidence_ids(state, requirement_ids)
+    evidence_map = {item.id: item for item in state.evidence if item.relevance > 0}
+    coverage_gaps = [
+        {
+            "requirement_id": requirement_id,
+            "summary": requirement_by_id(state)[requirement_id].summary,
+            "available_hosts": len(evidence_hosts_for_requirement(state, requirement_id)),
+            "required_hosts": required_independent_hosts(
+                requirement_by_id(state)[requirement_id].kind
+            ),
+        }
+        for requirement_id in requirement_ids
+        if requirement_gap_error(state, requirement_id) is not None
+    ]
+    return {
+        "query": research.query,
+        "focus": research.focus,
+        "depth": research.depth,
         "ledger_revision": state.evidence_revision,
-        "collection_decision": state.collection_decision,
-        "evidence_contract": {
-            "usable": usable_evidence_count(state),
-            "minimum": make_budget(research.depth).minimum_evidence,
-            "target": make_budget(research.depth).target_evidence,
-            "hard_limit_salvage": bool(state.stats.get("evidence_shortfall_salvage")),
-        },
-        "evidence": [serialize_evidence(item) for item in state.evidence if item.relevance > 0],
-        "report_plan": [item.model_dump() for item in state.report_plan],
+        "action": action,
+        "repair_heading": repair_heading,
+        "planned_section": (
+            planned.model_copy(update={"source_ids": assigned_ids}).model_dump()
+            if planned is not None
+            else None
+        ),
+        "section_to_repair": (
+            {
+                "heading": existing.heading,
+                "summary": existing.summary,
+                "source_ids": sorted(citation_ids(existing.body), key=numeric_source_id),
+                "chars": len(existing.body),
+            }
+            if existing is not None
+            else None
+        ),
+        "assigned_evidence": [
+            compact_evidence_payload(evidence_map[source_id])
+            for source_id in assigned_ids
+            if source_id in evidence_map
+        ],
+        "coverage_gaps": coverage_gaps,
         "completed_sections": [
             {
                 "heading": section.heading,
+                "requirement_ids": section.requirement_ids,
                 "summary": section.summary,
                 "source_ids": sorted(citation_ids(section.body), key=numeric_source_id),
-                "chars": len(section.body),
             }
             for section in state.report_sections
+            if section.heading != repair_heading
+        ],
+    }
+
+
+def build_submission_context(research: ResearchRequest, state: RunState) -> dict[str, Any]:
+    assembled_report = assemble_report_sections(state.report_sections)
+    cited_ids = sorted(citation_ids(assembled_report), key=numeric_source_id)
+    evidence_map = {item.id: item for item in state.evidence if item.relevance > 0}
+    return {
+        "query": research.query,
+        "depth": research.depth,
+        "evidence_contract": {
+            "hard_limit_salvage": bool(state.stats.get("evidence_shortfall_salvage")),
+        },
+        "assembled_report": assembled_report,
+        "cited_source_ids": cited_ids,
+        "evidence": [
+            compact_evidence_payload(evidence_map[source_id])
+            for source_id in cited_ids
+            if source_id in evidence_map
         ],
     }
 
@@ -1996,12 +2511,12 @@ def safe_plan_validation_error(error: BaseException | str) -> str:
         "heading must contain 1 to 200 characters",
         "heading must be plain text without Markdown heading markers",
         "heading is reserved for deterministic report assembly",
-        f"report plan must contain {DEEP_PLAN_MIN_SECTIONS} to {DEEP_PLAN_MAX_SECTIONS} sections",
         "report plan headings must be unique",
+        "report plan requirement IDs must be unique",
         "report plan section target is out of range",
         "report plan deliverables must contain 1 to 500 characters",
-        f"report plan targets must total at least {DEEP_MIN_ANSWER_CHARS} characters",
-        f"report plan must allocate at least {DEEP_MIN_CITED_SOURCES} source IDs",
+        "report plan must cover every requirement exactly once or more",
+        "query entry must target exactly one requirement",
         "report plan output did not match the required schema",
     }
     return message if message in allowed else "report plan failed semantic validation"
@@ -2012,44 +2527,30 @@ def build_plan_prompt(
     state: RunState,
     previous_validation_error: str = "",
 ) -> str:
-    """Request the single structured plan after deep evidence collection."""
+    """Request the single structured requirements and section skeleton for deep research."""
 
-    payload = finalization_context(research, state)
-    request_text = f"{research.query}\n{research.focus or ''}"
+    payload = build_plan_context(research)
     payload.update(
         {
             "task": "Plan the complete deep report before writing any section.",
-            "planner_hints": {
-                "comparison": bool(
-                    re.search(
-                        r"比較|compare|comparison|versus|\bvs\.?\b|(?:差|違い)",
-                        request_text,
-                        re.IGNORECASE,
-                    )
-                ),
-                "benchmark": bool(re.search(r"ベンチマーク|benchmark", request_text, re.I)),
-                "roadmap": bool(
-                    re.search(
-                        r"ロードマップ|roadmap|導入計画|実装計画|implementation plan",
-                        request_text,
-                        re.I,
-                    )
-                ),
-            },
             "requirements": [
-                f"Aim for {DEEP_PLAN_TARGET_SECTIONS} unique H2 sections; normally use "
-                f"{DEEP_PLAN_MIN_SECTIONS} to {DEEP_PLAN_MAX_SECTIONS}.",
-                f"Make target_chars total at least {DEEP_MIN_ANSWER_CHARS}; each target should be "
-                f"{DEEP_PLAN_MIN_SECTION_CHARS} to {DEEP_PLAN_MAX_SECTION_CHARS}.",
                 (
-                    "Assign concrete explicit user deliverables and usable source IDs "
-                    "to every section."
+                    "Return request fragments exactly as provided and map every fragment "
+                    "to at least one requirement."
                 ),
                 (
-                    "Use plain-text unique headings. H3 subsections may be written later "
-                    "inside bodies."
+                    "Use kind=direct for ordinary factual requests, and "
+                    "kind=comparison/benchmark/causal only when explicit."
                 ),
-                "Treat planner_hints as coverage hints, not mandatory report templates.",
+                "Comparison, benchmark, and causal requirements need independent hosts.",
+                (
+                    f"Plan around {DEEP_PLAN_TARGET_SECTIONS} sections by default, but "
+                    "optimize for coverage not padding."
+                ),
+                (
+                    "Assign every requirement to at least one section with concrete "
+                    "deliverables only. Do not assign source IDs; runtime does that later."
+                ),
             ],
             "previous_validation_error": (
                 safe_plan_validation_error(previous_validation_error)
@@ -2070,39 +2571,27 @@ def build_section_prompt(
 ) -> str:
     """Request one new or corrected report section as forced structured output."""
 
-    payload = finalization_context(research, state)
-    planned = next(
-        (item for item in state.report_plan if item.heading == repair_heading),
-        None,
-    )
-    existing = next(
-        (item for item in state.report_sections if item.heading == repair_heading),
-        None,
-    )
+    payload = build_section_context(research, state, action, repair_heading)
     payload.update(
         {
             "task": "Generate exactly one new or corrected level-2 report section.",
-            "action": action,
-            "repair_heading": repair_heading,
-            "planned_section": planned.model_dump() if planned is not None else None,
-            "section_to_repair": (
-                {
-                    "heading": existing.heading,
-                    "summary": existing.summary,
-                    "source_ids": sorted(citation_ids(existing.body), key=numeric_source_id),
-                    "chars": len(existing.body),
-                }
-                if existing is not None
-                else None
-            ),
             "requirements": [
                 (
                     "If repair_heading is present, use that exact target heading for the new or "
                     "repaired section; otherwise use a distinct plain-text heading."
                 ),
+                "Return requirement_ids exactly for the requirements this section covers.",
                 "Do not include a level-2 heading, Sources, or Limitations inside body_markdown.",
                 "Use inline evidence citations such as [S1] for every material claim.",
-                "Cover an explicit user deliverable not yet covered and keep sections coherent.",
+                (
+                    "If coverage_gaps are present, state the gap explicitly and do not "
+                    "invent unsupported claims."
+                ),
+                "Never cite evidence outside assigned_evidence.",
+                (
+                    "Cover the planned requirements and explicit deliverables only; "
+                    "do not invent new asks."
+                ),
                 (
                     "Maintain information density: every section must add non-redundant evidence, "
                     "data analysis, comparison, or implications."
@@ -2118,7 +2607,7 @@ def build_section_prompt(
                 ),
                 "Return a compact summary for future section prompts; do not repeat the full body.",
                 (
-                    f"Treat planned target_chars as soft; never exceed "
+                    "Treat planned target_chars as soft; never exceed "
                     f"{MAX_REPORT_SECTION_CHARS} chars."
                 ),
             ],
@@ -2135,11 +2624,8 @@ def build_submission_prompt(
 ) -> str:
     """Request findings and limitations for deterministic report submission."""
 
-    payload = finalization_context(research, state)
-    payload["assembled_report"] = assemble_report_sections(state.report_sections)
-    cited = sorted(
-        citation_ids(assemble_report_sections(state.report_sections)), key=numeric_source_id
-    )
+    payload = build_submission_context(research, state)
+    cited = payload["cited_source_ids"]
     payload.update(
         {
             "task": "Generate only the findings and limitations for the completed report.",
@@ -2152,20 +2638,201 @@ def build_submission_prompt(
                     "on reviews, job listings, or non-primary sources when applicable."
                 ),
                 (
-                    "If evidence_contract.hard_limit_salvage is true, explicitly disclose that the "
-                    "usable-evidence target was not reached before the hard search limit."
+                    "If runtime coverage gaps remain, describe only the supported findings and "
+                    "let explicit coverage limitations stand without inventing missing evidence."
                 ),
                 (
-                    f"Deep research requires at least {DEEP_MIN_FINDINGS} findings and "
-                    f"{DEEP_MIN_LIMITATIONS} substantive limitations."
-                    if research.depth == "deep"
-                    else "Return at least one finding; limitations may be empty."
+                    "Return at least one finding; limitations may be empty only when "
+                    "none are supported by the evidence."
                 ),
             ],
             "previous_validation_error": validation_error or None,
         }
     )
     return json.dumps(payload, ensure_ascii=False)
+
+
+def build_query_batch_prompt(research: ResearchRequest, state: RunState) -> str:
+    payload = build_query_context(research, state)
+    payload["task"] = "Generate a small search batch only for uncovered requirements."
+    payload["requirements_instructions"] = [
+        f"Return {DEEP_QUERY_BATCH_SIZE} or fewer focused search queries.",
+        "Each query must target exactly one uncovered requirement.",
+        "Do not ask to fetch URLs. The runtime owns the candidate queue and fetching.",
+    ]
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def enqueue_candidates(
+    state: RunState,
+    results: list[SearchResult],
+    requirement_ids: list[str],
+    purpose: str,
+) -> int:
+    if len(requirement_ids) != 1:
+        raise ValueError("candidate enqueue requires exactly one requirement")
+    requirement_id = requirement_ids[0]
+    if requirement_id not in set(uncovered_requirement_ids(state)):
+        raise ValueError("candidate enqueue requires an uncovered requirement")
+    known_urls = {item.url for item in state.evidence}
+    known_urls.update(item.url for item in state.candidate_queue)
+    known_urls.update(item.url for item in state.failed_candidates)
+    known_hosts = evidence_hosts_for_requirement(state, requirement_id)
+    known_hosts.update(
+        (urlparse(item.url).hostname or item.url)
+        for item in state.candidate_queue
+        if requirement_id in item.requirement_ids
+    )
+    added = 0
+    for result in results:
+        if result.url in known_urls:
+            state.stats["candidates_skipped"] += 1
+            continue
+        host = urlparse(result.url).hostname or result.url
+        if host in known_hosts:
+            state.stats["candidates_skipped"] += 1
+            continue
+        state.candidate_queue.append(
+            Candidate(
+                url=result.url,
+                title=result.title,
+                snippet=result.content,
+                engine=result.engine,
+                search_query=result.search_query,
+                purpose=purpose,
+                requirement_ids=[requirement_id],
+            )
+        )
+        known_urls.add(result.url)
+        known_hosts.add(host)
+        added += 1
+    state.stats["candidates_discovered"] = int(state.stats["candidates_discovered"]) + added
+    return added
+
+
+def record_failed_candidate(state: RunState, candidate: Candidate, reason: str) -> None:
+    if any(item.url == candidate.url for item in state.failed_candidates):
+        return
+    state.failed_candidates.append(FailedCandidate(candidate.url, reason[:200], "fetch"))
+
+
+def next_candidate_batch(state: RunState) -> list[Candidate]:
+    selected: list[Candidate] = []
+    round_hosts: dict[str, set[str]] = {}
+    round_counts: dict[str, int] = {}
+    requirements = requirement_by_id(state)
+    remaining: list[Candidate] = []
+    evidence_slots = max(0, make_budget(state.stats["depth"]).evidence - len(state.evidence))
+    max_batch = min(DEEP_FETCH_BATCH_SIZE, evidence_slots)
+    for candidate in state.candidate_queue:
+        if len(selected) >= max_batch:
+            remaining.append(candidate)
+            continue
+        active_requirements: list[str] = []
+        host = urlparse(candidate.url).hostname or candidate.url
+        deferred = False
+        drop_candidate = False
+        for requirement_id in candidate.requirement_ids:
+            requirement = requirements.get(requirement_id)
+            if requirement is None:
+                drop_candidate = True
+                continue
+            if requirement_is_covered(state, requirement):
+                continue
+            missing_hosts = required_independent_hosts(requirement.kind) - len(
+                evidence_hosts_for_requirement(state, requirement_id)
+            )
+            if missing_hosts <= 0:
+                continue
+            if host in round_hosts.setdefault(requirement_id, set()):
+                drop_candidate = True
+                continue
+            if round_counts.get(requirement_id, 0) >= missing_hosts:
+                deferred = True
+                continue
+            active_requirements.append(requirement_id)
+        if not active_requirements:
+            if deferred and not drop_candidate:
+                remaining.append(candidate)
+            else:
+                state.stats["candidates_skipped"] += 1
+            continue
+        selected.append(replace(candidate, requirement_ids=active_requirements))
+        for requirement_id in active_requirements:
+            round_hosts.setdefault(requirement_id, set()).add(host)
+            round_counts[requirement_id] = round_counts.get(requirement_id, 0) + 1
+    state.candidate_queue = remaining
+    return selected
+
+
+def apply_evidence_update(state: RunState, evidence: Evidence) -> None:
+    state.evidence.append(replace(evidence, id=source_id(len(state.evidence))))
+    state.evidence_revision += 1
+    state.last_inspected_revision = None
+    assign_report_plan_sources(state)
+    state.report_sections = [
+        item
+        for item in state.report_sections
+        if item.ledger_revision == state.evidence_revision - 1
+        and citation_ids(item.body)
+        <= {source.id for source in state.evidence if source.relevance > 0}
+    ]
+    state.phase = "research"
+    state.unmet_requirements = uncovered_requirement_ids(state)
+    state.collection_decision = None
+    state.repair_noop_fingerprints.clear()
+    state.repair_noop_counts.clear()
+    state.final_response = None
+    state.stats["documents"] += 1
+    state.stats["evidence"] = len(state.evidence)
+    state.stats["usable_evidence"] = usable_evidence_count(state)
+    state.stats["evidence_revision"] = state.evidence_revision
+    state.stats["report_sections"] = len(state.report_sections)
+    state.stats["report_chars"] = len(assemble_report_sections(state.report_sections))
+    state.stats["collection_decision"] = ""
+    state.stats["repair_noop_counts"] = {}
+    state.stats["requirement_coverage"] = requirement_coverage_snapshot(state)
+
+
+def requirement_coverage_snapshot(state: RunState) -> dict[str, dict[str, Any]]:
+    by_requirement = evidence_by_requirement(state)
+    requirements = requirement_by_id(state)
+    snapshot: dict[str, dict[str, Any]] = {}
+    for requirement_id, requirement in requirements.items():
+        evidence_items = by_requirement.get(requirement_id, [])
+        hosts = sorted({urlparse(item.url).hostname or item.url for item in evidence_items})
+        snapshot[requirement_id] = {
+            "kind": requirement.kind,
+            "covered": len(hosts) >= required_independent_hosts(requirement.kind),
+            "source_ids": [item.id for item in evidence_items],
+            "hosts": hosts,
+            "minimum_hosts": required_independent_hosts(requirement.kind),
+        }
+    return snapshot
+
+
+def should_reserve_finalization(deadline: float) -> bool:
+    return deadline - time.monotonic() <= FINALIZATION_RESERVE_SECONDS
+
+
+def structured_role_timeout_seconds(settings: Settings, remaining: float) -> float:
+    return min(settings.kimi_timeout_seconds, FINALIZER_TIMEOUT_SECONDS, remaining)
+
+
+def validated_query_entry(
+    state: RunState, entry: QuerySeedModel | SearchBatchEntry
+) -> QuerySeedModel:
+    requirement_ids = list(dict.fromkeys(entry.requirement_ids))
+    if len(requirement_ids) != 1:
+        raise ValueError("query entry must target exactly one requirement")
+    requirement_id = requirement_ids[0]
+    if requirement_id not in set(uncovered_requirement_ids(state)):
+        raise ValueError("query entry must target an uncovered requirement")
+    return QuerySeedModel(
+        query=bounded_query(entry.query),
+        purpose=bounded_purpose(entry.purpose),
+        requirement_ids=[requirement_id],
+    )
 
 
 def build_system_prompt(research: ResearchRequest, budget: Budget) -> str:
@@ -2574,12 +3241,28 @@ def build_research_tools(
     async def write_report_section(
         ledger_revision: int,
         heading: str,
-        body_markdown: str,
+        requirement_ids: list[str] | str,
+        body_markdown: str | None = None,
     ) -> dict[str, Any]:
         """Checkpoint one H2 section per turn; heading <=200 and body <=4000 characters."""
 
         try:
-            result = store_report_section(state, research, ledger_revision, heading, body_markdown)
+            normalized_requirement_ids = []
+            normalized_body = body_markdown
+            if isinstance(requirement_ids, str) and body_markdown is None:
+                normalized_body = requirement_ids
+            elif isinstance(requirement_ids, list):
+                normalized_requirement_ids = requirement_ids
+            else:
+                raise ValueError("invalid write_report_section arguments")
+            result = store_report_section(
+                state,
+                research,
+                ledger_revision,
+                heading,
+                normalized_requirement_ids,
+                cast(str, normalized_body),
+            )
             await save("running")
             return tool_success(result)
         except IntegrityError as exc:
@@ -2743,7 +3426,8 @@ async def run_research(
         wall_limit=wall_limit,
     )
     validate_checkpoint_state(state, research)
-    refresh_evidence_relevance(state, research)
+    if not (research.depth == "deep" and (state.report_plan or state.requirements)):
+        refresh_evidence_relevance(state, research)
     prune_unusable_report_sections(state)
     started = time.monotonic()
 
@@ -2884,7 +3568,12 @@ async def run_research(
             await asyncio.sleep(delay)
         return True
 
-    async def invoke_structured(prompt: str, output_model: type[BaseModel]) -> BaseModel:
+    async def invoke_structured(
+        prompt: str,
+        output_model: type[BaseModel],
+        *,
+        remaining: float,
+    ) -> BaseModel:
         while True:
             if fatal_errors:
                 raise fatal_errors[0]
@@ -2895,10 +3584,7 @@ async def run_research(
                     prompt,
                     turns=1,
                     structured_output_model=output_model,
-                    total_timeout=min(
-                        runtime.settings.kimi_timeout_seconds,
-                        FINALIZER_TIMEOUT_SECONDS,
-                    ),
+                    total_timeout=structured_role_timeout_seconds(runtime.settings, remaining),
                 )
             except (EventLoopException, APIError, TimeoutError) as exc:
                 if await recover_model_error(exc):
@@ -2915,6 +3601,120 @@ async def run_research(
                 raise ValueError("structured finalizer returned no validated output")
             return output
 
+    async def ensure_deep_plan() -> None:
+        if research.depth != "deep" or state.report_plan:
+            return
+        state.phase = "planning"
+        state.request_fragments = explicit_request_fragments(research)
+        state.requirements = []
+        state.unmet_requirements = [item.id for item in state.request_fragments]
+        await save("running")
+        validation_error = ""
+        for _attempt in range(STRUCTURED_OUTPUT_ATTEMPTS):
+            try:
+                state.stats["requirements_calls"] += 1
+                state.stats["plan_calls"] += 1
+                draft = cast(
+                    InitialPlanDraft,
+                    await invoke_structured(
+                        build_plan_prompt(research, state, validation_error),
+                        InitialPlanDraft,
+                        remaining=max(1.0, deadline - time.monotonic()),
+                    ),
+                )
+                state.last_inspected_revision = state.evidence_revision
+                store_initial_plan(state, research, draft)
+                state.unmet_requirements = uncovered_requirement_ids(state)
+                state.stats["requirement_coverage"] = requirement_coverage_snapshot(state)
+                await save("running")
+                return
+            except (ValueError, MaxTokensReachedException, StructuredOutputException) as exc:
+                validation_error = (
+                    safe_plan_validation_error(exc)
+                    if isinstance(exc, ValueError)
+                    else "report plan output did not match the required schema"
+                )
+                state.stats["structured_output_retries"] += 1
+                await save("running")
+        raise ExpectedResearchFailure("structured_plan_invalid")
+
+    async def run_deep_query_batch() -> int:
+        state.phase = "research"
+        state.unmet_requirements = uncovered_requirement_ids(state)
+        state.stats["requirement_coverage"] = requirement_coverage_snapshot(state)
+        search_slots = remaining_budgets(state, budget)["searches"]
+        if search_slots <= 0:
+            return 0
+        if state.query_seed_queue:
+            raw_entries = state.query_seed_queue[: min(DEEP_QUERY_BATCH_SIZE, search_slots)]
+            state.query_seed_queue = state.query_seed_queue[len(raw_entries) :]
+        else:
+            draft = cast(
+                SearchBatchDraft,
+                await invoke_structured(
+                    build_query_batch_prompt(research, state),
+                    SearchBatchDraft,
+                    remaining=max(1.0, deadline - time.monotonic()),
+                ),
+            )
+            state.stats["query_batch_calls"] += 1
+            raw_entries = draft.queries[:search_slots]
+        entries: list[QuerySeedModel] = []
+        batch_seen: set[str] = set()
+        for raw_entry in raw_entries:
+            try:
+                validated = validated_query_entry(state, raw_entry)
+            except ValueError:
+                state.stats["search_failures"] += 1
+                continue
+            if validated.query in batch_seen:
+                state.stats["duplicate_queries"] += 1
+                continue
+            if validated.query in state.searched_queries:
+                state.stats["duplicate_queries"] += 1
+                continue
+            batch_seen.add(validated.query)
+            entries.append(validated)
+        added = 0
+        for entry in entries:
+            state.searched_queries.add(entry.query)
+        state.stats["searches"] = len(state.searched_queries)
+        results = await asyncio.gather(
+            *[
+                search_searxng(
+                    runtime.settings,
+                    entry.query,
+                    research.language,
+                    research.recency_days,
+                    SEARCH_RESULT_LIMIT,
+                )
+                for entry in entries
+            ],
+            return_exceptions=True,
+        )
+        for entry, result in zip(entries, results, strict=True):
+            if isinstance(result, Exception):
+                if fatal_errors:
+                    raise fatal_errors[0]
+                if isinstance(result, (aiohttp.ClientError, OSError, TimeoutError, ValueError)):
+                    state.stats["search_failures"] += 1
+                    continue
+                if not is_expected_provider_failure(result):
+                    raise result
+                state.stats["search_failures"] += 1
+                continue
+            added += enqueue_candidates(
+                state,
+                [
+                    replace(item, search_query=entry.query)
+                    for item in cast(list[SearchResult], result)
+                ],
+                entry.requirement_ids,
+                entry.purpose,
+            )
+        await save("running")
+        return added
+
     async def finalize_structured_report() -> None:
         if fatal_errors:
             raise fatal_errors[0]
@@ -2923,51 +3723,14 @@ async def run_research(
         if not evidence_ready_for_report(state, research, budget):
             raise IntegrityError("collection decision does not satisfy finalization eligibility")
         state.stats["evidence_shortfall_salvage"] = (
-            usable_evidence_count(state) < budget.minimum_evidence
+            research.depth == "deep" and not all_requirements_covered(state)
         )
+        assign_report_plan_sources(state)
         state.last_inspected_revision = state.evidence_revision
         await save("running")
 
         if research.depth == "deep" and not state.report_plan:
-            state.phase = "planning"
-            state.unmet_requirements = ["report_plan"]
-            await save("running")
-            planned = False
-            validation_error = ""
-            for _attempt in range(STRUCTURED_OUTPUT_ATTEMPTS):
-                try:
-                    state.stats["plan_calls"] += 1
-                    draft = cast(
-                        ReportPlanDraft,
-                        await invoke_structured(
-                            build_plan_prompt(research, state, validation_error),
-                            ReportPlanDraft,
-                        ),
-                    )
-                    store_report_plan(state, research, draft)
-                    await save("running")
-                    planned = True
-                    break
-                except IntegrityError:
-                    raise
-                except ExpectedResearchFailure:
-                    raise
-                except (
-                    ValueError,
-                    MaxTokensReachedException,
-                    StructuredOutputException,
-                ) as exc:
-                    if fatal_errors:
-                        raise fatal_errors[0] from exc
-                    validation_error = (
-                        safe_plan_validation_error(exc)
-                        if isinstance(exc, ValueError)
-                        else "report plan output did not match the required schema"
-                    )
-                    state.stats["structured_output_retries"] += 1
-                    await save("running")
-            if not planned:
-                raise ExpectedResearchFailure("structured_plan_invalid")
+            raise IntegrityError("deep finalization requires an initialized report plan")
 
         state.phase = "sections"
         section_attempts = 0
@@ -3000,6 +3763,7 @@ async def run_research(
                                 repair_heading,
                             ),
                             ReportSectionDraft,
+                            remaining=max(1.0, deadline - time.monotonic()),
                         ),
                     )
                     store_report_section(
@@ -3007,6 +3771,7 @@ async def run_research(
                         research,
                         state.evidence_revision,
                         repair_heading or draft.heading,
+                        draft.requirement_ids,
                         draft.body_markdown,
                         draft.summary,
                     )
@@ -3051,6 +3816,7 @@ async def run_research(
                     await invoke_structured(
                         build_submission_prompt(research, state, validation_error),
                         ReportSubmissionDraft,
+                        remaining=max(1.0, deadline - time.monotonic()),
                     ),
                 )
                 accept_report(
@@ -3081,81 +3847,197 @@ async def run_research(
 
     try:
         async with asyncio.timeout(wall_limit):
-            continuation = False
-            no_progress_continuations = 0
-            while state.final_response is None and state.collection_decision is None:
-                decision = evidence_limit_decision(state, budget)
-                if decision is not None:
-                    set_collection_decision(state, decision)
-                    await save("running")
-                    if decision == "evidence_cap_exhausted":
-                        raise ExpectedResearchFailure("evidence_exhausted")
-                    break
-                if remaining_budgets(state, budget)["searches"] <= 0:
-                    raise ExpectedResearchFailure("evidence_exhausted")
-                progress_before = (len(state.searched_queries), len(state.evidence))
-                agent = build_research_agent(runtime.settings, research, tools[:3])
-                prompt = (
-                    build_research_continuation_prompt(research, state, budget)
-                    if continuation
-                    else build_user_prompt(research)
-                )
-                try:
-                    result = await invoke_agent(
-                        agent,
-                        prompt,
-                        turns=budget.turns,
-                        stop_event=evidence_ready,
-                    )
-                except (EventLoopException, APIError, TimeoutError) as exc:
-                    if fatal_errors:
-                        raise fatal_errors[0] from exc
-                    if not is_expected_provider_failure(exc):
-                        raise
-                    if collection_allows_finalization(state):
-                        state.stats["research_salvages"] += 1
-                        state.stats["agent_stop_reason"] = type(exc).__name__
-                        state.stats["stop_reason"] = "research_salvaged"
+            if research.depth == "deep":
+                await ensure_deep_plan()
+                idle_batches = 0
+                while state.final_response is None and state.collection_decision is None:
+                    state.stats["requirement_coverage"] = requirement_coverage_snapshot(state)
+                    if should_reserve_finalization(deadline):
+                        state.stats["finalization_reserved"] = True
+                        if usable_evidence_count(state) > 0:
+                            set_collection_decision(state, "voluntary_stop")
+                            await save("running")
+                            break
+                    decision = evidence_limit_decision(state, budget)
+                    if decision is not None:
+                        set_collection_decision(state, decision)
                         await save("running")
+                        if decision == "evidence_cap_exhausted":
+                            raise ExpectedResearchFailure("evidence_exhausted")
                         break
-                    if await recover_model_error(exc):
+                    if state.candidate_queue:
+                        fetch_batch = next_candidate_batch(state)
+                        if not fetch_batch:
+                            await save("running")
+                            continue
+                        state.stats["candidates_attempted"] = int(
+                            state.stats["candidates_attempted"]
+                        ) + len(fetch_batch)
+                        results = await asyncio.gather(
+                            *[
+                                extract_evidence(
+                                    SearchResult(
+                                        candidate.url,
+                                        candidate.title,
+                                        candidate.snippet,
+                                        candidate.engine,
+                                        candidate.search_query,
+                                    ),
+                                    research.query,
+                                    "; ".join(
+                                        filter(
+                                            None,
+                                            [
+                                                research.focus or "",
+                                                candidate.purpose,
+                                                *candidate_requirement_summaries(state, candidate),
+                                            ],
+                                        )
+                                    ),
+                                )
+                                for candidate in fetch_batch
+                            ],
+                            return_exceptions=True,
+                        )
+                        for candidate, result in zip(fetch_batch, results, strict=True):
+                            if isinstance(result, Exception):
+                                if isinstance(result, (TypeError, KeyError, IndexError)):
+                                    raise result
+                                if isinstance(
+                                    result, (aiohttp.ClientError, OSError, TimeoutError, ValueError)
+                                ):
+                                    state.stats["source_skips"] += 1
+                                    state.stats["candidates_failed"] = (
+                                        int(state.stats["candidates_failed"]) + 1
+                                    )
+                                    record_failed_candidate(state, candidate, str(result))
+                                    await save("running")
+                                    continue
+                                raise result
+                            evidence = replace(
+                                cast(Evidence, result),
+                                requirement_ids=list(dict.fromkeys(candidate.requirement_ids)),
+                            )
+                            if any(
+                                item.url == evidence.url or item.hash == evidence.hash
+                                for item in state.evidence
+                            ):
+                                state.stats["duplicate_sources"] += 1
+                                continue
+                            apply_evidence_update(state, evidence)
+                            await save("running")
+                            if evidence_limit_decision(state, budget) is not None:
+                                break
                         continue
-                    raise ExpectedResearchFailure("provider_failure") from exc
-                if fatal_errors:
-                    raise fatal_errors[0]
-                if result is None:
-                    state.stats["agent_stop_reason"] = "evidence_ready"
-                    state.stats["stop_reason"] = ""
+                    if remaining_budgets(state, budget)["searches"] <= 0:
+                        if usable_evidence_count(state) > 0:
+                            set_collection_decision(state, "voluntary_stop")
+                            await save("running")
+                            break
+                        raise ExpectedResearchFailure("evidence_exhausted")
+                    try:
+                        added = await run_deep_query_batch()
+                    except (EventLoopException, APIError, TimeoutError) as exc:
+                        if not is_expected_provider_failure(exc):
+                            raise
+                        if usable_evidence_count(state) > 0:
+                            state.stats["research_salvages"] += 1
+                            set_collection_decision(state, "voluntary_stop")
+                            await save("running")
+                            break
+                        if await recover_model_error(exc):
+                            continue
+                        raise ExpectedResearchFailure("provider_failure") from exc
+                    if added == 0:
+                        idle_batches += 1
+                        if idle_batches >= 2:
+                            if usable_evidence_count(state) > 0:
+                                set_collection_decision(state, "voluntary_stop")
+                                await save("running")
+                                break
+                            raise ExpectedResearchFailure("no_progress")
+                    else:
+                        idle_batches = 0
+                    state.stats["research_continuations"] = (
+                        int(state.stats["research_continuations"]) + 1
+                    )
                     await save("running")
+            else:
+                continuation = False
+                no_progress_continuations = 0
+                while state.final_response is None and state.collection_decision is None:
+                    decision = evidence_limit_decision(state, budget)
+                    if decision is not None:
+                        set_collection_decision(state, decision)
+                        await save("running")
+                        if decision == "evidence_cap_exhausted":
+                            raise ExpectedResearchFailure("evidence_exhausted")
+                        break
+                    if remaining_budgets(state, budget)["searches"] <= 0:
+                        raise ExpectedResearchFailure("evidence_exhausted")
+                    progress_before = (len(state.searched_queries), len(state.evidence))
+                    agent = build_research_agent(runtime.settings, research, tools[:3])
+                    prompt = (
+                        build_research_continuation_prompt(research, state, budget)
+                        if continuation
+                        else build_user_prompt(research)
+                    )
+                    try:
+                        result = await invoke_agent(
+                            agent,
+                            prompt,
+                            turns=budget.turns,
+                            stop_event=evidence_ready,
+                        )
+                    except (EventLoopException, APIError, TimeoutError) as exc:
+                        if fatal_errors:
+                            raise fatal_errors[0] from exc
+                        if not is_expected_provider_failure(exc):
+                            raise
+                        if collection_allows_finalization(state):
+                            state.stats["research_salvages"] += 1
+                            state.stats["agent_stop_reason"] = type(exc).__name__
+                            state.stats["stop_reason"] = "research_salvaged"
+                            await save("running")
+                            break
+                        if await recover_model_error(exc):
+                            continue
+                        raise ExpectedResearchFailure("provider_failure") from exc
+                    if fatal_errors:
+                        raise fatal_errors[0]
+                    if result is None:
+                        state.stats["agent_stop_reason"] = "evidence_ready"
+                        state.stats["stop_reason"] = ""
+                        await save("running")
+                        if state.collection_decision == "evidence_cap_exhausted":
+                            raise ExpectedResearchFailure("evidence_exhausted")
+                        if not collection_allows_finalization(state):
+                            raise IntegrityError("collector stop event has no eligible decision")
+                        break
+                    state.stats["agent_stop_reason"] = str(result.stop_reason)
+                    if state.final_response is not None:
+                        break
                     if state.collection_decision == "evidence_cap_exhausted":
                         raise ExpectedResearchFailure("evidence_exhausted")
-                    if not collection_allows_finalization(state):
-                        raise IntegrityError("collector stop event has no eligible decision")
-                    break
-                state.stats["agent_stop_reason"] = str(result.stop_reason)
-                if state.final_response is not None:
-                    break
-                if state.collection_decision == "evidence_cap_exhausted":
-                    raise ExpectedResearchFailure("evidence_exhausted")
-                if collection_allows_finalization(state):
+                    if collection_allows_finalization(state):
+                        await save("running")
+                        break
+                    if evidence_ready_for_report(state, research, budget):
+                        set_collection_decision(state, "voluntary_stop")
+                        await save("running")
+                        break
+                    if progress_before == (len(state.searched_queries), len(state.evidence)):
+                        if no_progress_continuations >= 1:
+                            raise ExpectedResearchFailure("no_progress")
+                        no_progress_continuations += 1
+                    else:
+                        no_progress_continuations = 0
+                    state.stats["research_continuations"] = (
+                        int(state.stats["research_continuations"]) + 1
+                    )
+                    state.stats["stop_reason"] = ""
                     await save("running")
-                    break
-                if evidence_ready_for_report(state, research, budget):
-                    set_collection_decision(state, "voluntary_stop")
-                    await save("running")
-                    break
-                if progress_before == (len(state.searched_queries), len(state.evidence)):
-                    if no_progress_continuations >= 1:
-                        raise ExpectedResearchFailure("no_progress")
-                    no_progress_continuations += 1
-                else:
-                    no_progress_continuations = 0
-                state.stats["research_continuations"] = (
-                    int(state.stats["research_continuations"]) + 1
-                )
-                state.stats["stop_reason"] = ""
-                await save("running")
-                continuation = True
+                    continuation = True
 
             if fatal_errors:
                 raise fatal_errors[0]
