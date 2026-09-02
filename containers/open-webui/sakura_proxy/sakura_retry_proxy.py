@@ -550,7 +550,12 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             for name, value in self.headers.items()
             if name.lower() not in HOP_BY_HOP_HEADERS
             and name.lower()
-            not in {"host", "content-length", OPENWEBUI_MODE_HEADER.casefold()}
+            not in {
+                "authorization",
+                "host",
+                "content-length",
+                OPENWEBUI_MODE_HEADER.casefold(),
+            }
         }
         headers["Host"] = self.upstream.netloc
         if self.headers.get(OPENWEBUI_MODE_HEADER, "").casefold() == "true":
@@ -563,6 +568,9 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 type(self).token_state.release(lease)
             connection.close()
             raise BrokenPipeError("client disconnected")
+        if lease is None and self.settings.account_tokens:
+            connection.close()
+            raise TimeoutError("token lease unavailable")
         if lease is not None:
             headers["Authorization"] = f"Bearer {lease.token}"
         if body:

@@ -18,6 +18,7 @@ from sakura_retry_proxy import (
     SakuraRetryProxyHandler,
     Settings,
     SharedTokenCooldown,
+    TokenLease,
     make_server,
     retry_after_seconds,
     retry_delay_seconds,
@@ -130,6 +131,15 @@ class UpstreamHandler(BaseHTTPRequestHandler):
 
 
 class SakuraRetryProxyTest(unittest.TestCase):
+    def unsafe_settings(self, **changes: object) -> Settings:
+        base = cast(type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass).settings
+        settings = object.__new__(Settings)
+        for field in Settings.__dataclass_fields__:
+            object.__setattr__(settings, field, getattr(base, field))
+        for field, value in changes.items():
+            object.__setattr__(settings, field, value)
+        return settings
+
     def setUp(self) -> None:
         UpstreamHandler.attempts = 0
         UpstreamHandler.mode = "rate_limit"
@@ -269,6 +279,87 @@ class SakuraRetryProxyTest(unittest.TestCase):
             {header for header in UpstreamHandler.authorization_headers},
             {"Bearer token-a", "Bearer token-b"},
         )
+
+    def test_deadline_without_lease_never_reaches_upstream(self) -> None:
+        single_token_proxy = make_server(
+            Settings(
+                upstream_url=(
+                    f"http://127.0.0.1:{self.upstream.server_address[1]}"
+                ),
+                max_retries=3,
+                base_backoff=0.01,
+                max_backoff=0.01,
+                jitter=0,
+                account_tokens=("token-a",),
+            ),
+            ("127.0.0.1", 0),
+        )
+        thread = threading.Thread(target=single_token_proxy.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 1)
+        self.addCleanup(single_token_proxy.server_close)
+        self.addCleanup(single_token_proxy.shutdown)
+        handler = cast(type[SakuraRetryProxyHandler], single_token_proxy.RequestHandlerClass)
+        handler.settings = self.unsafe_settings(
+            upstream_url=f"http://127.0.0.1:{self.upstream.server_address[1]}",
+            account_tokens=("token-a",),
+            retry_budget=0.02,
+            upstream_timeout=0.001,
+        )
+        handler.token_state = SharedTokenCooldown(handler.settings.account_tokens)
+        lease, _ = handler.token_state.acquire(time.monotonic() + 1, lambda: False)
+        self.assertIsNotNone(lease)
+        self.addCleanup(handler.token_state.release, cast(TokenLease, lease))
+        attempts_before = UpstreamHandler.attempts
+
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    f"http://127.0.0.1:{single_token_proxy.server_address[1]}/v1/chat/completions",
+                    data=b"{}",
+                    headers={"Authorization": "Bearer caller-secret"},
+                )
+            )
+        error.exception.close()
+
+        self.assertEqual(error.exception.code, 504)
+        self.assertEqual(UpstreamHandler.attempts, attempts_before)
+        self.assertNotIn("Bearer caller-secret", UpstreamHandler.authorization_headers)
+
+    def test_strips_caller_authorization_when_no_configured_token_exists(self) -> None:
+        UpstreamHandler.mode = "success"
+        UpstreamHandler.attempts = 0
+        UpstreamHandler.attempts_by_body = {}
+        UpstreamHandler.request_bodies = []
+        UpstreamHandler.authorization_headers = []
+        no_token_proxy = make_server(
+            Settings(
+                upstream_url=(
+                    f"http://127.0.0.1:{self.upstream.server_address[1]}"
+                ),
+                max_retries=3,
+                base_backoff=0.01,
+                max_backoff=0.01,
+                jitter=0,
+            ),
+            ("127.0.0.1", 0),
+        )
+        thread = threading.Thread(target=no_token_proxy.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 1)
+        self.addCleanup(no_token_proxy.server_close)
+        self.addCleanup(no_token_proxy.shutdown)
+
+        with urllib.request.urlopen(
+            urllib.request.Request(
+                f"http://127.0.0.1:{no_token_proxy.server_address[1]}/v1/chat/completions",
+                data=b"{}",
+                headers={"Authorization": "Bearer caller-secret"},
+            )
+        ) as response:
+            self.assertEqual(response.read(), b'{"ok":true}')
+
+        self.assertEqual(UpstreamHandler.authorization_headers, [None])
 
     def test_retries_timeout_once_with_low_reasoning(self) -> None:
         UpstreamHandler.mode = "timeout_then_success"
