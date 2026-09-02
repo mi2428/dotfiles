@@ -349,7 +349,9 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     side_effect=AssertionError("research must not restart"),
                 ),
                 patch.object(rt, "build_finalization_agent", return_value=first),
-                self.assertRaisesRegex(ValueError, "structured section failed"),
+                self.assertRaisesRegex(
+                    rt.IncompleteResearchError, "structured_section_attempts"
+                ) as failure,
             ):
                 await rt.run_research(
                     self.runtime,
@@ -359,14 +361,16 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "plan-resume-key",
                     rt.run_state_snapshot(state),
                 )
+            self.assertTrue(failure.exception.answer_markdown.startswith("# Deep Research未完了"))
+            self.assertIn("## Safe Evidence Ledger", failure.exception.answer_markdown)
 
             row = self.runtime.db.execute(
                 "SELECT status,state_json FROM research_runs WHERE idempotency_key=?",
                 ("plan-resume-key",),
             ).fetchone()
             snapshot = json.loads(row["state_json"])
-            self.assertEqual(row["status"], "failed")
-            self.assertEqual(snapshot["phase"], "sections")
+            self.assertEqual(row["status"], "failed_with_output")
+            self.assertEqual(snapshot["phase"], "incomplete")
             self.assertEqual(len(snapshot["report_plan"]), rt.DEEP_PLAN_TARGET_SECTIONS)
 
             bodies = [
@@ -384,12 +388,9 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                         for index, body in enumerate(bodies, 1)
                     ],
                     rt.ReportSubmissionDraft(
-                        findings=[
-                            rt.SubmitFinding(**item) for item in deep_findings(source_count)
-                        ],
+                        findings=[rt.SubmitFinding(**item) for item in deep_findings(source_count)],
                         limitations=[
-                            f"Limitation {index}"
-                            for index in range(1, rt.DEEP_MIN_LIMITATIONS + 1)
+                            f"Limitation {index}" for index in range(1, rt.DEEP_MIN_LIMITATIONS + 1)
                         ],
                     ),
                 ]
@@ -560,7 +561,9 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     side_effect=AssertionError("research must not restart"),
                 ),
                 patch.object(rt, "build_finalization_agent", return_value=structured),
-                self.assertRaisesRegex(ValueError, "structured section failed"),
+                self.assertRaisesRegex(
+                    rt.IncompleteResearchError, "structured_section_attempts"
+                ) as failure,
             ):
                 await rt.run_research(
                     self.runtime,
@@ -575,9 +578,52 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 ("invalid-key",),
             ).fetchone()
             snapshot = json.loads(row["state_json"])
-            self.assertEqual(row["status"], "failed")
+            self.assertEqual(row["status"], "failed_with_output")
             self.assertEqual(snapshot["stats"]["structured_output_retries"], 3)
             self.assertFalse(snapshot["report_sections"])
+            self.assertIn("## Sources", failure.exception.answer_markdown)
+
+        asyncio.run(run())
+
+    def test_submission_exhaustion_returns_completed_sections_without_an_extra_call(self) -> None:
+        state = stable_quick_state()
+        state.report_sections = [
+            rt.ReportSection(
+                "Saved section",
+                "Checkpointed answer [S1] [S2]",
+                state.evidence_revision,
+                "Saved summary",
+            )
+        ]
+        structured = StructuredAgent(
+            [rt.MaxTokensReachedException("partial submission") for _ in range(3)]
+        )
+
+        async def run() -> None:
+            with (
+                patch.object(
+                    rt,
+                    "build_research_agent",
+                    side_effect=AssertionError("research must not restart"),
+                ),
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+                self.assertRaisesRegex(
+                    rt.IncompleteResearchError, "normal_contract_unmet"
+                ) as failure,
+            ):
+                await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    rt.ResearchRequest(query="Evidence", depth="quick"),
+                    "rid",
+                    "submission-failure-key",
+                    rt.run_state_snapshot(state),
+                )
+
+            self.assertIn("## 完成済み節", failure.exception.answer_markdown)
+            self.assertIn("## Saved section", failure.exception.answer_markdown)
+            self.assertIn("Checkpointed answer [1] [2]", failure.exception.answer_markdown)
+            self.assertEqual(len(structured.prompts), 3)
 
         asyncio.run(run())
 
@@ -630,7 +676,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     ["Known constraint"],
                 )
                 self.assertEqual(accepted["status"], "success")
-                self.assertFalse(fatal)
+                self.assertIsInstance(fatal[0], rt.IntegrityError)
                 saved = self.runtime.db.execute(
                     "SELECT state_json FROM research_runs WHERE idempotency_key=?",
                     ("tools-key",),
@@ -650,7 +696,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         async def run() -> None:
             with (
                 patch.object(rt, "build_research_agent", return_value=NoProgressAgent()) as build,
-                self.assertRaisesRegex(ValueError, "made no progress"),
+                self.assertRaisesRegex(rt.IncompleteResearchError, "no_progress") as failure,
             ):
                 await rt.run_research(
                     self.runtime,
@@ -660,13 +706,52 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "no-progress-key",
                 )
             self.assertEqual(build.call_count, 2)
-            snapshot = json.loads(
-                self.runtime.db.execute(
-                    "SELECT state_json FROM research_runs WHERE idempotency_key=?",
-                    ("no-progress-key",),
-                ).fetchone()[0]
-            )
+            row = self.runtime.db.execute(
+                "SELECT status,state_json,response_json FROM research_runs WHERE idempotency_key=?",
+                ("no-progress-key",),
+            ).fetchone()
+            snapshot = json.loads(row["state_json"])
+            self.assertEqual(row["status"], "failed_with_output")
+            self.assertIsNone(row["response_json"])
             self.assertEqual(snapshot["stats"]["research_continuations"], 1)
+            self.assertIn("## 未達", failure.exception.answer_markdown)
+
+        asyncio.run(run())
+
+    def test_evidence_exhaustion_returns_output_and_same_key_can_resume(self) -> None:
+        async def run() -> None:
+            research = rt.ResearchRequest(query="research", depth="quick")
+            state = make_state(0, "quick")
+            state.searched_queries = {
+                f"query {index}" for index in range(rt.make_budget("quick").search_limit)
+            }
+            with (
+                patch.object(
+                    rt,
+                    "build_research_agent",
+                    side_effect=AssertionError("exhausted research must not start an agent"),
+                ),
+                self.assertRaisesRegex(rt.IncompleteResearchError, "evidence_exhausted") as failure,
+            ):
+                await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    "exhausted-key",
+                    rt.run_state_snapshot(state),
+                )
+            self.assertIn("# Deep Research未完了", failure.exception.answer_markdown)
+            self.assertIn("## Safe Evidence Ledger", failure.exception.answer_markdown)
+
+            resumed_id, _request_hash, cached, snapshot = await rt.reserve_run(
+                self.runtime,
+                research,
+                "exhausted-key",
+            )
+            self.assertEqual(resumed_id, "rid")
+            self.assertIsNone(cached)
+            self.assertEqual(cast(dict[str, Any], snapshot)["phase"], "incomplete")
 
         asyncio.run(run())
 
@@ -684,7 +769,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             with (
                 patch.object(rt, "wall_budget_seconds", return_value=0.01),
                 patch.object(rt, "build_research_agent", return_value=SlowAgent()),
-                self.assertRaises(TimeoutError),
+                self.assertRaisesRegex(rt.IncompleteResearchError, "wall_timeout") as wall_failure,
             ):
                 await rt.run_research(
                     self.runtime,
@@ -699,11 +784,14 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 ).fetchone()[0]
             )
             self.assertTrue(wall["stats"]["wall_exhausted"])
+            self.assertIn("時間上限", wall_failure.exception.answer_markdown)
 
             with (
                 patch.object(rt, "build_research_agent", return_value=TimeoutAgent()),
                 patch.object(rt, "MODEL_TRANSIENT_RECOVERIES", 2),
-                self.assertRaises(RuntimeError),
+                self.assertRaisesRegex(
+                    rt.IncompleteResearchError, "provider_failure"
+                ) as model_failure,
             ):
                 await rt.run_research(
                     self.runtime,
@@ -719,6 +807,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             )
             self.assertFalse(model["stats"]["wall_exhausted"])
             self.assertEqual(model["stats"]["model_transient_recoveries"], 2)
+            self.assertIn("モデル提供者", model_failure.exception.answer_markdown)
 
         asyncio.run(run())
 

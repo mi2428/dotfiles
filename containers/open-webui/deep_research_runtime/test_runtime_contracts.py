@@ -71,6 +71,61 @@ class RuntimeContractTests(RuntimeTestCase):
                     )
                 self.assertEqual(response.text, cached["answer_markdown"])
                 self.assertEqual(response.headers["x-openwebui-direct-output"], "true")
+                self.assertNotIn("x-deep-research-status", response.headers)
+
+                incomplete = rt.IncompleteResearchError(
+                    "no_progress",
+                    "# Deep Research未完了\n\n## Sources\n- なし\n",
+                )
+                with (
+                    patch.object(
+                        rt,
+                        "reserve_run",
+                        new=AsyncMock(return_value=("rid", "hash", None, None)),
+                    ),
+                    patch.object(rt, "run_research", new=AsyncMock(side_effect=incomplete)),
+                ):
+                    response = await client.post(
+                        "/research", headers=headers, json={"query": "partial"}
+                    )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.text, incomplete.answer_markdown)
+                self.assertEqual(response.headers["x-openwebui-direct-output"], "true")
+                self.assertEqual(response.headers["x-deep-research-status"], "failed")
+
+                with (
+                    patch.object(
+                        rt,
+                        "reserve_run",
+                        new=AsyncMock(return_value=("rid", "hash", None, None)),
+                    ),
+                    patch.object(
+                        rt,
+                        "run_research",
+                        new=AsyncMock(side_effect=asyncio.CancelledError()),
+                    ),
+                ):
+                    response = await client.post(
+                        "/research", headers=headers, json={"query": "disconnect"}
+                    )
+                self.assertEqual(response.status_code, 499)
+
+                with (
+                    patch.object(
+                        rt,
+                        "reserve_run",
+                        new=AsyncMock(return_value=("rid", "hash", None, None)),
+                    ),
+                    patch.object(
+                        rt,
+                        "run_research",
+                        new=AsyncMock(side_effect=rt.IntegrityError("corrupt checkpoint")),
+                    ),
+                ):
+                    response = await client.post(
+                        "/research", headers=headers, json={"query": "hard failure"}
+                    )
+                self.assertEqual(response.status_code, 502)
 
         asyncio.run(run())
 
@@ -362,7 +417,7 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertEqual([section.heading for section in state.report_sections], ["Safe"])
         context = rt.finalization_context(rt.ResearchRequest(query="Evidence"), state)
         self.assertEqual([item["id"] for item in context["evidence"]], ["S1"])
-        with self.assertRaisesRegex(ValueError, "unusable source IDs"):
+        with self.assertRaisesRegex(rt.IntegrityError, "unusable source IDs"):
             rt.store_report_section(
                 state,
                 rt.ResearchRequest(query="Evidence"),
@@ -370,6 +425,20 @@ class RuntimeContractTests(RuntimeTestCase):
                 "Unsafe replacement",
                 "Unsupported claim [S2] " * 50,
                 "Unsafe summary",
+            )
+
+        corrupt = rt.run_state_snapshot(make_state(1, "quick"))
+        corrupt["evidence_ledger"][0]["id"] = "S9"
+        loaded = rt.load_run_state(
+            corrupt,
+            depth="quick",
+            budget=rt.make_budget("quick"),
+            wall_limit=rt.wall_budget_seconds("quick"),
+        )
+        with self.assertRaisesRegex(rt.IntegrityError, "not sequential"):
+            rt.validate_checkpoint_state(
+                loaded,
+                rt.ResearchRequest(query="Evidence", depth="quick"),
             )
 
     def test_extraction_persists_search_and_fetch_provenance(self) -> None:
@@ -422,10 +491,10 @@ class RuntimeContractTests(RuntimeTestCase):
             await rt.checkpoint_run(
                 self.runtime,
                 key,
-                "failed",
+                "failed_with_output",
                 research_id,
                 request_hash,
-                error="failed",
+                error="no_progress",
                 state=rt.run_state_snapshot(state),
             )
             resumed_id, _, resumed_cached, resumed_snapshot = await rt.reserve_run(
@@ -461,6 +530,13 @@ class RuntimeContractTests(RuntimeTestCase):
             )
             _, _, completed, _ = await rt.reserve_run(self.runtime, request, key)
             self.assertEqual(cast(dict[str, Any], completed)["answer_markdown"], "done [S1]")
+            with self.assertRaises(rt.HTTPException) as conflict:
+                await rt.reserve_run(
+                    self.runtime,
+                    rt.ResearchRequest(query="different", depth="quick"),
+                    key,
+                )
+            self.assertEqual(conflict.exception.status_code, 409)
 
         asyncio.run(run())
 
