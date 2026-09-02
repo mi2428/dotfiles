@@ -52,7 +52,6 @@ def plan_for(
         ),
     ]
     return rt.InitialPlanDraft(
-        fragments=fragments,
         requirements=requirements,
         sections=sections,
         query_seeds=[],
@@ -104,7 +103,6 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
         fragments = rt.explicit_request_fragments(research)
         initial = rt.InitialPlanDraft(
-            fragments=fragments,
             requirements=[
                 rt.RequirementModel(
                     id="R1",
@@ -405,7 +403,6 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
         state = make_state(1)
         draft = rt.InitialPlanDraft(
-            fragments=rt.explicit_request_fragments(research),
             requirements=[
                 rt.RequirementModel(
                     id="R1", summary="Need direct evidence", kind="comparison", fragment_ids=["F1"]
@@ -589,7 +586,6 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             state,
             research,
             rt.InitialPlanDraft(
-                fragments=fragments,
                 requirements=[
                     rt.RequirementModel(
                         id="R1",

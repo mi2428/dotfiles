@@ -268,7 +268,6 @@ class QuerySeedModel(StrictModel):
 
 
 class InitialPlanDraft(StrictModel):
-    fragments: list[RequestFragmentModel] = Field(min_length=1, max_length=MAX_REQUEST_FRAGMENTS)
     requirements: list[RequirementModel] = Field(min_length=1, max_length=16)
     sections: list[InitialPlanSection] = Field(
         min_length=1,
@@ -1131,6 +1130,7 @@ def default_stats(depth: str, budget: Budget, wall_limit: float) -> dict[str, An
         "research_salvages": 0,
         "evidence_shortfall_salvage": False,
         "structured_output_retries": 0,
+        "plan_validation_error": "",
         "plan_calls": 0,
         "query_batch_calls": 0,
         "section_calls": 0,
@@ -1432,9 +1432,6 @@ def validated_initial_plan(
     list[QuerySeedModel],
 ]:
     fragments = explicit_request_fragments(research)
-    provided_fragments = [RequestFragmentModel.model_validate(item) for item in draft.fragments]
-    if [item.text for item in provided_fragments] != [item.text for item in fragments]:
-        raise ValueError("report plan fragments must match the explicit request fragments")
     expected_fragment_ids = {item.id for item in fragments}
     requirements = [RequirementModel.model_validate(item) for item in draft.requirements]
     requirement_ids = [item.id for item in requirements]
@@ -1464,8 +1461,8 @@ def validated_initial_plan(
             raise ValueError("report plan headings must be unique")
         headings.add(folded)
         section_requirement_ids = list(dict.fromkeys(item.requirement_ids))
-        if unknown := set(section_requirement_ids) - requirement_id_set:
-            raise IntegrityError(f"report plan contains unknown requirement IDs: {sorted(unknown)}")
+        if set(section_requirement_ids) - requirement_id_set:
+            raise ModelOutputError("report plan contains unknown requirement IDs")
         deliverables = [deliverable.strip() for deliverable in item.deliverables]
         if any(
             not deliverable or len(deliverable) > MAX_FOCUS_CHARS for deliverable in deliverables
@@ -1488,7 +1485,7 @@ def validated_initial_plan(
     query_seeds = [QuerySeedModel.model_validate(item) for item in draft.query_seeds]
     for item in query_seeds:
         if set(item.requirement_ids) - requirement_id_set:
-            raise IntegrityError("query seeds contain unknown requirement IDs")
+            raise ModelOutputError("query seeds contain unknown requirement IDs")
         if len(set(item.requirement_ids)) != 1:
             raise ValueError("query entry must target exactly one requirement")
     return fragments, normalized_requirements, sections, query_seeds
@@ -2518,6 +2515,8 @@ def safe_plan_validation_error(error: BaseException | str) -> str:
         "report plan section target is out of range",
         "report plan deliverables must contain 1 to 500 characters",
         "report plan must cover every requirement exactly once or more",
+        "report plan contains unknown requirement IDs",
+        "query seeds contain unknown requirement IDs",
         "query entry must target exactly one requirement",
         "report plan output did not match the required schema",
     }
@@ -2537,8 +2536,8 @@ def build_plan_prompt(
             "task": "Plan the complete deep report before writing any section.",
             "requirements": [
                 (
-                    "Return request fragments exactly as provided and map every fragment "
-                    "to at least one requirement."
+                    "Map every provided request fragment ID to at least one requirement. "
+                    "Do not repeat or rewrite fragment text in the output."
                 ),
                 (
                     "Use kind=direct for ordinary factual requests, and "
@@ -3636,6 +3635,7 @@ async def run_research(
                     if isinstance(exc, ValueError)
                     else "report plan output did not match the required schema"
                 )
+                state.stats["plan_validation_error"] = validation_error
                 state.stats["structured_output_retries"] += 1
                 await save("running")
         raise ExpectedResearchFailure("structured_plan_invalid")

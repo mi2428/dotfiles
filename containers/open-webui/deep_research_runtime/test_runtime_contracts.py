@@ -37,7 +37,6 @@ def deep_plan_for(research: rt.ResearchRequest) -> rt.InitialPlanDraft:
         for index, requirement in enumerate(requirements, 1)
     ]
     return rt.InitialPlanDraft(
-        fragments=fragments,
         requirements=requirements,
         sections=sections,
         query_seeds=[],
@@ -229,6 +228,11 @@ class RuntimeContractTests(RuntimeTestCase):
         draft = deep_plan_for(research)
         fragments, requirements, sections, query_seeds = rt.validated_initial_plan(research, draft)
         self.assertEqual("".join(item.text for item in fragments), research.query)
+        self.assertNotIn("fragments", rt.InitialPlanDraft.model_json_schema()["properties"])
+        self.assertEqual(
+            rt.build_plan_context(research)["request_fragments"],
+            [item.model_dump() for item in fragments],
+        )
         self.assertEqual(
             {fragment_id for item in requirements for fragment_id in item.fragment_ids},
             {item.id for item in fragments},
@@ -424,7 +428,6 @@ class RuntimeContractTests(RuntimeTestCase):
         research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
         fragments = rt.explicit_request_fragments(research)
         draft = rt.InitialPlanDraft(
-            fragments=fragments,
             requirements=[
                 rt.RequirementModel(
                     id="R1",
@@ -457,12 +460,20 @@ class RuntimeContractTests(RuntimeTestCase):
         )
         with self.assertRaisesRegex(ValueError, "exactly one requirement"):
             rt.validated_initial_plan(research, draft)
+        unknown = draft.model_copy(
+            update={
+                "query_seeds": [
+                    rt.QuerySeedModel(query="seed", purpose="bad", requirement_ids=["R3"])
+                ]
+            }
+        )
+        with self.assertRaisesRegex(rt.ModelOutputError, "unknown requirement IDs"):
+            rt.validated_initial_plan(research, unknown)
 
     def test_compare_fragment_kind_is_upgraded_by_runtime(self) -> None:
         research = rt.ResearchRequest(query="compare vendors", depth="deep")
         fragments = rt.explicit_request_fragments(research)
         draft = rt.InitialPlanDraft(
-            fragments=fragments,
             requirements=[
                 rt.RequirementModel(
                     id="R1",
