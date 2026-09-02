@@ -55,15 +55,19 @@ MAX_FINDINGS = 30
 MAX_FINDING_SOURCE_IDS = 6
 MAX_SOURCES = 60
 MAX_REPORT_SECTIONS = 24
-MAX_REPORT_SECTION_CHARS = 4_000
+MAX_REPORT_SECTION_CHARS = 10_000
 # Leave another full report envelope for headings, sources, and limitations.
 MAX_ANSWER_CHARS = MAX_REPORT_SECTIONS * MAX_REPORT_SECTION_CHARS * 2
 MAX_DOC_BYTES = 1_500_000
 MAX_REDIRECTS = 3
 DEEP_MIN_ANSWER_CHARS = 77_000
 DEEP_MIN_CITED_SOURCES = 20
-DEEP_MIN_SECTIONS = 24
 DEEP_MIN_SECTION_CHARS = 800
+DEEP_PLAN_TARGET_SECTIONS = 12
+DEEP_PLAN_MIN_SECTIONS = 10
+DEEP_PLAN_MAX_SECTIONS = 16
+DEEP_PLAN_MIN_SECTION_CHARS = 5_000
+DEEP_PLAN_MAX_SECTION_CHARS = 8_000
 DEEP_MIN_FINDINGS = 15
 DEEP_MIN_LIMITATIONS = 8
 SEARCH_TIMEOUT = 20
@@ -81,7 +85,6 @@ MODEL_TRANSIENT_RECOVERIES = 20
 MODEL_RETRY_BASE_SECONDS = 2.0
 MODEL_RETRY_MAX_SECONDS = 120.0
 STRUCTURED_OUTPUT_ATTEMPTS = 3
-STRUCTURED_DEEP_SECTION_CHARS = (DEEP_MIN_ANSWER_CHARS + DEEP_MIN_SECTIONS - 1) // DEEP_MIN_SECTIONS
 
 DEFAULT_WALL_BUDGETS = {"quick": 1800, "standard": 5400, "deep": 10_350}
 DEFAULT_DEPTH_BUDGETS = {
@@ -192,6 +195,28 @@ class ReportSectionDraft(StrictModel):
 
     heading: str = Field(min_length=1, max_length=200)
     body_markdown: str = Field(min_length=1, max_length=MAX_REPORT_SECTION_CHARS)
+    summary: str = Field(default="", max_length=500)
+
+
+class ReportPlanSection(StrictModel):
+    """One planned H2 section with explicit evidence and deliverable assignments."""
+
+    heading: str = Field(min_length=1, max_length=200)
+    target_chars: int = Field(
+        ge=DEEP_PLAN_MIN_SECTION_CHARS,
+        le=DEEP_PLAN_MAX_SECTION_CHARS,
+    )
+    source_ids: list[SourceId] = Field(min_length=1, max_length=MAX_SOURCES)
+    deliverables: list[str] = Field(min_length=1, max_length=8)
+
+
+class ReportPlanDraft(StrictModel):
+    """One structured deep-report plan produced after evidence collection."""
+
+    sections: list[ReportPlanSection] = Field(
+        min_length=DEEP_PLAN_MIN_SECTIONS,
+        max_length=DEEP_PLAN_MAX_SECTIONS,
+    )
 
 
 class ReportSubmissionDraft(StrictModel):
@@ -292,6 +317,7 @@ class ReportSection:
     heading: str
     body: str
     ledger_revision: int
+    summary: str = ""
 
 
 @dataclass(slots=True)
@@ -303,7 +329,10 @@ class RunState:
     evidence_revision: int
     last_inspected_revision: int | None
     stats: dict[str, Any]
+    report_plan: list[ReportPlanSection] = field(default_factory=list)
     report_sections: list[ReportSection] = field(default_factory=list)
+    phase: str = "research"
+    unmet_requirements: list[str] = field(default_factory=list)
     final_response: dict[str, Any] | None = None
 
 
@@ -900,6 +929,8 @@ def default_stats(depth: str, budget: Budget, wall_limit: float) -> dict[str, An
         "wall_exhausted": False,
         "stop_reason": "",
         "evidence_revision": 0,
+        "report_plan_sections": 0,
+        "report_plan_target_chars": 0,
         "report_sections": 0,
         "report_chars": 0,
         "model_transient_recoveries": 0,
@@ -907,6 +938,10 @@ def default_stats(depth: str, budget: Budget, wall_limit: float) -> dict[str, An
         "research_salvages": 0,
         "evidence_shortfall_salvage": False,
         "structured_output_retries": 0,
+        "plan_calls": 0,
+        "section_calls": 0,
+        "submission_calls": 0,
+        "repair_actions": {},
         "agent_stop_reason": "",
     }
 
@@ -918,7 +953,10 @@ def run_state_snapshot(state: RunState) -> dict[str, Any]:
         "evidence_revision": state.evidence_revision,
         "last_inspected_revision": state.last_inspected_revision,
         "stats": state.stats,
+        "report_plan": [item.model_dump() for item in state.report_plan],
         "report_sections": [asdict(item) for item in state.report_sections],
+        "phase": state.phase,
+        "unmet_requirements": state.unmet_requirements,
         "final_response": state.final_response,
     }
 
@@ -960,12 +998,18 @@ def load_run_state(
     stats["evidence"] = len(evidence)
     stats["usable_evidence"] = sum(item.relevance > 0 for item in evidence)
     stats["evidence_revision"] = int(snapshot.get("evidence_revision", len(evidence)))
+    report_plan = [
+        ReportPlanSection.model_validate(item)
+        for item in cast(list[dict[str, Any]], snapshot["report_plan"])
+    ]
     report_sections = [
         ReportSection(**item)
         for item in cast(list[dict[str, Any]], snapshot.get("report_sections", []))
     ]
     stats["report_sections"] = len(report_sections)
     stats["report_chars"] = len(assemble_report_sections(report_sections))
+    stats["report_plan_sections"] = len(report_plan)
+    stats["report_plan_target_chars"] = sum(item.target_chars for item in report_plan)
     final_response = cast(dict[str, Any] | None, snapshot.get("final_response"))
     return RunState(
         evidence=evidence,
@@ -977,7 +1021,10 @@ def load_run_state(
             else None
         ),
         stats=stats,
+        report_plan=report_plan,
         report_sections=report_sections,
+        phase=str(snapshot["phase"]),
+        unmet_requirements=list(cast(list[str], snapshot["unmet_requirements"])),
         final_response=final_response,
     )
 
@@ -1003,10 +1050,15 @@ def refresh_evidence_relevance(state: RunState, research: ResearchRequest) -> bo
     state.evidence = refreshed
     state.evidence_revision += 1
     state.last_inspected_revision = None
+    state.report_plan.clear()
     state.report_sections.clear()
+    state.phase = "research"
+    state.unmet_requirements.clear()
     state.final_response = None
     state.stats["evidence_revision"] = state.evidence_revision
     state.stats["usable_evidence"] = usable_evidence_count(state)
+    state.stats["report_plan_sections"] = 0
+    state.stats["report_plan_target_chars"] = 0
     state.stats["report_sections"] = 0
     state.stats["report_chars"] = 0
     return True
@@ -1055,33 +1107,100 @@ def assemble_report_sections(sections: list[ReportSection]) -> str:
     return "\n\n".join(f"## {section.heading}\n\n{section.body}" for section in sections)
 
 
+def validated_report_heading(heading: str) -> str:
+    normalized = heading.strip()
+    if not normalized or len(normalized) > 200:
+        raise ValueError("heading must contain 1 to 200 characters")
+    if "\n" in normalized or normalized.startswith("#"):
+        raise ValueError("heading must be plain text without Markdown heading markers")
+    if re.match(r"^(?:Sources|Limitations|限界|制約)", normalized, flags=re.IGNORECASE):
+        raise ValueError("heading is reserved for deterministic report assembly")
+    return normalized
+
+
+def store_report_plan(
+    state: RunState,
+    research: ResearchRequest,
+    draft: ReportPlanDraft,
+) -> None:
+    """Validate and checkpoint the single deep-report plan in memory."""
+
+    if research.depth != "deep":
+        raise ValueError("report planning is only used for deep research")
+    if state.last_inspected_revision != state.evidence_revision:
+        raise ValueError("inspect_evidence_ledger must follow the latest evidence update")
+    headings: set[str] = set()
+    usable_ids = {item.id for item in state.evidence if item.relevance > 0}
+    normalized: list[ReportPlanSection] = []
+    for item in draft.sections:
+        heading = validated_report_heading(item.heading)
+        folded = heading.casefold()
+        if folded in headings:
+            raise ValueError("report plan headings must be unique")
+        headings.add(folded)
+        source_ids = list(dict.fromkeys(item.source_ids))
+        if unknown := set(source_ids) - usable_ids:
+            raise ValueError(
+                f"report plan contains unknown or unusable source IDs: {sorted(unknown)}"
+            )
+        deliverables = [deliverable.strip() for deliverable in item.deliverables]
+        if any(
+            not deliverable or len(deliverable) > MAX_FOCUS_CHARS for deliverable in deliverables
+        ):
+            raise ValueError("report plan deliverables must contain 1 to 500 characters")
+        normalized.append(
+            item.model_copy(
+                update={
+                    "heading": heading,
+                    "source_ids": source_ids,
+                    "deliverables": deliverables,
+                }
+            )
+        )
+    if sum(item.target_chars for item in normalized) < DEEP_MIN_ANSWER_CHARS:
+        raise ValueError(
+            f"report plan targets must total at least {DEEP_MIN_ANSWER_CHARS} characters"
+        )
+    planned_sources = {source_id for item in normalized for source_id in item.source_ids}
+    if len(planned_sources) < DEEP_MIN_CITED_SOURCES:
+        raise ValueError(f"report plan must allocate at least {DEEP_MIN_CITED_SOURCES} source IDs")
+    state.report_plan = normalized
+    state.report_sections.clear()
+    state.phase = "sections"
+    state.unmet_requirements = ["missing_plan_section"]
+    state.stats["report_plan_sections"] = len(normalized)
+    state.stats["report_plan_target_chars"] = sum(item.target_chars for item in normalized)
+    state.stats["report_sections"] = 0
+    state.stats["report_chars"] = 0
+
+
 def store_report_section(
     state: RunState,
     research: ResearchRequest,
     ledger_revision: int,
     heading: str,
     body_markdown: str,
+    summary: str = "",
 ) -> dict[str, Any]:
     """Validate and checkpoint one report section in memory."""
 
-    normalized_heading = heading.strip()
+    normalized_heading = validated_report_heading(heading)
     body = body_markdown.strip()
+    compact_summary = summary.strip()
     if ledger_revision != state.evidence_revision:
         raise ValueError("ledger_revision must match the latest evidence revision")
     if state.last_inspected_revision != state.evidence_revision:
         raise ValueError("inspect_evidence_ledger must follow the latest evidence update")
-    if not normalized_heading or len(normalized_heading) > 200:
-        raise ValueError("heading must contain 1 to 200 characters")
-    if "\n" in normalized_heading or normalized_heading.startswith("#"):
-        raise ValueError("heading must be plain text without Markdown heading markers")
-    if re.match(r"^(?:Sources|Limitations|限界|制約)", normalized_heading, flags=re.IGNORECASE):
-        raise ValueError("heading is reserved for deterministic report assembly")
     if not body or len(body) > MAX_REPORT_SECTION_CHARS:
         raise ValueError(f"body_markdown must contain 1 to {MAX_REPORT_SECTION_CHARS} characters")
     if research.depth == "deep" and len(body) < DEEP_MIN_SECTION_CHARS:
         raise ValueError(
             f"deep section body must contain at least {DEEP_MIN_SECTION_CHARS} characters"
         )
+    if research.depth == "deep" and not compact_summary:
+        raise ValueError("deep report sections require a compact summary")
+    if len(compact_summary) > 500:
+        raise ValueError("section summary must not exceed 500 characters")
     if re.search(r"^##\s+", body, flags=re.MULTILINE):
         raise ValueError("body_markdown must not contain level-2 headings")
     evidence_ids = {item.id for item in state.evidence}
@@ -1095,7 +1214,7 @@ def store_report_section(
     if unusable:
         raise ValueError("unusable source IDs in report section")
 
-    section = ReportSection(normalized_heading, body, ledger_revision)
+    section = ReportSection(normalized_heading, body, ledger_revision, compact_summary)
     sections = list(state.report_sections)
     existing = next(
         (
@@ -1132,7 +1251,7 @@ def limitations_adapter() -> TypeAdapter[list[Limitation]]:
 
 
 def report_request_error(answer: str, depth: str, request_text: str) -> str | None:
-    """Return an unmet explicitly requested report deliverable, if any."""
+    """Return a hard comparison-table citation defect, if any."""
 
     if depth != "deep":
         return None
@@ -1148,72 +1267,23 @@ def report_request_error(answer: str, depth: str, request_text: str) -> str | No
         )
         for index, match in enumerate(matches)
     ]
-    comparison_requested = bool(
-        re.search(
-            r"比較|compare|comparison|versus|\bvs\.?\b|(?:差|違い)(?:$|[をのがは、。])",
-            request_text,
-            re.IGNORECASE,
-        )
-    )
-    if re.search(r"ベンチマーク|benchmark", request_text, re.IGNORECASE) and not any(
-        re.search(r"ベンチマーク|独立.{0,5}評価|empirical|benchmark", heading, re.IGNORECASE)
-        for heading, _ in sections
-    ):
-        return "requested benchmark analysis needs a dedicated section"
-
-    if re.search(
-        r"ロードマップ|roadmap|導入計画|実装計画|運用計画|implementation plan|deployment plan",
-        request_text,
-        re.IGNORECASE,
-    ):
-        roadmap_headings = [
-            heading
-            for heading, _ in sections
-            if re.search(r"ロードマップ|roadmap", heading, re.IGNORECASE)
+    for heading, body in sections:
+        lines = body.splitlines()
+        table_rows = [
+            line.strip()
+            for index, line in enumerate(lines)
+            if line.strip().startswith("|")
+            and line.strip().endswith("|")
+            and not re.fullmatch(r"\|[\s:|-]+\|", line.strip())
+            and not (
+                index + 1 < len(lines) and re.fullmatch(r"\|[\s:|-]+\|", lines[index + 1].strip())
+            )
         ]
-        if not roadmap_headings:
-            return "requested roadmap needs a dedicated section"
-        requested_horizon = re.search(
-            r"(\d+)\s*(?:か月|ヶ月|カ月|months?)", request_text, re.IGNORECASE
-        )
-        if requested_horizon and not any(
-            re.search(
-                rf"{re.escape(requested_horizon.group(1))}\s*(?:か月|ヶ月|カ月|months?)",
-                heading,
-                re.IGNORECASE,
-            )
-            for heading in roadmap_headings
-        ):
+        if any(not citation_ids(row) for row in table_rows):
             return (
-                f"requested {requested_horizon.group(1)}-month roadmap must identify "
-                "its horizon in the heading"
+                f'comparison table data rows in section "{heading}" need inline citations; '
+                "repair this section using its exact heading"
             )
-
-    if comparison_requested:
-        table_found = False
-        for heading, body in sections:
-            if not re.search(r"比較|comparison|差|違い", heading, re.IGNORECASE):
-                continue
-            lines = body.splitlines()
-            table_rows = [
-                line.strip()
-                for index, line in enumerate(lines)
-                if line.strip().startswith("|")
-                and line.strip().endswith("|")
-                and not re.fullmatch(r"\|[\s:|-]+\|", line.strip())
-                and not (
-                    index + 1 < len(lines)
-                    and re.fullmatch(r"\|[\s:|-]+\|", lines[index + 1].strip())
-                )
-            ]
-            table_found = table_found or bool(table_rows)
-            if any(not citation_ids(row) for row in table_rows):
-                return (
-                    f'comparison table data rows in section "{heading}" need inline citations; '
-                    "repair this section using its exact heading"
-                )
-        if not table_found:
-            return "requested comparison table is missing"
     return None
 
 
@@ -1235,9 +1305,6 @@ def validate_submit_report(
         raise ValueError("answer_markdown too long")
     if depth == "deep" and len(answer) < DEEP_MIN_ANSWER_CHARS:
         raise ValueError("deep report too short")
-    section_count = len(re.findall(r"^##\s+\S", answer, flags=re.MULTILINE))
-    if depth == "deep" and section_count < DEEP_MIN_SECTIONS:
-        raise ValueError(f"deep report needs at least {DEEP_MIN_SECTIONS} sections")
     section_matches = list(re.finditer(r"^##\s+\S.*$", answer, flags=re.MULTILINE))
     sections = [
         (
@@ -1257,10 +1324,21 @@ def validate_submit_report(
         raise ValueError(
             f"deep report sections must each contain at least {DEEP_MIN_SECTION_CHARS} characters"
         )
+    if depth == "deep":
+        if not state.report_plan:
+            raise ValueError("deep report requires a checkpointed report plan")
+        answer_headings = {heading.casefold() for heading, _body in sections}
+        missing_headings = [
+            item.heading
+            for item in state.report_plan
+            if item.heading.casefold() not in answer_headings
+        ]
+        if missing_headings:
+            raise ValueError("deep report is missing planned sections")
     if requirement_error := report_request_error(answer, depth, request_text):
         raise ValueError(requirement_error)
     if len(findings) == 0 or len(findings) > MAX_FINDINGS:
-        raise ValueError("findings must contain 1 to 20 items")
+        raise ValueError(f"findings must contain 1 to {MAX_FINDINGS} items")
     if depth == "deep" and len(findings) < DEEP_MIN_FINDINGS:
         raise ValueError(f"deep report needs at least {DEEP_MIN_FINDINGS} findings")
     usable_count = usable_evidence_count(state)
@@ -1283,8 +1361,8 @@ def validate_submit_report(
     if depth == "deep" and len(cited_ids) < DEEP_MIN_CITED_SOURCES:
         raise ValueError(f"deep report needs at least {DEEP_MIN_CITED_SOURCES} cited sources")
     finding_ids = {source_id for item in validated_findings for source_id in item.source_ids}
-    if finding_ids != cited_ids:
-        raise ValueError("answer citations and finding source IDs must match exactly")
+    if not finding_ids or not finding_ids <= cited_ids:
+        raise ValueError("finding source IDs must be a non-empty subset of answer citations")
 
     evidence_by_id = {item.id: item for item in state.evidence}
     unknown = sorted(cited_ids - evidence_by_id.keys(), key=numeric_source_id)
@@ -1389,29 +1467,72 @@ def evidence_target_reached(state: RunState, budget: Budget) -> bool:
     return usable_evidence_count(state) >= budget.target_evidence
 
 
-def report_needs_section(state: RunState, research: ResearchRequest) -> bool:
-    """Return whether another section is required before structured submission."""
+ReportAction = Literal[
+    "missing_plan_section",
+    "expand_existing",
+    "citation_repair",
+    "deliverable_repair",
+    "submit",
+]
 
-    if not state.report_sections:
-        return True
+
+def next_report_action(
+    state: RunState,
+    research: ResearchRequest,
+) -> tuple[ReportAction, str | None, str]:
+    """Choose the next section or submission action from the current checkpoint."""
+
     if research.depth != "deep":
-        return False
+        return (
+            ("submit", None, "")
+            if state.report_sections
+            else ("missing_plan_section", None, "write the report section")
+        )
+    sections = {item.heading.casefold(): item for item in state.report_sections}
+    for planned in state.report_plan:
+        if planned.heading.casefold() not in sections:
+            return "missing_plan_section", planned.heading, "write the next planned section"
     answer = assemble_report_sections(state.report_sections)
-    cited = citation_ids(answer)
-    return any(
-        (
-            len(state.report_sections) < DEEP_MIN_SECTIONS,
-            len(answer) < DEEP_MIN_ANSWER_CHARS,
-            len(cited) < DEEP_MIN_CITED_SOURCES,
-            bool(
-                report_request_error(
-                    answer,
-                    research.depth,
-                    f"{research.query}\n{research.focus or ''}",
-                )
+    if requirement_error := report_request_error(
+        answer,
+        research.depth,
+        f"{research.query}\n{research.focus or ''}",
+    ):
+        repair_heading = next(
+            (
+                section.heading
+                for section in state.report_sections
+                if f'"{section.heading}"' in requirement_error
+            ),
+            state.report_sections[0].heading,
+        )
+        return "deliverable_repair", repair_heading, requirement_error
+    if len(answer) < DEEP_MIN_ANSWER_CHARS:
+        planned_by_heading = {item.heading.casefold(): item for item in state.report_plan}
+        section = min(
+            state.report_sections,
+            key=lambda item: (
+                len(item.body) / planned_by_heading[item.heading.casefold()].target_chars
             ),
         )
-    )
+        return (
+            "expand_existing",
+            section.heading,
+            f"expand the assembled report from {len(answer)} to at least "
+            f"{DEEP_MIN_ANSWER_CHARS} chars",
+        )
+    if len(citation_ids(answer)) < DEEP_MIN_CITED_SOURCES:
+        section = min(state.report_sections, key=lambda item: len(citation_ids(item.body)))
+        return (
+            "citation_repair",
+            section.heading,
+            f"broaden inline citation coverage to {DEEP_MIN_CITED_SOURCES} usable sources",
+        )
+    return "submit", None, ""
+
+
+def report_needs_section(state: RunState, research: ResearchRequest) -> bool:
+    return next_report_action(state, research)[0] != "submit"
 
 
 def build_research_continuation_prompt(
@@ -1450,30 +1571,97 @@ def finalization_context(research: ResearchRequest, state: RunState) -> dict[str
             "hard_limit_salvage": bool(state.stats.get("evidence_shortfall_salvage")),
         },
         "evidence": [serialize_evidence(item) for item in state.evidence if item.relevance > 0],
+        "report_plan": [item.model_dump() for item in state.report_plan],
         "completed_sections": [
-            {"heading": section.heading, "body_markdown": section.body}
+            {
+                "heading": section.heading,
+                "summary": section.summary,
+                "source_ids": sorted(citation_ids(section.body), key=numeric_source_id),
+                "chars": len(section.body),
+            }
             for section in state.report_sections
         ],
     }
 
 
+def build_plan_prompt(research: ResearchRequest, state: RunState) -> str:
+    """Request the single structured plan after deep evidence collection."""
+
+    payload = finalization_context(research, state)
+    request_text = f"{research.query}\n{research.focus or ''}"
+    payload.update(
+        {
+            "task": "Plan the complete deep report before writing any section.",
+            "planner_hints": {
+                "comparison": bool(
+                    re.search(
+                        r"比較|compare|comparison|versus|\bvs\.?\b|(?:差|違い)",
+                        request_text,
+                        re.IGNORECASE,
+                    )
+                ),
+                "benchmark": bool(re.search(r"ベンチマーク|benchmark", request_text, re.I)),
+                "roadmap": bool(
+                    re.search(
+                        r"ロードマップ|roadmap|導入計画|実装計画|implementation plan",
+                        request_text,
+                        re.I,
+                    )
+                ),
+            },
+            "requirements": [
+                f"Aim for {DEEP_PLAN_TARGET_SECTIONS} unique H2 sections; normally use "
+                f"{DEEP_PLAN_MIN_SECTIONS} to {DEEP_PLAN_MAX_SECTIONS}.",
+                f"Make target_chars total at least {DEEP_MIN_ANSWER_CHARS}; each target should be "
+                f"{DEEP_PLAN_MIN_SECTION_CHARS} to {DEEP_PLAN_MAX_SECTION_CHARS}.",
+                (
+                    "Assign concrete explicit user deliverables and usable source IDs "
+                    "to every section."
+                ),
+                (
+                    "Use plain-text unique headings. H3 subsections may be written later "
+                    "inside bodies."
+                ),
+                "Treat planner_hints as coverage hints, not mandatory report templates.",
+            ],
+        }
+    )
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def build_section_prompt(
     research: ResearchRequest,
     state: RunState,
+    action: ReportAction = "missing_plan_section",
     validation_error: str = "",
     repair_heading: str | None = None,
 ) -> str:
     """Request one new or corrected report section as forced structured output."""
 
     payload = finalization_context(research, state)
+    planned = next(
+        (item for item in state.report_plan if item.heading == repair_heading),
+        None,
+    )
+    existing = next(
+        (item for item in state.report_sections if item.heading == repair_heading),
+        None,
+    )
     payload.update(
         {
             "task": "Generate exactly one new or corrected level-2 report section.",
+            "action": action,
             "repair_heading": repair_heading,
+            "planned_section": planned.model_dump() if planned is not None else None,
+            "section_to_repair": (
+                {"heading": existing.heading, "body_markdown": existing.body}
+                if existing is not None
+                else None
+            ),
             "requirements": [
                 (
-                    "If repair_heading is present, repair that existing section and return its "
-                    "exact heading; otherwise use a distinct plain-text heading."
+                    "If repair_heading is present, use that exact target heading for the new or "
+                    "repaired section; otherwise use a distinct plain-text heading."
                 ),
                 "Do not include a level-2 heading, Sources, or Limitations inside body_markdown.",
                 "Use inline evidence citations such as [S1] for every material claim.",
@@ -1491,12 +1679,10 @@ def build_section_prompt(
                     "If the query explicitly requests architecture or a roadmap, cover it and use "
                     "the requested horizon. Do not invent an implementation plan for other topics."
                 ),
+                "Return a compact summary for future section prompts; do not repeat the full body.",
                 (
-                    f"For deep research, write {STRUCTURED_DEEP_SECTION_CHARS} to "
-                    f"{MAX_REPORT_SECTION_CHARS} substantive characters and broaden "
-                    "source coverage."
-                    if research.depth == "deep"
-                    else f"Keep body_markdown within {MAX_REPORT_SECTION_CHARS} characters."
+                    f"Treat planned target_chars as soft; never exceed "
+                    f"{MAX_REPORT_SECTION_CHARS} chars."
                 ),
             ],
             "previous_validation_error": validation_error or None,
@@ -1513,6 +1699,7 @@ def build_submission_prompt(
     """Request findings and limitations for deterministic report submission."""
 
     payload = finalization_context(research, state)
+    payload["assembled_report"] = assemble_report_sections(state.report_sections)
     cited = sorted(
         citation_ids(assemble_report_sections(state.report_sections)), key=numeric_source_id
     )
@@ -1521,7 +1708,7 @@ def build_submission_prompt(
             "task": "Generate only the findings and limitations for the completed report.",
             "cited_source_ids": cited,
             "requirements": [
-                "The union of findings.source_ids must exactly equal cited_source_ids.",
+                "findings.source_ids must be a non-empty subset of cited_source_ids.",
                 "Every finding must be supported by its source IDs.",
                 (
                     "Limitations must disclose material provenance weaknesses, including reliance "
@@ -1861,12 +2048,17 @@ def build_research_tools(
             state.evidence.append(evidence)
             state.evidence_revision += 1
             state.last_inspected_revision = None
+            state.report_plan.clear()
             state.report_sections.clear()
+            state.phase = "research"
+            state.unmet_requirements.clear()
             state.final_response = None
             state.stats["documents"] += 1
             state.stats["evidence"] = len(state.evidence)
             state.stats["usable_evidence"] = usable_evidence_count(state)
             state.stats["evidence_revision"] = state.evidence_revision
+            state.stats["report_plan_sections"] = 0
+            state.stats["report_plan_target_chars"] = 0
             state.stats["report_sections"] = 0
             state.stats["report_chars"] = 0
             await save("running")
@@ -1907,7 +2099,15 @@ def build_research_tools(
                     "stats": state.stats,
                     "remaining_budget": remaining_budgets(state, make_budget(research.depth)),
                     "evidence": [serialize_evidence(item) for item in state.evidence],
-                    "report_sections": [asdict(item) for item in state.report_sections],
+                    "report_sections": [
+                        {
+                            "heading": item.heading,
+                            "summary": item.summary,
+                            "source_ids": sorted(citation_ids(item.body), key=numeric_source_id),
+                            "chars": len(item.body),
+                        }
+                        for item in state.report_sections
+                    ],
                 }
             )
         except Exception as exc:  # pragma: no cover - defensive fail-closed path
@@ -2216,57 +2416,58 @@ async def run_research(
         state.last_inspected_revision = state.evidence_revision
         await save("running")
 
+        if research.depth == "deep" and not state.report_plan:
+            state.phase = "planning"
+            state.unmet_requirements = ["report_plan"]
+            state.stats["plan_calls"] += 1
+            await save("running")
+            draft = cast(
+                ReportPlanDraft,
+                await invoke_structured(build_plan_prompt(research, state), ReportPlanDraft),
+            )
+            store_report_plan(state, research, draft)
+            await save("running")
+
+        state.phase = "sections"
         section_attempts = 0
         validation_error = ""
-        while report_needs_section(state, research):
-            validation_error = (
-                report_request_error(
-                    assemble_report_sections(state.report_sections),
-                    research.depth,
-                    f"{research.query}\n{research.focus or ''}",
-                )
-                or validation_error
-            )
-            repair_heading = next(
-                (
-                    section.heading
-                    for section in state.report_sections
-                    if f'"{section.heading}"' in validation_error
-                ),
-                None,
-            )
+        while True:
+            action, repair_heading, action_error = next_report_action(state, research)
+            if action == "submit":
+                break
+            state.unmet_requirements = [action]
+            repairs = cast(dict[str, int], state.stats["repair_actions"])
+            repairs[action] = repairs.get(action, 0) + 1
             stored = False
             for _attempt in range(STRUCTURED_OUTPUT_ATTEMPTS):
                 section_attempts += 1
                 if section_attempts > MAX_REPORT_SECTIONS * STRUCTURED_OUTPUT_ATTEMPTS:
                     raise ValueError("structured section attempt limit exceeded")
                 try:
+                    state.stats["section_calls"] += 1
                     draft = cast(
                         ReportSectionDraft,
                         await invoke_structured(
                             build_section_prompt(
                                 research,
                                 state,
-                                validation_error,
+                                action,
+                                validation_error or action_error,
                                 repair_heading,
                             ),
                             ReportSectionDraft,
                         ),
                     )
-                    if (
-                        research.depth == "deep"
-                        and len(draft.body_markdown.strip()) < STRUCTURED_DEEP_SECTION_CHARS
-                    ):
-                        raise ValueError(
-                            "structured deep sections must be long enough to complete the report"
-                        )
                     store_report_section(
                         state,
                         research,
                         state.evidence_revision,
                         repair_heading or draft.heading,
                         draft.body_markdown,
+                        draft.summary,
                     )
+                    next_action = next_report_action(state, research)[0]
+                    state.unmet_requirements = [] if next_action == "submit" else [next_action]
                     await save("running")
                     validation_error = ""
                     stored = True
@@ -2283,9 +2484,13 @@ async def run_research(
             if not stored:
                 raise ValueError(f"structured section failed: {validation_error}")
 
+        state.phase = "submission"
+        state.unmet_requirements = ["findings", "limitations"]
+        await save("running")
         validation_error = ""
         for _attempt in range(STRUCTURED_OUTPUT_ATTEMPTS):
             try:
+                state.stats["submission_calls"] += 1
                 draft = cast(
                     ReportSubmissionDraft,
                     await invoke_structured(
@@ -2301,6 +2506,8 @@ async def run_research(
                     [item.model_dump() for item in draft.findings],
                     draft.limitations,
                 )
+                state.phase = "completed"
+                state.unmet_requirements.clear()
                 await save("running")
                 return
             except (

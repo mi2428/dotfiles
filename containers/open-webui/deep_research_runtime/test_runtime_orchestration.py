@@ -16,9 +16,11 @@ from test_support import (
     RuntimeTestCase,
     StructuredAgent,
     deep_findings,
+    deep_plan,
     deep_section_body,
     make_state,
     parse_tool_payload,
+    planned_deep_state,
     report_sections,
     rt,
     stable_quick_state,
@@ -152,10 +154,13 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         structured = StructuredAgent(
             [
-                rt.ReportSectionDraft(heading="Sources", body_markdown="invalid"),
+                rt.ReportSectionDraft(
+                    heading="Sources", body_markdown="invalid", summary="Invalid"
+                ),
                 rt.ReportSectionDraft(
                     heading="Summary",
                     body_markdown="Answer supported by evidence [S1] [S2]",
+                    summary="Answer summary",
                 ),
                 rt.ReportSubmissionDraft(
                     findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1", "S2"])],
@@ -228,7 +233,11 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         structured = StructuredAgent(
             [
-                rt.ReportSectionDraft(heading="Summary", body_markdown="Saved work [S1] [S2]"),
+                rt.ReportSectionDraft(
+                    heading="Summary",
+                    body_markdown="Saved work [S1] [S2]",
+                    summary="Saved work summary",
+                ),
                 rt.ReportSubmissionDraft(
                     findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1", "S2"])],
                     limitations=["Known constraint"],
@@ -318,21 +327,112 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_finalizer_repairs_an_existing_section_at_the_section_limit(self) -> None:
+    def test_deep_plan_is_checkpointed_once_and_resume_keeps_section_bodies_compact(self) -> None:
+        source_count = rt.DEEP_MIN_CITED_SOURCES
+        research = rt.ResearchRequest(query="Evidence", depth="deep")
+        first = StructuredAgent(
+            [
+                rt.ReportPlanDraft(sections=deep_plan(source_count)),
+                rt.MaxTokensReachedException("partial section"),
+                rt.MaxTokensReachedException("partial section"),
+                rt.MaxTokensReachedException("partial section"),
+            ]
+        )
+
+        async def run() -> None:
+            state = planned_deep_state(source_count)
+            state.report_plan.clear()
+            with (
+                patch.object(
+                    rt,
+                    "build_research_agent",
+                    side_effect=AssertionError("research must not restart"),
+                ),
+                patch.object(rt, "build_finalization_agent", return_value=first),
+                self.assertRaisesRegex(ValueError, "structured section failed"),
+            ):
+                await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    "plan-resume-key",
+                    rt.run_state_snapshot(state),
+                )
+
+            row = self.runtime.db.execute(
+                "SELECT status,state_json FROM research_runs WHERE idempotency_key=?",
+                ("plan-resume-key",),
+            ).fetchone()
+            snapshot = json.loads(row["state_json"])
+            self.assertEqual(row["status"], "failed")
+            self.assertEqual(snapshot["phase"], "sections")
+            self.assertEqual(len(snapshot["report_plan"]), rt.DEEP_PLAN_TARGET_SECTIONS)
+
+            bodies = [
+                f"Unique section {index}. " + deep_section_body(source_count)
+                for index in range(1, rt.DEEP_PLAN_TARGET_SECTIONS + 1)
+            ]
+            resumed = StructuredAgent(
+                [
+                    *[
+                        rt.ReportSectionDraft(
+                            heading=f"Section {index}",
+                            body_markdown=body,
+                            summary=f"Summary {index}",
+                        )
+                        for index, body in enumerate(bodies, 1)
+                    ],
+                    rt.ReportSubmissionDraft(
+                        findings=[
+                            rt.SubmitFinding(**item) for item in deep_findings(source_count)
+                        ],
+                        limitations=[
+                            f"Limitation {index}"
+                            for index in range(1, rt.DEEP_MIN_LIMITATIONS + 1)
+                        ],
+                    ),
+                ]
+            )
+            with (
+                patch.object(
+                    rt,
+                    "build_research_agent",
+                    side_effect=AssertionError("research must not restart"),
+                ),
+                patch.object(rt, "build_finalization_agent", return_value=resumed),
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    "plan-resume-key",
+                    snapshot,
+                )
+
+            self.assertGreaterEqual(len(response.answer_markdown), rt.DEEP_MIN_ANSWER_CHARS)
+            self.assertNotIn(rt.ReportPlanDraft, resumed.models)
+            self.assertNotIn(bodies[0], resumed.prompts[1])
+            self.assertEqual(resumed.models[-1], rt.ReportSubmissionDraft)
+
+        asyncio.run(run())
+
+    def test_finalizer_uses_adaptive_deliverable_repair_without_adding_a_section(self) -> None:
         source_count = rt.make_budget("deep").minimum_evidence
-        state = make_state(source_count)
+        state = planned_deep_state(source_count)
         research = rt.ResearchRequest(query="compare Evidence alternatives", depth="deep")
-        self.assertTrue(rt.refresh_evidence_relevance(state, research))
         revision = state.evidence_revision
         body = deep_section_body(source_count)
         state.report_sections = [
-            rt.ReportSection(section.heading, section.body, revision)
+            rt.ReportSection(section.heading, section.body, revision, section.summary)
             for section in report_sections(source_count)
         ]
         state.report_sections[0] = rt.ReportSection(
-            "Comparison",
+            "Section 1",
             "| Option | Evaluation |\n|---|---|\n| A | Evidence |\n\n" + body,
             revision,
+            "Comparison summary",
         )
         structured = StructuredAgent(
             [
@@ -340,6 +440,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     heading="Model ignored the requested repair heading",
                     body_markdown="| Option | Evaluation |\n|---|---|\n| A | Evidence [S1] |\n\n"
                     + body,
+                    summary="Comparison repair",
                 ),
                 rt.ReportSubmissionDraft(
                     findings=[rt.SubmitFinding(**item) for item in deep_findings(source_count)],
@@ -368,7 +469,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     rt.run_state_snapshot(state),
                 )
 
-            self.assertEqual(response.answer_markdown.count("## Comparison"), 1)
+            self.assertEqual(response.answer_markdown.count("## Section 1\n\n"), 1)
             self.assertNotIn("## Model ignored", response.answer_markdown)
             self.assertIn("Evidence [1]", response.answer_markdown)
             self.assertEqual(
@@ -397,6 +498,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 rt.ReportSectionDraft(
                     heading="Summary",
                     body_markdown="Checkpoint-preserving response [S1] [S2]",
+                    summary="Checkpoint summary",
                 ),
                 rt.ReportSubmissionDraft(
                     findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1", "S2"])],
@@ -444,7 +546,9 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             [
                 rt.MaxTokensReachedException("partial structured output"),
                 rt.StructuredOutputException("invalid payload"),
-                rt.ReportSectionDraft(heading="Limitations", body_markdown="invalid"),
+                rt.ReportSectionDraft(
+                    heading="Limitations", body_markdown="invalid", summary="Invalid"
+                ),
             ]
         )
 

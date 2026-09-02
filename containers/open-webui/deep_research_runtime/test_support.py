@@ -83,12 +83,14 @@ class StructuredAgent:
         self.outputs = outputs
         self.models: list[type[rt.StrictModel]] = []
         self.limits: list[dict[str, int]] = []
+        self.prompts: list[str] = []
 
-    async def invoke_async(self, _prompt: str, **kwargs: Any) -> SimpleNamespace:
+    async def invoke_async(self, prompt: str, **kwargs: Any) -> SimpleNamespace:
         model = cast(type[rt.StrictModel], kwargs["structured_output_model"])
         output = self.outputs.pop(0)
         self.models.append(model)
         self.limits.append(kwargs["limits"])
+        self.prompts.append(prompt)
         if isinstance(output, Exception):
             raise output
         if not isinstance(output, model):
@@ -156,7 +158,7 @@ def make_state(count: int, depth: str = "deep") -> rt.RunState:
 def deep_answer(source_count: int) -> str:
     return "\n\n".join(
         f"## Section {index}\n\n{deep_section_body(source_count)}"
-        for index in range(1, rt.DEEP_MIN_SECTIONS + 1)
+        for index in range(1, rt.DEEP_PLAN_TARGET_SECTIONS + 1)
     )
 
 
@@ -173,16 +175,45 @@ def deep_findings(source_count: int) -> list[dict[str, Any]]:
 def report_sections(source_count: int) -> list[rt.ReportSection]:
     body = deep_section_body(source_count)
     return [
-        rt.ReportSection(f"Section {index}", body, source_count)
-        for index in range(1, rt.DEEP_MIN_SECTIONS + 1)
+        rt.ReportSection(f"Section {index}", body, source_count, f"Summary {index}")
+        for index in range(1, rt.DEEP_PLAN_TARGET_SECTIONS + 1)
     ]
 
 
 def deep_section_body(source_count: int) -> str:
     citations = " ".join(f"[S{index}]" for index in range(1, source_count + 1))
     sentence = "Detailed evidence and analysis. "
-    repetitions = (rt.STRUCTURED_DEEP_SECTION_CHARS + len(sentence) - 1) // len(sentence)
+    target = (rt.DEEP_MIN_ANSWER_CHARS + rt.DEEP_PLAN_TARGET_SECTIONS - 1) // (
+        rt.DEEP_PLAN_TARGET_SECTIONS
+    )
+    repetitions = (target + len(sentence) - 1) // len(sentence)
     return sentence * repetitions + citations
+
+
+def deep_plan(source_count: int) -> list[rt.ReportPlanSection]:
+    target = (rt.DEEP_MIN_ANSWER_CHARS + rt.DEEP_PLAN_TARGET_SECTIONS - 1) // (
+        rt.DEEP_PLAN_TARGET_SECTIONS
+    )
+    source_ids = [f"S{index}" for index in range(1, source_count + 1)]
+    return [
+        rt.ReportPlanSection(
+            heading=f"Section {index}",
+            target_chars=target,
+            source_ids=source_ids,
+            deliverables=[f"Deliverable {index}"],
+        )
+        for index in range(1, rt.DEEP_PLAN_TARGET_SECTIONS + 1)
+    ]
+
+
+def planned_deep_state(count: int) -> rt.RunState:
+    state = make_state(count)
+    state.evidence = [replace(item, relevance=0.9) for item in state.evidence]
+    state.report_plan = deep_plan(count)
+    state.phase = "sections"
+    state.stats["report_plan_sections"] = len(state.report_plan)
+    state.stats["report_plan_target_chars"] = sum(item.target_chars for item in state.report_plan)
+    return state
 
 
 def stable_quick_state(count: int = 2) -> rt.RunState:

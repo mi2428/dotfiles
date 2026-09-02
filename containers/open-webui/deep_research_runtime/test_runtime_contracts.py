@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import replace
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
@@ -14,8 +15,10 @@ from test_support import (
     RuntimeTestCase,
     deep_answer,
     deep_findings,
+    deep_plan,
     deep_section_body,
     make_state,
+    planned_deep_state,
     report_sections,
     rt,
 )
@@ -102,13 +105,13 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertEqual(
             (
                 rt.MAX_REPORT_SECTIONS,
-                rt.DEEP_MIN_SECTIONS,
+                rt.DEEP_PLAN_TARGET_SECTIONS,
                 rt.DEEP_MIN_ANSWER_CHARS,
                 rt.DEEP_MIN_CITED_SOURCES,
                 rt.DEEP_MIN_FINDINGS,
                 rt.DEEP_MIN_LIMITATIONS,
             ),
-            (24, 24, 77_000, 20, 15, 8),
+            (24, 12, 77_000, 20, 15, 8),
         )
         self.assertEqual(
             (
@@ -120,7 +123,10 @@ class RuntimeContractTests(RuntimeTestCase):
             ),
             (96, 384, 60, 20, 30),
         )
-        self.assertLessEqual(rt.STRUCTURED_DEEP_SECTION_CHARS, rt.MAX_REPORT_SECTION_CHARS)
+        self.assertEqual(
+            (rt.DEEP_PLAN_MIN_SECTIONS, rt.DEEP_PLAN_MAX_SECTIONS),
+            (10, 16),
+        )
 
     def test_deep_evidence_minimum_allows_finalize_but_only_target_stops_agent(self) -> None:
         research = rt.ResearchRequest(query="Evidence", depth="deep")
@@ -142,7 +148,7 @@ class RuntimeContractTests(RuntimeTestCase):
         budget = rt.make_budget("deep")
         source_count = budget.minimum_evidence
         limitations = [f"Limitation {index}" for index in range(1, rt.DEEP_MIN_LIMITATIONS + 1)]
-        state = make_state(source_count)
+        state = planned_deep_state(source_count)
         response = rt.validate_submit_report(
             "rid",
             state,
@@ -168,7 +174,7 @@ class RuntimeContractTests(RuntimeTestCase):
                 "deep",
             )
 
-        salvage = make_state(rt.DEEP_MIN_CITED_SOURCES)
+        salvage = planned_deep_state(rt.DEEP_MIN_CITED_SOURCES)
         salvage.searched_queries = {f"query {index}" for index in range(budget.search_limit)}
         research = rt.ResearchRequest(query="generic research", depth="deep")
         self.assertTrue(rt.evidence_ready_for_report(salvage, research, budget))
@@ -203,15 +209,16 @@ class RuntimeContractTests(RuntimeTestCase):
         budget = rt.make_budget("deep")
         source_count = budget.minimum_evidence
         limitations = [f"Limitation {index}" for index in range(1, rt.DEEP_MIN_LIMITATIONS + 1)]
-        state = make_state(source_count)
+        state = planned_deep_state(source_count)
         state.report_sections = report_sections(source_count)
         comparison = rt.ResearchRequest(query="方式Aと方式Bの違い", depth="deep")
-        self.assertTrue(rt.report_needs_section(state, comparison))
+        self.assertFalse(rt.report_needs_section(state, comparison))
 
         state.report_sections[0] = rt.ReportSection(
-            "方式の比較",
+            "Section 1",
             "| 方式 | 評価 |\n|---|---|\n| A | 根拠 |\n\n" + deep_section_body(source_count),
             source_count,
+            "比較結果の要約",
         )
         error = rt.report_request_error(
             rt.assemble_report_sections(state.report_sections),
@@ -219,42 +226,22 @@ class RuntimeContractTests(RuntimeTestCase):
             comparison.query,
         )
         self.assertIn(
-            'section "方式の比較"',
+            'section "Section 1"',
             error or "",
         )
+        self.assertEqual(rt.next_report_action(state, comparison)[0], "deliverable_repair")
 
         state.report_sections[0] = rt.ReportSection(
-            "方式の比較",
+            "Section 1",
             "| 方式 | 評価 |\n|---|---|\n| A | 根拠 [S1] |\n\n" + deep_section_body(source_count),
             source_count,
+            "比較結果の要約",
         )
         self.assertFalse(rt.report_needs_section(state, comparison))
 
         answer = rt.assemble_report_sections(state.report_sections)
-        with self.assertRaisesRegex(ValueError, "benchmark analysis"):
-            rt.validate_submit_report(
-                "rid",
-                state,
-                source_count,
-                answer,
-                deep_findings(source_count),
-                limitations,
-                budget,
-                "deep",
-                "第三者ベンチマーク",
-            )
-        with self.assertRaisesRegex(ValueError, "12-month roadmap"):
-            rt.validate_submit_report(
-                "rid",
-                state,
-                source_count,
-                answer.replace("## Section 2", "## ロードマップ", 1),
-                deep_findings(source_count),
-                limitations,
-                budget,
-                "deep",
-                "12か月ロードマップ",
-            )
+        self.assertIsNone(rt.report_request_error(answer, "deep", "第三者ベンチマーク"))
+        self.assertIsNone(rt.report_request_error(answer, "deep", "12か月ロードマップ"))
         hiring = rt.validate_submit_report(
             "rid",
             state,
@@ -267,6 +254,75 @@ class RuntimeContractTests(RuntimeTestCase):
             "人材の採用判断を支援してください",
         )
         self.assertNotIn("12か月ロードマップ", hiring.answer_markdown)
+
+    def test_plan_manifest_adaptive_repairs_and_citation_subset(self) -> None:
+        source_count = rt.DEEP_MIN_CITED_SOURCES
+        research = rt.ResearchRequest(query="比較とロードマップ", depth="deep")
+        state = make_state(source_count)
+        draft = rt.ReportPlanDraft(sections=deep_plan(source_count))
+        rt.store_report_plan(state, research, draft)
+        state = rt.load_run_state(
+            rt.run_state_snapshot(state),
+            depth="deep",
+            budget=rt.make_budget("deep"),
+            wall_limit=rt.wall_budget_seconds("deep"),
+        )
+        self.assertEqual(state.phase, "sections")
+        self.assertEqual(state.report_plan[0].heading, "Section 1")
+        self.assertEqual(state.unmet_requirements, ["missing_plan_section"])
+        state.last_inspected_revision = state.evidence_revision
+        rt.store_report_section(
+            state,
+            research,
+            state.evidence_revision,
+            "Section 1",
+            "Substantive soft-target evidence [S1]. " * 30,
+            "Soft target summary",
+        )
+        self.assertLess(len(state.report_sections[0].body), state.report_plan[0].target_chars)
+        state.report_sections = report_sections(source_count)
+        state.report_sections[0] = replace(
+            state.report_sections[0],
+            body="Short but substantive evidence " * 40 + "[S1]",
+        )
+
+        action, heading, _reason = rt.next_report_action(state, research)
+        self.assertEqual((action, heading), ("expand_existing", "Section 1"))
+        prompt = json.loads(
+            rt.build_section_prompt(research, state, action, repair_heading=heading)
+        )
+        self.assertEqual(len(prompt["report_plan"]), rt.DEEP_PLAN_TARGET_SECTIONS)
+        self.assertNotIn("body_markdown", prompt["completed_sections"][1])
+        self.assertNotIn(state.report_sections[1].body, json.dumps(prompt, ensure_ascii=False))
+        self.assertEqual(
+            prompt["section_to_repair"]["body_markdown"], state.report_sections[0].body
+        )
+
+        state.report_sections = [
+            replace(section, ledger_revision=state.evidence_revision)
+            for section in report_sections(1)
+        ]
+        self.assertEqual(rt.next_report_action(state, research)[0], "citation_repair")
+
+        state.report_sections = report_sections(source_count)
+        findings = [
+            {"claim": f"Finding {index}", "source_ids": ["S1"]}
+            for index in range(1, rt.DEEP_MIN_FINDINGS + 1)
+        ]
+        response = rt.validate_submit_report(
+            "rid",
+            state,
+            state.evidence_revision,
+            rt.assemble_report_sections(state.report_sections),
+            findings,
+            [f"Limitation {index}" for index in range(1, rt.DEEP_MIN_LIMITATIONS + 1)],
+            rt.make_budget("deep"),
+            "deep",
+            research.query,
+        )
+        self.assertEqual(
+            {source_id for item in response.findings for source_id in item.source_ids}, {"S1"}
+        )
 
     def test_relevance_is_lexical_auditable_and_refresh_invalidates_stale_report(self) -> None:
         table = "\n".join(f"試行{index}回 性能{300 + index}点" for index in range(12))
@@ -313,6 +369,7 @@ class RuntimeContractTests(RuntimeTestCase):
                 state.evidence_revision,
                 "Unsafe replacement",
                 "Unsupported claim [S2] " * 50,
+                "Unsafe summary",
             )
 
     def test_extraction_persists_search_and_fetch_provenance(self) -> None:
