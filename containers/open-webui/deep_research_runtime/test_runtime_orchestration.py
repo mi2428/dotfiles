@@ -307,6 +307,10 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         self.assertEqual(rt.model_retry_delay(status_error(503), 3), 16)
         self.assertIsNone(rt.model_retry_delay(status_error(400), 0))
         self.assertEqual(rt.model_retry_delay(TimeoutError("timeout"), 0), 0)
+        self.assertFalse(rt.is_expected_provider_failure(status_error(401)))
+        self.assertFalse(
+            rt.is_expected_provider_failure(rt.EventLoopException(RuntimeError("unknown")))
+        )
 
         finalizer = rt.build_finalization_agent(self.runtime.settings, request)
         finalizer_model = cast(rt.SakuraKimiModel, finalizer.model)
@@ -423,7 +427,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_nonretryable_failure_after_evidence_is_salvaged_without_research_restart(self) -> None:
+    def test_retryable_failure_after_evidence_is_salvaged_without_research_restart(self) -> None:
         state = stable_quick_state(1)
 
         class FailingCollector:
@@ -434,7 +438,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 search = parse_tool_payload(await self.tools["search_web"]("second source"))
                 await self.tools["fetch_source"](search["results"][0]["url"], "support claim")
                 request = httpx.Request("POST", "http://llm.local/v1/chat/completions")
-                response = httpx.Response(400, request=request)
+                response = httpx.Response(503, request=request)
                 raise rt.EventLoopException(
                     APIStatusError("provider error", response=response, body={})
                 )
@@ -631,13 +635,30 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         duplicate = deep_plan(rt.DEEP_MIN_CITED_SOURCES)
         duplicate[1] = duplicate[1].model_copy(update={"heading": duplicate[0].heading})
         short = [item.model_copy(update={"target_chars": 5_000}) for item in deep_plan(20)]
-        structured = StructuredAgent(
-            [
-                rt.ReportPlanDraft(sections=duplicate),
-                rt.ReportPlanDraft(sections=short),
-                *deep_structured_outputs(20),
-            ]
-        )
+
+        class FeedbackPlanAgent(StructuredAgent):
+            async def invoke_async(self, prompt: str, **kwargs: Any) -> SimpleNamespace:
+                if kwargs["structured_output_model"] is not rt.ReportPlanDraft:
+                    return await super().invoke_async(prompt, **kwargs)
+                feedback = json.loads(prompt)["previous_validation_error"]
+                if feedback is None:
+                    output = rt.ReportPlanDraft(sections=duplicate)
+                elif feedback == "report plan headings must be unique":
+                    output = rt.ReportPlanDraft(sections=short)
+                elif feedback == "report plan targets must total at least 77000 characters":
+                    output = rt.ReportPlanDraft(sections=deep_plan(20))
+                else:
+                    raise AssertionError(f"unexpected safe plan feedback: {feedback}")
+                self.models.append(rt.ReportPlanDraft)
+                self.limits.append(kwargs["limits"])
+                self.prompts.append(prompt)
+                return SimpleNamespace(
+                    stop_reason="tool_use",
+                    structured_output=output,
+                    message={"role": "assistant", "content": []},
+                )
+
+        structured = FeedbackPlanAgent(deep_structured_outputs(20)[1:])
 
         async def run() -> None:
             state = planned_deep_state(20)
@@ -665,6 +686,131 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertEqual(structured.models[:3], [rt.ReportPlanDraft] * 3)
             self.assertEqual(response.stats["plan_calls"], 3)
             self.assertEqual(response.stats["structured_output_retries"], 2)
+            plan_prompts = [
+                json.loads(prompt)
+                for prompt, model in zip(structured.prompts, structured.models, strict=True)
+                if model is rt.ReportPlanDraft
+            ]
+            self.assertEqual(
+                [item["previous_validation_error"] for item in plan_prompts],
+                [
+                    None,
+                    "report plan headings must be unique",
+                    "report plan targets must total at least 77000 characters",
+                ],
+            )
+            self.assertEqual(
+                json.loads(
+                    rt.build_plan_prompt(
+                        rt.ResearchRequest(query="Evidence", depth="deep"),
+                        state,
+                        "RAW_PROVIDER_OUTPUT_SENTINEL",
+                    )
+                )["previous_validation_error"],
+                "report plan failed semantic validation",
+            )
+
+        asyncio.run(run())
+
+    def test_nonretryable_provider_and_internal_type_errors_are_hard_http_failures(self) -> None:
+        def provider_error(status_code: int) -> rt.EventLoopException:
+            request = httpx.Request("POST", "http://llm.local/v1/chat/completions")
+            response = httpx.Response(status_code, request=request)
+            return rt.EventLoopException(
+                APIStatusError("provider error", response=response, body={})
+            )
+
+        class HardFailureAgent:
+            def __init__(self, error: Exception) -> None:
+                self.error = error
+
+            async def invoke_async(self, _prompt: str, **_kwargs: Any) -> SimpleNamespace:
+                raise self.error
+
+        async def assert_hard_response(
+            client: httpx.AsyncClient,
+            query: str,
+            key: str,
+            state: rt.RunState | None,
+            error: Exception,
+            *,
+            finalizer: bool,
+        ) -> None:
+            headers = {
+                "Authorization": "Bearer test-api-key",
+                "X-OpenWebUI-Message-Id": key,
+            }
+            with (
+                patch.object(
+                    rt,
+                    "reserve_run",
+                    new=AsyncMock(
+                        return_value=(
+                            "rid",
+                            "hash",
+                            None,
+                            rt.run_state_snapshot(state) if state is not None else None,
+                        )
+                    ),
+                ),
+                patch.object(
+                    rt,
+                    "build_research_agent",
+                    return_value=HardFailureAgent(error),
+                ) as research_build,
+                patch.object(
+                    rt,
+                    "build_finalization_agent",
+                    return_value=HardFailureAgent(error),
+                ) as finalizer_build,
+                patch.object(rt, "AGENT_CANCEL_GRACE_SECONDS", 0.01),
+            ):
+                response = await client.post(
+                    "/research",
+                    headers=headers,
+                    json={"query": query, "depth": "deep" if state is not None else "quick"},
+                )
+            self.assertEqual(response.status_code, 502)
+            self.assertNotIn("x-openwebui-direct-output", response.headers)
+            self.assertNotIn("x-deep-research-status", response.headers)
+            self.assertEqual(research_build.call_count, 0 if finalizer else 1)
+            self.assertEqual(finalizer_build.call_count, 1 if finalizer else 0)
+
+        async def run() -> None:
+            transport = httpx.ASGITransport(app=rt.app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                await assert_hard_response(
+                    client,
+                    "collector 401",
+                    "collector-401",
+                    None,
+                    provider_error(401),
+                    finalizer=False,
+                )
+
+                finalizer_state = planned_deep_state(20)
+                await assert_hard_response(
+                    client,
+                    "Evidence",
+                    "finalizer-401",
+                    finalizer_state,
+                    provider_error(401),
+                    finalizer=True,
+                )
+
+                deep = planned_deep_state(20)
+                deep.report_plan.clear()
+                deep.stats["report_plan_sections"] = 0
+                deep.stats["report_plan_target_chars"] = 0
+                deep.phase = "evidence_complete"
+                await assert_hard_response(
+                    client,
+                    "Evidence",
+                    "plan-type-error",
+                    deep,
+                    TypeError("internal planner bug"),
+                    finalizer=True,
+                )
 
         asyncio.run(run())
 

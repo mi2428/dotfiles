@@ -460,6 +460,12 @@ def model_retry_delay(error: BaseException, attempt: int) -> float | None:
     return None
 
 
+def is_expected_provider_failure(error: BaseException) -> bool:
+    """Return whether provider failure is explicitly retryable or a timeout."""
+
+    return model_retry_delay(error, 0) is not None
+
+
 def is_public_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     return not any(
         (
@@ -1977,7 +1983,28 @@ def finalization_context(research: ResearchRequest, state: RunState) -> dict[str
     }
 
 
-def build_plan_prompt(research: ResearchRequest, state: RunState) -> str:
+def safe_plan_validation_error(error: BaseException | str) -> str:
+    message = str(error)
+    allowed = {
+        "heading must contain 1 to 200 characters",
+        "heading must be plain text without Markdown heading markers",
+        "heading is reserved for deterministic report assembly",
+        f"report plan must contain {DEEP_PLAN_MIN_SECTIONS} to {DEEP_PLAN_MAX_SECTIONS} sections",
+        "report plan headings must be unique",
+        "report plan section target is out of range",
+        "report plan deliverables must contain 1 to 500 characters",
+        f"report plan targets must total at least {DEEP_MIN_ANSWER_CHARS} characters",
+        f"report plan must allocate at least {DEEP_MIN_CITED_SOURCES} source IDs",
+        "report plan output did not match the required schema",
+    }
+    return message if message in allowed else "report plan failed semantic validation"
+
+
+def build_plan_prompt(
+    research: ResearchRequest,
+    state: RunState,
+    previous_validation_error: str = "",
+) -> str:
     """Request the single structured plan after deep evidence collection."""
 
     payload = finalization_context(research, state)
@@ -2017,6 +2044,11 @@ def build_plan_prompt(research: ResearchRequest, state: RunState) -> str:
                 ),
                 "Treat planner_hints as coverage hints, not mandatory report templates.",
             ],
+            "previous_validation_error": (
+                safe_plan_validation_error(previous_validation_error)
+                if previous_validation_error
+                else None
+            ),
         }
     )
     return json.dumps(payload, ensure_ascii=False)
@@ -2870,6 +2902,8 @@ async def run_research(
             except (EventLoopException, APIError, TimeoutError) as exc:
                 if await recover_model_error(exc):
                     continue
+                if not is_expected_provider_failure(exc):
+                    raise
                 raise ExpectedResearchFailure("provider_failure") from exc
             if result is None:
                 raise ExpectedResearchFailure("provider_failure")
@@ -2898,13 +2932,14 @@ async def run_research(
             state.unmet_requirements = ["report_plan"]
             await save("running")
             planned = False
+            validation_error = ""
             for _attempt in range(STRUCTURED_OUTPUT_ATTEMPTS):
                 try:
                     state.stats["plan_calls"] += 1
                     draft = cast(
                         ReportPlanDraft,
                         await invoke_structured(
-                            build_plan_prompt(research, state),
+                            build_plan_prompt(research, state, validation_error),
                             ReportPlanDraft,
                         ),
                     )
@@ -2917,13 +2952,17 @@ async def run_research(
                 except ExpectedResearchFailure:
                     raise
                 except (
-                    TypeError,
                     ValueError,
                     MaxTokensReachedException,
                     StructuredOutputException,
                 ) as exc:
                     if fatal_errors:
                         raise fatal_errors[0] from exc
+                    validation_error = (
+                        safe_plan_validation_error(exc)
+                        if isinstance(exc, ValueError)
+                        else "report plan output did not match the required schema"
+                    )
                     state.stats["structured_output_retries"] += 1
                     await save("running")
             if not planned:
@@ -2987,7 +3026,6 @@ async def run_research(
                 except IntegrityError:
                     raise
                 except (
-                    TypeError,
                     ValueError,
                     MaxTokensReachedException,
                     StructuredOutputException,
@@ -3029,7 +3067,6 @@ async def run_research(
             except IntegrityError:
                 raise
             except (
-                TypeError,
                 ValueError,
                 MaxTokensReachedException,
                 StructuredOutputException,
@@ -3072,6 +3109,8 @@ async def run_research(
                 except (EventLoopException, APIError, TimeoutError) as exc:
                     if fatal_errors:
                         raise fatal_errors[0] from exc
+                    if not is_expected_provider_failure(exc):
+                        raise
                     if collection_allows_finalization(state):
                         state.stats["research_salvages"] += 1
                         state.stats["agent_stop_reason"] = type(exc).__name__
