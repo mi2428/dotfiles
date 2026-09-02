@@ -31,6 +31,14 @@ class UpstreamHandler(BaseHTTPRequestHandler):
     request_bodies: ClassVar[list[bytes]] = []
     authorization_headers: ClassVar[list[str | None]] = []
     attempts_by_authorization: ClassVar[dict[str | None, int]] = {}
+    active_requests = 0
+    max_active_requests = 0
+    active_by_authorization: ClassVar[dict[str | None, int]] = {}
+    max_active_by_authorization: ClassVar[dict[str | None, int]] = {}
+    state_lock = threading.Lock()
+    hold_event = threading.Event()
+    request_started_event = threading.Event()
+    two_requests_started_event = threading.Event()
 
     def do_POST(self) -> None:
         type(self).attempts += 1
@@ -45,53 +53,77 @@ class UpstreamHandler(BaseHTTPRequestHandler):
         type(self).attempts_by_body[body] = (
             type(self).attempts_by_body.get(body, 0) + 1
         )
-        if (self.mode in {"rate_limit", "rate_limit_slow"} and self.attempts < 3) or (
-            self.mode == "second_rate_limited"
-            and body == b"second"
-            and self.attempts_by_body[body] == 1
-        ):
-            self.send_response(429)
-            self.send_header(
-                "Retry-After", "1000" if self.mode == "rate_limit_slow" else "0"
+        with type(self).state_lock:
+            type(self).active_requests += 1
+            type(self).max_active_requests = max(
+                type(self).max_active_requests, type(self).active_requests
             )
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            return
-        if (
-            self.mode == "token_a_once_rate_limited"
-            and authorization == "Bearer token-a"
-            and self.attempts_by_authorization[authorization] == 1
-        ):
-            self.send_response(429)
-            self.send_header("Retry-After", "0.2")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            return
-        if self.mode == "always_timeout" or (
-            self.mode in {"timeout_then_success", "timeout_then_stream"}
-            and self.attempts == 1
-        ):
-            body = b'data: {"error":{"code":"timeout"}}\n\n'
+            type(self).active_by_authorization[authorization] = (
+                type(self).active_by_authorization.get(authorization, 0) + 1
+            )
+            type(self).max_active_by_authorization[authorization] = max(
+                type(self).max_active_by_authorization.get(authorization, 0),
+                type(self).active_by_authorization[authorization],
+            )
+            type(self).request_started_event.set()
+            if type(self).active_requests >= 2:
+                type(self).two_requests_started_event.set()
+        try:
+            if self.mode in {"serialized_hold", "parallel_hold"}:
+                type(self).hold_event.wait(timeout=1)
+            if (self.mode in {"rate_limit", "rate_limit_slow"} and self.attempts < 3) or (
+                self.mode == "second_rate_limited"
+                and body == b"second"
+                and self.attempts_by_body[body] == 1
+            ):
+                self.send_response(429)
+                self.send_header(
+                    "Retry-After", "1000" if self.mode == "rate_limit_slow" else "0"
+                )
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if (
+                self.mode == "token_a_once_rate_limited"
+                and authorization == "Bearer token-a"
+                and self.attempts_by_authorization[authorization] == 1
+            ):
+                self.send_response(429)
+                self.send_header("Retry-After", "0.2")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if self.mode == "always_timeout" or (
+                self.mode in {"timeout_then_success", "timeout_then_stream"}
+                and self.attempts == 1
+            ):
+                body = b'data: {"error":{"code":"timeout"}}\n\n'
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if self.mode == "timeout_then_stream":
+                body = b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            body = b'{"ok":true}'
             self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
-            return
-        if self.mode == "timeout_then_stream":
-            body = b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            return
-        body = b'{"ok":true}'
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        finally:
+            with type(self).state_lock:
+                type(self).active_requests -= 1
+                type(self).active_by_authorization[authorization] = (
+                    type(self).active_by_authorization.get(authorization, 1) - 1
+                )
 
     def log_message(self, format: str, *args: object) -> None:
         pass
@@ -105,6 +137,14 @@ class SakuraRetryProxyTest(unittest.TestCase):
         UpstreamHandler.request_bodies = []
         UpstreamHandler.authorization_headers = []
         UpstreamHandler.attempts_by_authorization = {}
+        UpstreamHandler.active_requests = 0
+        UpstreamHandler.max_active_requests = 0
+        UpstreamHandler.active_by_authorization = {}
+        UpstreamHandler.max_active_by_authorization = {}
+        UpstreamHandler.state_lock = threading.Lock()
+        UpstreamHandler.hold_event = threading.Event()
+        UpstreamHandler.request_started_event = threading.Event()
+        UpstreamHandler.two_requests_started_event = threading.Event()
         self.upstream = ThreadingHTTPServer(("127.0.0.1", 0), UpstreamHandler)
         upstream_port = self.upstream.server_address[1]
         self.proxy = make_server(
@@ -166,6 +206,68 @@ class SakuraRetryProxyTest(unittest.TestCase):
         self.assertEqual(
             UpstreamHandler.authorization_headers,
             ["Bearer token-a", "Bearer token-b", "Bearer token-b"],
+        )
+
+    def test_same_token_never_allows_two_in_flight_upstream_requests(self) -> None:
+        single_token_proxy = make_server(
+            replace(
+                cast(type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass).settings,
+                account_tokens=("token-a",),
+            ),
+            ("127.0.0.1", 0),
+        )
+        thread = threading.Thread(target=single_token_proxy.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 1)
+        self.addCleanup(single_token_proxy.server_close)
+        self.addCleanup(single_token_proxy.shutdown)
+        UpstreamHandler.mode = "serialized_hold"
+        proxy_port = single_token_proxy.server_address[1]
+
+        def request() -> bytes:
+            with urllib.request.urlopen(
+                urllib.request.Request(
+                    f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
+                    data=b"{}",
+                )
+            ) as response:
+                return response.read()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first = executor.submit(request)
+            self.assertTrue(UpstreamHandler.request_started_event.wait(timeout=1))
+            second = executor.submit(request)
+            time.sleep(0.05)
+            self.assertFalse(UpstreamHandler.two_requests_started_event.is_set())
+            UpstreamHandler.hold_event.set()
+            self.assertEqual(first.result(timeout=1), b'{"ok":true}')
+            self.assertEqual(second.result(timeout=1), b'{"ok":true}')
+
+        self.assertEqual(UpstreamHandler.max_active_by_authorization["Bearer token-a"], 1)
+
+    def test_different_tokens_can_run_upstream_in_parallel(self) -> None:
+        UpstreamHandler.mode = "parallel_hold"
+        proxy_port = self.proxy.server_address[1]
+
+        def request() -> bytes:
+            with urllib.request.urlopen(
+                urllib.request.Request(
+                    f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
+                    data=b"{}",
+                )
+            ) as response:
+                return response.read()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(request) for _ in range(2)]
+            self.assertTrue(UpstreamHandler.two_requests_started_event.wait(timeout=1))
+            UpstreamHandler.hold_event.set()
+            self.assertEqual([future.result(timeout=1) for future in futures], [b'{"ok":true}'] * 2)
+
+        self.assertGreaterEqual(UpstreamHandler.max_active_requests, 2)
+        self.assertEqual(
+            {header for header in UpstreamHandler.authorization_headers},
+            {"Bearer token-a", "Bearer token-b"},
         )
 
     def test_retries_timeout_once_with_low_reasoning(self) -> None:

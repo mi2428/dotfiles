@@ -181,6 +181,7 @@ class SharedTokenCooldown:
         self._tokens = tokens
         self._next_index = 0
         self._cooldown_until = [0.0] * len(tokens)
+        self._in_flight = [False] * len(tokens)
         self._condition = threading.Condition()
 
     def acquire(
@@ -196,13 +197,24 @@ class SharedTokenCooldown:
                 now = time.monotonic()
                 for offset in range(len(self._tokens)):
                     slot = (self._next_index + offset) % len(self._tokens)
-                    if self._cooldown_until[slot] <= now:
+                    if (
+                        not self._in_flight[slot]
+                        and self._cooldown_until[slot] <= now
+                    ):
+                        self._in_flight[slot] = True
                         self._next_index = (slot + 1) % len(self._tokens)
                         return TokenLease(slot, self._tokens[slot]), waited
                 remaining = deadline - now
                 if remaining <= 0:
                     return None, waited
-                shared_wait = min(self._cooldown_until) - now
+                available_slots = [
+                    slot for slot, busy in enumerate(self._in_flight) if not busy
+                ]
+                shared_wait = (
+                    min(self._cooldown_until[slot] for slot in available_slots) - now
+                    if available_slots
+                    else remaining
+                )
                 pause = min(max(0.0, shared_wait), remaining, 0.1)
                 if pause <= 0:
                     continue
@@ -210,14 +222,30 @@ class SharedTokenCooldown:
                 self._condition.wait(timeout=pause)
                 waited += time.monotonic() - start
 
+    def release(self, lease: TokenLease) -> None:
+        with self._condition:
+            if self._in_flight[lease.slot]:
+                self._in_flight[lease.slot] = False
+                self._condition.notify_all()
+
     def schedule(self, slot: int, delay: float) -> float:
         with self._condition:
-            self._cooldown_until[slot] = max(
-                self._cooldown_until[slot], time.monotonic() + max(0.0, delay)
-            )
-            scheduled = max(0.0, self._cooldown_until[slot] - time.monotonic())
+            scheduled = self._schedule_unlocked(slot, delay)
             self._condition.notify_all()
             return scheduled
+
+    def schedule_and_release(self, lease: TokenLease, delay: float) -> float:
+        with self._condition:
+            scheduled = self._schedule_unlocked(lease.slot, delay)
+            self._in_flight[lease.slot] = False
+            self._condition.notify_all()
+            return scheduled
+
+    def _schedule_unlocked(self, slot: int, delay: float) -> float:
+        self._cooldown_until[slot] = max(
+            self._cooldown_until[slot], time.monotonic() + max(0.0, delay)
+        )
+        return max(0.0, self._cooldown_until[slot] - time.monotonic())
 
 
 class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
@@ -258,6 +286,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         )
         correlation_id = uuid4().hex[:12]
         while True:
+            lease: TokenLease | None = None
             remaining = retry_deadline - time.monotonic()
             if remaining <= 0:
                 self._log_event(
@@ -277,7 +306,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 return
             try:
                 upstream_attempt += 1
-                connection, response, token_slot, shared_wait = self._request_upstream(
+                connection, response, lease, shared_wait = self._request_upstream(
                     request_body,
                     min(self.settings.upstream_timeout, remaining),
                     retry_deadline,
@@ -287,7 +316,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 if fallback is not None and time.monotonic() < retry_deadline:
                     self._log_event(
                         correlation_id=correlation_id,
-                        token_slot=None,
+                        token_slot=None if lease is None else lease.slot,
                         attempt=upstream_attempt,
                         reason="timeout",
                         scheduled=0.0,
@@ -302,7 +331,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                     continue
                 self._log_event(
                     correlation_id=correlation_id,
-                    token_slot=None,
+                    token_slot=None if lease is None else lease.slot,
                     attempt=upstream_attempt,
                     reason="timeout",
                     scheduled=0.0,
@@ -318,7 +347,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             except BrokenPipeError:
                 self._log_event(
                     correlation_id=correlation_id,
-                    token_slot=None,
+                    token_slot=None if lease is None else lease.slot,
                     attempt=upstream_attempt,
                     reason="client_disconnect",
                     scheduled=0.0,
@@ -330,7 +359,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             except (OSError, http.client.HTTPException):
                 self._log_event(
                     correlation_id=correlation_id,
-                    token_slot=None,
+                    token_slot=None if lease is None else lease.slot,
                     attempt=upstream_attempt,
                     reason="upstream_error",
                     scheduled=0.0,
@@ -344,6 +373,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 )
                 return
             rate_limited = False
+            token_slot = None if lease is None else lease.slot
             if (
                 response.status == 429
                 and rate_limit_attempt < self.settings.max_retries
@@ -354,10 +384,11 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                     self.settings, rate_limit_attempt, retry_after
                 )
                 scheduled = (
-                    type(self).token_state.schedule(token_slot, delay)
-                    if token_slot is not None
+                    type(self).token_state.schedule_and_release(lease, delay)
+                    if lease is not None
                     else delay
                 )
+                lease = None
                 if delay < retry_deadline - time.monotonic():
                     response.read()
                     connection.close()
@@ -394,6 +425,9 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             except TimeoutError:
                 response.close()
                 connection.close()
+                if lease is not None:
+                    type(self).token_state.release(lease)
+                    lease = None
                 fallback = None if timeout_retried else timeout_retry_body(request_body)
                 if fallback is not None and time.monotonic() < retry_deadline:
                     self._log_event(
@@ -433,6 +467,9 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             if fallback is not None and time.monotonic() < retry_deadline:
                 response.close()
                 connection.close()
+                if lease is not None:
+                    type(self).token_state.release(lease)
+                    lease = None
                 self._log_event(
                     correlation_id=correlation_id,
                     token_slot=token_slot,
@@ -463,6 +500,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 connection,
                 response,
                 prefix,
+                lease,
                 self._retry_headers(timeout_retried, effective_reasoning_effort),
                 openwebui_mode and effective_reasoning_effort == "low",
             )
@@ -487,7 +525,12 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
 
     def _request_upstream(
         self, body: bytes, timeout: float, deadline: float
-    ) -> tuple[http.client.HTTPConnection, http.client.HTTPResponse, int | None, float]:
+    ) -> tuple[
+        http.client.HTTPConnection,
+        http.client.HTTPResponse,
+        TokenLease | None,
+        float,
+    ]:
         host = self.upstream.hostname
         if host is None:
             raise ValueError("upstream host is required")
@@ -516,6 +559,8 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             deadline, self._client_disconnected
         )
         if self._client_disconnected():
+            if lease is not None:
+                type(self).token_state.release(lease)
             connection.close()
             raise BrokenPipeError("client disconnected")
         if lease is not None:
@@ -529,8 +574,10 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 body,
                 headers,
             )
-            return connection, connection.getresponse(), None if lease is None else lease.slot, shared_wait
+            return connection, connection.getresponse(), lease, shared_wait
         except Exception:
+            if lease is not None:
+                type(self).token_state.release(lease)
             connection.close()
             raise
 
@@ -581,6 +628,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         connection: http.client.HTTPConnection,
         response: http.client.HTTPResponse,
         prefix: bytes = b"",
+        lease: TokenLease | None = None,
         extra_headers: dict[str, str] | None = None,
         openwebui_retry_status: bool = False,
     ) -> None:
@@ -619,6 +667,8 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
         finally:
+            if lease is not None:
+                type(self).token_state.release(lease)
             response.close()
             connection.close()
             self.close_connection = True
