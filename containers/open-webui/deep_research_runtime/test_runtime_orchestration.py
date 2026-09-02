@@ -296,20 +296,31 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         self.assertEqual(manager.window_size, 30)
         self.assertIn("runtime owns finalization", cast(str, agent.system_prompt))
 
-        def status_error(status_code: int) -> rt.EventLoopException:
+        def status_error(
+            status_code: int,
+            body: dict[str, Any] | None = None,
+        ) -> rt.EventLoopException:
             request = httpx.Request("POST", "http://llm.local/v1/chat/completions")
             response = httpx.Response(status_code, request=request)
             return rt.EventLoopException(
-                APIStatusError("provider error", response=response, body={})
+                APIStatusError("provider error", response=response, body=body or {})
             )
 
         self.assertEqual(rt.model_retry_delay(status_error(429), 0), 2)
         self.assertEqual(rt.model_retry_delay(status_error(503), 3), 16)
         self.assertIsNone(rt.model_retry_delay(status_error(400), 0))
         self.assertEqual(rt.model_retry_delay(TimeoutError("timeout"), 0), 0)
-        self.assertFalse(rt.is_expected_provider_failure(status_error(401)))
-        self.assertFalse(
-            rt.is_expected_provider_failure(rt.EventLoopException(RuntimeError("unknown")))
+        timeout_body = {"error": {"code": "timeout", "message": "upstream timeout"}}
+        for status_code in (401, 403):
+            self.assertFalse(
+                rt.is_expected_provider_failure(status_error(status_code, timeout_body))
+            )
+        unknown = RuntimeError("unknown provider wrapper")
+        unknown.__cause__ = TimeoutError("nested timeout")
+        self.assertIsNone(rt.model_retry_delay(rt.EventLoopException(unknown), 0))
+        self.assertEqual(
+            rt.model_retry_delay(rt.EventLoopException(TimeoutError("known timeout")), 0),
+            0,
         )
 
         finalizer = rt.build_finalization_agent(self.runtime.settings, request)
@@ -713,11 +724,14 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         asyncio.run(run())
 
     def test_nonretryable_provider_and_internal_type_errors_are_hard_http_failures(self) -> None:
-        def provider_error(status_code: int) -> rt.EventLoopException:
+        def provider_error(
+            status_code: int,
+            body: dict[str, Any] | None = None,
+        ) -> rt.EventLoopException:
             request = httpx.Request("POST", "http://llm.local/v1/chat/completions")
             response = httpx.Response(status_code, request=request)
             return rt.EventLoopException(
-                APIStatusError("provider error", response=response, body={})
+                APIStatusError("provider error", response=response, body=body or {})
             )
 
         class HardFailureAgent:
@@ -779,24 +793,24 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         async def run() -> None:
             transport = httpx.ASGITransport(app=rt.app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                await assert_hard_response(
-                    client,
-                    "collector 401",
-                    "collector-401",
-                    None,
-                    provider_error(401),
-                    finalizer=False,
-                )
-
                 finalizer_state = planned_deep_state(20)
-                await assert_hard_response(
-                    client,
-                    "Evidence",
-                    "finalizer-401",
-                    finalizer_state,
-                    provider_error(401),
-                    finalizer=True,
-                )
+                timeout_body = {"error": {"code": "timeout", "message": "upstream timeout"}}
+                unknown = RuntimeError("unknown provider wrapper")
+                unknown.__cause__ = TimeoutError("nested timeout")
+                for key, state, error, finalizer in (
+                    ("collector-401", None, provider_error(401, timeout_body), False),
+                    ("finalizer-401", finalizer_state, provider_error(401, timeout_body), True),
+                    ("finalizer-403", finalizer_state, provider_error(403, timeout_body), True),
+                    ("unknown-wrapper", None, rt.EventLoopException(unknown), False),
+                ):
+                    await assert_hard_response(
+                        client,
+                        "Evidence" if state is not None else key,
+                        key,
+                        state,
+                        error,
+                        finalizer=finalizer,
+                    )
 
                 deep = planned_deep_state(20)
                 deep.report_plan.clear()
@@ -811,6 +825,115 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     TypeError("internal planner bug"),
                     finalizer=True,
                 )
+
+                with (
+                    patch.object(
+                        rt,
+                        "reserve_run",
+                        new=AsyncMock(return_value=("rid", "hash", None, None)),
+                    ),
+                    patch.object(
+                        rt,
+                        "build_research_agent",
+                        return_value=HardFailureAgent(provider_error(503)),
+                    ),
+                    patch.object(rt, "MODEL_TRANSIENT_RECOVERIES", 0),
+                    patch.object(rt, "AGENT_CANCEL_GRACE_SECONDS", 0.01),
+                ):
+                    response = await client.post(
+                        "/research",
+                        headers={
+                            "Authorization": "Bearer test-api-key",
+                            "X-OpenWebUI-Message-Id": "provider-503",
+                        },
+                        json={"query": "provider 503", "depth": "quick"},
+                    )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers["x-openwebui-direct-output"], "true")
+                self.assertEqual(response.headers["x-deep-research-status"], "failed")
+
+        asyncio.run(run())
+
+    def test_tool_dependency_programmer_errors_are_hard_http_failures(self) -> None:
+        class ToolFailureAgent:
+            def __init__(self, tools: list[Any], operation: str) -> None:
+                self.tools = {tool.tool_name: tool for tool in tools}
+                self.operation = operation
+
+            async def invoke_async(self, _prompt: str, **_kwargs: Any) -> SimpleNamespace:
+                searched = await self.tools["search_web"]("programmer error source")
+                if self.operation == "fetch":
+                    result = parse_tool_payload(searched)["results"][0]
+                    await self.tools["fetch_source"](result["url"], "support claim")
+                return SimpleNamespace(stop_reason="end_turn", message={"content": []})
+
+        async def run() -> None:
+            transport = httpx.ASGITransport(app=rt.app)
+            search_result = rt.SearchResult(
+                "http://example.com/programmer-error",
+                "Source",
+                "snippet",
+                "engine",
+            )
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                for operation in ("search", "fetch"):
+                    with (
+                        patch.object(
+                            rt,
+                            "build_research_agent",
+                            side_effect=lambda *args, operation=operation: ToolFailureAgent(
+                                args[2], operation
+                            ),
+                        ),
+                        patch.object(
+                            rt,
+                            "search_searxng",
+                            new=AsyncMock(
+                                side_effect=(
+                                    TypeError("internal search bug")
+                                    if operation == "search"
+                                    else None
+                                ),
+                                return_value=[search_result],
+                            ),
+                        ),
+                        patch.object(
+                            rt,
+                            "extract_evidence",
+                            new=AsyncMock(side_effect=TypeError("internal fetch bug")),
+                        ),
+                        patch.object(rt, "AGENT_CANCEL_GRACE_SECONDS", 0.01),
+                    ):
+                        response = await client.post(
+                            "/research",
+                            headers={
+                                "Authorization": "Bearer test-api-key",
+                                "X-OpenWebUI-Message-Id": f"tool-{operation}-type-error",
+                            },
+                            json={"query": f"tool {operation} TypeError", "depth": "quick"},
+                        )
+                    self.assertEqual(response.status_code, 502)
+                    self.assertNotIn("x-openwebui-direct-output", response.headers)
+                    self.assertNotIn("x-deep-research-status", response.headers)
+
+            for error in (KeyError("internal key bug"), IndexError("internal index bug")):
+                state = make_state(0, "quick")
+                with patch.object(
+                    rt,
+                    "search_searxng",
+                    new=AsyncMock(side_effect=error),
+                ):
+                    tools, _allowlist, fatal = rt.build_research_tools(
+                        self.runtime,
+                        rt.ResearchRequest(query="programmer error", depth="quick"),
+                        "rid",
+                        f"tool-{type(error).__name__}",
+                        "hash",
+                        state,
+                    )
+                    result = await tools[0]("programmer error source")
+                self.assertEqual(result["status"], "error")
+                self.assertIsInstance(fatal[0], type(error))
 
         asyncio.run(run())
 

@@ -429,13 +429,23 @@ def env_int(name: str, default: int, *, minimum: int = 1, maximum: int | None = 
 def model_retry_delay(error: BaseException, attempt: int) -> float | None:
     """Return a backoff for retryable provider errors wrapped by Strands."""
 
-    pending: list[BaseException] = [error]
+    provider_errors = (EventLoopException, APIError, APITimeoutError, TimeoutError)
+    pending = [error] if isinstance(error, provider_errors) else []
     seen: set[int] = set()
     while pending:
-        current = pending.pop()
+        current = pending.pop(0)
         if id(current) in seen:
             continue
         seen.add(id(current))
+        if isinstance(current, APIError):
+            status_code = getattr(current, "status_code", None)
+            if isinstance(status_code, int):
+                if status_code == 429 or 500 <= status_code < 600:
+                    return min(
+                        MODEL_RETRY_MAX_SECONDS,
+                        MODEL_RETRY_BASE_SECONDS * (2**attempt),
+                    )
+                return None
         if isinstance(current, (APITimeoutError, TimeoutError)):
             return 0.0
         if isinstance(current, APIError):
@@ -447,15 +457,12 @@ def model_retry_delay(error: BaseException, attempt: int) -> float | None:
             message = str(detail.get("message") or current).strip().rstrip(".").casefold()
             if code == "timeout" or message in {"request timed out", "upstream timeout"}:
                 return 0.0
-            status_code = getattr(current, "status_code", None)
-            if status_code == 429 or (isinstance(status_code, int) and 500 <= status_code < 600):
-                return min(MODEL_RETRY_MAX_SECONDS, MODEL_RETRY_BASE_SECONDS * (2**attempt))
         for nested in (
             getattr(current, "original_exception", None),
             current.__cause__,
             current.__context__,
         ):
-            if isinstance(nested, BaseException):
+            if isinstance(nested, provider_errors):
                 pending.append(nested)
     return None
 
@@ -2436,10 +2443,7 @@ def build_research_tools(
             aiohttp.ClientError,
             OSError,
             TimeoutError,
-            TypeError,
             ValueError,
-            KeyError,
-            IndexError,
         ) as exc:
             state.stats["search_failures"] += 1
             await save("running")
@@ -2525,10 +2529,7 @@ def build_research_tools(
             aiohttp.ClientError,
             OSError,
             TimeoutError,
-            TypeError,
             ValueError,
-            KeyError,
-            IndexError,
         ) as exc:
             state.stats["source_skips"] += 1
             return tool_error("fetch_failed", str(exc))
