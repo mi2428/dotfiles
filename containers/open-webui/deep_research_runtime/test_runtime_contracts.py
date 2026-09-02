@@ -108,11 +108,11 @@ class RuntimeContractTests(RuntimeTestCase):
                 rt.DEEP_MIN_FINDINGS,
                 rt.DEEP_MIN_LIMITATIONS,
             ),
-            (24, 24, 77_000, 26, 15, 8),
+            (24, 24, 77_000, 20, 15, 8),
         )
         self.assertEqual(
             (budget.searches, budget.search_limit, budget.evidence, budget.minimum_evidence),
-            (96, 192, 60, 30),
+            (96, 384, 60, 20),
         )
         self.assertLessEqual(rt.STRUCTURED_DEEP_SECTION_CHARS, rt.MAX_REPORT_SECTION_CHARS)
 

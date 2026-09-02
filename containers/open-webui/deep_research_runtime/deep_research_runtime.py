@@ -61,7 +61,7 @@ MAX_ANSWER_CHARS = MAX_REPORT_SECTIONS * MAX_REPORT_SECTION_CHARS * 2
 MAX_DOC_BYTES = 1_500_000
 MAX_REDIRECTS = 3
 DEEP_MIN_ANSWER_CHARS = 77_000
-DEEP_MIN_CITED_SOURCES = 26
+DEEP_MIN_CITED_SOURCES = 20
 DEEP_MIN_SECTIONS = 24
 DEEP_MIN_SECTION_CHARS = 800
 DEEP_MIN_FINDINGS = 15
@@ -101,9 +101,9 @@ DEFAULT_DEPTH_BUDGETS = {
     },
     "deep": {
         "searches": 96,
-        "search_limit": 192,
+        "search_limit": 384,
         "evidence": 60,
-        "minimum_evidence": 30,
+        "minimum_evidence": 20,
         "turns": 270,
     },
 }
