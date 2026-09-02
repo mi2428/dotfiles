@@ -23,7 +23,7 @@ from urllib.parse import SplitResult, urlsplit
 LOG = logging.getLogger("sakura-retry-proxy")
 SSL_CONTEXT = ssl.create_default_context()
 LISTEN_ADDRESS = ("0.0.0.0", 8080)
-UPSTREAM_TIMEOUT = 7200.0
+TIMEOUT_SAFETY_MARGIN_SECONDS = 300.0
 MAX_REQUEST_BYTES = 64 * 1024 * 1024
 HOP_BY_HOP_HEADERS = {
     "connection",
@@ -111,7 +111,18 @@ class Settings:
     base_backoff: float = 2.0
     max_backoff: float = 120.0
     jitter: float = 1.0
+    retry_budget: float = 1200.0
+    upstream_timeout: float = 420.0
     account_tokens: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.upstream_timeout <= 0 or self.retry_budget <= 0:
+            raise ValueError("Sakura timeout settings must be positive")
+        if (
+            self.retry_budget - 2 * self.upstream_timeout
+            < TIMEOUT_SAFETY_MARGIN_SECONDS
+        ):
+            raise ValueError("Sakura retry budget lacks timeout safety margin")
 
     @classmethod
     def from_environment(cls) -> Settings:
@@ -134,6 +145,12 @@ class Settings:
                 os.getenv("SAKURA_RETRY_MAX_SECONDS", defaults.max_backoff)
             ),
             jitter=float(os.getenv("SAKURA_RETRY_JITTER_SECONDS", defaults.jitter)),
+            retry_budget=float(
+                os.getenv("SAKURA_RETRY_BUDGET_SECONDS", defaults.retry_budget)
+            ),
+            upstream_timeout=float(
+                os.getenv("SAKURA_UPSTREAM_TIMEOUT_SECONDS", defaults.upstream_timeout)
+            ),
             account_tokens=account_tokens,
         )
 
@@ -181,15 +198,26 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         rate_limit_attempt = 0
         timeout_retried = False
         effective_reasoning_effort = None
+        retry_deadline = time.monotonic() + self.settings.retry_budget
         openwebui_mode = (
             self.headers.get(OPENWEBUI_MODE_HEADER, "").casefold() == "true"
         )
         while True:
+            remaining = retry_deadline - time.monotonic()
+            if remaining <= 0:
+                self._send_json(
+                    504,
+                    {"error": {"code": "timeout", "message": "upstream timeout"}},
+                    self._retry_headers(timeout_retried, effective_reasoning_effort),
+                )
+                return
             try:
-                connection, response = self._request_upstream(request_body)
+                connection, response = self._request_upstream(
+                    request_body, min(self.settings.upstream_timeout, remaining)
+                )
             except TimeoutError as error:
                 fallback = None if timeout_retried else timeout_retry_body(request_body)
-                if fallback is not None:
+                if fallback is not None and time.monotonic() < retry_deadline:
                     LOG.warning("Upstream request timed out; retrying once")
                     if fallback != request_body:
                         effective_reasoning_effort = "low"
@@ -217,28 +245,36 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 and rate_limit_attempt < self.settings.max_retries
             ):
                 retry_after = retry_after_seconds(response.getheader("Retry-After"))
-                response.read()
-                connection.close()
                 delay = retry_delay_seconds(
                     self.settings, rate_limit_attempt, retry_after
                 )
-                rate_limit_attempt += 1
-                LOG.warning(
-                    "Upstream returned 429; retrying in %.1fs (%d/%d)",
-                    delay,
-                    rate_limit_attempt,
-                    self.settings.max_retries,
-                )
-                time.sleep(delay)
-                continue
+                if delay < retry_deadline - time.monotonic():
+                    response.read()
+                    connection.close()
+                    rate_limit_attempt += 1
+                    LOG.warning(
+                        "Upstream returned 429; retrying in %.1fs (%d/%d)",
+                        delay,
+                        rate_limit_attempt,
+                        self.settings.max_retries,
+                    )
+                    time.sleep(delay)
+                    continue
 
             try:
+                remaining = retry_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("retry budget exhausted")
+                if connection.sock is not None:
+                    connection.sock.settimeout(
+                        min(self.settings.upstream_timeout, remaining)
+                    )
                 prefix = response.readline(64 * 1024)
             except TimeoutError as error:
                 response.close()
                 connection.close()
                 fallback = None if timeout_retried else timeout_retry_body(request_body)
-                if fallback is not None:
+                if fallback is not None and time.monotonic() < retry_deadline:
                     LOG.warning("Upstream response timed out; retrying once")
                     if fallback != request_body:
                         effective_reasoning_effort = "low"
@@ -257,7 +293,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             fallback = None
             if is_timeout_response(response.status, prefix) and not timeout_retried:
                 fallback = timeout_retry_body(request_body)
-            if fallback is not None:
+            if fallback is not None and time.monotonic() < retry_deadline:
                 response.close()
                 connection.close()
                 LOG.warning("Upstream returned a timeout; retrying once")
@@ -295,7 +331,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         return self.rfile.read(length) if length else b""
 
     def _request_upstream(
-        self, body: bytes
+        self, body: bytes, timeout: float
     ) -> tuple[http.client.HTTPConnection, http.client.HTTPResponse]:
         host = self.upstream.hostname
         if host is None:
@@ -304,12 +340,12 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             connection: http.client.HTTPConnection = http.client.HTTPSConnection(
                 host,
                 self.upstream.port,
-                timeout=UPSTREAM_TIMEOUT,
+                timeout=timeout,
                 context=SSL_CONTEXT,
             )
         else:
             connection = http.client.HTTPConnection(
-                host, self.upstream.port, timeout=UPSTREAM_TIMEOUT
+                host, self.upstream.port, timeout=timeout
             )
         headers = {
             name: value

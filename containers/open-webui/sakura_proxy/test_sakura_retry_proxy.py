@@ -5,13 +5,16 @@ import json
 import os
 import threading
 import unittest
+import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import ClassVar
+from typing import ClassVar, cast
 from unittest.mock import patch
 
 from sakura_retry_proxy import (
+    SakuraRetryProxyHandler,
     Settings,
     make_server,
     retry_after_seconds,
@@ -33,13 +36,15 @@ class UpstreamHandler(BaseHTTPRequestHandler):
         type(self).request_bodies.append(body)
         type(self).authorization_headers.append(self.headers.get("Authorization"))
         type(self).attempts_by_body[body] = type(self).attempts_by_body.get(body, 0) + 1
-        if (self.mode == "rate_limit" and self.attempts < 3) or (
+        if (self.mode in {"rate_limit", "rate_limit_slow"} and self.attempts < 3) or (
             self.mode == "second_rate_limited"
             and body == b"second"
             and self.attempts_by_body[body] == 1
         ):
             self.send_response(429)
-            self.send_header("Retry-After", "0")
+            self.send_header(
+                "Retry-After", "1000" if self.mode == "rate_limit_slow" else "0"
+            )
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
@@ -226,6 +231,27 @@ class SakuraRetryProxyTest(unittest.TestCase):
             10,
         )
 
+    def test_retry_budget_stops_before_an_unaffordable_backoff(self) -> None:
+        UpstreamHandler.mode = "rate_limit_slow"
+        handler = cast(type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass)
+        handler.settings = replace(
+            handler.settings,
+            max_backoff=1000,
+            retry_budget=300.002,
+            upstream_timeout=0.001,
+        )
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.proxy.server_address[1]}/v1/chat/completions",
+            data=b"{}",
+        )
+
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(request)
+        error.exception.close()
+
+        self.assertEqual(error.exception.code, 429)
+        self.assertEqual(UpstreamHandler.attempts, 1)
+
     def test_settings_parse_comma_separated_account_tokens(self) -> None:
         with patch.dict(
             os.environ,
@@ -236,6 +262,12 @@ class SakuraRetryProxyTest(unittest.TestCase):
 
         self.assertEqual(settings.account_tokens, ("token-a", "token-b", "token-c"))
         self.assertEqual(settings.upstream_url, "https://api.ai.sakura.ad.jp")
+        self.assertGreaterEqual(
+            settings.retry_budget - 2 * settings.upstream_timeout,
+            300,
+        )
+        with self.assertRaisesRegex(ValueError, "lacks timeout safety margin"):
+            replace(settings, retry_budget=1000)
 
         with (
             patch.dict(os.environ, {}, clear=True),

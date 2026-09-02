@@ -56,6 +56,10 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         )
         self.assertEqual(finalizer.tool_names, [])
         self.assertEqual(finalizer_params["max_tokens"], rt.FINALIZER_MAX_TOKENS)
+        self.assertEqual(
+            self.runtime.settings.kimi_timeout_seconds - rt.FINALIZER_TIMEOUT_SECONDS,
+            rt.TIMEOUT_SAFETY_MARGIN_SECONDS,
+        )
 
     def test_timeout_recovery_collects_once_then_forces_structured_finalization(self) -> None:
         class TimeoutAgent:
