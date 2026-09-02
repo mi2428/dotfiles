@@ -2966,9 +2966,13 @@ def build_agent(
     system_prompt: str,
     *,
     max_tokens: int = KIMI_MAX_TOKENS,
+    force_tool_use: bool = False,
 ) -> Agent:
     """Build one bounded Kimi agent with shared runtime settings."""
 
+    params: dict[str, Any] = {"max_tokens": max_tokens}
+    if force_tool_use:
+        params["tool_choice"] = "required"
     model = SakuraKimiModel(
         model_id=settings.model,
         client_args={
@@ -2977,7 +2981,7 @@ def build_agent(
             "timeout": settings.kimi_timeout_seconds,
             "max_retries": 0,
         },
-        params={"max_tokens": max_tokens},
+        params=params,
     )
     return Agent(
         model=model,
@@ -3010,6 +3014,7 @@ def build_finalization_agent(settings: Settings, research: ResearchRequest) -> A
         [],
         build_finalization_system_prompt(research),
         max_tokens=FINALIZER_MAX_TOKENS,
+        force_tool_use=True,
     )
 
 

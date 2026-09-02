@@ -4,7 +4,7 @@ import asyncio
 import os
 import unittest
 from dataclasses import replace
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import aiohttp
@@ -206,9 +206,17 @@ class RuntimeContractTests(RuntimeTestCase):
         standard = rt.ResearchRequest(query="standard coverage", depth="standard")
         agent = rt.build_research_agent(self.runtime.settings, standard, [])
         model = cast(rt.SakuraKimiModel, agent.model)
+        finalizer_model = cast(
+            rt.SakuraKimiModel,
+            rt.build_finalization_agent(self.runtime.settings, standard).model,
+        )
         manager = cast(SlidingWindowConversationManager, agent.conversation_manager)
+        research_params = cast(dict[str, Any], model.config["params"])
+        finalizer_params = cast(dict[str, Any], finalizer_model.config["params"])
         self.assertEqual(model.client_args["timeout"], 1800)
         self.assertEqual(model.client_args["max_retries"], 0)
+        self.assertNotIn("tool_choice", research_params)
+        self.assertEqual(finalizer_params["tool_choice"], "required")
         self.assertIsInstance(manager, SlidingWindowConversationManager)
         self.assertIsInstance(agent.tool_executor, SequentialToolExecutor)
         self.assertEqual(manager.window_size, 30)
