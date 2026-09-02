@@ -40,37 +40,37 @@ add_replacement(
 )
 add_replacement(
     """                        tool_function_params, tool_result, tool, tool_type, direct_tool = tool_results[id(tool_call)]
-                         if tool_result is None:
+                        if tool_result is None:
 """,
     """                        tool_function_params, tool_result, tool, tool_type, direct_tool = tool_results[id(tool_call)]
-                         tool_response_headers = (
-                             tool_result[1]
-                             if tool_type == 'external'
-                             and isinstance(tool_result, tuple)
-                             and len(tool_result) == 2
-                             else None
-                         )
-                         tool_response_header_items = (
-                             {str(key).casefold(): str(value) for key, value in tool_response_headers.items()}
-                             if tool_response_headers is not None
-                             else {}
-                         )
-                         return_direct = bool(
-                             tool_response_header_items.get('x-openwebui-direct-output', '').casefold() == 'true'
-                             and tool_response_header_items.get('content-type', '').casefold().startswith('text/plain')
-                         )
-                         deep_research_status = tool_response_header_items.get('x-deep-research-status', '').casefold()
-                         if tool_result is None:
+                        tool_response_headers = (
+                            tool_result[1]
+                            if tool_type == 'external'
+                            and isinstance(tool_result, tuple)
+                            and len(tool_result) == 2
+                            else None
+                        )
+                        tool_response_header_items = (
+                            {str(key).casefold(): str(value) for key, value in tool_response_headers.items()}
+                            if tool_response_headers is not None
+                            else {}
+                        )
+                        return_direct = bool(
+                            tool_response_header_items.get('x-openwebui-direct-output', '').casefold() == 'true'
+                            and tool_response_header_items.get('content-type', '').casefold().startswith('text/plain')
+                        )
+                        deep_research_status = tool_response_header_items.get('x-deep-research-status', '').casefold()
+                        if tool_result is None:
 """,
 )
 add_replacement(
     """                                'content': tool_result_content(tool_result),
-                                 **({'files': tool_result_files} if tool_result_files else {}),
+                                **({'files': tool_result_files} if tool_result_files else {}),
 """,
     """                                'content': tool_result_content(tool_result),
-                                 'return_direct': return_direct,
-                                 'deep_research_status': deep_research_status,
-                                 **({'files': tool_result_files} if tool_result_files else {}),
+                                'return_direct': return_direct,
+                                'deep_research_status': deep_research_status,
+                                **({'files': tool_result_files} if tool_result_files else {}),
 """,
 )
 add_replacement(
