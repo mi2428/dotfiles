@@ -4,6 +4,7 @@ import http.client
 import json
 import os
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -16,6 +17,7 @@ from unittest.mock import patch
 from sakura_retry_proxy import (
     SakuraRetryProxyHandler,
     Settings,
+    SharedTokenCooldown,
     make_server,
     retry_after_seconds,
     retry_delay_seconds,
@@ -28,14 +30,21 @@ class UpstreamHandler(BaseHTTPRequestHandler):
     attempts_by_body: ClassVar[dict[bytes, int]] = {}
     request_bodies: ClassVar[list[bytes]] = []
     authorization_headers: ClassVar[list[str | None]] = []
+    attempts_by_authorization: ClassVar[dict[str | None, int]] = {}
 
     def do_POST(self) -> None:
         type(self).attempts += 1
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
         type(self).request_bodies.append(body)
-        type(self).authorization_headers.append(self.headers.get("Authorization"))
-        type(self).attempts_by_body[body] = type(self).attempts_by_body.get(body, 0) + 1
+        authorization = self.headers.get("Authorization")
+        type(self).authorization_headers.append(authorization)
+        type(self).attempts_by_authorization[authorization] = (
+            type(self).attempts_by_authorization.get(authorization, 0) + 1
+        )
+        type(self).attempts_by_body[body] = (
+            type(self).attempts_by_body.get(body, 0) + 1
+        )
         if (self.mode in {"rate_limit", "rate_limit_slow"} and self.attempts < 3) or (
             self.mode == "second_rate_limited"
             and body == b"second"
@@ -45,6 +54,16 @@ class UpstreamHandler(BaseHTTPRequestHandler):
             self.send_header(
                 "Retry-After", "1000" if self.mode == "rate_limit_slow" else "0"
             )
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if (
+            self.mode == "token_a_once_rate_limited"
+            and authorization == "Bearer token-a"
+            and self.attempts_by_authorization[authorization] == 1
+        ):
+            self.send_response(429)
+            self.send_header("Retry-After", "0.2")
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
@@ -85,6 +104,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         UpstreamHandler.attempts_by_body = {}
         UpstreamHandler.request_bodies = []
         UpstreamHandler.authorization_headers = []
+        UpstreamHandler.attempts_by_authorization = {}
         self.upstream = ThreadingHTTPServer(("127.0.0.1", 0), UpstreamHandler)
         upstream_port = self.upstream.server_address[1]
         self.proxy = make_server(
@@ -128,6 +148,24 @@ class SakuraRetryProxyTest(unittest.TestCase):
         self.assertEqual(
             UpstreamHandler.authorization_headers,
             ["Bearer token-a", "Bearer token-b", "Bearer token-a", "Bearer token-b"],
+        )
+
+    def test_shared_cooldown_keeps_following_request_off_the_limited_token(self) -> None:
+        UpstreamHandler.mode = "token_a_once_rate_limited"
+        proxy_port = self.proxy.server_address[1]
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
+            data=b"{}",
+        )
+
+        with urllib.request.urlopen(request) as response:
+            self.assertEqual(response.read(), b'{"ok":true}')
+        with urllib.request.urlopen(request) as response:
+            self.assertEqual(response.read(), b'{"ok":true}')
+
+        self.assertEqual(
+            UpstreamHandler.authorization_headers,
+            ["Bearer token-a", "Bearer token-b", "Bearer token-b"],
         )
 
     def test_retries_timeout_once_with_low_reasoning(self) -> None:
@@ -251,6 +289,54 @@ class SakuraRetryProxyTest(unittest.TestCase):
 
         self.assertEqual(error.exception.code, 429)
         self.assertEqual(UpstreamHandler.attempts, 1)
+
+    def test_shared_cooldown_waits_until_a_token_is_available(self) -> None:
+        state = SharedTokenCooldown(("token-a", "token-b"))
+        state.schedule(0, 0.05)
+        state.schedule(1, 0.05)
+
+        start = time.monotonic()
+        lease, waited = state.acquire(start + 1, lambda: False)
+        elapsed = time.monotonic() - start
+
+        self.assertIsNotNone(lease)
+        self.assertGreaterEqual(waited, 0.03)
+        self.assertGreaterEqual(elapsed, 0.03)
+
+    def test_aggregate_logs_use_token_slots_without_leaking_secrets(self) -> None:
+        UpstreamHandler.mode = "token_a_once_rate_limited"
+        proxy_port = self.proxy.server_address[1]
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
+            data=b"{}",
+        )
+
+        with self.assertLogs("sakura-retry-proxy", level="INFO") as captured, urllib.request.urlopen(
+            request
+        ) as response:
+            self.assertEqual(response.read(), b'{"ok":true}')
+
+        aggregate_logs = [line for line in captured.output if "correlation=" in line]
+        self.assertGreaterEqual(len(aggregate_logs), 2)
+        self.assertTrue(
+            any(
+                all(
+                    field in line
+                    for field in (
+                        "token_slot=",
+                        "attempt=",
+                        "reason=",
+                        "scheduled=",
+                        "shared_wait=",
+                        "status=",
+                    )
+                )
+                for line in aggregate_logs
+            )
+        )
+        self.assertFalse(
+            any("token-a" in line or "token-b" in line for line in captured.output)
+        )
 
     def test_settings_parse_comma_separated_account_tokens(self) -> None:
         with patch.dict(
