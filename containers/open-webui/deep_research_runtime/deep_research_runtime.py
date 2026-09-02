@@ -89,6 +89,7 @@ MODEL_TRANSIENT_RECOVERIES = 1
 MODEL_RETRY_BASE_SECONDS = 2.0
 MODEL_RETRY_MAX_SECONDS = 120.0
 STRUCTURED_OUTPUT_ATTEMPTS = 3
+STRUCTURED_OUTPUT_TURNS = 2
 REPAIR_NOOP_LIMITS = {
     "citation_repair": 1,
     "deliverable_repair": 1,
@@ -3594,7 +3595,7 @@ async def run_research(
                 result = await invoke_agent(
                     agent,
                     prompt,
-                    turns=1,
+                    turns=STRUCTURED_OUTPUT_TURNS,
                     structured_output_model=output_model,
                     total_timeout=structured_role_timeout_seconds(runtime.settings, remaining),
                 )

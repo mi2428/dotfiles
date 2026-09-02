@@ -219,6 +219,9 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "fresh-key",
                 )
             self.assertEqual(search_calls, ["direct evidence", "vendor comparison independent"])
+            self.assertTrue(
+                all(item["turns"] == rt.STRUCTURED_OUTPUT_TURNS for item in structured.limits)
+            )
             self.assertIn("Comparison across two hosts", response.answer_markdown)
 
         asyncio.run(run())
