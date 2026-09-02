@@ -321,7 +321,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
             self.assertEqual(response.answer_markdown.count("## Comparison"), 1)
             self.assertNotIn("## Model ignored", response.answer_markdown)
-            self.assertIn("Evidence [S1]", response.answer_markdown)
+            self.assertIn("Evidence [1]", response.answer_markdown)
             self.assertEqual(
                 structured.models,
                 [rt.ReportSectionDraft, rt.ReportSubmissionDraft],

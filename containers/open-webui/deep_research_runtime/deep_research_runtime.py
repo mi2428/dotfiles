@@ -1000,11 +1000,22 @@ def numeric_source_id(value: str) -> int:
     return int(value[1:])
 
 
+def format_public_citations(text: str, *, bare: bool = False) -> str:
+    """Remove internal source prefixes from user-facing citation labels."""
+
+    formatted = re.sub(r"\[S(\d+)\]", r"[\1]", text)
+    if bare:
+        formatted = re.sub(r"(?<![A-Za-z0-9_[])S(\d+)(?![A-Za-z0-9_])", r"[\1]", formatted)
+        formatted = re.sub(r"\]\s*[,、]\s*\[", "][", formatted)
+    return formatted
+
+
 def append_sources_section(answer_markdown: str, sources: list[SourceModel]) -> str:
     if re.search(r"^##\s+Sources", answer_markdown, flags=re.IGNORECASE | re.MULTILINE):
         raise ValueError("answer_markdown must not include a Sources section")
     lines = [
-        f"[{source.id}] {re.sub(r'\s+', ' ', source.title or source.url).strip()} — <{source.url}>"
+        f"[{numeric_source_id(source.id)}] "
+        f"{re.sub(r'\s+', ' ', source.title or source.url).strip()} — <{source.url}>"
         for source in sources
     ]
     return answer_markdown.rstrip() + "\n\n## Sources\n" + "\n".join(lines)
@@ -1276,7 +1287,12 @@ def validate_submit_report(
         source_from_evidence(evidence_by_id[source_name])
         for source_name in sorted(cited_ids, key=numeric_source_id)
     ]
-    answer_with_limitations = append_limitations_section(answer, validated_limitations)
+    public_limitations = [
+        format_public_citations(limitation, bare=True) for limitation in validated_limitations
+    ]
+    answer_with_limitations = append_limitations_section(
+        format_public_citations(answer), public_limitations
+    )
     full_answer = append_sources_section(answer_with_limitations, sources)
     if len(full_answer) > MAX_ANSWER_CHARS:
         raise ValueError("answer_markdown with sources too long")
@@ -1288,7 +1304,7 @@ def validate_submit_report(
             for item in validated_findings
         ],
         sources=sources,
-        limitations=validated_limitations,
+        limitations=public_limitations,
         stats=state.stats,
     )
 

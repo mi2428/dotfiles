@@ -79,9 +79,14 @@ class RuntimeContractTests(RuntimeTestCase):
             relevance=1,
             source_quality=0.8,
         )
-        answer = rt.append_limitations_section("Answer [S1]", ["Known constraint"])
+        answer = rt.append_limitations_section(
+            rt.format_public_citations("Answer [S1]"),
+            [rt.format_public_citations("S6、S15、S16は制約", bare=True)],
+        )
         answer = rt.append_sources_section(answer, [source])
-        self.assertIn("[S1] Line 1 Line 2 — <https://example.com/a_(b)>", answer)
+        self.assertIn("Answer [1]", answer)
+        self.assertIn("- [6][15][16]は制約", answer)
+        self.assertIn("[1] Line 1 Line 2 — <https://example.com/a_(b)>", answer)
         self.assertLess(answer.index("## Limitations"), answer.index("## Sources"))
         self.assertEqual(rt.source_quality("https://www.mhlw.go.jp/example"), 0.9)
         self.assertEqual(rt.source_quality("https://docs.example.com/reference"), 0.8)
