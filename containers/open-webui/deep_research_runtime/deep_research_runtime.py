@@ -547,6 +547,11 @@ def model_retry_delay(error: BaseException, attempt: int) -> float | None:
             message = str(detail.get("message") or current).strip().rstrip(".").casefold()
             if code == "timeout" or message in {"request timed out", "upstream timeout"}:
                 return 0.0
+            if code == "internal_server_error" or message == "internal server error":
+                return min(
+                    MODEL_RETRY_MAX_SECONDS,
+                    MODEL_RETRY_BASE_SECONDS * (2**attempt),
+                )
         for nested in (
             getattr(current, "original_exception", None),
             current.__cause__,
@@ -3944,6 +3949,15 @@ async def run_research(
                         raise ExpectedResearchFailure("evidence_exhausted")
                     try:
                         added = await run_deep_query_batch()
+                    except ExpectedResearchFailure as exc:
+                        if exc.reason != "provider_failure":
+                            raise
+                        if usable_evidence_count(state) > 0:
+                            state.stats["research_salvages"] += 1
+                            set_collection_decision(state, "voluntary_stop")
+                            await save("running")
+                            break
+                        raise
                     except (EventLoopException, APIError, TimeoutError) as exc:
                         if not is_expected_provider_failure(exc):
                             raise

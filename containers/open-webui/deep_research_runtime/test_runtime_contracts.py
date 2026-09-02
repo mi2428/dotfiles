@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 
 import aiohttp
 import httpx
-from openai import APIStatusError
+from openai import APIError, APIStatusError
 from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands.tools.executors import SequentialToolExecutor
 
@@ -228,6 +228,9 @@ class RuntimeContractTests(RuntimeTestCase):
         )
         self.assertEqual(rt.model_retry_delay(wrapped, 0), 2)
         self.assertTrue(rt.is_expected_provider_failure(wrapped))
+        stream_error = APIError("Internal server error.", request=request, body=None)
+        self.assertEqual(rt.model_retry_delay(stream_error, 0), 2)
+        self.assertTrue(rt.is_expected_provider_failure(stream_error))
 
     def test_validated_requirements_plan_maps_every_explicit_fragment(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")

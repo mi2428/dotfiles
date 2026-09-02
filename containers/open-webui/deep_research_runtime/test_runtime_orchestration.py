@@ -8,6 +8,9 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
+import httpx
+from openai import APIError
+
 from test_support import (
     FakeRequest,
     RuntimeTestCase,
@@ -285,6 +288,53 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     rt.run_state_snapshot(state),
                 )
             self.assertEqual(calls, ["dup", "ok", "idle-2"])
+            self.assertTrue(response.stats["evidence_shortfall_salvage"])
+
+        asyncio.run(run())
+
+    def test_repeated_stream_provider_error_salvages_collected_evidence(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
+        state = make_state(1)
+        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        rt.store_initial_plan(state, research, plan_for(research))
+        request = httpx.Request("POST", "http://llm.local/v1/chat/completions")
+        structured = StructuredAgent(
+            [
+                APIError("Internal server error.", request=request, body=None),
+                APIError("Internal server error.", request=request, body=None),
+                rt.ReportSectionDraft(
+                    heading="Direct evidence",
+                    requirement_ids=["R1"],
+                    body_markdown="Supported evidence [S1]",
+                    summary="direct",
+                ),
+                rt.ReportSectionDraft(
+                    heading="Comparison",
+                    requirement_ids=["R2"],
+                    body_markdown="Coverage gap remains",
+                    summary="gap",
+                ),
+                rt.ReportSubmissionDraft(
+                    findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1"])],
+                    limitations=["Known constraint"],
+                ),
+            ]
+        )
+
+        async def run() -> None:
+            with (
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+                patch.object(rt, "MODEL_RETRY_BASE_SECONDS", 0.0),
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    "provider-salvage-key",
+                    rt.run_state_snapshot(state),
+                )
+            self.assertEqual(response.stats["research_salvages"], 1)
             self.assertTrue(response.stats["evidence_shortfall_salvage"])
 
         asyncio.run(run())
