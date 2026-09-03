@@ -55,7 +55,6 @@ MAX_FOCUS_CHARS = 500
 MAX_LANGUAGE_CHARS = 16
 MAX_LIMITATION_CHARS = 500
 MAX_BLOCK_SOURCE_IDS = 6
-MAX_SOURCES = 60
 MAX_REPORT_SECTIONS = 16
 MAX_REPORT_SECTION_CHARS = 10_000
 # Leave another full report envelope for headings, sources, and limitations.
@@ -69,8 +68,6 @@ MAX_SECTION_REQUIREMENTS = MAX_PAYLOAD_EVIDENCE_EXCERPTS // 2
 MAX_PAYLOAD_SEARCHED_QUERIES = 12
 DEEP_PLAN_TARGET_SECTIONS = 10
 DEEP_PLAN_MAX_SECTIONS = 16
-DEEP_PLAN_MIN_SECTION_CHARS = 400
-DEEP_PLAN_MAX_SECTION_CHARS = 8_000
 SEARCH_TIMEOUT = 20
 DOC_TIMEOUT = 45
 BODY_BYTE_LIMIT = 1_000_000
@@ -302,22 +299,6 @@ class SectionContentDraft(StrictModel):
     tables: list[ReportTable] = Field(default_factory=list, max_length=8)
 
 
-class ReportPlanSection(StrictModel):
-    """One planned H2 section with explicit evidence and deliverable assignments."""
-
-    heading: str = Field(min_length=1, max_length=200)
-    target_chars: int = Field(
-        ge=DEEP_PLAN_MIN_SECTION_CHARS,
-        le=DEEP_PLAN_MAX_SECTION_CHARS,
-    )
-    requirement_ids: list[RequirementId] = Field(
-        default_factory=list,
-        max_length=MAX_SECTION_REQUIREMENTS,
-    )
-    source_ids: list[SourceId] = Field(default_factory=list, max_length=MAX_SOURCES)
-    deliverables: list[str] = Field(min_length=1, max_length=8)
-
-
 class RequestFragmentModel(StrictModel):
     id: FragmentId
     text: str = Field(min_length=1, max_length=MAX_REQUEST_FRAGMENT_CHARS)
@@ -330,41 +311,26 @@ class RequirementModel(StrictModel):
     fragment_ids: list[FragmentId] = Field(min_length=1, max_length=8)
 
 
-class InitialPlanSection(StrictModel):
+class PlanSection(StrictModel):
     heading: str = Field(min_length=1, max_length=200)
-    target_chars: int = Field(
-        ge=DEEP_PLAN_MIN_SECTION_CHARS,
-        le=DEEP_PLAN_MAX_SECTION_CHARS,
-    )
     requirement_ids: list[RequirementId] = Field(
         min_length=1,
         max_length=MAX_SECTION_REQUIREMENTS,
     )
-    deliverables: list[str] = Field(min_length=1, max_length=8)
 
 
-class QuerySeedModel(StrictModel):
-    query: str = Field(min_length=1, max_length=MAX_QUERY_CHARS)
-    purpose: str = Field(min_length=1, max_length=MAX_FOCUS_CHARS)
-    requirement_ids: list[RequirementId] = Field(min_length=1, max_length=4)
-
-
-class InitialPlanDraft(StrictModel):
+class PlanDraft(StrictModel):
     requirements: list[RequirementModel] = Field(min_length=1, max_length=16)
-    sections: list[InitialPlanSection] = Field(
+    sections: list[PlanSection] = Field(
         min_length=1,
         max_length=DEEP_PLAN_MAX_SECTIONS,
-    )
-    query_seeds: list[QuerySeedModel] = Field(
-        default_factory=list,
-        max_length=DEEP_QUERY_BATCH_SIZE,
     )
 
 
 class SearchBatchEntry(StrictModel):
     query: str = Field(min_length=1, max_length=MAX_QUERY_CHARS)
     purpose: str = Field(min_length=1, max_length=MAX_FOCUS_CHARS)
-    requirement_ids: list[RequirementId] = Field(min_length=1, max_length=4)
+    requirement_id: RequirementId
 
 
 class SearchBatchDraft(StrictModel):
@@ -505,7 +471,7 @@ class Candidate:
     engine: str
     search_query: str
     purpose: str
-    requirement_ids: list[str]
+    requirement_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -539,9 +505,8 @@ class RunState:
     stats: dict[str, Any]
     request_fragments: list[RequestFragmentModel] = field(default_factory=list)
     requirements: list[RequirementModel] = field(default_factory=list)
-    report_plan: list[ReportPlanSection] = field(default_factory=list)
+    report_plan: list[PlanSection] = field(default_factory=list)
     report_sections: list[ReportSection] = field(default_factory=list)
-    query_seed_queue: list[QuerySeedModel] = field(default_factory=list)
     candidate_queue: list[Candidate] = field(default_factory=list)
     failed_candidates: list[FailedCandidate] = field(default_factory=list)
     phase: RunPhase = "research"
@@ -859,10 +824,6 @@ def safe_exception_name(error: BaseException) -> str:
     return name if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,79}", name) else "Exception"
 
 
-def safe_operation_reason(value: str, fallback: str = "internal_error") -> str:
-    return value if value in SAFE_OPERATION_REASONS else fallback
-
-
 def safe_operation_error_details(error: BaseException) -> SafeOperationErrorDetails:
     """Classify runtime and network failures without retaining exception text."""
 
@@ -946,7 +907,6 @@ def safe_operation_error_details(error: BaseException) -> SafeOperationErrorDeta
             "pdf extraction failed": "extraction_failed",
             "document has no text": "unusable_document",
             "could not select source excerpt": "unusable_document",
-            "query entry must target exactly one requirement": "invalid_query_entry",
             "query entry must target an uncovered requirement": "invalid_query_entry",
         }
         reason = exact_reasons.get(message)
@@ -1582,7 +1542,6 @@ def default_stats(depth: str, budget: Budget, wall_limit: float) -> dict[str, An
         "stop_reason": "",
         "evidence_revision": 0,
         "report_plan_sections": 0,
-        "report_plan_target_chars": 0,
         "report_sections": 0,
         "report_chars": 0,
         "model_transient_recoveries": 0,
@@ -1598,7 +1557,6 @@ def default_stats(depth: str, budget: Budget, wall_limit: float) -> dict[str, An
         "plan_calls": 0,
         "query_batch_calls": 0,
         "section_calls": 0,
-        "requirements_calls": 0,
         "section_validation_failures": {},
         "section_validation_latest_reason": "",
         "agent_stop_reason": "",
@@ -1613,12 +1571,11 @@ def run_state_snapshot(state: RunState) -> dict[str, Any]:
         "searched_queries": sorted(state.searched_queries),
         "evidence_revision": state.evidence_revision,
         "last_inspected_revision": state.last_inspected_revision,
-        "stats": state.stats,
+        "stats": state.stats | {"report_plan_sections": len(state.report_plan)},
         "request_fragments": [item.model_dump() for item in state.request_fragments],
         "requirements": [item.model_dump() for item in state.requirements],
         "report_plan": [item.model_dump() for item in state.report_plan],
         "report_sections": [asdict(item) for item in state.report_sections],
-        "query_seed_queue": [item.model_dump() for item in state.query_seed_queue],
         "candidate_queue": [asdict(item) for item in state.candidate_queue],
         "failed_candidates": [asdict(item) for item in state.failed_candidates],
         "phase": state.phase,
@@ -1643,12 +1600,134 @@ def load_run_state(
         )
     if snapshot.get("checkpoint_version") != CHECKPOINT_VERSION:
         raise IntegrityError("unsupported checkpoint version")
-    evidence = [
-        Evidence(**item) for item in cast(list[dict[str, Any]], snapshot["evidence_ledger"])
-    ]
-    raw_stats = cast(dict[str, Any], snapshot["stats"])
+    if set(snapshot) != {
+        "checkpoint_version",
+        "evidence_ledger",
+        "searched_queries",
+        "evidence_revision",
+        "last_inspected_revision",
+        "stats",
+        "request_fragments",
+        "requirements",
+        "report_plan",
+        "report_sections",
+        "candidate_queue",
+        "failed_candidates",
+        "phase",
+        "collection_decision",
+    }:
+        raise IntegrityError("checkpoint fields do not match version 2")
     fresh_stats = default_stats(depth, budget, wall_limit)
-    stats = fresh_stats | {key: value for key, value in raw_stats.items() if key in fresh_stats}
+    try:
+        evidence = [Evidence(**item) for item in snapshot["evidence_ledger"]]
+        request_fragments = [
+            RequestFragmentModel.model_validate(item) for item in snapshot["request_fragments"]
+        ]
+        requirements = [RequirementModel.model_validate(item) for item in snapshot["requirements"]]
+        report_plan = [PlanSection.model_validate(item) for item in snapshot["report_plan"]]
+        report_sections = [ReportSection(**item) for item in snapshot["report_sections"]]
+        candidate_queue = [Candidate(**item) for item in snapshot["candidate_queue"]]
+        failed_candidates = [FailedCandidate(**item) for item in snapshot["failed_candidates"]]
+        searched_queries = snapshot["searched_queries"]
+        evidence_revision = snapshot["evidence_revision"]
+        last_inspected_revision = snapshot["last_inspected_revision"]
+        raw_stats = snapshot["stats"]
+        phase = snapshot["phase"]
+        collection_decision = snapshot["collection_decision"]
+        if (
+            not isinstance(searched_queries, list)
+            or any(not isinstance(item, str) for item in searched_queries)
+            or any(bounded_query(item) != item for item in searched_queries)
+            or searched_queries != sorted(set(searched_queries))
+            or not isinstance(evidence_revision, int)
+            or isinstance(evidence_revision, bool)
+            or not (
+                last_inspected_revision is None
+                or (
+                    isinstance(last_inspected_revision, int)
+                    and not isinstance(last_inspected_revision, bool)
+                )
+            )
+            or not isinstance(raw_stats, dict)
+            or not isinstance(phase, str)
+            or not (collection_decision is None or isinstance(collection_decision, str))
+            or any(
+                not all(
+                    isinstance(value, str)
+                    for value in (
+                        item.id,
+                        item.url,
+                        item.title,
+                        item.publisher,
+                        item.published_at,
+                        item.excerpt,
+                        item.hash,
+                        item.search_query,
+                        item.purpose,
+                    )
+                )
+                or any(
+                    isinstance(value, bool) or not isinstance(value, (int, float))
+                    for value in (item.relevance, item.source_quality)
+                )
+                or not isinstance(item.requirement_ids, list)
+                or any(not isinstance(value, str) for value in item.requirement_ids)
+                for item in evidence
+            )
+            or any(
+                not all(isinstance(value, str) for value in asdict(item).values())
+                for item in candidate_queue
+            )
+            or any(
+                not isinstance(item.ledger_revision, int)
+                or isinstance(item.ledger_revision, bool)
+                or not all(
+                    isinstance(value, str)
+                    for value in (item.heading, item.body, item.summary, item.mode)
+                )
+                or not isinstance(item.requirement_ids, list)
+                or not isinstance(item.source_ids, list)
+                or any(
+                    not isinstance(value, str)
+                    for value in (*item.requirement_ids, *item.source_ids)
+                )
+                for item in report_sections
+            )
+            or any(
+                not all(isinstance(value, str) for value in asdict(item).values())
+                or item.reason not in SAFE_OPERATION_REASONS
+                or item.stage not in {"search", "fetch"}
+                for item in failed_candidates
+            )
+        ):
+            raise TypeError("invalid checkpoint field type")
+        if set(raw_stats) != set(fresh_stats):
+            raise TypeError("invalid checkpoint stats fields")
+        for key, default in fresh_stats.items():
+            value = raw_stats[key]
+            if type(value) is not type(default) or (type(default) is int and value < 0):
+                raise TypeError("invalid checkpoint stats value")
+        for key in (
+            "operation_failure_reasons",
+            "model_transient_failures",
+            "section_validation_failures",
+        ):
+            if any(
+                type(name) is not str or type(count) is not int or count < 0
+                for name, count in raw_stats[key].items()
+            ):
+                raise TypeError("invalid checkpoint stats counter")
+        for key, limit in (
+            ("operation_failure_events", OPERATION_FAILURE_EVENT_LIMIT),
+            ("model_transient_events", MODEL_FAILURE_EVENT_LIMIT),
+        ):
+            if len(raw_stats[key]) > limit or any(
+                type(event) is not dict for event in raw_stats[key]
+            ):
+                raise TypeError("invalid checkpoint stats events")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise IntegrityError("checkpoint nested state is invalid") from exc
+    stats = dict(raw_stats)
     for key in (
         "depth",
         "wall_limit_s",
@@ -1664,68 +1743,32 @@ def load_run_state(
     ):
         stats[key] = fresh_stats[key]
     stats["evidence"] = len(evidence)
+    stats["documents"] = len(evidence)
+    stats["searches"] = len(searched_queries)
     stats["usable_evidence"] = sum(item.relevance > 0 for item in evidence)
-    stats["evidence_revision"] = int(snapshot["evidence_revision"])
-    request_fragments = [
-        RequestFragmentModel.model_validate(item)
-        for item in cast(list[dict[str, Any]], snapshot.get("request_fragments", []))
-    ]
-    requirements = [
-        RequirementModel.model_validate(item)
-        for item in cast(list[dict[str, Any]], snapshot.get("requirements", []))
-    ]
-    report_plan = [
-        ReportPlanSection.model_validate(item)
-        for item in cast(list[dict[str, Any]], snapshot["report_plan"])
-    ]
-    try:
-        report_sections = [
-            ReportSection(**item)
-            for item in cast(list[dict[str, Any]], snapshot["report_sections"])
-        ]
-    except (TypeError, ValueError) as exc:
-        raise IntegrityError("checkpointed report section is invalid") from exc
-    query_seed_queue = [
-        QuerySeedModel.model_validate(item)
-        for item in cast(list[dict[str, Any]], snapshot.get("query_seed_queue", []))
-    ]
-    candidate_queue = [
-        Candidate(**item)
-        for item in cast(list[dict[str, Any]], snapshot.get("candidate_queue", []))
-    ]
-    failed_candidates = [
-        FailedCandidate(
-            url=str(item["url"]),
-            reason=safe_operation_reason(str(item.get("reason", "")), "fetch_error"),
-            stage="search" if item.get("stage") == "search" else "fetch",
-        )
-        for item in cast(list[dict[str, Any]], snapshot.get("failed_candidates", []))
-    ]
+    stats["evidence_revision"] = evidence_revision
     stats["report_sections"] = len(report_sections)
     stats["report_chars"] = len(assemble_report_sections(report_sections))
     stats["report_plan_sections"] = len(report_plan)
-    stats["report_plan_target_chars"] = sum(item.target_chars for item in report_plan)
-    collection_decision = cast(CollectionDecision | None, snapshot["collection_decision"])
     state = RunState(
         evidence=evidence,
-        searched_queries=set(cast(list[str], snapshot["searched_queries"])),
-        evidence_revision=int(snapshot["evidence_revision"]),
-        last_inspected_revision=(
-            cast(int | None, snapshot["last_inspected_revision"])
-            if snapshot.get("last_inspected_revision") is not None
-            else None
-        ),
+        searched_queries=set(searched_queries),
+        evidence_revision=evidence_revision,
+        last_inspected_revision=last_inspected_revision,
         stats=stats,
         request_fragments=request_fragments,
         requirements=requirements,
         report_plan=report_plan,
         report_sections=report_sections,
-        query_seed_queue=query_seed_queue,
         candidate_queue=candidate_queue,
         failed_candidates=failed_candidates,
-        phase=cast(RunPhase, str(snapshot["phase"])),
-        collection_decision=collection_decision,
+        phase=cast(RunPhase, phase),
+        collection_decision=cast(CollectionDecision | None, collection_decision),
     )
+    try:
+        state.stats["requirement_coverage"] = requirement_coverage_snapshot(state)
+    except ValueError as exc:
+        raise IntegrityError("checkpoint nested state is invalid") from exc
     if report_plan:
         try:
             normalized_plan = validated_report_plan(state, depth, report_plan)
@@ -1759,14 +1802,11 @@ def refresh_evidence_relevance(state: RunState, research: ResearchRequest) -> bo
     state.evidence = refreshed
     state.evidence_revision += 1
     state.last_inspected_revision = None
-    state.report_plan.clear()
     state.report_sections.clear()
     state.phase = "research"
     state.collection_decision = None
     state.stats["evidence_revision"] = state.evidence_revision
     state.stats["usable_evidence"] = usable_evidence_count(state)
-    state.stats["report_plan_sections"] = 0
-    state.stats["report_plan_target_chars"] = 0
     state.stats["report_sections"] = 0
     state.stats["report_chars"] = 0
     return True
@@ -1918,46 +1958,31 @@ def report_markdown_structure_error(body: str) -> str | None:
 def validated_report_plan(
     state: RunState,
     depth: str,
-    sections: list[ReportPlanSection],
-) -> list[ReportPlanSection]:
+    sections: list[PlanSection],
+) -> list[PlanSection]:
     """Apply the same semantic plan contract to generation and resume."""
 
     if depth != "deep":
         raise ValueError("report planning is only used for deep research")
     headings: set[str] = set()
-    usable_ids = {item.id for item in state.evidence if item.relevance > 0}
     known_requirements = {item.id for item in state.requirements}
-    normalized: list[ReportPlanSection] = []
+    normalized: list[PlanSection] = []
     for item in sections:
         heading = validated_report_heading(item.heading)
         folded = heading.casefold()
         if folded in headings:
             raise ValueError("report plan headings must be unique")
         headings.add(folded)
-        if not DEEP_PLAN_MIN_SECTION_CHARS <= item.target_chars <= DEEP_PLAN_MAX_SECTION_CHARS:
-            raise ValueError("report plan section target is out of range")
         requirement_ids = list(dict.fromkeys(item.requirement_ids))
         if unknown_requirements := set(requirement_ids) - known_requirements:
             raise IntegrityError(
                 f"report plan contains unknown requirement IDs: {sorted(unknown_requirements)}"
             )
-        source_ids = list(dict.fromkeys(item.source_ids))
-        if unknown := set(source_ids) - usable_ids:
-            raise IntegrityError(
-                f"report plan contains unknown or unusable source IDs: {sorted(unknown)}"
-            )
-        deliverables = [deliverable.strip() for deliverable in item.deliverables]
-        if any(
-            not deliverable or len(deliverable) > MAX_FOCUS_CHARS for deliverable in deliverables
-        ):
-            raise ValueError("report plan deliverables must contain 1 to 500 characters")
         normalized.append(
             item.model_copy(
                 update={
                     "heading": heading,
                     "requirement_ids": requirement_ids,
-                    "source_ids": source_ids,
-                    "deliverables": deliverables,
                 }
             )
         )
@@ -1971,12 +1996,11 @@ def validated_report_plan(
 
 def validated_initial_plan(
     research: ResearchRequest,
-    draft: InitialPlanDraft,
+    draft: PlanDraft,
 ) -> tuple[
     list[RequestFragmentModel],
     list[RequirementModel],
-    list[ReportPlanSection],
-    list[QuerySeedModel],
+    list[PlanSection],
 ]:
     fragments = explicit_request_fragments(research)
     expected_fragment_ids = {item.id for item in fragments}
@@ -2000,7 +2024,7 @@ def validated_initial_plan(
         )
     requirement_id_set = set(requirement_ids)
     headings: set[str] = set()
-    sections: list[ReportPlanSection] = []
+    sections: list[PlanSection] = []
     for item in draft.sections:
         heading = validated_report_heading(item.heading)
         folded = heading.casefold()
@@ -2010,18 +2034,10 @@ def validated_initial_plan(
         section_requirement_ids = list(dict.fromkeys(item.requirement_ids))
         if set(section_requirement_ids) - requirement_id_set:
             raise ModelOutputError("report plan contains unknown requirement IDs")
-        deliverables = [deliverable.strip() for deliverable in item.deliverables]
-        if any(
-            not deliverable or len(deliverable) > MAX_FOCUS_CHARS for deliverable in deliverables
-        ):
-            raise ValueError("report plan deliverables must contain 1 to 500 characters")
         sections.append(
-            ReportPlanSection(
+            PlanSection(
                 heading=heading,
-                target_chars=item.target_chars,
                 requirement_ids=section_requirement_ids,
-                source_ids=[],
-                deliverables=deliverables,
             )
         )
     covered_requirements = {
@@ -2029,23 +2045,7 @@ def validated_initial_plan(
     }
     if covered_requirements != requirement_id_set:
         raise ValueError("report plan must cover every requirement exactly once or more")
-    query_seeds = [QuerySeedModel.model_validate(item) for item in draft.query_seeds]
-    for item in query_seeds:
-        if set(item.requirement_ids) - requirement_id_set:
-            raise ModelOutputError("query seeds contain unknown requirement IDs")
-        if len(set(item.requirement_ids)) != 1:
-            raise ValueError("query entry must target exactly one requirement")
-    return fragments, normalized_requirements, sections, query_seeds
-
-
-def assigned_source_ids_for_requirements(
-    state: RunState, requirement_ids: Sequence[str]
-) -> list[str]:
-    evidence_groups = evidence_by_requirement(state)
-    assigned: list[str] = []
-    for requirement_id in requirement_ids:
-        assigned.extend(item.id for item in evidence_groups.get(requirement_id, []))
-    return sorted(dict.fromkeys(assigned), key=numeric_source_id)
+    return fragments, normalized_requirements, sections
 
 
 def section_evidence_ids(state: RunState, requirement_ids: Sequence[str]) -> list[str]:
@@ -2066,22 +2066,19 @@ def section_evidence_ids(state: RunState, requirement_ids: Sequence[str]) -> lis
             hosts.add(host)
             if len(hosts) >= required_independent_hosts(requirement.kind):
                 break
-    assigned = assigned_source_ids_for_requirements(state, requirement_ids)
+    evidence_groups = evidence_by_requirement(state)
+    assigned = sorted(
+        {
+            item.id
+            for requirement_id in requirement_ids
+            for item in evidence_groups.get(requirement_id, [])
+        },
+        key=numeric_source_id,
+    )
     for source_id in assigned:
         if source_id not in balanced and len(balanced) < MAX_PAYLOAD_EVIDENCE_EXCERPTS:
             balanced.append(source_id)
     return balanced[:MAX_PAYLOAD_EVIDENCE_EXCERPTS]
-
-
-def assign_report_plan_sources(state: RunState) -> None:
-    if not state.report_plan:
-        return
-    state.report_plan = [
-        item.model_copy(
-            update={"source_ids": assigned_source_ids_for_requirements(state, item.requirement_ids)}
-        )
-        for item in state.report_plan
-    ]
 
 
 def requirement_by_id(state: RunState) -> dict[str, RequirementModel]:
@@ -2234,11 +2231,6 @@ def validate_section_draft(contract: SectionContract, draft: SectionContentDraft
             raise ModelOutputError(f"insufficient independent hosts for {requirement_id}")
 
 
-def candidate_requirement_summaries(state: RunState, candidate: Candidate) -> list[str]:
-    requirements = requirement_by_id(state)
-    return [requirements[rid].summary for rid in candidate.requirement_ids if rid in requirements]
-
-
 def uncovered_requirement_ids(state: RunState) -> list[str]:
     return [item.id for item in state.requirements if not requirement_is_covered(state, item)]
 
@@ -2268,11 +2260,13 @@ def validate_checkpoint_state(state: RunState, research: ResearchRequest) -> Non
             raise IntegrityError("evidence URL is not public") from exc
         if normalized_url != item.url:
             raise IntegrityError("evidence URL is not normalized")
-    if state.last_inspected_revision is not None and (
-        state.last_inspected_revision > state.evidence_revision
+    if state.last_inspected_revision is not None and not (
+        0 <= state.last_inspected_revision <= state.evidence_revision
     ):
         raise IntegrityError("inspected evidence revision is invalid")
     budget = make_budget(research.depth)
+    if len(state.searched_queries) > budget.search_limit:
+        raise IntegrityError("searched queries exceed the search budget")
     if len(state.evidence) > budget.evidence:
         raise IntegrityError("evidence ledger exceeds the storage cap")
     decision = state.collection_decision
@@ -2300,31 +2294,50 @@ def validate_checkpoint_state(state: RunState, research: ResearchRequest) -> Non
         raise IntegrityError("sections phase requires an eligible collection decision")
     if decision is not None and state.phase not in {"sections", "incomplete"}:
         raise IntegrityError("collection decision conflicts with checkpoint phase")
-    fragment_ids = {item.id for item in state.request_fragments}
-    if state.requirements and not state.request_fragments:
-        raise IntegrityError("requirements require explicit fragments")
+    if research.depth != "deep":
+        if state.request_fragments or state.requirements or state.report_plan:
+            raise IntegrityError("non-deep checkpoint contains report planning state")
+    else:
+        expected_fragments = explicit_request_fragments(research)
+        if state.request_fragments and state.request_fragments != expected_fragments:
+            raise IntegrityError("checkpoint request fragments do not match the request")
+        if state.requirements or state.report_plan:
+            if not state.requirements or not state.report_plan:
+                raise IntegrityError("checkpoint requirements and report plan must coexist")
+            try:
+                fragments, requirements, sections = validated_initial_plan(
+                    research,
+                    PlanDraft(requirements=state.requirements, sections=state.report_plan),
+                )
+            except ValueError as exc:
+                raise IntegrityError("checkpointed initial plan is invalid") from exc
+            if (
+                fragments != state.request_fragments
+                or requirements != state.requirements
+                or sections != state.report_plan
+            ):
+                raise IntegrityError("checkpointed initial plan is not canonical")
     requirement_ids = {item.id for item in state.requirements}
-    if any(set(item.fragment_ids) - fragment_ids for item in state.requirements):
-        raise IntegrityError("requirement fragment mapping is invalid")
     usable_ids = {item.id for item in state.evidence if item.relevance > 0}
     for candidate in state.candidate_queue:
-        if set(candidate.requirement_ids) - requirement_ids:
+        if candidate.requirement_id not in requirement_ids:
             raise IntegrityError("candidate queue requirement IDs are invalid")
-    for item in state.query_seed_queue:
-        if set(item.requirement_ids) - requirement_ids:
-            raise IntegrityError("query seed queue requirement IDs are invalid")
+        try:
+            normalized_url = validate_public_url(candidate.url)
+        except ValueError as exc:
+            raise IntegrityError("candidate URL is not public") from exc
+        if normalized_url != candidate.url:
+            raise IntegrityError("candidate URL is not normalized")
+    for candidate in state.failed_candidates:
+        try:
+            normalized_url = validate_public_url(candidate.url)
+        except ValueError as exc:
+            raise IntegrityError("failed candidate URL is not public") from exc
+        if normalized_url != candidate.url:
+            raise IntegrityError("failed candidate URL is not normalized")
     for evidence in state.evidence:
         if set(evidence.requirement_ids) - requirement_ids:
             raise IntegrityError("evidence requirement IDs are invalid")
-    if state.report_plan:
-        try:
-            validated = validated_report_plan(state, research.depth, state.report_plan)
-        except IntegrityError:
-            raise
-        except ValueError as exc:
-            raise IntegrityError("checkpointed report plan is invalid") from exc
-        if validated != state.report_plan:
-            raise IntegrityError("checkpointed report plan is not normalized")
     section_headings = [item.heading.casefold() for item in state.report_sections]
     if len(section_headings) != len(set(section_headings)):
         raise IntegrityError("checkpointed report section headings are not unique")
@@ -2385,22 +2398,19 @@ def validate_checkpoint_state(state: RunState, research: ResearchRequest) -> Non
 def store_initial_plan(
     state: RunState,
     research: ResearchRequest,
-    draft: InitialPlanDraft,
+    draft: PlanDraft,
 ) -> None:
     """Validate and checkpoint the deep skeleton before evidence collection."""
 
     if research.depth != "deep":
         raise ValueError("report planning is only used for deep research")
-    fragments, requirements, normalized, query_seeds = validated_initial_plan(research, draft)
+    fragments, requirements, normalized = validated_initial_plan(research, draft)
     state.request_fragments = fragments
     state.requirements = requirements
     state.report_plan = normalized
-    assign_report_plan_sources(state)
-    state.query_seed_queue = list(query_seeds)
     state.report_sections.clear()
     state.phase = "research"
     state.stats["report_plan_sections"] = len(normalized)
-    state.stats["report_plan_target_chars"] = sum(item.target_chars for item in normalized)
     state.stats["report_sections"] = 0
     state.stats["report_chars"] = 0
     state.stats["requirement_coverage"] = requirement_coverage_snapshot(state)
@@ -2455,9 +2465,6 @@ def build_incomplete_markdown(
         "provider_failure": "モデル提供者の呼び出しを完了できませんでした。",
         "model_budget_exhausted": "モデル出力または試行の上限に達しました。",
         "structured_plan_invalid": "有効な構造化レポート計画を確定できませんでした。",
-        "structured_section_attempts": "有効な構造化レポート節を確定できませんでした。",
-        "normal_contract_unmet": "通常の完成品質契約を満たせませんでした。",
-        "report_not_submitted": "最終レポートを提出できませんでした。",
     }
     answer = assemble_report_sections(state.report_sections)
     cited_ids = citation_ids(answer)
@@ -2872,12 +2879,8 @@ def safe_plan_validation_error(error: BaseException | str) -> str:
         "heading is reserved for deterministic report assembly",
         "report plan headings must be unique",
         "report plan requirement IDs must be unique",
-        "report plan section target is out of range",
-        "report plan deliverables must contain 1 to 500 characters",
         "report plan must cover every requirement exactly once or more",
         "report plan contains unknown requirement IDs",
-        "query seeds contain unknown requirement IDs",
-        "query entry must target exactly one requirement",
         "report plan output did not match the required schema",
     }
     return message if message in allowed else "report plan failed semantic validation"
@@ -2916,7 +2919,6 @@ def record_section_validation_failure(state: RunState, error: BaseException) -> 
 
 def build_plan_prompt(
     research: ResearchRequest,
-    state: RunState,
     previous_validation_error: str = "",
 ) -> str:
     """Request the single structured requirements and section skeleton for deep research."""
@@ -2940,8 +2942,8 @@ def build_plan_prompt(
                     "optimize for coverage not padding."
                 ),
                 (
-                    "Assign every requirement to at least one section with concrete "
-                    "deliverables only. Do not assign source IDs; runtime does that later."
+                    "Assign every requirement to at least one section. "
+                    "Return only the runtime-owned requirement mapping."
                 ),
             ],
             "previous_validation_error": (
@@ -3026,7 +3028,7 @@ def build_query_batch_prompt(research: ResearchRequest, state: RunState) -> str:
     payload["task"] = "Generate a small search batch only for uncovered requirements."
     payload["requirements_instructions"] = [
         f"Return {DEEP_QUERY_BATCH_SIZE} or fewer focused search queries.",
-        "Each query must target exactly one uncovered requirement.",
+        "Set requirement_id to one uncovered requirement for each query.",
         "Do not ask to fetch URLs. The runtime owns the candidate queue and fetching.",
     ]
     return json.dumps(payload, ensure_ascii=False)
@@ -3035,12 +3037,9 @@ def build_query_batch_prompt(research: ResearchRequest, state: RunState) -> str:
 def enqueue_candidates(
     state: RunState,
     results: list[SearchResult],
-    requirement_ids: list[str],
+    requirement_id: str,
     purpose: str,
 ) -> int:
-    if len(requirement_ids) != 1:
-        raise ValueError("candidate enqueue requires exactly one requirement")
-    requirement_id = requirement_ids[0]
     if requirement_id not in set(uncovered_requirement_ids(state)):
         raise ValueError("candidate enqueue requires an uncovered requirement")
     known_urls = {item.url for item in state.evidence}
@@ -3050,7 +3049,7 @@ def enqueue_candidates(
     known_hosts.update(
         (urlparse(item.url).hostname or item.url)
         for item in state.candidate_queue
-        if requirement_id in item.requirement_ids
+        if requirement_id == item.requirement_id
     )
     added = 0
     for result in results:
@@ -3069,7 +3068,7 @@ def enqueue_candidates(
                 engine=result.engine,
                 search_query=result.search_query,
                 purpose=purpose,
-                requirement_ids=[requirement_id],
+                requirement_id=requirement_id,
             )
         )
         known_urls.add(result.url)
@@ -3141,39 +3140,24 @@ def next_candidate_batch(state: RunState, budget: Budget) -> list[Candidate]:
         if len(selected) >= max_batch:
             remaining.append(candidate)
             continue
-        active_requirements: list[str] = []
+        requirement_id = candidate.requirement_id
         host = urlparse(candidate.url).hostname or candidate.url
-        deferred = False
-        drop_candidate = False
-        for requirement_id in candidate.requirement_ids:
-            requirement = requirements.get(requirement_id)
-            if requirement is None:
-                drop_candidate = True
-                continue
-            if requirement_is_covered(state, requirement):
-                continue
-            missing_hosts = required_independent_hosts(requirement.kind) - len(
-                evidence_hosts_for_requirement(state, requirement_id)
-            )
-            if missing_hosts <= 0:
-                continue
-            if host in round_hosts.setdefault(requirement_id, set()):
-                drop_candidate = True
-                continue
-            if round_counts.get(requirement_id, 0) >= missing_hosts:
-                deferred = True
-                continue
-            active_requirements.append(requirement_id)
-        if not active_requirements:
-            if deferred and not drop_candidate:
-                remaining.append(candidate)
-            else:
-                state.stats["candidates_skipped"] += 1
+        requirement = requirements.get(requirement_id)
+        if requirement is None or requirement_is_covered(state, requirement):
+            state.stats["candidates_skipped"] += 1
             continue
-        selected.append(replace(candidate, requirement_ids=active_requirements))
-        for requirement_id in active_requirements:
-            round_hosts.setdefault(requirement_id, set()).add(host)
-            round_counts[requirement_id] = round_counts.get(requirement_id, 0) + 1
+        missing_hosts = required_independent_hosts(requirement.kind) - len(
+            evidence_hosts_for_requirement(state, requirement_id)
+        )
+        if missing_hosts <= 0 or host in round_hosts.setdefault(requirement_id, set()):
+            state.stats["candidates_skipped"] += 1
+            continue
+        if round_counts.get(requirement_id, 0) >= missing_hosts:
+            remaining.append(candidate)
+            continue
+        selected.append(candidate)
+        round_hosts[requirement_id].add(host)
+        round_counts[requirement_id] = round_counts.get(requirement_id, 0) + 1
     state.candidate_queue = remaining
     return selected
 
@@ -3182,7 +3166,6 @@ def apply_evidence_update(state: RunState, evidence: Evidence) -> None:
     state.evidence.append(replace(evidence, id=source_id(len(state.evidence))))
     state.evidence_revision += 1
     state.last_inspected_revision = None
-    assign_report_plan_sources(state)
     state.report_sections.clear()
     state.phase = "research"
     state.collection_decision = None
@@ -3220,19 +3203,13 @@ def structured_role_timeout_seconds(settings: Settings, remaining: float) -> flo
     return min(settings.kimi_timeout_seconds, FINALIZER_TIMEOUT_SECONDS, remaining)
 
 
-def validated_query_entry(
-    state: RunState, entry: QuerySeedModel | SearchBatchEntry
-) -> QuerySeedModel:
-    requirement_ids = list(dict.fromkeys(entry.requirement_ids))
-    if len(requirement_ids) != 1:
-        raise ValueError("query entry must target exactly one requirement")
-    requirement_id = requirement_ids[0]
-    if requirement_id not in set(uncovered_requirement_ids(state)):
+def validated_query_entry(state: RunState, entry: SearchBatchEntry) -> SearchBatchEntry:
+    if entry.requirement_id not in set(uncovered_requirement_ids(state)):
         raise ValueError("query entry must target an uncovered requirement")
-    return QuerySeedModel(
+    return SearchBatchEntry(
         query=bounded_query(entry.query),
         purpose=bounded_purpose(entry.purpose),
-        requirement_ids=[requirement_id],
+        requirement_id=entry.requirement_id,
     )
 
 
@@ -3570,7 +3547,6 @@ def build_research_tools(
             state.evidence.append(evidence)
             state.evidence_revision += 1
             state.last_inspected_revision = None
-            state.report_plan.clear()
             state.report_sections.clear()
             state.phase = "research"
             state.collection_decision = None
@@ -3578,8 +3554,6 @@ def build_research_tools(
             state.stats["evidence"] = len(state.evidence)
             state.stats["usable_evidence"] = usable_evidence_count(state)
             state.stats["evidence_revision"] = state.evidence_revision
-            state.stats["report_plan_sections"] = 0
-            state.stats["report_plan_target_chars"] = 0
             state.stats["report_sections"] = 0
             state.stats["report_chars"] = 0
             decision = evidence_limit_decision(state, budget)
@@ -3611,7 +3585,7 @@ def build_research_tools(
 
     @tool
     async def inspect_evidence_ledger() -> dict[str, Any]:
-        """Inspect the current evidence ledger before attempting a report submission."""
+        """Inspect the current evidence ledger before deterministic finalization."""
 
         try:
             state.last_inspected_revision = state.evidence_revision
@@ -4014,13 +3988,12 @@ async def run_research(
         validation_error = ""
         for _attempt in range(STRUCTURED_OUTPUT_ATTEMPTS):
             try:
-                state.stats["requirements_calls"] += 1
                 state.stats["plan_calls"] += 1
                 draft = cast(
-                    InitialPlanDraft,
+                    PlanDraft,
                     await invoke_structured(
-                        build_plan_prompt(research, state, validation_error),
-                        InitialPlanDraft,
+                        build_plan_prompt(research, validation_error),
+                        PlanDraft,
                         remaining=max(1.0, deadline - time.monotonic()),
                     ),
                 )
@@ -4046,21 +4019,17 @@ async def run_research(
         search_slots = remaining_budgets(state, budget)["searches"]
         if search_slots <= 0:
             return 0
-        if state.query_seed_queue:
-            raw_entries = state.query_seed_queue[: min(DEEP_QUERY_BATCH_SIZE, search_slots)]
-            state.query_seed_queue = state.query_seed_queue[len(raw_entries) :]
-        else:
-            draft = cast(
+        draft = cast(
+            SearchBatchDraft,
+            await invoke_structured(
+                build_query_batch_prompt(research, state),
                 SearchBatchDraft,
-                await invoke_structured(
-                    build_query_batch_prompt(research, state),
-                    SearchBatchDraft,
-                    remaining=max(1.0, deadline - time.monotonic()),
-                ),
-            )
-            state.stats["query_batch_calls"] += 1
-            raw_entries = draft.queries[:search_slots]
-        entries: list[QuerySeedModel] = []
+                remaining=max(1.0, deadline - time.monotonic()),
+            ),
+        )
+        state.stats["query_batch_calls"] += 1
+        raw_entries = draft.queries[:search_slots]
+        entries: list[SearchBatchEntry] = []
         batch_seen: set[str] = set()
         for raw_entry in raw_entries:
             try:
@@ -4124,7 +4093,7 @@ async def run_research(
                     replace(item, search_query=entry.query)
                     for item in cast(list[SearchResult], result)
                 ],
-                entry.requirement_ids,
+                entry.requirement_id,
                 entry.purpose,
             )
         await save("running")
@@ -4136,7 +4105,6 @@ async def run_research(
             raise fatal_errors[0]
         if not collection_allows_finalization(state):
             raise IntegrityError("report finalization requires a collection decision")
-        assign_report_plan_sources(state)
         state.last_inspected_revision = state.evidence_revision
         if research.depth == "deep" and not state.report_plan:
             raise IntegrityError("deep finalization requires an initialized report plan")
@@ -4238,7 +4206,9 @@ async def run_research(
                                             [
                                                 research.focus or "",
                                                 candidate.purpose,
-                                                *candidate_requirement_summaries(state, candidate),
+                                                requirement_by_id(state)[
+                                                    candidate.requirement_id
+                                                ].summary,
                                             ],
                                         )
                                     ),
@@ -4272,7 +4242,7 @@ async def run_research(
                                 raise result
                             evidence = replace(
                                 cast(Evidence, result),
-                                requirement_ids=list(dict.fromkeys(candidate.requirement_ids)),
+                                requirement_ids=[candidate.requirement_id],
                             )
                             if any(
                                 item.url == evidence.url or item.hash == evidence.hash

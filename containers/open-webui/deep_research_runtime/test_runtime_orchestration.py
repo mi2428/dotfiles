@@ -22,9 +22,7 @@ from test_support import (
 )
 
 
-def plan_for(
-    research: rt.ResearchRequest, source_ids: list[str] | None = None
-) -> rt.InitialPlanDraft:
+def plan_for(research: rt.ResearchRequest) -> rt.PlanDraft:
     fragments = rt.explicit_request_fragments(research)
     requirements = [
         rt.RequirementModel(
@@ -41,23 +39,18 @@ def plan_for(
         ),
     ]
     sections = [
-        rt.InitialPlanSection(
+        rt.PlanSection(
             heading="Direct evidence",
-            target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
             requirement_ids=["R1"],
-            deliverables=[requirements[0].summary],
         ),
-        rt.InitialPlanSection(
+        rt.PlanSection(
             heading="Comparison",
-            target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
             requirement_ids=["R2"],
-            deliverables=[requirements[1].summary],
         ),
     ]
-    return rt.InitialPlanDraft(
+    return rt.PlanDraft(
         requirements=requirements,
         sections=sections,
-        query_seeds=[],
     )
 
 
@@ -127,7 +120,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
     def test_fresh_empty_deep_state_runs_plan_query_candidate_fetch_and_coverage(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
         fragments = rt.explicit_request_fragments(research)
-        initial = rt.InitialPlanDraft(
+        initial = rt.PlanDraft(
             requirements=[
                 rt.RequirementModel(
                     id="R1",
@@ -143,28 +136,12 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 ),
             ],
             sections=[
-                rt.InitialPlanSection(
+                rt.PlanSection(
                     heading="Direct evidence",
-                    target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                     requirement_ids=["R1"],
-                    deliverables=["Need direct evidence"],
                 ),
-                rt.InitialPlanSection(
+                rt.PlanSection(
                     heading="Comparison",
-                    target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
-                    requirement_ids=["R2"],
-                    deliverables=["compare vendors"],
-                ),
-            ],
-            query_seeds=[
-                rt.QuerySeedModel(
-                    query="direct evidence",
-                    purpose="cover R1",
-                    requirement_ids=["R1"],
-                ),
-                rt.QuerySeedModel(
-                    query="vendor comparison independent",
-                    purpose="cover R2",
                     requirement_ids=["R2"],
                 ),
             ],
@@ -172,12 +149,25 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         structured = StructuredAgent(
             [
                 initial,
+                rt.SearchBatchDraft(
+                    queries=[
+                        rt.SearchBatchEntry(
+                            query="direct evidence", purpose="cover R1", requirement_id="R1"
+                        ),
+                        rt.SearchBatchEntry(
+                            query="vendor comparison independent",
+                            purpose="cover R2",
+                            requirement_id="R2",
+                        ),
+                    ]
+                ),
                 section(cited("Supported direct claim", "S1")),
                 comparison_section("Comparison across two hosts", "S2", "S3"),
             ]
         )
 
         search_calls: list[str] = []
+        extraction_focuses: list[str | None] = []
 
         async def fake_search(
             _settings: rt.Settings,
@@ -195,8 +185,9 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             ]
 
         async def fake_extract(
-            result: rt.SearchResult, _query: str, _focus: str | None
+            result: rt.SearchResult, _query: str, focus: str | None
         ) -> rt.Evidence:
+            extraction_focuses.append(focus)
             return rt.Evidence(
                 url=result.url,
                 title=result.title,
@@ -231,16 +222,33 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 all(item["turns"] == rt.STRUCTURED_OUTPUT_TURNS for item in structured.limits)
             )
             self.assertEqual(response.outcome, "completed")
-            self.assertEqual(structured.models[1], rt.SectionContentDraft)
+            self.assertEqual(
+                structured.models,
+                [rt.PlanDraft, rt.SearchBatchDraft, rt.SectionContentDraft, rt.SectionContentDraft],
+            )
+            self.assertEqual(
+                extraction_focuses,
+                [
+                    "cover R1; Need direct evidence",
+                    "cover R2; compare vendors",
+                    "cover R2; compare vendors",
+                ],
+            )
             self.assertIn("Comparison across two hosts", response.answer_markdown)
             row = self.runtime.db.execute(
                 "SELECT status, state_json FROM research_runs WHERE idempotency_key='fresh-key'"
             ).fetchone()
-            stats = json.loads(row["state_json"])["stats"]
+            completed_state = json.loads(row["state_json"])
+            stats = completed_state["stats"]
             self.assertEqual(row["status"], "completed")
             self.assertEqual((stats["searches"], stats["documents"], stats["evidence"]), (2, 3, 3))
+            self.assertEqual(stats["query_batch_calls"], 1)
             self.assertEqual(stats["model_transient_events"], [])
             self.assertEqual(stats["operation_failure_events"], [])
+            self.assertEqual(
+                [item["requirement_ids"] for item in completed_state["evidence_ledger"]],
+                [["R1"], ["R2"], ["R2"]],
+            )
 
         asyncio.run(run())
 
@@ -258,17 +266,15 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 APIError("Internal server error.", request=request, body=None),
                 rt.SearchBatchDraft(
                     queries=[
-                        rt.SearchBatchEntry(query="dup", purpose="r2", requirement_ids=["R2"]),
-                        rt.SearchBatchEntry(query="dup", purpose="r2 dup", requirement_ids=["R2"]),
-                        rt.SearchBatchEntry(query="ok", purpose="r2 ok", requirement_ids=["R2"]),
+                        rt.SearchBatchEntry(query="dup", purpose="r2", requirement_id="R2"),
+                        rt.SearchBatchEntry(query="dup", purpose="r2 dup", requirement_id="R2"),
+                        rt.SearchBatchEntry(query="ok", purpose="r2 ok", requirement_id="R2"),
                     ]
                 ),
                 APIError("Internal server error.", request=request, body=None),
                 rt.SearchBatchDraft(
                     queries=[
-                        rt.SearchBatchEntry(
-                            query="idle-2", purpose="r2 idle", requirement_ids=["R2"]
-                        )
+                        rt.SearchBatchEntry(query="idle-2", purpose="r2 idle", requirement_id="R2")
                     ]
                 ),
                 section(cited("Supported direct claim", "S1")),
@@ -478,19 +484,13 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             for index, item in enumerate(state.evidence, 1)
         ]
         state.report_plan = [
-            rt.ReportPlanSection(
+            rt.PlanSection(
                 heading="Partial gaps",
-                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                 requirement_ids=[f"R{index}" for index in range(1, 7)],
-                source_ids=[],
-                deliverables=["covered direct and five gaps"],
             ),
-            rt.ReportPlanSection(
+            rt.PlanSection(
                 heading="Next section",
-                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                 requirement_ids=["R7"],
-                source_ids=[],
-                deliverables=["next direct"],
             ),
         ]
         rt.set_collection_decision(state, "voluntary_stop")
@@ -543,26 +543,17 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             rt.RequirementModel(id="R3", summary="fact 3", kind="direct", fragment_ids=["F1"]),
         ]
         state.report_plan = [
-            rt.ReportPlanSection(
+            rt.PlanSection(
                 heading="Direct evidence",
-                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                 requirement_ids=["R1"],
-                source_ids=["S1"],
-                deliverables=["fact 1"],
             ),
-            rt.ReportPlanSection(
+            rt.PlanSection(
                 heading="Comparison",
-                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                 requirement_ids=["R2"],
-                source_ids=[],
-                deliverables=["fact 2"],
             ),
-            rt.ReportPlanSection(
+            rt.PlanSection(
                 heading="Third fact",
-                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                 requirement_ids=["R3"],
-                source_ids=["S3"],
-                deliverables=["fact 3"],
             ),
         ]
         rt.set_collection_decision(state, "voluntary_stop")
@@ -637,21 +628,12 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         asyncio.run(run())
 
     def test_deep_uses_candidate_queue_past_thirty_until_requirement_done(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
+        research = rt.ResearchRequest(
+            query="Need direct evidence", focus="compare vendors", depth="deep"
+        )
         state = make_state(30)
-        state.request_fragments = rt.explicit_request_fragments(research)
         initial = plan_for(research)
-        state.requirements = initial.requirements
-        state.report_plan = [
-            rt.ReportPlanSection(
-                heading=item.heading,
-                target_chars=item.target_chars,
-                requirement_ids=item.requirement_ids,
-                source_ids=[],
-                deliverables=item.deliverables,
-            )
-            for item in initial.sections
-        ]
+        rt.store_initial_plan(state, research, initial)
         state.evidence = [
             replace(
                 item,
@@ -672,7 +654,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                         rt.SearchBatchEntry(
                             query="independent vendor comparison",
                             purpose="cover R2",
-                            requirement_ids=["R2"],
+                            requirement_id="R2",
                         )
                     ]
                 ),
@@ -735,21 +717,18 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
     def test_failed_candidate_is_not_refetched_after_resume(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
         state = make_state(1)
-        draft = rt.InitialPlanDraft(
+        draft = rt.PlanDraft(
             requirements=[
                 rt.RequirementModel(
                     id="R1", summary="Need direct evidence", kind="comparison", fragment_ids=["F1"]
                 )
             ],
             sections=[
-                rt.InitialPlanSection(
+                rt.PlanSection(
                     heading="Direct evidence",
-                    target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                     requirement_ids=["R1"],
-                    deliverables=["Need direct evidence"],
                 )
             ],
-            query_seeds=[],
         )
         state.last_inspected_revision = state.evidence_revision
         state.evidence[0] = replace(
@@ -773,7 +752,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 engine="engine",
                 search_query="good query",
                 purpose="cover R1",
-                requirement_ids=["R1"],
+                requirement_id="R1",
             )
         ]
         structured = StructuredAgent(
@@ -844,7 +823,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 engine="e",
                 search_query="q",
                 purpose="p",
-                requirement_ids=["R1"],
+                requirement_id="R1",
             ),
             rt.Candidate(
                 url="https://b.example/2",
@@ -853,7 +832,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 engine="e",
                 search_query="q",
                 purpose="p",
-                requirement_ids=["R1"],
+                requirement_id="R1",
             ),
         ]
         batch = rt.next_candidate_batch(state, rt.make_budget("deep"))
@@ -878,7 +857,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     engine="e",
                     search_query="q",
                     purpose="p",
-                    requirement_ids=["R1"],
+                    requirement_id="R1",
                 )
             ]
             return state
@@ -934,12 +913,9 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             state.evidence[2], requirement_ids=["R2"], url="https://b.example/3"
         )
         state.report_plan = [
-            rt.ReportPlanSection(
+            rt.PlanSection(
                 heading="Combined",
-                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                 requirement_ids=["R1", "R2"],
-                source_ids=[],
-                deliverables=["facts", "compare"],
             )
         ]
         contract = rt.build_section_contract(research, state, "Combined")
@@ -964,7 +940,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         rt.store_initial_plan(
             state,
             research,
-            rt.InitialPlanDraft(
+            rt.PlanDraft(
                 requirements=[
                     rt.RequirementModel(
                         id="R1",
@@ -980,20 +956,15 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     ),
                 ],
                 sections=[
-                    rt.InitialPlanSection(
+                    rt.PlanSection(
                         heading="Direct",
-                        target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                         requirement_ids=["R1"],
-                        deliverables=["Need direct evidence"],
                     ),
-                    rt.InitialPlanSection(
+                    rt.PlanSection(
                         heading="Compare",
-                        target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                         requirement_ids=["R2"],
-                        deliverables=["compare vendors"],
                     ),
                 ],
-                query_seeds=[],
             ),
         )
         structured = StructuredAgent(
@@ -1003,7 +974,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                         rt.SearchBatchEntry(
                             query="missing comparison evidence 1",
                             purpose="cover R2",
-                            requirement_ids=["R2"],
+                            requirement_id="R2",
                         )
                     ]
                 ),
@@ -1012,7 +983,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                         rt.SearchBatchEntry(
                             query="missing comparison evidence 2",
                             purpose="cover R2",
-                            requirement_ids=["R2"],
+                            requirement_id="R2",
                         )
                     ]
                 ),
@@ -1048,7 +1019,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         rt.store_initial_plan(
             state,
             research,
-            rt.InitialPlanDraft(
+            rt.PlanDraft(
                 requirements=[
                     rt.RequirementModel(
                         id="R1",
@@ -1064,14 +1035,11 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     ),
                 ],
                 sections=[
-                    rt.InitialPlanSection(
+                    rt.PlanSection(
                         heading="Combined",
-                        target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                         requirement_ids=["R1", "R2"],
-                        deliverables=["Need facts", "compare vendors"],
                     )
                 ],
-                query_seeds=[],
             ),
         )
         rt.set_collection_decision(state, "voluntary_stop")
@@ -1343,7 +1311,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         rt.store_initial_plan(
             state,
             research,
-            rt.InitialPlanDraft(
+            rt.PlanDraft(
                 requirements=[
                     rt.RequirementModel(
                         id="R1",
@@ -1353,14 +1321,11 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     )
                 ],
                 sections=[
-                    rt.InitialPlanSection(
+                    rt.PlanSection(
                         heading="Comparison",
-                        target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                         requirement_ids=["R1"],
-                        deliverables=["compare vendors"],
                     )
                 ],
-                query_seeds=[],
             ),
         )
         state.searched_queries = {
@@ -1427,13 +1392,13 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "build_finalization_agent",
                     return_value=StructuredAgent(
                         [
-                            plan_for(research, ["S1"]),
+                            plan_for(research),
                             rt.SearchBatchDraft(
                                 queries=[
                                     rt.SearchBatchEntry(
                                         query="direct evidence",
                                         purpose="cover R1",
-                                        requirement_ids=["R1"],
+                                        requirement_id="R1",
                                     )
                                 ]
                             ),
@@ -1442,7 +1407,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                                     rt.SearchBatchEntry(
                                         query="direct evidence retry",
                                         purpose="cover R1",
-                                        requirement_ids=["R1"],
+                                        requirement_id="R1",
                                     )
                                 ]
                             ),
@@ -1669,7 +1634,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     rt,
                     "extract_evidence",
                     new=AsyncMock(side_effect=ValueError("fetch failed 503")),
-                ),
+                ) as extract,
                 self.assertLogs(rt.LOG.name, level="WARNING") as logs,
             ):
                 tools, _allowlist, _fatal = rt.build_research_tools(
@@ -1692,6 +1657,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertEqual(event["stage"], "tool")
             self.assertEqual(event["http_status"], 503)
             self.assertEqual(event["exception"], "ValueError")
+            self.assertEqual(extract.await_args_list[0].args[2], "verify")
             self.assertNotIn("fetch failed 503", "\n".join(logs.output))
             row = self.runtime.db.execute(
                 "SELECT state_json FROM research_runs WHERE idempotency_key = ?",

@@ -18,7 +18,7 @@ from strands.tools.executors import SequentialToolExecutor
 from test_support import FakeResponse, FakeSession, RuntimeTestCase, make_state, rt
 
 
-def deep_plan_for(research: rt.ResearchRequest) -> rt.InitialPlanDraft:
+def deep_plan_for(research: rt.ResearchRequest) -> rt.PlanDraft:
     fragments = rt.explicit_request_fragments(research)
     requirements = [
         rt.RequirementModel(
@@ -30,18 +30,15 @@ def deep_plan_for(research: rt.ResearchRequest) -> rt.InitialPlanDraft:
         for index, fragment in enumerate(fragments, 1)
     ]
     sections = [
-        rt.InitialPlanSection(
+        rt.PlanSection(
             heading=f"Section {index}",
-            target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
             requirement_ids=[requirement.id],
-            deliverables=[requirement.summary],
         )
         for index, requirement in enumerate(requirements, 1)
     ]
-    return rt.InitialPlanDraft(
+    return rt.PlanDraft(
         requirements=requirements,
         sections=sections,
-        query_seeds=[],
     )
 
 
@@ -545,9 +542,22 @@ class RuntimeContractTests(RuntimeTestCase):
         state = make_state(1)
         state.last_inspected_revision = state.evidence_revision
         draft = deep_plan_for(research)
-        fragments, requirements, sections, query_seeds = rt.validated_initial_plan(research, draft)
+        fragments, requirements, sections = rt.validated_initial_plan(research, draft)
         self.assertEqual("".join(item.text for item in fragments), research.query)
-        self.assertNotIn("fragments", rt.InitialPlanDraft.model_json_schema()["properties"])
+        schema = rt.PlanDraft.model_json_schema()
+        self.assertEqual(set(schema["properties"]), {"requirements", "sections"})
+        self.assertEqual(set(schema["required"]), {"requirements", "sections"})
+        section_schema = schema["$defs"]["PlanSection"]
+        self.assertEqual(set(section_schema["properties"]), {"heading", "requirement_ids"})
+        self.assertEqual(set(section_schema["required"]), {"heading", "requirement_ids"})
+        self.assertEqual(section_schema["properties"]["requirement_ids"]["minItems"], 1)
+        for removed in (
+            "InitialPlanDraft",
+            "InitialPlanSection",
+            "ReportPlanSection",
+            "QuerySeedModel",
+        ):
+            self.assertFalse(hasattr(rt, removed))
         self.assertEqual(
             rt.build_plan_context(research)["request_fragments"],
             [item.model_dump() for item in fragments],
@@ -557,7 +567,6 @@ class RuntimeContractTests(RuntimeTestCase):
             {item.id for item in fragments},
         )
         self.assertEqual([item.requirement_ids for item in sections], [["R1"]])
-        self.assertEqual(query_seeds, [])
 
     def test_requirement_coverage_uses_direct_one_host_and_comparison_two_hosts(self) -> None:
         state = make_state(3)
@@ -811,12 +820,9 @@ class RuntimeContractTests(RuntimeTestCase):
             replace(item, requirement_ids=["R1"], relevance=0.9) for item in state.evidence
         ]
         state.report_plan = [
-            rt.ReportPlanSection(
+            rt.PlanSection(
                 heading="Section 1",
-                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                 requirement_ids=["R1"],
-                source_ids=[],
-                deliverables=["Need direct evidence"],
             )
         ]
         state.report_sections = [
@@ -838,7 +844,7 @@ class RuntimeContractTests(RuntimeTestCase):
                 engine="engine",
                 search_query="noise",
                 purpose="noise",
-                requirement_ids=["R1"],
+                requirement_id="R1",
             )
         ]
         query_payload = rt.build_query_context(research, state)
@@ -892,12 +898,9 @@ class RuntimeContractTests(RuntimeTestCase):
             )
         ]
         state.report_plan = [
-            rt.ReportPlanSection(
+            rt.PlanSection(
                 heading="Evidence",
-                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                 requirement_ids=["R1"],
-                source_ids=[],
-                deliverables=["Need direct evidence"],
             )
         ]
         state.evidence = [
@@ -917,6 +920,39 @@ class RuntimeContractTests(RuntimeTestCase):
                 section(cited("Unseen", "S13")),
             )
         self.assertEqual(rt.run_state_snapshot(state), before)
+
+    def test_ledger_update_preserves_plan_and_rederives_section_evidence(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
+        state = make_state(1)
+        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        rt.store_initial_plan(state, research, deep_plan_for(research))
+        plan = [item.model_dump() for item in state.report_plan]
+        self.assertEqual(
+            [item.id for item in rt.build_section_contract(research, state, "Section 1").evidence],
+            ["S1"],
+        )
+
+        rt.apply_evidence_update(
+            state,
+            rt.Evidence(
+                url="https://second.example/2",
+                title="Second",
+                publisher="Second",
+                published_at="2026-01-01",
+                excerpt="Additional direct evidence",
+                hash="b" * 64,
+                relevance=0.9,
+                source_quality=0.7,
+                requirement_ids=["R1"],
+            ),
+        )
+
+        self.assertEqual([item.model_dump() for item in state.report_plan], plan)
+        self.assertEqual(state.stats["report_plan_sections"], 1)
+        self.assertEqual(
+            [item.id for item in rt.build_section_contract(research, state, "Section 1").evidence],
+            ["S1", "S2"],
+        )
 
     def test_rendered_section_over_ten_thousand_chars_is_not_checkpointed(self) -> None:
         research = rt.ResearchRequest(query="Evidence", depth="standard")
@@ -944,12 +980,9 @@ class RuntimeContractTests(RuntimeTestCase):
         ]
         requirement_ids = [item.id for item in state.requirements]
         state.report_plan = [
-            rt.ReportPlanSection(
+            rt.PlanSection(
                 heading="Comparison",
-                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                 requirement_ids=requirement_ids,
-                source_ids=[],
-                deliverables=["compare vendors"],
             )
         ]
         state.evidence = [
@@ -1016,56 +1049,52 @@ class RuntimeContractTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_invalid_query_seeds_are_rejected_at_plan_validation(self) -> None:
+    def test_plan_and_search_schemas_are_exact_and_scalar(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        fragments = rt.explicit_request_fragments(research)
-        draft = rt.InitialPlanDraft(
-            requirements=[
-                rt.RequirementModel(
-                    id="R1",
-                    summary="Need direct evidence",
-                    kind="direct",
-                    fragment_ids=[fragments[0].id],
-                ),
-                rt.RequirementModel(
-                    id="R2",
-                    summary="Need direct evidence followup",
-                    kind="direct",
-                    fragment_ids=[fragments[0].id],
-                ),
-            ],
-            sections=[
-                rt.InitialPlanSection(
-                    heading="Section 1",
-                    target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
-                    requirement_ids=["R1", "R2"],
-                    deliverables=["Need direct evidence"],
-                )
-            ],
-            query_seeds=[
-                rt.QuerySeedModel(
-                    query="seed",
-                    purpose="bad",
-                    requirement_ids=["R1", "R2"],
-                )
-            ],
-        )
-        with self.assertRaisesRegex(ValueError, "exactly one requirement"):
-            rt.validated_initial_plan(research, draft)
-        unknown = draft.model_copy(
-            update={
-                "query_seeds": [
-                    rt.QuerySeedModel(query="seed", purpose="bad", requirement_ids=["R3"])
-                ]
-            }
-        )
-        with self.assertRaisesRegex(rt.ModelOutputError, "unknown requirement IDs"):
-            rt.validated_initial_plan(research, unknown)
+        plan = deep_plan_for(research).model_dump()
+        for field, value in (
+            ("target_chars", 400),
+            ("deliverables", ["echo"]),
+            ("source_ids", ["S1"]),
+        ):
+            invalid = json.loads(json.dumps(plan))
+            invalid["sections"][0][field] = value
+            with self.subTest(field=field), self.assertRaises(ValidationError):
+                rt.PlanDraft.model_validate(invalid)
+        plan["query_seeds"] = []
+        with self.assertRaises(ValidationError):
+            rt.PlanDraft.model_validate(plan)
+
+        schema = rt.SearchBatchEntry.model_json_schema()
+        self.assertEqual(set(schema["properties"]), {"query", "purpose", "requirement_id"})
+        self.assertEqual(set(schema["required"]), {"query", "purpose", "requirement_id"})
+        for payload in (
+            {"query": "q", "purpose": "p"},
+            {"query": "q", "purpose": "p", "requirement_ids": ["R1"]},
+            {"query": "q", "purpose": "p", "requirement_id": ["R1"]},
+        ):
+            with self.subTest(payload=payload), self.assertRaises(ValidationError):
+                rt.SearchBatchEntry.model_validate(payload)
+
+        state = make_state(1)
+        state.request_fragments = rt.explicit_request_fragments(research)
+        state.requirements = [
+            rt.RequirementModel(
+                id="R1", summary="Need direct evidence", kind="direct", fragment_ids=["F1"]
+            )
+        ]
+        unknown = rt.SearchBatchEntry(query="q", purpose="p", requirement_id="R2")
+        with self.assertRaisesRegex(ValueError, "uncovered requirement"):
+            rt.validated_query_entry(state, unknown)
+        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        covered = rt.SearchBatchEntry(query="q", purpose="p", requirement_id="R1")
+        with self.assertRaisesRegex(ValueError, "uncovered requirement"):
+            rt.validated_query_entry(state, covered)
 
     def test_compare_fragment_kind_is_upgraded_by_runtime(self) -> None:
         research = rt.ResearchRequest(query="compare vendors", depth="deep")
         fragments = rt.explicit_request_fragments(research)
-        draft = rt.InitialPlanDraft(
+        draft = rt.PlanDraft(
             requirements=[
                 rt.RequirementModel(
                     id="R1",
@@ -1075,18 +1104,13 @@ class RuntimeContractTests(RuntimeTestCase):
                 )
             ],
             sections=[
-                rt.InitialPlanSection(
+                rt.PlanSection(
                     heading="Comparison",
-                    target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                     requirement_ids=["R1"],
-                    deliverables=["compare vendors"],
                 )
             ],
-            query_seeds=[],
         )
-        _fragments, requirements, _sections, _query_seeds = rt.validated_initial_plan(
-            research, draft
-        )
+        _fragments, requirements, _sections = rt.validated_initial_plan(research, draft)
         self.assertEqual(requirements[0].kind, "comparison")
         state = make_state(1)
         state.request_fragments = fragments
@@ -1117,12 +1141,9 @@ class RuntimeContractTests(RuntimeTestCase):
         ]
         state.evidence[0] = replace(state.evidence[0], requirement_ids=["R1"], relevance=0.9)
         state.report_plan = [
-            rt.ReportPlanSection(
+            rt.PlanSection(
                 heading="Compare",
-                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                 requirement_ids=["R2"],
-                source_ids=[],
-                deliverables=["compare vendors"],
             )
         ]
         contract = rt.build_section_contract(research, state, "Compare")
@@ -1364,6 +1385,324 @@ class RuntimeContractTests(RuntimeTestCase):
         )
         rt.validate_checkpoint_state(loaded, rt.ResearchRequest(query="Evidence", depth="quick"))
 
+    def test_checkpoint_shape_nested_state_and_stats_are_strict(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
+        state = make_state(1)
+        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        rt.store_initial_plan(state, research, deep_plan_for(research))
+        rt.set_collection_decision(state, "coverage_complete")
+        rt.store_report_section(
+            state,
+            rt.build_section_contract(research, state, "Section 1"),
+            section(cited("Supported", "S1")),
+        )
+        state.candidate_queue = [
+            rt.Candidate(
+                url="https://candidate.example/1",
+                title="candidate",
+                snippet="snippet",
+                engine="engine",
+                search_query="query",
+                purpose="purpose",
+                requirement_id="R1",
+            )
+        ]
+        state.failed_candidates = [
+            rt.FailedCandidate("https://failed.example/1", "timeout", "fetch")
+        ]
+        state.searched_queries = {"q001"}
+        valid = rt.run_state_snapshot(state)
+        self.assertEqual(
+            set(valid),
+            {
+                "checkpoint_version",
+                "evidence_ledger",
+                "searched_queries",
+                "evidence_revision",
+                "last_inspected_revision",
+                "stats",
+                "request_fragments",
+                "requirements",
+                "report_plan",
+                "report_sections",
+                "candidate_queue",
+                "failed_candidates",
+                "phase",
+                "collection_decision",
+            },
+        )
+
+        tampered_stats = json.loads(json.dumps(valid))
+        tampered_stats["stats"].update(
+            depth="quick",
+            wall_limit_s=1.0,
+            search_target=0,
+            search_budget=0,
+            evidence_budget=0,
+            minimum_evidence=0,
+            target_evidence=0,
+            model_turn_budget=0,
+            searches=0,
+            documents=0,
+            evidence=99,
+            usable_evidence=99,
+            evidence_revision=99,
+            report_plan_sections=99,
+            report_sections=99,
+            report_chars=99,
+            requirement_coverage={"tampered": {}},
+        )
+        loaded = rt.load_run_state(
+            tampered_stats,
+            depth="deep",
+            budget=rt.make_budget("deep"),
+            wall_limit=rt.wall_budget_seconds("deep"),
+        )
+        fresh = rt.default_stats("deep", rt.make_budget("deep"), rt.wall_budget_seconds("deep"))
+        for key in (
+            "depth",
+            "wall_limit_s",
+            "search_target",
+            "search_budget",
+            "evidence_budget",
+            "minimum_evidence",
+            "target_evidence",
+            "model_turn_budget",
+        ):
+            self.assertEqual(loaded.stats[key], fresh[key])
+        self.assertEqual(loaded.stats["evidence"], 1)
+        self.assertEqual(loaded.stats["documents"], 1)
+        self.assertEqual(loaded.stats["searches"], 1)
+        self.assertEqual(loaded.stats["usable_evidence"], 1)
+        self.assertEqual(loaded.stats["evidence_revision"], 1)
+        self.assertEqual(loaded.stats["report_plan_sections"], 1)
+        self.assertEqual(loaded.stats["report_sections"], 1)
+        self.assertEqual(
+            loaded.stats["report_chars"], len(rt.assemble_report_sections(loaded.report_sections))
+        )
+        self.assertEqual(
+            loaded.stats["requirement_coverage"], rt.requirement_coverage_snapshot(loaded)
+        )
+
+        invalid: dict[str, dict[str, Any]] = {}
+        item = json.loads(json.dumps(valid))
+        item["query_seed_queue"] = []
+        invalid["removed top-level field"] = item
+        item = json.loads(json.dumps(valid))
+        item.pop("request_fragments")
+        invalid["missing top-level field"] = item
+        item = json.loads(json.dumps(valid))
+        item["report_plan"][0]["target_chars"] = 400
+        invalid["old plan field"] = item
+        item = json.loads(json.dumps(valid))
+        item["report_plan"][0].pop("requirement_ids")
+        invalid["missing plan field"] = item
+        item = json.loads(json.dumps(valid))
+        item["evidence_ledger"][0]["relevance"] = "high"
+        invalid["evidence type"] = item
+        item = json.loads(json.dumps(valid))
+        item["evidence_ledger"][0]["url"] = "http://[bad"
+        invalid["malformed mapped evidence URL"] = item
+        item = json.loads(json.dumps(valid))
+        candidate = item["candidate_queue"][0]
+        candidate["requirement_ids"] = [candidate.pop("requirement_id")]
+        invalid["old candidate shape"] = item
+        item = json.loads(json.dumps(valid))
+        item["failed_candidates"][0]["reason"] = "raw failure text"
+        invalid["unsafe failed reason"] = item
+        item = json.loads(json.dumps(valid))
+        item["failed_candidates"][0]["stage"] = "download"
+        invalid["invalid failed stage"] = item
+        item = json.loads(json.dumps(valid))
+        item["report_sections"][0]["ledger_revision"] = "1"
+        invalid["report section type"] = item
+        item = json.loads(json.dumps(valid))
+        item["stats"]["requirements_calls"] = 99
+        invalid["unknown stats field"] = item
+        item = json.loads(json.dumps(valid))
+        item["stats"]["report_plan_target_chars"] = 99
+        invalid["deleted stats field"] = item
+        item = json.loads(json.dumps(valid))
+        item["stats"].pop("query_batch_calls")
+        invalid["missing stats field"] = item
+        item = json.loads(json.dumps(valid))
+        item["stats"]["query_batch_calls"] = "oops"
+        invalid["wrong stats type"] = item
+        item = json.loads(json.dumps(valid))
+        item["stats"]["searches"] = True
+        invalid["bool stats counter"] = item
+        item = json.loads(json.dumps(valid))
+        item["stats"]["searches"] = -1
+        invalid["negative stats counter"] = item
+        item = json.loads(json.dumps(valid))
+        item["stats"]["operation_failure_reasons"] = {"timeout": -1}
+        invalid["negative stats reason count"] = item
+        item = json.loads(json.dumps(valid))
+        item["stats"]["model_transient_events"] = ["timeout"]
+        invalid["invalid stats event"] = item
+        item = json.loads(json.dumps(valid))
+        item["stats"]["operation_failure_events"] = [
+            {} for _ in range(rt.OPERATION_FAILURE_EVENT_LIMIT + 1)
+        ]
+        invalid["oversized stats events"] = item
+        item = json.loads(json.dumps(valid))
+        item["stats"]["fatal_error"] = []
+        invalid["invalid stats dictionary"] = item
+        for label, snapshot in invalid.items():
+            with self.subTest(label=label), self.assertRaises(rt.IntegrityError):
+                rt.load_run_state(
+                    snapshot,
+                    depth="deep",
+                    budget=rt.make_budget("deep"),
+                    wall_limit=rt.wall_budget_seconds("deep"),
+                )
+
+    def test_checkpoint_rejects_noncanonical_searched_queries(self) -> None:
+        research = rt.ResearchRequest(query="Evidence", depth="quick")
+        budget = rt.make_budget("quick")
+        valid = rt.run_state_snapshot(make_state(0, "quick"))
+        invalid = {
+            "duplicate": ["same query", "same query"],
+            "out of order": ["z query", "a query"],
+            "blank": [""],
+            "nonnormalized": [" padded query "],
+        }
+        for label, searched_queries in invalid.items():
+            snapshot = json.loads(json.dumps(valid))
+            snapshot["searched_queries"] = searched_queries
+            with self.subTest(label=label), self.assertRaises(rt.IntegrityError):
+                rt.load_run_state(
+                    snapshot,
+                    depth="quick",
+                    budget=budget,
+                    wall_limit=rt.wall_budget_seconds("quick"),
+                )
+
+        negative_revision = json.loads(json.dumps(valid))
+        negative_revision["last_inspected_revision"] = -1
+        loaded = rt.load_run_state(
+            negative_revision,
+            depth="quick",
+            budget=budget,
+            wall_limit=rt.wall_budget_seconds("quick"),
+        )
+        with self.assertRaises(rt.IntegrityError):
+            rt.validate_checkpoint_state(loaded, research)
+
+        over_budget = json.loads(json.dumps(valid))
+        over_budget["searched_queries"] = [
+            f"q{index:03d}" for index in range(budget.search_limit + 1)
+        ]
+        loaded = rt.load_run_state(
+            over_budget,
+            depth="quick",
+            budget=budget,
+            wall_limit=rt.wall_budget_seconds("quick"),
+        )
+        with self.assertRaises(rt.IntegrityError):
+            rt.validate_checkpoint_state(loaded, research)
+
+    def test_checkpoint_plan_must_match_request_owned_contract(self) -> None:
+        research = rt.ResearchRequest(
+            query="Need direct evidence",
+            focus="compare vendors",
+            depth="deep",
+        )
+        state = make_state(0)
+        rt.store_initial_plan(state, research, deep_plan_for(research))
+        valid = rt.run_state_snapshot(state)
+
+        retry = make_state(0)
+        retry.phase = "planning"
+        retry.request_fragments = rt.explicit_request_fragments(research)
+        loaded_retry = rt.load_run_state(
+            rt.run_state_snapshot(retry),
+            depth="deep",
+            budget=rt.make_budget("deep"),
+            wall_limit=rt.wall_budget_seconds("deep"),
+        )
+        rt.validate_checkpoint_state(loaded_retry, research)
+        self.assertEqual(loaded_retry.request_fragments, retry.request_fragments)
+        self.assertEqual(loaded_retry.requirements, [])
+        self.assertEqual(loaded_retry.report_plan, [])
+
+        invalid: dict[str, dict[str, Any]] = {}
+        item = json.loads(json.dumps(valid))
+        item["request_fragments"][0]["text"] = "Different request"
+        invalid["request mismatch"] = item
+        item = json.loads(json.dumps(valid))
+        item["requirements"][1]["id"] = "R1"
+        item["report_plan"][1]["requirement_ids"] = ["R1"]
+        invalid["duplicate requirement ID"] = item
+        item = json.loads(json.dumps(valid))
+        item["requirements"][1]["fragment_ids"] = ["F1"]
+        invalid["unmapped fragment"] = item
+        item = json.loads(json.dumps(valid))
+        item["report_plan"] = []
+        invalid["requirements without plan"] = item
+        item = json.loads(json.dumps(valid))
+        item["requirements"] = []
+        invalid["plan without requirements"] = item
+        for label, snapshot in invalid.items():
+            with self.subTest(label=label), self.assertRaises(rt.IntegrityError):
+                loaded = rt.load_run_state(
+                    snapshot,
+                    depth="deep",
+                    budget=rt.make_budget("deep"),
+                    wall_limit=rt.wall_budget_seconds("deep"),
+                )
+                rt.validate_checkpoint_state(loaded, research)
+
+        quick_research = rt.ResearchRequest(query="Evidence", depth="quick")
+        nondeep = make_state(0, "quick")
+        nondeep.request_fragments = rt.explicit_request_fragments(quick_research)
+        with self.assertRaises(rt.IntegrityError):
+            loaded = rt.load_run_state(
+                rt.run_state_snapshot(nondeep),
+                depth="quick",
+                budget=rt.make_budget("quick"),
+                wall_limit=rt.wall_budget_seconds("quick"),
+            )
+            rt.validate_checkpoint_state(loaded, quick_research)
+
+    def test_checkpoint_rejects_candidate_urls_outside_runtime_invariants(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
+        state = make_state(0)
+        rt.store_initial_plan(state, research, deep_plan_for(research))
+        state.candidate_queue = [
+            rt.Candidate(
+                url="https://candidate.example/1",
+                title="candidate",
+                snippet="snippet",
+                engine="engine",
+                search_query="query",
+                purpose="purpose",
+                requirement_id="R1",
+            )
+        ]
+        state.failed_candidates = [
+            rt.FailedCandidate("https://failed.example/1", "timeout", "fetch")
+        ]
+        valid = rt.run_state_snapshot(state)
+        rt.validate_checkpoint_state(state, research)
+
+        for queue, url in (
+            ("candidate_queue", "http://127.0.0.1/private"),
+            ("candidate_queue", "https://candidate.example"),
+            ("failed_candidates", "http://127.0.0.1/private"),
+            ("failed_candidates", "https://failed.example"),
+        ):
+            snapshot = json.loads(json.dumps(valid))
+            snapshot[queue][0]["url"] = url
+            with self.subTest(queue=queue, url=url), self.assertRaises(rt.IntegrityError):
+                loaded = rt.load_run_state(
+                    snapshot,
+                    depth="deep",
+                    budget=rt.make_budget("deep"),
+                    wall_limit=rt.wall_budget_seconds("deep"),
+                )
+                rt.validate_checkpoint_state(loaded, research)
+
     def test_summary_and_stats_cannot_change_mode_or_outcome(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
         state = make_state(1)
@@ -1378,11 +1717,7 @@ class RuntimeContractTests(RuntimeTestCase):
         state.report_sections[0] = replace(
             state.report_sections[0], summary="検証済み証拠台帳からの抽出要約"
         )
-        state.stats.update(
-            completion_class="degraded",
-            extractive_finalization=True,
-            report_sections_extractive=99,
-        )
+        state.stats["research_salvages"] = 99
         snapshot = rt.run_state_snapshot(state)
         loaded = rt.load_run_state(
             snapshot,
@@ -1428,12 +1763,9 @@ class RuntimeContractTests(RuntimeTestCase):
             )
         ]
         state.report_plan = [
-            rt.ReportPlanSection(
+            rt.PlanSection(
                 heading="Comparison",
-                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                 requirement_ids=["R1"],
-                source_ids=["S1", "S2"],
-                deliverables=["compare vendors"],
             )
         ]
         state.evidence[0] = replace(
@@ -1485,12 +1817,9 @@ class RuntimeContractTests(RuntimeTestCase):
             )
         ]
         state.report_plan = [
-            rt.ReportPlanSection(
+            rt.PlanSection(
                 heading="Comparison",
-                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                 requirement_ids=["R1"],
-                source_ids=["S1", "S2"],
-                deliverables=["compare vendors"],
             )
         ]
         state.evidence[0] = replace(
@@ -1563,7 +1892,7 @@ class RuntimeContractTests(RuntimeTestCase):
         rt.store_initial_plan(
             state,
             research,
-            rt.InitialPlanDraft(
+            rt.PlanDraft(
                 requirements=[
                     rt.RequirementModel(
                         id="R1",
@@ -1579,20 +1908,15 @@ class RuntimeContractTests(RuntimeTestCase):
                     ),
                 ],
                 sections=[
-                    rt.InitialPlanSection(
+                    rt.PlanSection(
                         heading="Direct evidence",
-                        target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                         requirement_ids=["R1"],
-                        deliverables=["Need direct evidence"],
                     ),
-                    rt.InitialPlanSection(
+                    rt.PlanSection(
                         heading="Comparison",
-                        target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
                         requirement_ids=["R2"],
-                        deliverables=["need another fact"],
                     ),
                 ],
-                query_seeds=[],
             ),
         )
         rt.store_report_section(
