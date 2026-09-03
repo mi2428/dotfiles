@@ -310,6 +310,8 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             [
                 APIError("Internal server error.", request=request, body=None),
                 APIError("Internal server error.", request=request, body=None),
+                APIError("Internal server error.", request=request, body=None),
+                APIError("Internal server error.", request=request, body=None),
                 rt.ReportSectionDraft(
                     heading="Direct evidence",
                     requirement_ids=["R1"],
@@ -343,6 +345,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     rt.run_state_snapshot(state),
                 )
             self.assertEqual(response.stats["research_salvages"], 1)
+            self.assertEqual(response.stats["model_transient_recoveries"], 3)
             self.assertTrue(response.stats["evidence_shortfall_salvage"])
 
         asyncio.run(run())
@@ -356,6 +359,8 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         request = httpx.Request("POST", "http://llm.local/v1/chat/completions")
         structured = StructuredAgent(
             [
+                APIError("Internal server error.", request=request, body=None),
+                APIError("Internal server error.", request=request, body=None),
                 APIError("Internal server error.", request=request, body=None),
                 APIError("Internal server error.", request=request, body=None),
             ]
@@ -376,6 +381,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 )
             self.assertTrue(response.stats["extractive_finalization"])
             self.assertEqual(response.stats["extractive_finalization_reason"], "provider_failure")
+            self.assertEqual(response.stats["model_transient_recoveries"], 3)
             self.assertIn("検証済み証拠台帳から抽出的に構成", response.answer_markdown)
             self.assertIn("Runtime coverage gap", response.answer_markdown)
             self.assertEqual(len(response.sources), 1)

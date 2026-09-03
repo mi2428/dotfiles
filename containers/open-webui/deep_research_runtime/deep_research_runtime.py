@@ -84,8 +84,8 @@ DEEP_QUERY_BATCH_SIZE = 3
 DEEP_FETCH_BATCH_SIZE = 6
 AGENT_CANCEL_GRACE_SECONDS = 5
 DEFAULT_KIMI_TIMEOUT_SECONDS = 1800
-# The proxy already performs bounded provider retries and shared cooldown waits.
-MODEL_TRANSIENT_RECOVERIES = 1
+# Stream errors arrive after the proxy has accepted HTTP 200, so retry them here.
+MODEL_TRANSIENT_RECOVERIES = 3
 MODEL_RETRY_BASE_SECONDS = 2.0
 MODEL_RETRY_MAX_SECONDS = 120.0
 STRUCTURED_OUTPUT_ATTEMPTS = 3

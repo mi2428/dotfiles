@@ -229,7 +229,11 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertEqual(rt.model_retry_delay(wrapped, 0), 2)
         self.assertTrue(rt.is_expected_provider_failure(wrapped))
         stream_error = APIError("Internal server error.", request=request, body=None)
-        self.assertEqual(rt.model_retry_delay(stream_error, 0), 2)
+        self.assertEqual(rt.MODEL_TRANSIENT_RECOVERIES, 3)
+        self.assertEqual(
+            [rt.model_retry_delay(stream_error, attempt) for attempt in range(3)],
+            [2, 4, 8],
+        )
         self.assertTrue(rt.is_expected_provider_failure(stream_error))
 
     def test_validated_requirements_plan_maps_every_explicit_fragment(self) -> None:
