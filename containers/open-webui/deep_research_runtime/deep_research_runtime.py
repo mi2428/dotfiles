@@ -925,6 +925,20 @@ def safe_operation_error_details(error: BaseException) -> SafeOperationErrorDeta
 
 
 def safe_fatal_error_event(error: BaseException, phase: str) -> dict[str, Any]:
+    if isinstance(error, ModelOutputError):
+        exception = safe_exception_name(error)
+        return {
+            "timestamp": int(time.time()),
+            "phase": phase,
+            "reason": "model_output_error",
+            "reason_source": "validation",
+            "exception": exception,
+            "cause_exception": exception,
+            "http_status": None,
+            "provider_code": "none",
+            "message_bucket": "none",
+            "validation_bucket": safe_section_validation_error(error),
+        }
     if isinstance(error, (EventLoopException, APIError, APITimeoutError)):
         details = safe_model_recovery_details(error)
         return {
@@ -937,6 +951,7 @@ def safe_fatal_error_event(error: BaseException, phase: str) -> dict[str, Any]:
             "http_status": details.http_status,
             "provider_code": details.provider_code,
             "message_bucket": details.message_bucket,
+            "validation_bucket": "none",
         }
     details = safe_operation_error_details(error)
     return {
@@ -949,6 +964,7 @@ def safe_fatal_error_event(error: BaseException, phase: str) -> dict[str, Any]:
         "http_status": details.http_status,
         "provider_code": "none",
         "message_bucket": "none",
+        "validation_bucket": "none",
     }
 
 
@@ -2355,7 +2371,7 @@ def safe_extractive_text(value: str, limit: int = 500) -> str:
     """Return bounded plain text copied from untrusted evidence."""
 
     text = re.sub(r"\s+", " ", value).strip()
-    return re.sub(r"[*_`#<>\[\]]", "", text)[:limit].strip()
+    return re.sub(r"[*_`#<>\[\]|]", "", text)[:limit].strip()
 
 
 def finalize_extractively(
@@ -4899,7 +4915,7 @@ async def run_research(
         LOG.error(
             "research_failure research_id=%s phase=%s reason=%s reason_source=%s "
             "exception=%s cause_exception=%s http_status=%s provider_code=%s "
-            "message_bucket=%s",
+            "message_bucket=%s validation_bucket=%s",
             research_id,
             fatal_error["phase"],
             fatal_error["reason"],
@@ -4909,6 +4925,7 @@ async def run_research(
             fatal_error["http_status"] if fatal_error["http_status"] is not None else "none",
             fatal_error["provider_code"],
             fatal_error["message_bucket"],
+            fatal_error["validation_bucket"],
         )
         await save("failed", error=cast(str, fatal_error["reason"]))
         raise
@@ -4991,7 +5008,8 @@ def build_app() -> FastAPI:
             details = safe_fatal_error_event(exc, "endpoint")
             LOG.error(
                 "research_endpoint_failure phase=%s reason=%s reason_source=%s exception=%s "
-                "cause_exception=%s http_status=%s provider_code=%s message_bucket=%s",
+                "cause_exception=%s http_status=%s provider_code=%s message_bucket=%s "
+                "validation_bucket=%s",
                 details["phase"],
                 details["reason"],
                 details["reason_source"],
@@ -5000,6 +5018,7 @@ def build_app() -> FastAPI:
                 details["http_status"] if details["http_status"] is not None else "none",
                 details["provider_code"],
                 details["message_bucket"],
+                details["validation_bucket"],
             )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,

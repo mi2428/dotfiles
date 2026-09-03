@@ -1011,9 +1011,11 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "http_status": None,
                     "provider_code": "none",
                     "message_bucket": "none",
+                    "validation_bucket": "none",
                 },
             )
             self.assertNotIn("internal bug", "\n".join(logs.output))
+            self.assertIn("validation_bucket=none", "\n".join(logs.output))
 
         asyncio.run(run())
 

@@ -343,6 +343,13 @@ class RuntimeContractTests(RuntimeTestCase):
             rt.safe_operation_error_details(OSError("secret provider text")),
             rt.SafeOperationErrorDetails("os_error", "exception", "OSError", "OSError", None),
         )
+        fatal = rt.safe_fatal_error_event(
+            rt.ModelOutputError("Markdown table rows must use separate lines"), "sections"
+        )
+        self.assertEqual(fatal["reason"], "model_output_error")
+        self.assertEqual(fatal["reason_source"], "validation")
+        self.assertEqual(fatal["cause_exception"], "ModelOutputError")
+        self.assertEqual(fatal["validation_bucket"], "Markdown table rows must use separate lines")
 
     def test_validated_requirements_plan_maps_every_explicit_fragment(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
@@ -956,7 +963,12 @@ class RuntimeContractTests(RuntimeTestCase):
         state = make_state(1)
         fragments = rt.explicit_request_fragments(research)
         state.last_inspected_revision = state.evidence_revision
-        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        state.evidence[0] = replace(
+            state.evidence[0],
+            relevance=0.9,
+            requirement_ids=["R1", "R2"],
+            excerpt="Verified comparison | --- | --- | remains plain text.",
+        )
         state.stats["evidence_shortfall_salvage"] = True
         rt.store_initial_plan(
             state,
@@ -1005,6 +1017,7 @@ class RuntimeContractTests(RuntimeTestCase):
         response = rt.finalize_extractively("rid", state, research, "normal_contract_unmet")
         self.assertEqual(response.stats["extractive_finalization_reason"], "normal_contract_unmet")
         self.assertIn("残りの節は検証済み証拠の抽出要約です。", response.answer_markdown)
+        self.assertNotIn("|", state.report_sections[-1].body)
 
 
 if __name__ == "__main__":
