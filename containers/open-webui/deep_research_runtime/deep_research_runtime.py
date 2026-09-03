@@ -91,6 +91,34 @@ DEFAULT_KIMI_TIMEOUT_SECONDS = 3600
 MODEL_TRANSIENT_RECOVERIES = 5
 MODEL_RETRY_BASE_SECONDS = 10.0
 MODEL_RETRY_MAX_SECONDS = 120.0
+MODEL_FAILURE_EVENT_LIMIT = 50
+OPERATION_FAILURE_EVENT_LIMIT = 50
+SAFE_OPERATION_REASONS = frozenset(
+    {
+        "blocked_url",
+        "connection_error",
+        "dns_no_public_address",
+        "extraction_failed",
+        "fetch_error",
+        "http_client_error",
+        "http_error",
+        "integrity_error",
+        "internal_error",
+        "invalid_purpose",
+        "invalid_query",
+        "invalid_query_entry",
+        "invalid_response",
+        "invalid_url",
+        "invalid_value",
+        "os_error",
+        "redirect_limit",
+        "response_too_large",
+        "timeout",
+        "unusable_document",
+        "unsupported_content_type",
+        "upstream_disconnect",
+    }
+)
 STRUCTURED_OUTPUT_ATTEMPTS = 3
 STRUCTURED_OUTPUT_TURNS = 2
 REPAIR_NOOP_LIMITS = {
@@ -573,7 +601,7 @@ def provider_error_state(error: BaseException) -> tuple[bool, bool]:
             detail = body.get("error", body)
             if not isinstance(detail, dict):
                 detail = {}
-            code = str(current.code or detail.get("code") or "").casefold()
+            code = str(current.code or detail.get("code") or detail.get("type") or "").casefold()
             message = str(detail.get("message") or current).strip().rstrip(".").casefold()
             retryable = (
                 retryable
@@ -604,14 +632,38 @@ def provider_error_state(error: BaseException) -> tuple[bool, bool]:
     return retryable, proxy_exhausted
 
 
-def safe_model_recovery_details(error: BaseException) -> tuple[str, int | None]:
+@dataclass(frozen=True, slots=True)
+class SafeModelRecoveryDetails:
+    reason: str
+    reason_source: str
+    http_status: int | None
+    provider_code: str
+    message_bucket: str
+    cause_exception: str
+
+
+def safe_model_recovery_details(error: BaseException) -> SafeModelRecoveryDetails:
     """Return bounded diagnostics without persisting provider text or response bodies."""
 
     if type(error) is TimeoutError:
         if str(error) == "model returned no result":
-            return "model_empty_result", None
+            return SafeModelRecoveryDetails(
+                "model_empty_result",
+                "runtime",
+                None,
+                "none",
+                "empty_result",
+                "TimeoutError",
+            )
         if str(error) == "model call total timeout":
-            return "model_total_timeout", None
+            return SafeModelRecoveryDetails(
+                "model_total_timeout",
+                "runtime",
+                None,
+                "none",
+                "total_timeout",
+                "TimeoutError",
+            )
 
     provider_errors = (
         EventLoopException,
@@ -623,13 +675,46 @@ def safe_model_recovery_details(error: BaseException) -> tuple[str, int | None]:
     pending = [error] if isinstance(error, provider_errors) else []
     seen: set[int] = set()
     reason = "provider_transient_error"
+    reason_source = "unknown"
     reason_priority = 0
     http_status: int | None = None
+    provider_code = "none"
+    message_bucket = "none"
+    cause_exception = type(error).__name__
+    safe_codes = {
+        "authentication_error",
+        "conflict_error",
+        "internal_error",
+        "internal_server_error",
+        "invalid_request_error",
+        "not_found_error",
+        "overloaded_error",
+        "permission_error",
+        "rate_limit_exceeded",
+        "server_error",
+        "timeout",
+        "unprocessable_entity_error",
+    }
+    safe_messages = {
+        "internal server error": "internal_server_error",
+        "request timed out": "request_timed_out",
+        "server error": "server_error",
+        "upstream timeout": "upstream_timeout",
+    }
+    safe_exception_names = {
+        "APIConnectionError",
+        "APIError",
+        "APIStatusError",
+        "APITimeoutError",
+        "EventLoopException",
+        "TimeoutError",
+    }
 
-    def choose(candidate: str, priority: int) -> None:
-        nonlocal reason, reason_priority
+    def choose(candidate: str, source: str, priority: int) -> None:
+        nonlocal reason, reason_priority, reason_source
         if priority > reason_priority:
             reason = candidate
+            reason_source = source
             reason_priority = priority
 
     while pending:
@@ -637,40 +722,72 @@ def safe_model_recovery_details(error: BaseException) -> tuple[str, int | None]:
         if id(current) in seen:
             continue
         seen.add(id(current))
+        current_name = type(current).__name__
+        cause_exception = (
+            current_name if current_name in safe_exception_names else "other_provider_exception"
+        )
         if isinstance(current, APITimeoutError):
-            choose("provider_timeout", 5)
+            choose("provider_timeout", "exception", 5)
         elif isinstance(current, APIConnectionError):
-            choose("provider_connection_error", 3)
+            choose("provider_connection_error", "exception", 3)
         elif isinstance(current, TimeoutError):
-            choose("provider_timeout", 5)
+            choose("provider_timeout", "exception", 5)
         if isinstance(current, APIError):
             status_code = getattr(current, "status_code", None)
             if isinstance(status_code, int):
                 http_status = status_code
                 if status_code == 429:
-                    choose("provider_rate_limit", 6)
+                    choose("provider_rate_limit", "http_status", 6)
                 elif status_code in {408, 409}:
-                    choose("provider_http_transient", 5)
+                    choose("provider_http_transient", "http_status", 5)
                 elif 500 <= status_code < 600:
-                    choose("provider_http_server_error", 5)
+                    choose("provider_http_server_error", "http_status", 5)
+                elif status_code == 401:
+                    choose("provider_auth_error", "http_status", 5)
+                elif status_code == 403:
+                    choose("provider_permission_error", "http_status", 5)
+                elif status_code == 404:
+                    choose("provider_not_found", "http_status", 5)
+                elif 400 <= status_code < 500:
+                    choose("provider_invalid_request", "http_status", 4)
             body = current.body if isinstance(current.body, dict) else {}
             detail = body.get("error", body)
             if not isinstance(detail, dict):
                 detail = {}
-            code = str(current.code or detail.get("code") or "").casefold()
+            code = str(current.code or detail.get("code") or detail.get("type") or "").casefold()
             message = str(detail.get("message") or current).strip().rstrip(".").casefold()
+            if code:
+                provider_code = code if code in safe_codes else "other"
+            if message:
+                message_bucket = safe_messages.get(message, "other")
             if code == "rate_limit_exceeded":
-                choose("provider_rate_limit", 6)
-            elif code == "timeout" or message in {"request timed out", "upstream timeout"}:
-                choose("provider_timeout", 6)
+                choose("provider_rate_limit", "provider_code", 6)
+            elif code == "authentication_error":
+                choose("provider_auth_error", "provider_code", 6)
+            elif code == "permission_error":
+                choose("provider_permission_error", "provider_code", 6)
+            elif code == "not_found_error":
+                choose("provider_not_found", "provider_code", 6)
+            elif code in {
+                "invalid_request_error",
+                "unprocessable_entity_error",
+            }:
+                choose("provider_invalid_request", "provider_code", 6)
+            elif code == "timeout":
+                choose("provider_timeout", "provider_code", 6)
+            elif message in {"request timed out", "upstream timeout"}:
+                choose("provider_timeout", "message", 6)
             elif code in {
                 "internal_error",
                 "internal_server_error",
                 "overloaded_error",
-            } or message in {"internal server error", "server error"}:
-                choose("provider_internal_error", 6)
+                "server_error",
+            }:
+                choose("provider_internal_error", "provider_code", 6)
+            elif message in {"internal server error", "server error"}:
+                choose("provider_internal_error", "message", 6)
             elif status_code is None:
-                choose("provider_statusless_api_error", 2)
+                choose("provider_statusless_api_error", "exception", 2)
         for nested in (
             getattr(current, "original_exception", None),
             current.__cause__,
@@ -678,7 +795,161 @@ def safe_model_recovery_details(error: BaseException) -> tuple[str, int | None]:
         ):
             if isinstance(nested, provider_errors):
                 pending.append(nested)
-    return reason, http_status
+    return SafeModelRecoveryDetails(
+        reason,
+        reason_source,
+        http_status,
+        provider_code,
+        message_bucket,
+        cause_exception,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class SafeOperationErrorDetails:
+    reason: str
+    reason_source: str
+    exception: str
+    cause_exception: str
+    http_status: int | None
+
+
+def safe_exception_name(error: BaseException) -> str:
+    name = type(error).__name__
+    return name if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,79}", name) else "Exception"
+
+
+def safe_operation_reason(value: str, fallback: str = "internal_error") -> str:
+    return value if value in SAFE_OPERATION_REASONS else fallback
+
+
+def safe_operation_error_details(error: BaseException) -> SafeOperationErrorDetails:
+    """Classify runtime and network failures without retaining exception text."""
+
+    exception = safe_exception_name(error)
+    cause_exception = exception
+    current = error
+    seen: set[int] = set()
+    for _ in range(8):
+        if id(current) in seen:
+            break
+        seen.add(id(current))
+        cause_exception = safe_exception_name(current)
+        nested = current.__cause__ or current.__context__
+        if not isinstance(nested, BaseException):
+            break
+        current = nested
+
+    if isinstance(error, aiohttp.ClientResponseError):
+        status_code = error.status if isinstance(error.status, int) else None
+        return SafeOperationErrorDetails(
+            "http_error", "http_status", exception, cause_exception, status_code
+        )
+    if isinstance(error, (TimeoutError, asyncio.TimeoutError)):
+        return SafeOperationErrorDetails("timeout", "exception", exception, cause_exception, None)
+    if isinstance(error, aiohttp.ServerDisconnectedError):
+        return SafeOperationErrorDetails(
+            "upstream_disconnect", "exception", exception, cause_exception, None
+        )
+    if isinstance(error, aiohttp.ClientConnectionError):
+        return SafeOperationErrorDetails(
+            "connection_error", "exception", exception, cause_exception, None
+        )
+    if isinstance(error, aiohttp.ClientPayloadError):
+        return SafeOperationErrorDetails(
+            "invalid_response", "exception", exception, cause_exception, None
+        )
+    if isinstance(error, aiohttp.ClientError):
+        return SafeOperationErrorDetails(
+            "http_client_error", "exception", exception, cause_exception, None
+        )
+    if isinstance(error, UnicodeError):
+        return SafeOperationErrorDetails(
+            "invalid_response", "exception", exception, cause_exception, None
+        )
+    if isinstance(error, json.JSONDecodeError):
+        return SafeOperationErrorDetails(
+            "invalid_response", "exception", exception, cause_exception, None
+        )
+    if isinstance(error, IntegrityError):
+        return SafeOperationErrorDetails(
+            "integrity_error", "exception", exception, cause_exception, None
+        )
+    if isinstance(error, ValueError):
+        message = str(error)
+        status_match = re.fullmatch(r"(?:http|fetch failed) ([45]\d\d)", message)
+        if status_match:
+            return SafeOperationErrorDetails(
+                "http_error",
+                "http_status",
+                exception,
+                cause_exception,
+                int(status_match.group(1)),
+            )
+        exact_reasons = {
+            "query is empty": "invalid_query",
+            "query too long": "invalid_query",
+            "purpose is empty": "invalid_purpose",
+            "purpose too long": "invalid_purpose",
+            "scheme must be http or https": "invalid_url",
+            "userinfo not allowed": "invalid_url",
+            "missing host": "invalid_url",
+            "invalid port": "invalid_url",
+            "blocked ip literal": "blocked_url",
+            "response too large": "response_too_large",
+            "unexpected content type": "unsupported_content_type",
+            "disallowed content type": "unsupported_content_type",
+            "expected a JSON object": "invalid_response",
+            "invalid search results": "invalid_response",
+            "too many redirects": "redirect_limit",
+            "html extraction failed": "extraction_failed",
+            "pdf extraction failed": "extraction_failed",
+            "document has no text": "unusable_document",
+            "could not select source excerpt": "unusable_document",
+            "query entry must target exactly one requirement": "invalid_query_entry",
+            "query entry must target an uncovered requirement": "invalid_query_entry",
+        }
+        reason = exact_reasons.get(message)
+        if reason is None and message.startswith("blocked address for "):
+            reason = "blocked_url"
+        if reason is None and message.startswith("no public address for "):
+            reason = "dns_no_public_address"
+        return SafeOperationErrorDetails(
+            reason or "invalid_value", "message", exception, cause_exception, None
+        )
+    if isinstance(error, OSError):
+        return SafeOperationErrorDetails("os_error", "exception", exception, cause_exception, None)
+    return SafeOperationErrorDetails(
+        "internal_error", "exception", exception, cause_exception, None
+    )
+
+
+def safe_fatal_error_event(error: BaseException, phase: str) -> dict[str, Any]:
+    if isinstance(error, (EventLoopException, APIError, APITimeoutError)):
+        details = safe_model_recovery_details(error)
+        return {
+            "timestamp": int(time.time()),
+            "phase": phase,
+            "reason": details.reason,
+            "reason_source": details.reason_source,
+            "exception": safe_exception_name(error),
+            "cause_exception": details.cause_exception,
+            "http_status": details.http_status,
+            "provider_code": details.provider_code,
+            "message_bucket": details.message_bucket,
+        }
+    details = safe_operation_error_details(error)
+    return {
+        "timestamp": int(time.time()),
+        "phase": phase,
+        "reason": details.reason,
+        "reason_source": details.reason_source,
+        "exception": details.exception,
+        "cause_exception": details.cause_exception,
+        "http_status": details.http_status,
+        "provider_code": "none",
+        "message_bucket": "none",
+    }
 
 
 def model_retry_delay(error: BaseException, attempt: int) -> float | None:
@@ -1243,6 +1514,8 @@ def default_stats(depth: str, budget: Budget, wall_limit: float) -> dict[str, An
         "evidence": 0,
         "usable_evidence": 0,
         "search_failures": 0,
+        "operation_failure_reasons": {},
+        "operation_failure_events": [],
         "candidates_discovered": 0,
         "candidates_attempted": 0,
         "candidates_skipped": 0,
@@ -1262,6 +1535,8 @@ def default_stats(depth: str, budget: Budget, wall_limit: float) -> dict[str, An
         "model_transient_failures": {},
         "model_transient_latest_reason": "",
         "model_transient_latest_role": "",
+        "model_transient_events": [],
+        "fatal_error": {},
         "research_continuations": 0,
         "research_salvages": 0,
         "evidence_shortfall_salvage": False,
@@ -1369,7 +1644,11 @@ def load_run_state(
         for item in cast(list[dict[str, Any]], snapshot.get("candidate_queue", []))
     ]
     failed_candidates = [
-        FailedCandidate(**item)
+        FailedCandidate(
+            url=str(item["url"]),
+            reason=safe_operation_reason(str(item.get("reason", "")), "fetch_error"),
+            stage="search" if item.get("stage") == "search" else "fetch",
+        )
         for item in cast(list[dict[str, Any]], snapshot.get("failed_candidates", []))
     ]
     stats["report_sections"] = len(report_sections)
@@ -3066,10 +3345,54 @@ def enqueue_candidates(
     return added
 
 
-def record_failed_candidate(state: RunState, candidate: Candidate, reason: str) -> None:
+def record_operation_failure(
+    state: RunState,
+    research_id: str,
+    operation: Literal["search", "fetch"],
+    stage: str,
+    details: SafeOperationErrorDetails,
+) -> None:
+    reasons = cast(dict[str, int], state.stats["operation_failure_reasons"])
+    reason_key = f"{operation}:{details.reason}"
+    reasons[reason_key] = reasons.get(reason_key, 0) + 1
+    event = {
+        "timestamp": int(time.time()),
+        "phase": state.phase,
+        "operation": operation,
+        "stage": stage,
+        "reason": details.reason,
+        "reason_source": details.reason_source,
+        "exception": details.exception,
+        "cause_exception": details.cause_exception,
+        "http_status": details.http_status,
+    }
+    events = cast(list[dict[str, Any]], state.stats["operation_failure_events"])
+    events.append(event)
+    # ponytail: bounded history; raise the cap only if incident analysis needs a wider window.
+    del events[:-OPERATION_FAILURE_EVENT_LIMIT]
+    LOG.warning(
+        "operation_failure research_id=%s phase=%s operation=%s stage=%s reason=%s "
+        "reason_source=%s exception=%s cause_exception=%s http_status=%s",
+        research_id,
+        state.phase,
+        operation,
+        stage,
+        details.reason,
+        details.reason_source,
+        details.exception,
+        details.cause_exception,
+        details.http_status if details.http_status is not None else "none",
+    )
+
+
+def record_failed_candidate(
+    state: RunState,
+    candidate: Candidate,
+    details: SafeOperationErrorDetails,
+) -> None:
     if any(item.url == candidate.url for item in state.failed_candidates):
         return
-    state.failed_candidates.append(FailedCandidate(candidate.url, reason[:200], "fetch"))
+    state.failed_candidates.append(FailedCandidate(candidate.url, details.reason, "fetch"))
 
 
 def next_candidate_batch(state: RunState) -> list[Candidate]:
@@ -3473,9 +3796,11 @@ def build_research_tools(
             TimeoutError,
             ValueError,
         ) as exc:
+            details = safe_operation_error_details(exc)
             state.stats["search_failures"] += 1
+            record_operation_failure(state, research_id, "search", "tool", details)
             await save("running")
-            return tool_error("search_failed", str(exc))
+            return tool_error("search_failed", details.reason)
         except Exception as exc:  # pragma: no cover - defensive fail-closed path
             record_fatal(exc)
             return tool_error("internal_error", "search failed due to an internal runtime error")
@@ -3559,8 +3884,11 @@ def build_research_tools(
             TimeoutError,
             ValueError,
         ) as exc:
+            details = safe_operation_error_details(exc)
             state.stats["source_skips"] += 1
-            return tool_error("fetch_failed", str(exc))
+            record_operation_failure(state, research_id, "fetch", "tool", details)
+            await save("running")
+            return tool_error("fetch_failed", details.reason)
         except Exception as exc:  # pragma: no cover - defensive fail-closed path
             record_fatal(exc)
             return tool_error("internal_error", "fetch failed due to an internal runtime error")
@@ -3577,7 +3905,11 @@ def build_research_tools(
                     "ok": True,
                     "revision": state.evidence_revision,
                     "ledger_revision": state.evidence_revision,
-                    "stats": state.stats,
+                    "stats": {
+                        key: value
+                        for key, value in state.stats.items()
+                        if key not in {"model_transient_events", "operation_failure_events"}
+                    },
                     "remaining_budget": remaining_budgets(state, make_budget(research.depth)),
                     "evidence": [serialize_evidence(item) for item in state.evidence],
                     "report_sections": [
@@ -3919,7 +4251,7 @@ async def run_research(
         retryable, proxy_exhausted = provider_error_state(exc)
         if not retryable:
             return False
-        reason, http_status = safe_model_recovery_details(exc)
+        details = safe_model_recovery_details(exc)
         can_retry = not proxy_exhausted and model_recoveries < MODEL_TRANSIENT_RECOVERIES
         delay = (
             min(MODEL_RETRY_MAX_SECONDS, MODEL_RETRY_BASE_SECONDS * (2**model_recoveries))
@@ -3927,8 +4259,8 @@ async def run_research(
             else 0.0
         )
         failures = cast(dict[str, int], state.stats["model_transient_failures"])
-        failures[reason] = failures.get(reason, 0) + 1
-        state.stats["model_transient_latest_reason"] = reason
+        failures[details.reason] = failures.get(details.reason, 0) + 1
+        state.stats["model_transient_latest_reason"] = details.reason
         state.stats["model_transient_latest_role"] = role
         streak = model_recoveries + 1
         action = (
@@ -3936,15 +4268,40 @@ async def run_research(
             if can_retry
             else ("proxy_exhausted" if proxy_exhausted else "runtime_exhausted")
         )
+        event = {
+            "timestamp": int(time.time()),
+            "phase": state.phase,
+            "role": role,
+            "reason": details.reason,
+            "reason_source": details.reason_source,
+            "exception": type(exc).__name__,
+            "cause_exception": details.cause_exception,
+            "http_status": details.http_status,
+            "provider_code": details.provider_code,
+            "message_bucket": details.message_bucket,
+            "action": action,
+            "streak": streak,
+            "delay_s": delay,
+        }
+        events = cast(list[dict[str, Any]], state.stats["model_transient_events"])
+        events.append(event)
+        # ponytail: retain the last 50 safe events; increase only if one run needs a longer audit.
+        del events[:-MODEL_FAILURE_EVENT_LIMIT]
         LOG.warning(
-            "model_failure research_id=%s phase=%s role=%s reason=%s exception=%s "
-            "http_status=%s action=%s streak=%d delay_s=%.3f",
+            "model_failure research_id=%s phase=%s role=%s reason=%s reason_source=%s "
+            "exception=%s "
+            "cause_exception=%s http_status=%s provider_code=%s message_bucket=%s "
+            "action=%s streak=%d delay_s=%.3f",
             research_id,
             state.phase,
             role,
-            reason,
+            details.reason,
+            details.reason_source,
             type(exc).__name__,
-            http_status if http_status is not None else "none",
+            details.cause_exception,
+            details.http_status if details.http_status is not None else "none",
+            details.provider_code,
+            details.message_bucket,
             action,
             streak,
             delay,
@@ -4064,8 +4421,15 @@ async def run_research(
         for raw_entry in raw_entries:
             try:
                 validated = validated_query_entry(state, raw_entry)
-            except ValueError:
+            except ValueError as exc:
                 state.stats["search_failures"] += 1
+                record_operation_failure(
+                    state,
+                    research_id,
+                    "search",
+                    "query_validation",
+                    safe_operation_error_details(exc),
+                )
                 continue
             if validated.query in batch_seen:
                 state.stats["duplicate_queries"] += 1
@@ -4098,6 +4462,13 @@ async def run_research(
                     raise fatal_errors[0]
                 if isinstance(result, (aiohttp.ClientError, OSError, TimeoutError, ValueError)):
                     state.stats["search_failures"] += 1
+                    record_operation_failure(
+                        state,
+                        research_id,
+                        "search",
+                        "request",
+                        safe_operation_error_details(result),
+                    )
                     continue
                 if not is_expected_provider_failure(result):
                     raise result
@@ -4309,11 +4680,19 @@ async def run_research(
                                 if isinstance(
                                     result, (aiohttp.ClientError, OSError, TimeoutError, ValueError)
                                 ):
+                                    details = safe_operation_error_details(result)
                                     state.stats["source_skips"] += 1
                                     state.stats["candidates_failed"] = (
                                         int(state.stats["candidates_failed"]) + 1
                                     )
-                                    record_failed_candidate(state, candidate, str(result))
+                                    record_operation_failure(
+                                        state,
+                                        research_id,
+                                        "fetch",
+                                        "request",
+                                        details,
+                                    )
+                                    record_failed_candidate(state, candidate, details)
                                     await save("running")
                                     continue
                                 raise result
@@ -4514,8 +4893,24 @@ async def run_research(
             cancel_signal.set()
         if agent_task is not None:
             agent_task.cancel()
-        state.stats["stop_reason"] = state.stats.get("stop_reason") or type(exc).__name__
-        await save("failed", error=str(exc)[:500])
+        fatal_error = safe_fatal_error_event(exc, state.phase)
+        state.stats["fatal_error"] = fatal_error
+        state.stats["stop_reason"] = state.stats.get("stop_reason") or fatal_error["reason"]
+        LOG.error(
+            "research_failure research_id=%s phase=%s reason=%s reason_source=%s "
+            "exception=%s cause_exception=%s http_status=%s provider_code=%s "
+            "message_bucket=%s",
+            research_id,
+            fatal_error["phase"],
+            fatal_error["reason"],
+            fatal_error["reason_source"],
+            fatal_error["exception"],
+            fatal_error["cause_exception"],
+            fatal_error["http_status"] if fatal_error["http_status"] is not None else "none",
+            fatal_error["provider_code"],
+            fatal_error["message_bucket"],
+        )
+        await save("failed", error=cast(str, fatal_error["reason"]))
         raise
     finally:
         tasks = [task for task in (agent_task, watch_task, stop_task) if task is not None]
@@ -4593,6 +4988,19 @@ def build_app() -> FastAPI:
         except HTTPException:
             raise
         except Exception as exc:
+            details = safe_fatal_error_event(exc, "endpoint")
+            LOG.error(
+                "research_endpoint_failure phase=%s reason=%s reason_source=%s exception=%s "
+                "cause_exception=%s http_status=%s provider_code=%s message_bucket=%s",
+                details["phase"],
+                details["reason"],
+                details["reason_source"],
+                details["exception"],
+                details["cause_exception"],
+                details["http_status"] if details["http_status"] is not None else "none",
+                details["provider_code"],
+                details["message_bucket"],
+            )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="research failed",

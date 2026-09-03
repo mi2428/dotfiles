@@ -310,16 +310,62 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 "provider_internal_error",
             )
             self.assertEqual(response.stats["model_transient_latest_role"], "SearchBatchDraft")
-            self.assertEqual(len(logs.output), 2)
+            self.assertEqual(len(response.stats["model_transient_events"]), 2)
+            self.assertEqual(
+                response.stats["model_transient_events"][-1],
+                {
+                    "timestamp": response.stats["model_transient_events"][-1]["timestamp"],
+                    "phase": "research",
+                    "role": "SearchBatchDraft",
+                    "reason": "provider_internal_error",
+                    "reason_source": "message",
+                    "exception": "APIError",
+                    "cause_exception": "APIError",
+                    "http_status": None,
+                    "provider_code": "none",
+                    "message_bucket": "internal_server_error",
+                    "action": "retry",
+                    "streak": 1,
+                    "delay_s": 0.0,
+                },
+            )
+            self.assertEqual(
+                response.stats["operation_failure_reasons"],
+                {"search:os_error": 1},
+            )
+            self.assertEqual(len(response.stats["operation_failure_events"]), 1)
+            self.assertEqual(
+                response.stats["operation_failure_events"][0],
+                {
+                    "timestamp": response.stats["operation_failure_events"][0]["timestamp"],
+                    "phase": "research",
+                    "operation": "search",
+                    "stage": "request",
+                    "reason": "os_error",
+                    "reason_source": "exception",
+                    "exception": "OSError",
+                    "cause_exception": "OSError",
+                    "http_status": None,
+                },
+            )
+            model_logs = [line for line in logs.output if "model_failure" in line]
+            operation_logs = [line for line in logs.output if "operation_failure" in line]
+            self.assertEqual(len(model_logs), 2)
+            self.assertEqual(len(operation_logs), 1)
             self.assertTrue(
                 all(
                     "reason=provider_internal_error" in line
+                    and "reason_source=message" in line
                     and "exception=APIError" in line
+                    and "provider_code=none" in line
+                    and "message_bucket=internal_server_error" in line
                     and "role=SearchBatchDraft" in line
                     and "Internal server error" not in line
-                    for line in logs.output
+                    for line in model_logs
                 )
             )
+            self.assertIn("reason=os_error", operation_logs[0])
+            self.assertNotIn("search failed", operation_logs[0])
             self.assertTrue(response.stats["evidence_shortfall_salvage"])
 
         asyncio.run(run())
@@ -936,6 +982,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
             with (
                 patch.object(rt, "build_research_agent", return_value=ToolFailureAgent()),
+                self.assertLogs(rt.LOG.name, level="ERROR") as logs,
                 self.assertRaises(TypeError),
             ):
                 await rt.run_research(
@@ -945,6 +992,28 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "rid",
                     "hard-failure-key",
                 )
+            row = self.runtime.db.execute(
+                "SELECT status, error, state_json FROM research_runs WHERE idempotency_key = ?",
+                ("hard-failure-key",),
+            ).fetchone()
+            self.assertEqual(row["status"], "failed")
+            self.assertEqual(row["error"], "internal_error")
+            fatal = json.loads(row["state_json"])["stats"]["fatal_error"]
+            self.assertEqual(
+                fatal,
+                {
+                    "timestamp": fatal["timestamp"],
+                    "phase": "research",
+                    "reason": "internal_error",
+                    "reason_source": "exception",
+                    "exception": "TypeError",
+                    "cause_exception": "TypeError",
+                    "http_status": None,
+                    "provider_code": "none",
+                    "message_bucket": "none",
+                },
+            )
+            self.assertNotIn("internal bug", "\n".join(logs.output))
 
         asyncio.run(run())
 
@@ -1361,7 +1430,59 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 )
                 inspected = parse_tool_payload(await tool_map["inspect_evidence_ledger"]())
                 self.assertEqual(inspected["ledger_revision"], 2)
+                self.assertNotIn("model_transient_events", inspected["stats"])
+                self.assertNotIn("operation_failure_events", inspected["stats"])
                 self.assertIsInstance(fatal, list)
+
+        asyncio.run(run())
+
+    def test_fetch_failure_checkpoints_safe_diagnostics_without_raw_text(self) -> None:
+        async def run() -> None:
+            research = rt.ResearchRequest(query="Evidence", depth="quick")
+            state = stable_quick_state()
+            with (
+                patch.object(
+                    rt,
+                    "search_searxng",
+                    new=AsyncMock(
+                        return_value=[
+                            rt.SearchResult("http://example.com/3", "Three", "", "engine")
+                        ]
+                    ),
+                ),
+                patch.object(
+                    rt,
+                    "extract_evidence",
+                    new=AsyncMock(side_effect=ValueError("fetch failed 503")),
+                ),
+                self.assertLogs(rt.LOG.name, level="WARNING") as logs,
+            ):
+                tools, _allowlist, _fatal = rt.build_research_tools(
+                    self.runtime,
+                    research,
+                    "rid",
+                    "safe-fetch-key",
+                    rt.query_hash(research.model_dump()),
+                    state,
+                )
+                tool_map = {tool.tool_name: tool for tool in tools}
+                await tool_map["search_web"]("new evidence")
+                failure = parse_tool_payload(
+                    await tool_map["fetch_source"]("http://example.com/3", "verify")
+                )
+            self.assertEqual(failure["message"], "http_error")
+            self.assertEqual(state.stats["operation_failure_reasons"], {"fetch:http_error": 1})
+            event = state.stats["operation_failure_events"][0]
+            self.assertEqual(event["operation"], "fetch")
+            self.assertEqual(event["stage"], "tool")
+            self.assertEqual(event["http_status"], 503)
+            self.assertEqual(event["exception"], "ValueError")
+            self.assertNotIn("fetch failed 503", "\n".join(logs.output))
+            row = self.runtime.db.execute(
+                "SELECT state_json FROM research_runs WHERE idempotency_key = ?",
+                ("safe-fetch-key",),
+            ).fetchone()
+            self.assertNotIn("fetch failed 503", row["state_json"])
 
         asyncio.run(run())
 

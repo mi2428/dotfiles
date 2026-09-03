@@ -235,7 +235,14 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertTrue(rt.is_expected_provider_failure(wrapped))
         self.assertEqual(
             rt.safe_model_recovery_details(wrapped),
-            ("provider_http_server_error", 503),
+            rt.SafeModelRecoveryDetails(
+                "provider_http_server_error",
+                "http_status",
+                503,
+                "none",
+                "other",
+                "APIStatusError",
+            ),
         )
         exhausted = rt.EventLoopException(
             APIStatusError(
@@ -259,6 +266,17 @@ class RuntimeContractTests(RuntimeTestCase):
         )
         self.assertIsNone(rt.model_retry_delay(unauthorized, 0))
         self.assertFalse(rt.is_expected_provider_failure(unauthorized))
+        self.assertEqual(
+            rt.safe_model_recovery_details(unauthorized),
+            rt.SafeModelRecoveryDetails(
+                "provider_auth_error",
+                "http_status",
+                401,
+                "none",
+                "other",
+                "APIStatusError",
+            ),
+        )
         stream_error = APIError("Internal server error.", request=request, body=None)
         self.assertEqual(rt.MODEL_TRANSIENT_RECOVERIES, 5)
         self.assertEqual(
@@ -268,15 +286,62 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertTrue(rt.is_expected_provider_failure(stream_error))
         self.assertEqual(
             rt.safe_model_recovery_details(stream_error),
-            ("provider_internal_error", None),
+            rt.SafeModelRecoveryDetails(
+                "provider_internal_error",
+                "message",
+                None,
+                "none",
+                "internal_server_error",
+                "APIError",
+            ),
         )
         self.assertEqual(
             rt.safe_model_recovery_details(connection_error),
-            ("provider_connection_error", None),
+            rt.SafeModelRecoveryDetails(
+                "provider_connection_error",
+                "exception",
+                None,
+                "none",
+                "other",
+                "APIConnectionError",
+            ),
         )
         self.assertEqual(
             rt.safe_model_recovery_details(TimeoutError("model returned no result")),
-            ("model_empty_result", None),
+            rt.SafeModelRecoveryDetails(
+                "model_empty_result",
+                "runtime",
+                None,
+                "none",
+                "empty_result",
+                "TimeoutError",
+            ),
+        )
+        coded = APIError(
+            "provider failure",
+            request=request,
+            body={"error": {"code": "overloaded_error", "message": "busy"}},
+        )
+        self.assertEqual(
+            rt.safe_model_recovery_details(coded),
+            rt.SafeModelRecoveryDetails(
+                "provider_internal_error",
+                "provider_code",
+                None,
+                "overloaded_error",
+                "other",
+                "APIError",
+            ),
+        )
+        self.assertEqual(
+            rt.safe_operation_error_details(ValueError("fetch failed 503")),
+            rt.SafeOperationErrorDetails(
+                "http_error", "http_status", "ValueError", "ValueError", 503
+            ),
+        )
+        self.assertEqual(
+            rt.safe_operation_error_details(OSError("secret provider text")),
+            rt.SafeOperationErrorDetails("os_error", "exception", "OSError", "OSError", None),
         )
 
     def test_validated_requirements_plan_maps_every_explicit_fragment(self) -> None:
