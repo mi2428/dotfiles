@@ -71,8 +71,9 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         structured = StructuredAgent(
             [
-                rt.ReportSectionDraft(
+                rt.StandardReportSectionDraft(
                     heading="Summary",
+                    requirement_ids=[],
                     body_markdown="Answer supported by evidence [S1] [S2]",
                     summary="summary",
                 ),
@@ -99,6 +100,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     rt.run_state_snapshot(state),
                 )
             self.assertIn("Answer supported by evidence", response.answer_markdown)
+            self.assertEqual(structured.models[0], rt.StandardReportSectionDraft)
 
         asyncio.run(run())
 
@@ -222,6 +224,8 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertTrue(
                 all(item["turns"] == rt.STRUCTURED_OUTPUT_TURNS for item in structured.limits)
             )
+            self.assertFalse(response.stats["extractive_finalization"])
+            self.assertEqual(structured.models[1], rt.ReportSectionDraft)
             self.assertIn("Comparison across two hosts", response.answer_markdown)
 
         asyncio.run(run())
@@ -387,6 +391,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertEqual(response.stats["extractive_finalization_reason"], "provider_failure")
             self.assertEqual(response.stats["model_transient_recoveries"], 5)
             self.assertIn("検証済み証拠台帳から抽出的に構成", response.answer_markdown)
+            self.assertIn("全節は検証済み証拠の抽出要約です。", response.answer_markdown)
             self.assertIn("Runtime coverage gap", response.answer_markdown)
             self.assertEqual(len(response.sources), 1)
 
@@ -723,7 +728,15 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         ]
         payload = rt.build_section_context(research, state, "missing_plan_section", "Combined")
         self.assertEqual([item["id"] for item in payload["assigned_evidence"]], ["S1", "S2", "S3"])
-        self.assertEqual(payload["planned_section"]["source_ids"], ["S1", "S2", "S3"])
+        self.assertEqual(payload["planned_section"]["assigned_source_ids"], ["S1", "S2", "S3"])
+        self.assertEqual(
+            [item["assigned_source_ids"] for item in payload["planned_requirements"]],
+            [["S1"], ["S2", "S3"]],
+        )
+        self.assertEqual(
+            [item["requirement_ids"] for item in payload["assigned_evidence"]],
+            [["R1"], ["R2"], ["R2"]],
+        )
 
     def test_gap_finalization_returns_completed_report_with_runtime_gap_limitation(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
@@ -875,6 +888,14 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     rt.run_state_snapshot(state),
                 )
             self.assertGreaterEqual(response.stats["structured_output_retries"], 1)
+            self.assertEqual(
+                response.stats["section_validation_failures"],
+                {"unknown requirement IDs in report section": 1},
+            )
+            self.assertEqual(
+                response.stats["section_validation_latest_reason"],
+                "unknown requirement IDs in report section",
+            )
             self.assertEqual(response.stats["collection_decision"], "voluntary_stop")
 
         asyncio.run(run())
@@ -995,8 +1016,118 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertEqual(
                 response.stats["extractive_finalization_reason"], "structured_section_attempts"
             )
+            self.assertEqual(
+                response.stats["section_validation_failures"],
+                {"report section output exceeded the model token budget": 3},
+            )
+            self.assertEqual(
+                response.stats["section_validation_latest_reason"],
+                "report section output exceeded the model token budget",
+            )
             self.assertNotIn("# Deep Research未完了", response.answer_markdown)
+            self.assertIn("残りの節は検証済み証拠の抽出要約です。", response.answer_markdown)
+            self.assertNotIn("全節は検証済み証拠の抽出要約です。", response.answer_markdown)
             self.assertEqual(len(response.sources), 1)
+
+        asyncio.run(run())
+
+    def test_structured_section_attempts_without_saved_sections_marks_all_sections(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
+        state = make_state(1)
+        state.last_inspected_revision = state.evidence_revision
+        state.evidence[0] = replace(
+            state.evidence[0],
+            relevance=0.9,
+            requirement_ids=["R1"],
+            search_query=research.query,
+            purpose="Need direct evidence",
+        )
+        rt.store_initial_plan(state, research, plan_for(research))
+        state.searched_queries = {
+            f"q{index}" for index in range(rt.make_budget("deep").search_limit)
+        }
+        structured = StructuredAgent(
+            [
+                rt.MaxTokensReachedException("partial"),
+                rt.MaxTokensReachedException("partial"),
+                rt.MaxTokensReachedException("partial"),
+            ]
+        )
+
+        async def run() -> None:
+            with (
+                patch.object(rt, "build_research_agent", side_effect=AssertionError("deep only")),
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    "all-sections-fallback-key",
+                    rt.run_state_snapshot(state),
+                )
+            self.assertEqual(
+                response.stats["extractive_finalization_reason"], "structured_section_attempts"
+            )
+            self.assertIn("全節は検証済み証拠の抽出要約です。", response.answer_markdown)
+            self.assertNotIn("残りの節は検証済み証拠の抽出要約です。", response.answer_markdown)
+
+        asyncio.run(run())
+
+    def test_mixed_section_validation_failures_keep_each_safe_reason_count(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
+        state = make_state(1)
+        state.last_inspected_revision = state.evidence_revision
+        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        rt.store_initial_plan(state, research, plan_for(research))
+        state.searched_queries = {
+            f"q{index}" for index in range(rt.make_budget("deep").search_limit)
+        }
+        structured = StructuredAgent(
+            [
+                rt.ReportSectionDraft(
+                    heading="Direct evidence",
+                    requirement_ids=["R9"],
+                    body_markdown="Body [S1]",
+                    summary="bad requirement",
+                ),
+                rt.ReportSectionDraft(
+                    heading="Direct evidence",
+                    requirement_ids=["R1"],
+                    body_markdown="Body [S9]",
+                    summary="bad source",
+                ),
+                rt.MaxTokensReachedException("partial"),
+                rt.MaxTokensReachedException("unused"),
+            ]
+        )
+
+        async def run() -> None:
+            with (
+                patch.object(rt, "build_research_agent", side_effect=AssertionError("deep only")),
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    "mixed-reasons-key",
+                    rt.run_state_snapshot(state),
+                )
+            self.assertEqual(
+                response.stats["section_validation_failures"],
+                {
+                    "unknown requirement IDs in report section": 1,
+                    "unknown source IDs in report section": 1,
+                    "report section output exceeded the model token budget": 1,
+                },
+            )
+            self.assertEqual(
+                response.stats["section_validation_latest_reason"],
+                "report section output exceeded the model token budget",
+            )
 
         asyncio.run(run())
 
@@ -1142,8 +1273,11 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             [
                 rt.MaxTokensReachedException("partial structured output"),
                 rt.StructuredOutputException("invalid payload"),
-                rt.ReportSectionDraft(
-                    heading="Limitations", body_markdown="invalid", summary="Invalid"
+                rt.StandardReportSectionDraft(
+                    heading="Limitations",
+                    requirement_ids=[],
+                    body_markdown="invalid",
+                    summary="Invalid",
                 ),
             ]
         )
@@ -1169,6 +1303,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     rt.run_state_snapshot(state),
                 )
             self.assertIn("## Sources", failure.exception.answer_markdown)
+            self.assertEqual(structured.models, [rt.StandardReportSectionDraft] * 3)
 
         asyncio.run(run())
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import unittest
 from dataclasses import replace
@@ -10,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 import aiohttp
 import httpx
 from openai import APIConnectionError, APIError, APIStatusError
+from pydantic import ValidationError
 from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands.tools.executors import SequentialToolExecutor
 
@@ -302,6 +304,62 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertTrue(rt.requirement_is_covered(state, state.requirements[0]))
         self.assertTrue(rt.requirement_is_covered(state, state.requirements[1]))
 
+    def test_report_section_draft_schema_requires_requirement_ids_and_nonempty_summary(
+        self,
+    ) -> None:
+        schema = rt.ReportSectionDraft.model_json_schema()
+        standard_schema = rt.StandardReportSectionDraft.model_json_schema()
+        self.assertEqual(
+            set(schema["required"]),
+            {"heading", "requirement_ids", "body_markdown", "summary"},
+        )
+        self.assertNotIn("requirement_ids", set(standard_schema.get("required", [])))
+        self.assertNotIn("summary", set(standard_schema.get("required", [])))
+        with self.assertRaises(ValidationError):
+            rt.ReportSectionDraft.model_validate(
+                {"heading": "Summary", "body_markdown": "Body [S1]", "summary": "ok"}
+            )
+        with self.assertRaises(ValidationError):
+            rt.ReportSectionDraft(
+                heading="Summary",
+                requirement_ids=[],
+                body_markdown="Body [S1]",
+                summary="ok",
+            )
+        with self.assertRaises(ValidationError):
+            rt.ReportSectionDraft.model_validate(
+                {
+                    "heading": "Summary",
+                    "requirement_ids": ["R1"],
+                    "body_markdown": "Body [S1]",
+                    "summary": "",
+                }
+            )
+        rt.StandardReportSectionDraft(
+            heading="Summary",
+            requirement_ids=[],
+            body_markdown="Body [S1]",
+            summary="",
+        )
+
+    def test_safe_section_validation_error_rejects_suffix_smuggling(self) -> None:
+        self.assertEqual(
+            rt.safe_section_validation_error("missing cited evidence for R12"),
+            "missing cited evidence for R12",
+        )
+        self.assertEqual(
+            rt.safe_section_validation_error("insufficient independent hosts for R7"),
+            "insufficient independent hosts for R7",
+        )
+        self.assertEqual(
+            rt.safe_section_validation_error("missing cited evidence for R12 secret"),
+            "report section failed semantic validation",
+        )
+        self.assertEqual(
+            rt.safe_section_validation_error("insufficient independent hosts for R7 extra"),
+            "report section failed semantic validation",
+        )
+
     def test_deep_submit_allows_short_complete_report_and_rejects_missing_requirements(
         self,
     ) -> None:
@@ -410,6 +468,29 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertNotIn("evidence", query_payload)
         self.assertNotIn("candidate_queue", query_payload)
         self.assertEqual(len(section_payload["assigned_evidence"]), 3)
+        self.assertEqual(
+            section_payload["planned_section"],
+            {
+                "heading": "Section 1",
+                "target_chars": rt.DEEP_PLAN_MIN_SECTION_CHARS,
+                "deliverables": ["Need direct evidence"],
+                "requirement_ids": ["R1"],
+                "assigned_source_ids": ["S1", "S2", "S3"],
+            },
+        )
+        self.assertEqual(
+            section_payload["planned_requirements"],
+            [
+                {
+                    "id": "R1",
+                    "summary": "Need direct evidence",
+                    "kind": "direct",
+                    "required_independent_host_count": 1,
+                    "assigned_source_ids": ["S1", "S2", "S3"],
+                }
+            ],
+        )
+        self.assertEqual(section_payload["assigned_evidence"][0]["requirement_ids"], ["R1"])
         self.assertEqual(
             section_payload["completed_sections"],
             [
@@ -574,12 +655,54 @@ class RuntimeContractTests(RuntimeTestCase):
             )
         ]
         context = rt.build_section_context(research, state, "missing_plan_section", "Compare")
+        self.assertEqual(
+            context["planned_requirements"],
+            [
+                {
+                    "id": "R2",
+                    "summary": "compare vendors",
+                    "kind": "comparison",
+                    "required_independent_host_count": 2,
+                    "assigned_source_ids": [],
+                }
+            ],
+        )
         self.assertEqual(context["coverage_gaps"][0]["required_hosts"], 2)
         prompt = rt.build_section_prompt(
             research, state, "missing_plan_section", repair_heading="Compare"
         )
+        prompt_payload = json.loads(prompt)
         self.assertIn("unsupported claims", prompt)
         self.assertIn("assigned_evidence", prompt)
+        self.assertIn(
+            "Return requirement_ids exactly equal to planned_section.requirement_ids.",
+            prompt_payload["requirements"],
+        )
+        self.assertTrue(
+            any(
+                "required_independent_host_count distinct hosts" in item
+                for item in prompt_payload["requirements"]
+            )
+        )
+        self.assertTrue(
+            any(
+                "assigned_evidence.requirement_ids" in item and "assigned_evidence.url" in item
+                for item in prompt_payload["requirements"]
+            )
+        )
+
+    def test_standard_section_prompt_does_not_require_missing_planned_mapping(self) -> None:
+        research = rt.ResearchRequest(query="Evidence", depth="standard")
+        state = make_state(1, "standard")
+        prompt_payload = json.loads(rt.build_section_prompt(research, state))
+        self.assertNotIn(
+            "Return requirement_ids exactly equal to planned_section.requirement_ids.",
+            prompt_payload["requirements"],
+        )
+        self.assertIn(
+            "Return requirement_ids only when the prompt explicitly provides planned requirements.",
+            prompt_payload["requirements"],
+        )
 
     def test_model_output_error_retries_but_checkpoint_corruption_stays_integrity_error(
         self,
@@ -724,6 +847,61 @@ class RuntimeContractTests(RuntimeTestCase):
                 "Only one host cited [S1]",
                 "summary",
             )
+
+    def test_extractive_finalization_reason_wording_distinguishes_remaining_sections(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence; need another fact", depth="deep")
+        state = make_state(1)
+        fragments = rt.explicit_request_fragments(research)
+        state.last_inspected_revision = state.evidence_revision
+        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        state.stats["evidence_shortfall_salvage"] = True
+        rt.store_initial_plan(
+            state,
+            research,
+            rt.InitialPlanDraft(
+                requirements=[
+                    rt.RequirementModel(
+                        id="R1",
+                        summary="Need direct evidence",
+                        kind="direct",
+                        fragment_ids=[fragments[0].id],
+                    ),
+                    rt.RequirementModel(
+                        id="R2",
+                        summary="need another fact",
+                        kind="direct",
+                        fragment_ids=[fragments[-1].id],
+                    ),
+                ],
+                sections=[
+                    rt.InitialPlanSection(
+                        heading="Direct evidence",
+                        target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
+                        requirement_ids=["R1"],
+                        deliverables=["Need direct evidence"],
+                    ),
+                    rt.InitialPlanSection(
+                        heading="Comparison",
+                        target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
+                        requirement_ids=["R2"],
+                        deliverables=["need another fact"],
+                    ),
+                ],
+                query_seeds=[],
+            ),
+        )
+        rt.store_report_section(
+            state,
+            research,
+            state.evidence_revision,
+            "Direct evidence",
+            ["R1"],
+            "Supported claim [S1]",
+            "summary",
+        )
+        response = rt.finalize_extractively("rid", state, research, "normal_contract_unmet")
+        self.assertEqual(response.stats["extractive_finalization_reason"], "normal_contract_unmet")
+        self.assertIn("残りの節は検証済み証拠の抽出要約です。", response.answer_markdown)
 
 
 if __name__ == "__main__":
