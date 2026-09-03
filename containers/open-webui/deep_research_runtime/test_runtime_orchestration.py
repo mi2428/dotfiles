@@ -100,10 +100,6 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         structured = StructuredAgent(
             [
                 section(cited("Answer supported by evidence", "S1", "S2")),
-                rt.ReportSubmissionDraft(
-                    findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1", "S2"])],
-                    limitations=["Known constraint"],
-                ),
             ]
         )
 
@@ -123,7 +119,8 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     rt.run_state_snapshot(state),
                 )
             self.assertIn("Answer supported by evidence", response.answer_markdown)
-            self.assertEqual(structured.models[0], rt.SectionContentDraft)
+            self.assertEqual(structured.models, [rt.SectionContentDraft])
+            self.assertEqual(structured.outputs, [])
 
         asyncio.run(run())
 
@@ -177,10 +174,6 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 initial,
                 section(cited("Supported direct claim", "S1")),
                 comparison_section("Comparison across two hosts", "S2", "S3"),
-                rt.ReportSubmissionDraft(
-                    findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1", "S2", "S3"])],
-                    limitations=["Known constraint"],
-                ),
             ]
         )
 
@@ -237,17 +230,24 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertTrue(
                 all(item["turns"] == rt.STRUCTURED_OUTPUT_TURNS for item in structured.limits)
             )
-            self.assertFalse(response.stats["extractive_finalization"])
-            self.assertEqual(response.stats["report_sections_structured"], 2)
-            self.assertEqual(response.stats["report_sections_extractive"], 0)
-            self.assertEqual(response.stats["completion_class"], "structured")
+            self.assertEqual(response.outcome, "completed")
             self.assertEqual(structured.models[1], rt.SectionContentDraft)
             self.assertIn("Comparison across two hosts", response.answer_markdown)
+            row = self.runtime.db.execute(
+                "SELECT status, state_json FROM research_runs WHERE idempotency_key='fresh-key'"
+            ).fetchone()
+            stats = json.loads(row["state_json"])["stats"]
+            self.assertEqual(row["status"], "completed")
+            self.assertEqual((stats["searches"], stats["documents"], stats["evidence"]), (2, 3, 3))
+            self.assertEqual(stats["model_transient_events"], [])
+            self.assertEqual(stats["operation_failure_events"], [])
 
         asyncio.run(run())
 
     def test_search_failure_and_same_batch_duplicate_do_not_stop_other_query(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
+        research = rt.ResearchRequest(
+            query="Need direct evidence", focus="compare vendors", depth="deep"
+        )
         state = make_state(1)
         state.last_inspected_revision = state.evidence_revision
         state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
@@ -271,10 +271,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                         )
                     ]
                 ),
-                rt.ReportSubmissionDraft(
-                    findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1"])],
-                    limitations=["Known constraint"],
-                ),
+                section(cited("Supported direct claim", "S1")),
             ]
         )
 
@@ -304,54 +301,6 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     rt.run_state_snapshot(state),
                 )
             self.assertEqual(calls, ["dup", "ok", "idle-2"])
-            self.assertEqual(response.stats["model_transient_recoveries"], 2)
-            self.assertEqual(
-                response.stats["model_transient_failures"],
-                {"provider_internal_error": 2},
-            )
-            self.assertEqual(
-                response.stats["model_transient_latest_reason"],
-                "provider_internal_error",
-            )
-            self.assertEqual(response.stats["model_transient_latest_role"], "SearchBatchDraft")
-            self.assertEqual(len(response.stats["model_transient_events"]), 2)
-            self.assertEqual(
-                response.stats["model_transient_events"][-1],
-                {
-                    "timestamp": response.stats["model_transient_events"][-1]["timestamp"],
-                    "phase": "research",
-                    "role": "SearchBatchDraft",
-                    "reason": "provider_internal_error",
-                    "reason_source": "message",
-                    "exception": "APIError",
-                    "cause_exception": "APIError",
-                    "http_status": None,
-                    "provider_code": "none",
-                    "message_bucket": "internal_server_error",
-                    "action": "retry",
-                    "streak": 1,
-                    "delay_s": 0.0,
-                },
-            )
-            self.assertEqual(
-                response.stats["operation_failure_reasons"],
-                {"search:os_error": 1},
-            )
-            self.assertEqual(len(response.stats["operation_failure_events"]), 1)
-            self.assertEqual(
-                response.stats["operation_failure_events"][0],
-                {
-                    "timestamp": response.stats["operation_failure_events"][0]["timestamp"],
-                    "phase": "research",
-                    "operation": "search",
-                    "stage": "request",
-                    "reason": "os_error",
-                    "reason_source": "exception",
-                    "exception": "OSError",
-                    "cause_exception": "OSError",
-                    "http_status": None,
-                },
-            )
             model_logs = [line for line in logs.output if "model_failure" in line]
             operation_logs = [line for line in logs.output if "operation_failure" in line]
             self.assertEqual(len(model_logs), 2)
@@ -370,17 +319,30 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             )
             self.assertIn("reason=os_error", operation_logs[0])
             self.assertNotIn("search failed", operation_logs[0])
-            self.assertTrue(response.stats["evidence_shortfall_salvage"])
-            self.assertFalse(response.stats["extractive_finalization"])
-            self.assertEqual(response.stats["completion_class"], "structured")
-            self.assertEqual(response.stats["section_calls"], 0)
-            self.assertNotIn(rt.SectionContentDraft, structured.models)
+            self.assertEqual(response.outcome, "degraded")
+            self.assertEqual(structured.models.count(rt.SectionContentDraft), 1)
             self.assertEqual(structured.outputs, [])
+            row = self.runtime.db.execute(
+                "SELECT status, state_json FROM research_runs WHERE idempotency_key=?",
+                ("search-failure-key",),
+            ).fetchone()
+            stats = json.loads(row["state_json"])["stats"]
+            self.assertEqual(row["status"], "completed")
+            self.assertEqual(stats["model_transient_recoveries"], 2)
+            self.assertEqual(stats["model_transient_failures"]["provider_internal_error"], 2)
+            self.assertEqual(len(stats["model_transient_events"]), 2)
+            self.assertEqual(stats["searches"], 3)
+            self.assertEqual(stats["search_failures"], 1)
+            self.assertEqual(stats["duplicate_queries"], 1)
+            self.assertEqual(stats["operation_failure_reasons"]["search:os_error"], 1)
+            self.assertEqual(len(stats["operation_failure_events"]), 1)
 
         asyncio.run(run())
 
     def test_repeated_stream_provider_error_salvages_collected_evidence(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
+        research = rt.ResearchRequest(
+            query="Need direct evidence", focus="compare vendors", depth="deep"
+        )
         state = make_state(1)
         state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
         rt.store_initial_plan(state, research, plan_for(research))
@@ -393,10 +355,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 APIError("Internal server error.", request=request, body=None),
                 APIError("Internal server error.", request=request, body=None),
                 APIError("Internal server error.", request=request, body=None),
-                rt.ReportSubmissionDraft(
-                    findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1"])],
-                    limitations=["Known constraint"],
-                ),
+                section(cited("Supported direct claim", "S1")),
             ]
         )
 
@@ -413,22 +372,35 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "provider-salvage-key",
                     rt.run_state_snapshot(state),
                 )
-            self.assertEqual(response.stats["research_salvages"], 1)
-            self.assertEqual(response.stats["model_transient_recoveries"], 5)
-            self.assertEqual(
-                response.stats["model_transient_failures"],
-                {"provider_internal_error": 6},
-            )
-            self.assertTrue(response.stats["evidence_shortfall_salvage"])
-            self.assertFalse(response.stats["extractive_finalization"])
-            self.assertEqual(response.stats["completion_class"], "structured")
+            self.assertEqual(response.outcome, "degraded")
+            self.assertIn("Supported direct claim", response.answer_markdown)
+            row = self.runtime.db.execute(
+                "SELECT status, state_json FROM research_runs WHERE idempotency_key=?",
+                ("provider-salvage-key",),
+            ).fetchone()
+            stats = json.loads(row["state_json"])["stats"]
+            self.assertEqual(row["status"], "completed")
+            self.assertEqual(stats["model_transient_recoveries"], 5)
+            self.assertEqual(stats["model_transient_failures"]["provider_internal_error"], 6)
+            self.assertEqual(len(stats["model_transient_events"]), 6)
+            self.assertEqual(stats["research_salvages"], 1)
 
         asyncio.run(run())
 
-    def test_finalization_provider_failure_uses_extractive_report(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
-        state = make_state(1)
+    def test_section_provider_exhaustion_falls_back_locally_then_next_section_succeeds(
+        self,
+    ) -> None:
+        research = rt.ResearchRequest(
+            query="Need direct evidence", focus="compare vendors", depth="deep"
+        )
+        state = make_state(3)
         state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        state.evidence[1] = replace(
+            state.evidence[1], relevance=0.9, requirement_ids=["R2"], url="https://b.example/2"
+        )
+        state.evidence[2] = replace(
+            state.evidence[2], relevance=0.9, requirement_ids=["R2"], url="https://c.example/3"
+        )
         rt.store_initial_plan(state, research, plan_for(research))
         rt.set_collection_decision(state, "voluntary_stop")
         request = httpx.Request("POST", "http://llm.local/v1/chat/completions")
@@ -440,13 +412,21 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 APIError("Internal server error.", request=request, body=None),
                 APIError("Internal server error.", request=request, body=None),
                 APIError("Internal server error.", request=request, body=None),
+                comparison_section("Recovered comparison", "S2", "S3"),
             ]
         )
+        modes: list[str] = []
+        finalize = rt.finalize_report
+
+        def capture_modes(current: rt.RunState, request: rt.ResearchRequest) -> rt.FinalReport:
+            modes.extend(item.mode for item in current.report_sections)
+            return finalize(current, request)
 
         async def run() -> None:
             with (
                 patch.object(rt, "build_finalization_agent", return_value=structured),
                 patch.object(rt, "MODEL_RETRY_BASE_SECONDS", 0.0),
+                patch.object(rt, "finalize_report", side_effect=capture_modes),
             ):
                 response = await rt.run_research(
                     self.runtime,
@@ -456,19 +436,101 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "extractive-finalization-key",
                     rt.run_state_snapshot(state),
                 )
-            self.assertTrue(response.stats["extractive_finalization"])
-            self.assertEqual(response.stats["extractive_finalization_reason"], "provider_failure")
-            self.assertEqual(response.stats["model_transient_recoveries"], 5)
-            self.assertEqual(response.stats["report_sections_structured"], 0)
-            self.assertEqual(response.stats["completion_class"], "degraded")
-            self.assertIn("検証済み証拠台帳から抽出的に構成", response.answer_markdown)
-            self.assertIn("全節は検証済み証拠の抽出要約です。", response.answer_markdown)
-            self.assertIn("Runtime coverage gap", response.answer_markdown)
-            self.assertEqual(len(response.sources), 1)
+            self.assertEqual(response.outcome, "degraded")
+            self.assertIn("Runtime extractive evidence", response.answer_markdown)
+            self.assertIn("Recovered comparison", response.answer_markdown)
+            self.assertEqual(modes, ["extractive", "structured"])
+            self.assertEqual(structured.models.count(rt.SectionContentDraft), 7)
+            self.assertEqual(structured.outputs, [])
 
         asyncio.run(run())
 
-    def test_partial_extractive_fallback_resume_preserves_structured_count(self) -> None:
+    def test_maximal_partial_gap_semantic_fallback_is_bounded_and_continues(self) -> None:
+        research = rt.ResearchRequest(query="Need evidence", depth="deep")
+        state = make_state(rt.MAX_PAYLOAD_EVIDENCE_EXCERPTS)
+        state.request_fragments = [rt.RequestFragmentModel(id="F1", text="Need evidence")]
+        unsafe = "[]#|<>`*_~\\"
+        summary = (unsafe * 30)[:300]
+        state.requirements = [
+            rt.RequirementModel(
+                id="R1", summary="covered direct", kind="direct", fragment_ids=["F1"]
+            ),
+            *[
+                rt.RequirementModel(
+                    id=f"R{index}",
+                    summary=summary,
+                    kind="comparison",
+                    fragment_ids=["F1"],
+                )
+                for index in range(2, 7)
+            ],
+            rt.RequirementModel(id="R7", summary="next direct", kind="direct", fragment_ids=["F1"]),
+        ]
+        requirement_ids = [item.id for item in state.requirements]
+        state.evidence = [
+            replace(
+                item,
+                relevance=0.9,
+                requirement_ids=requirement_ids,
+                url=f"https://same.example/{index}",
+                excerpt=(unsafe * 120)[:1200],
+            )
+            for index, item in enumerate(state.evidence, 1)
+        ]
+        state.report_plan = [
+            rt.ReportPlanSection(
+                heading="Partial gaps",
+                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
+                requirement_ids=[f"R{index}" for index in range(1, 7)],
+                source_ids=[],
+                deliverables=["covered direct and five gaps"],
+            ),
+            rt.ReportPlanSection(
+                heading="Next section",
+                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
+                requirement_ids=["R7"],
+                source_ids=[],
+                deliverables=["next direct"],
+            ),
+        ]
+        rt.set_collection_decision(state, "voluntary_stop")
+        invalid = section(cited("invalid citation", "S999"))
+        structured = StructuredAgent(
+            [invalid, invalid, invalid, section(cited("Next structured section", "S1"))]
+        )
+        saved_sections: list[rt.ReportSection] = []
+        finalize = rt.finalize_report
+
+        def capture_sections(current: rt.RunState, request: rt.ResearchRequest) -> rt.FinalReport:
+            saved_sections.extend(current.report_sections)
+            return finalize(current, request)
+
+        async def run() -> None:
+            with (
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+                patch.object(rt, "finalize_report", side_effect=capture_sections),
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    "bounded-fallback-key",
+                    rt.run_state_snapshot(state),
+                )
+            first = saved_sections[0]
+            self.assertEqual([item.mode for item in saved_sections], ["extractive", "structured"])
+            self.assertLess(len(first.body), rt.MAX_REPORT_SECTION_CHARS)
+            self.assertEqual(first.body.count("Runtime extractive evidence:"), 12)
+            self.assertNotIn("Runtime partial evidence:", first.body)
+            self.assertEqual(first.body.count("Runtime coverage gap:"), 5)
+            self.assertIn(rt.safe_extractive_text(summary, 300), first.body)
+            self.assertIn("Next structured section", response.answer_markdown)
+            self.assertEqual(structured.models.count(rt.SectionContentDraft), 4)
+
+        asyncio.run(run())
+
+    def test_gap_checkpoint_resume_continues_with_structured_section(self) -> None:
         research = rt.ResearchRequest(query="Need evidence", depth="deep")
         state = make_state(3)
         state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
@@ -513,33 +575,19 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         state.report_sections.append(
             rt.ReportSection(
                 "Comparison",
-                "生成モデル中断後に、検証済み証拠台帳から抽出的に構成した節です。",
+                "Runtime coverage gap: fact 2 (supporting evidence unavailable).",
                 state.evidence_revision,
-                rt.EXTRACTIVE_SECTION_SUMMARY,
+                "fact 2",
                 ["R2"],
+                [],
+                "gap",
             )
         )
-        state.stats["evidence_shortfall_salvage"] = True
-        state.stats["extractive_finalization"] = True
-        state.stats["report_sections_structured"] = 1
-        state.stats["report_sections_extractive"] = 1
-        state.stats["completion_class"] = "degraded"
-        request = httpx.Request("POST", "http://llm.local/v1/chat/completions")
-        structured = StructuredAgent(
-            [
-                APIError("Internal server error.", request=request, body=None),
-                APIError("Internal server error.", request=request, body=None),
-                APIError("Internal server error.", request=request, body=None),
-                APIError("Internal server error.", request=request, body=None),
-                APIError("Internal server error.", request=request, body=None),
-                APIError("Internal server error.", request=request, body=None),
-            ]
-        )
+        structured = StructuredAgent([section(cited("Third structured fact", "S3"))])
 
         async def run() -> None:
             with (
                 patch.object(rt, "build_finalization_agent", return_value=structured),
-                patch.object(rt, "MODEL_RETRY_BASE_SECONDS", 0.0),
             ):
                 response = await rt.run_research(
                     self.runtime,
@@ -549,14 +597,16 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "partial-fallback-resume-key",
                     rt.run_state_snapshot(state),
                 )
-            self.assertEqual(response.stats["report_sections_structured"], 1)
-            self.assertEqual(response.stats["report_sections_extractive"], 2)
-            self.assertEqual(response.stats["completion_class"], "degraded")
+            self.assertEqual(response.outcome, "degraded")
+            self.assertIn("Third structured fact", response.answer_markdown)
+            self.assertEqual(structured.models, [rt.SectionContentDraft])
 
         asyncio.run(run())
 
     def test_empty_provider_result_retries_before_finalization(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
+        research = rt.ResearchRequest(
+            query="Need direct evidence", focus="compare vendors", depth="deep"
+        )
         state = make_state(1)
         state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
         rt.store_initial_plan(state, research, plan_for(research))
@@ -564,10 +614,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         structured = StructuredAgent(
             [
                 None,
-                rt.ReportSubmissionDraft(
-                    findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1"])],
-                    limitations=["Known constraint"],
-                ),
+                section(cited("Supported claim", "S1")),
             ]
         )
 
@@ -584,12 +631,8 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "empty-provider-result-key",
                     rt.run_state_snapshot(state),
                 )
-            self.assertEqual(response.stats["model_transient_recoveries"], 1)
-            self.assertEqual(
-                response.stats["model_transient_failures"],
-                {"model_empty_result": 1},
-            )
-            self.assertFalse(response.stats["extractive_finalization"])
+            self.assertEqual(response.outcome, "degraded")
+            self.assertEqual(structured.models.count(rt.SectionContentDraft), 2)
 
         asyncio.run(run())
 
@@ -635,10 +678,6 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 ),
                 section(cited("Supported direct claim", "S1")),
                 comparison_section("Comparison across two hosts", "S31", "S32"),
-                rt.ReportSubmissionDraft(
-                    findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1", "S31", "S32"])],
-                    limitations=["Known constraint"],
-                ),
             ]
         )
 
@@ -740,10 +779,6 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         structured = StructuredAgent(
             [
                 comparison_section("Supported claim", "S1", "S2"),
-                rt.ReportSubmissionDraft(
-                    findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1", "S2"])],
-                    limitations=["Known constraint"],
-                ),
             ]
         )
 
@@ -821,9 +856,55 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 requirement_ids=["R1"],
             ),
         ]
-        batch = rt.next_candidate_batch(state)
+        batch = rt.next_candidate_batch(state, rt.make_budget("deep"))
         self.assertEqual([item.url for item in batch], ["https://a.example/1"])
         self.assertEqual([item.url for item in state.candidate_queue], ["https://b.example/2"])
+
+    def test_candidate_batch_uses_budget_instead_of_stats_depth(self) -> None:
+        def queued_state(stats_depth: str) -> rt.RunState:
+            state = make_state(rt.make_budget("quick").evidence)
+            state.stats["depth"] = stats_depth
+            state.request_fragments = [rt.RequestFragmentModel(id="F1", text="Need evidence")]
+            state.requirements = [
+                rt.RequirementModel(
+                    id="R1", summary="Need evidence", kind="direct", fragment_ids=["F1"]
+                )
+            ]
+            state.candidate_queue = [
+                rt.Candidate(
+                    url="https://candidate.example/1",
+                    title="candidate",
+                    snippet="",
+                    engine="e",
+                    search_query="q",
+                    purpose="p",
+                    requirement_ids=["R1"],
+                )
+            ]
+            return state
+
+        budget = rt.make_budget("deep")
+        self.assertEqual(
+            rt.next_candidate_batch(queued_state("quick"), budget),
+            rt.next_candidate_batch(queued_state("deep"), budget),
+        )
+
+    def test_section_evidence_context_deduplicates_shared_balanced_prefix(self) -> None:
+        state = make_state(rt.MAX_PAYLOAD_EVIDENCE_EXCERPTS)
+        state.request_fragments = [rt.RequestFragmentModel(id="F1", text="Need evidence")]
+        state.requirements = [
+            rt.RequirementModel(id="R1", summary="fact", kind="direct", fragment_ids=["F1"]),
+            rt.RequirementModel(
+                id="R2", summary="comparison", kind="comparison", fragment_ids=["F1"]
+            ),
+        ]
+        requirement_ids = [item.id for item in state.requirements]
+        state.evidence = [replace(item, requirement_ids=requirement_ids) for item in state.evidence]
+
+        source_ids = rt.section_evidence_ids(state, requirement_ids)
+
+        self.assertEqual(source_ids, [f"S{index}" for index in range(1, 13)])
+        self.assertEqual(len(source_ids), len(set(source_ids)))
 
     def test_section_payload_balances_multiple_requirement_evidence(self) -> None:
         research = rt.ResearchRequest(query="need facts and compare vendors", depth="deep")
@@ -862,7 +943,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             )
         ]
         contract = rt.build_section_contract(research, state, "Combined")
-        payload = rt.build_section_context(research, state, "missing_plan_section", contract)
+        payload = rt.build_section_context(research, state, contract)
         self.assertEqual([item["id"] for item in payload["assigned_evidence"]], ["S1", "S2", "S3"])
         self.assertEqual(
             [item["assigned_source_ids"] for item in payload["section_contract"]["requirements"]],
@@ -935,10 +1016,6 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                         )
                     ]
                 ),
-                rt.ReportSubmissionDraft(
-                    findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1"])],
-                    limitations=["Known constraint"],
-                ),
             ]
         )
 
@@ -956,12 +1033,8 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "gap-key",
                     rt.run_state_snapshot(state),
                 )
-            self.assertTrue(response.stats["evidence_shortfall_salvage"])
-            self.assertTrue(any("Runtime coverage gap" in item for item in response.limitations))
-            self.assertEqual(response.stats["collection_decision"], "voluntary_stop")
-            self.assertFalse(response.stats["extractive_finalization"])
-            self.assertEqual(response.stats["completion_class"], "structured")
-            self.assertEqual(response.stats["section_calls"], 0)
+            self.assertEqual(response.outcome, "degraded")
+            self.assertIn("Runtime coverage gap", response.answer_markdown)
             self.assertNotIn(rt.SectionContentDraft, structured.models)
             self.assertEqual(structured.outputs, [])
 
@@ -1005,15 +1078,20 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         structured = StructuredAgent(
             [
                 section(cited("Supported covered content", "S1")),
-                rt.ReportSubmissionDraft(
-                    findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1"])],
-                    limitations=["Known constraint"],
-                ),
             ]
         )
+        modes: list[str] = []
+        finalize = rt.finalize_report
+
+        def capture_modes(current: rt.RunState, request: rt.ResearchRequest) -> rt.FinalReport:
+            modes.extend(item.mode for item in current.report_sections)
+            return finalize(current, request)
 
         async def run() -> None:
-            with patch.object(rt, "build_finalization_agent", return_value=structured):
+            with (
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+                patch.object(rt, "finalize_report", side_effect=capture_modes),
+            ):
                 response = await rt.run_research(
                     self.runtime,
                     FakeRequest(),
@@ -1025,7 +1103,8 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             report = response.answer_markdown.split("\n\n## Limitations", 1)[0]
             self.assertIn("Supported covered content [1]", report)
             self.assertEqual(report.count("Runtime coverage gap:"), 1)
-            self.assertEqual(response.stats["section_calls"], 1)
+            self.assertEqual(response.outcome, "degraded")
+            self.assertEqual(modes, ["structured"])
             self.assertEqual(structured.models.count(rt.SectionContentDraft), 1)
             self.assertEqual(structured.outputs, [])
 
@@ -1039,10 +1118,6 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             [
                 section(cited("Bad", "S9")),
                 section(cited("Valid citation", "S1")),
-                rt.ReportSubmissionDraft(
-                    findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1"])],
-                    limitations=["Known constraint"],
-                ),
             ]
         )
 
@@ -1061,16 +1136,8 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "retry-key",
                     rt.run_state_snapshot(state),
                 )
-            self.assertGreaterEqual(response.stats["structured_output_retries"], 1)
-            self.assertEqual(
-                response.stats["section_validation_failures"],
-                {"source IDs are not in the section contract": 1},
-            )
-            self.assertEqual(
-                response.stats["section_validation_latest_reason"],
-                "source IDs are not in the section contract",
-            )
-            self.assertEqual(response.stats["completion_class"], "structured")
+            self.assertEqual(response.outcome, "completed")
+            self.assertEqual(structured.models, [rt.SectionContentDraft, rt.SectionContentDraft])
 
         asyncio.run(run())
 
@@ -1153,7 +1220,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_expected_exhaustion_below_twenty_uses_extractive_finalization(self) -> None:
+    def test_section_one_invalid_three_times_falls_back_then_section_two_succeeds(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
         state = make_state(3)
         state.last_inspected_revision = state.evidence_revision
@@ -1180,18 +1247,20 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         )
         draft = plan_for(research)
         rt.store_initial_plan(state, research, draft)
-        state.searched_queries = {
-            f"q{index}" for index in range(rt.make_budget("deep").search_limit)
-        }
-        state.stats["finalization_reserved"] = True
         structured = StructuredAgent(
             [
-                section(cited("Supported direct claim", "S1")),
                 rt.MaxTokensReachedException("partial"),
                 rt.MaxTokensReachedException("partial"),
                 rt.MaxTokensReachedException("partial"),
+                comparison_section("Structured second section", "S2", "S3"),
             ]
         )
+        modes: list[str] = []
+        finalize = rt.finalize_report
+
+        def capture_modes(current: rt.RunState, request: rt.ResearchRequest) -> rt.FinalReport:
+            modes.extend(item.mode for item in current.report_sections)
+            return finalize(current, request)
 
         async def run() -> None:
             with (
@@ -1201,6 +1270,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     side_effect=AssertionError("deep must not use tool agent"),
                 ),
                 patch.object(rt, "build_finalization_agent", return_value=structured),
+                patch.object(rt, "finalize_report", side_effect=capture_modes),
             ):
                 response = await rt.run_research(
                     self.runtime,
@@ -1210,28 +1280,18 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "exhaustion-key",
                     rt.run_state_snapshot(state),
                 )
-            self.assertTrue(response.stats["extractive_finalization"])
-            self.assertEqual(
-                response.stats["extractive_finalization_reason"], "structured_section_attempts"
-            )
-            self.assertEqual(
-                response.stats["section_validation_failures"],
-                {"report section output exceeded the model token budget": 3},
-            )
-            self.assertEqual(
-                response.stats["section_validation_latest_reason"],
-                "report section output exceeded the model token budget",
-            )
-            self.assertNotIn("# Deep Research未完了", response.answer_markdown)
-            self.assertIn("残りの節は検証済み証拠の抽出要約です。", response.answer_markdown)
-            self.assertNotIn("全節は検証済み証拠の抽出要約です。", response.answer_markdown)
-            self.assertEqual(len(response.sources), 3)
+            self.assertEqual(modes, ["extractive", "structured"])
+            self.assertEqual(response.outcome, "degraded")
+            self.assertIn("Runtime extractive evidence", response.answer_markdown)
+            self.assertIn("Structured second section", response.answer_markdown)
+            self.assertEqual(structured.models, [rt.SectionContentDraft] * 4)
+            self.assertEqual(structured.outputs, [])
 
         asyncio.run(run())
 
-    def test_structured_section_attempts_without_saved_sections_marks_all_sections(self) -> None:
+    def test_evidence_cap_reached_with_uncovered_requirement_finalizes_degraded(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        state = make_state(1)
+        state = make_state(rt.make_budget("deep").evidence)
         state.last_inspected_revision = state.evidence_revision
         state.evidence[0] = replace(
             state.evidence[0],
@@ -1241,16 +1301,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             purpose="Need direct evidence",
         )
         rt.store_initial_plan(state, research, plan_for(research))
-        state.searched_queries = {
-            f"q{index}" for index in range(rt.make_budget("deep").search_limit)
-        }
-        structured = StructuredAgent(
-            [
-                rt.MaxTokensReachedException("partial"),
-                rt.MaxTokensReachedException("partial"),
-                rt.MaxTokensReachedException("partial"),
-            ]
-        )
+        structured = StructuredAgent([section(cited("Structured first section", "S1"))])
 
         async def run() -> None:
             with (
@@ -1265,11 +1316,10 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "all-sections-fallback-key",
                     rt.run_state_snapshot(state),
                 )
-            self.assertEqual(
-                response.stats["extractive_finalization_reason"], "structured_section_attempts"
-            )
-            self.assertIn("全節は検証済み証拠の抽出要約です。", response.answer_markdown)
-            self.assertNotIn("残りの節は検証済み証拠の抽出要約です。", response.answer_markdown)
+            self.assertEqual(response.outcome, "degraded")
+            self.assertIn("Structured first section", response.answer_markdown)
+            self.assertIn("Runtime coverage gap", response.answer_markdown)
+            self.assertEqual(structured.outputs, [])
 
         asyncio.run(run())
 
@@ -1324,11 +1374,18 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 rt.MaxTokensReachedException("unused"),
             ]
         )
+        telemetry: dict[str, Any] = {}
+        finalize = rt.finalize_report
+
+        def capture_stats(current: rt.RunState, request: rt.ResearchRequest) -> rt.FinalReport:
+            telemetry.update(current.stats)
+            return finalize(current, request)
 
         async def run() -> None:
             with (
                 patch.object(rt, "build_research_agent", side_effect=AssertionError("deep only")),
                 patch.object(rt, "build_finalization_agent", return_value=structured),
+                patch.object(rt, "finalize_report", side_effect=capture_stats),
             ):
                 response = await rt.run_research(
                     self.runtime,
@@ -1339,7 +1396,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     rt.run_state_snapshot(state),
                 )
             self.assertEqual(
-                response.stats["section_validation_failures"],
+                telemetry["section_validation_failures"],
                 {
                     "comparison section requires a table": 1,
                     "insufficient independent hosts for R1": 1,
@@ -1347,9 +1404,10 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 },
             )
             self.assertEqual(
-                response.stats["section_validation_latest_reason"],
+                telemetry["section_validation_latest_reason"],
                 "report section output exceeded the model token budget",
             )
+            self.assertEqual(response.outcome, "degraded")
 
         asyncio.run(run())
 
@@ -1408,36 +1466,72 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_checkpointed_sections_resume_at_submission_only(self) -> None:
+    def test_all_checkpointed_sections_resume_with_zero_final_model_calls(self) -> None:
         state = stable_quick_state()
-        state.report_sections = [rt.ReportSection("Summary", "Saved answer [S1] [S2]", 2)]
-        structured = StructuredAgent(
-            [
-                rt.ReportSubmissionDraft(
-                    findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1", "S2"])],
-                    limitations=["Known constraint"],
-                )
-            ]
-        )
+        state.report_sections = [
+            rt.ReportSection(
+                "Summary",
+                "Saved answer [S1] [S2]",
+                2,
+                "saved",
+                [],
+                ["S1", "S2"],
+                "structured",
+            )
+        ]
+        state.stats["fatal_error"] = {"reason": "old_terminal_failure"}
+        state.stats["model_transient_recoveries"] = 2
+        state.stats["model_transient_events"] = [{"reason": "provider_timeout"}]
+        state.stats["operation_failure_reasons"] = {"timeout": 1}
+        state.stats["operation_failure_events"] = [{"reason": "timeout"}]
 
         async def run() -> None:
+            research = rt.ResearchRequest(query="Evidence", depth="quick")
+            request_hash = rt.query_hash(research.model_dump())
+            await rt.checkpoint_run(
+                self.runtime,
+                "resume-key",
+                "interrupted",
+                "rid",
+                request_hash,
+                state=rt.run_state_snapshot(state),
+            )
+            research_id, _, cached, snapshot = await rt.reserve_run(
+                self.runtime, research, "resume-key"
+            )
+            self.assertIsNone(cached)
             with (
                 patch.object(
                     rt,
                     "build_research_agent",
                     side_effect=AssertionError("research must not restart"),
                 ),
-                patch.object(rt, "build_finalization_agent", return_value=structured),
+                patch.object(
+                    rt,
+                    "build_finalization_agent",
+                    side_effect=AssertionError("final model must not run"),
+                ),
             ):
                 response = await rt.run_research(
                     self.runtime,
                     FakeRequest(),
-                    rt.ResearchRequest(query="Evidence", depth="quick"),
-                    "rid",
+                    research,
+                    research_id,
                     "resume-key",
-                    rt.run_state_snapshot(state),
+                    snapshot,
                 )
             self.assertIn("Saved answer", response.answer_markdown)
+            self.assertEqual(response.outcome, "completed")
+            row = self.runtime.db.execute(
+                "SELECT status, state_json FROM research_runs WHERE idempotency_key='resume-key'"
+            ).fetchone()
+            stats = json.loads(row["state_json"])["stats"]
+            self.assertEqual(row["status"], "completed")
+            self.assertEqual(stats["fatal_error"], {})
+            self.assertEqual(stats["model_transient_recoveries"], 2)
+            self.assertEqual(stats["model_transient_events"], [{"reason": "provider_timeout"}])
+            self.assertEqual(stats["operation_failure_reasons"], {"timeout": 1})
+            self.assertEqual(stats["operation_failure_events"], [{"reason": "timeout"}])
 
         asyncio.run(run())
 
@@ -1489,7 +1583,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_invalid_structured_output_stops_at_bound_and_keeps_checkpoint(self) -> None:
+    def test_invalid_structured_output_falls_back_at_section_bound(self) -> None:
         state = stable_quick_state()
         structured = StructuredAgent(
             [
@@ -1507,11 +1601,8 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     side_effect=AssertionError("research must not restart"),
                 ),
                 patch.object(rt, "build_finalization_agent", return_value=structured),
-                self.assertRaisesRegex(
-                    rt.IncompleteResearchError, "structured_section_attempts"
-                ) as failure,
             ):
-                await rt.run_research(
+                response = await rt.run_research(
                     self.runtime,
                     FakeRequest(),
                     rt.ResearchRequest(query="Evidence", depth="quick"),
@@ -1519,7 +1610,8 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "invalid-key",
                     rt.run_state_snapshot(state),
                 )
-            self.assertIn("## Sources", failure.exception.answer_markdown)
+            self.assertEqual(response.outcome, "degraded")
+            self.assertIn("Runtime extractive evidence", response.answer_markdown)
             self.assertEqual(structured.models, [rt.SectionContentDraft] * 3)
 
         asyncio.run(run())
@@ -1545,6 +1637,9 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     state,
                 )
                 tool_map = {tool.tool_name: tool for tool in tools}
+                self.assertEqual(
+                    set(tool_map), {"search_web", "fetch_source", "inspect_evidence_ledger"}
+                )
                 self.assertEqual(
                     (await tool_map["search_web"]("new evidence"))["status"], "success"
                 )

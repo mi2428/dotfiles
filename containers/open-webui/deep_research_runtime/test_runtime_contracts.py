@@ -90,21 +90,10 @@ class RuntimeContractTests(RuntimeTestCase):
                 self.assertEqual(
                     (await client.post("/research", json={"query": "x"})).status_code, 401
                 )
-                cached = rt.ResearchResponse(
-                    research_id="rid",
+                cached = rt.FinalReport(
+                    version=2,
                     answer_markdown="done [S1]",
-                    findings=[rt.CitationModel(claim="claim", source_ids=["S1"])],
-                    sources=[
-                        rt.SourceModel(
-                            id="S1",
-                            url="https://example.com",
-                            hash="a" * 64,
-                            relevance=1,
-                            source_quality=1,
-                        )
-                    ],
-                    limitations=[],
-                    stats={},
+                    outcome="completed",
                 ).model_dump()
                 with patch.object(
                     rt,
@@ -126,25 +115,14 @@ class RuntimeContractTests(RuntimeTestCase):
         async def run() -> None:
             transport = httpx.ASGITransport(app=rt.app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                cached = rt.ResearchResponse(
-                    research_id="rid",
+                cached = rt.FinalReport(
+                    version=2,
                     answer_markdown=(
                         "> Degraded report\n\n## Summary\n\nBody [S1]\n\n"
                         "## Limitations\n- gap\n\n## Sources\n"
                         "[1] https://example.com — <https://example.com>"
                     ),
-                    findings=[rt.CitationModel(claim="claim", source_ids=["S1"])],
-                    sources=[
-                        rt.SourceModel(
-                            id="S1",
-                            url="https://example.com",
-                            hash="a" * 64,
-                            relevance=1,
-                            source_quality=1,
-                        )
-                    ],
-                    limitations=["gap"],
-                    stats={"completion_class": "degraded", "extractive_finalization": True},
+                    outcome="degraded",
                 ).model_dump()
                 with patch.object(
                     rt,
@@ -179,30 +157,97 @@ class RuntimeContractTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_report_assembly_and_generic_source_ranking(self) -> None:
-        source = rt.SourceModel(
-            id="S1",
-            url="https://example.com/a_(b)",
+    def test_openapi_preserves_incomplete_cancel_and_fatal_boundaries(self) -> None:
+        async def run() -> None:
+            transport = httpx.ASGITransport(app=rt.app)
+            headers = {"Authorization": "Bearer test-api-key"}
+            reserved = AsyncMock(return_value=("rid", "hash", None, None))
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                with (
+                    patch.object(rt, "reserve_run", new=reserved),
+                    patch.object(
+                        rt,
+                        "run_research",
+                        new=AsyncMock(
+                            side_effect=rt.IncompleteResearchError("no_progress", "partial\n")
+                        ),
+                    ),
+                ):
+                    incomplete = await client.post(
+                        "/research", headers=headers, json={"query": "incomplete"}
+                    )
+                self.assertEqual(incomplete.text, "partial\n")
+                self.assertTrue(incomplete.headers["content-type"].startswith("text/plain"))
+                self.assertEqual(incomplete.headers["x-openwebui-direct-output"], "true")
+                self.assertEqual(incomplete.headers["x-deep-research-status"], "failed")
+
+                with (
+                    patch.object(rt, "reserve_run", new=reserved),
+                    patch.object(
+                        rt,
+                        "run_research",
+                        new=AsyncMock(side_effect=asyncio.CancelledError()),
+                    ),
+                ):
+                    cancelled = await client.post(
+                        "/research", headers=headers, json={"query": "cancelled"}
+                    )
+                self.assertEqual(cancelled.status_code, 499)
+
+                with (
+                    patch.object(rt, "reserve_run", new=reserved),
+                    patch.object(
+                        rt,
+                        "run_research",
+                        new=AsyncMock(side_effect=rt.IntegrityError("corrupt")),
+                    ),
+                    self.assertLogs(rt.LOG.name, level="ERROR"),
+                ):
+                    fatal = await client.post("/research", headers=headers, json={"query": "fatal"})
+                self.assertEqual(fatal.status_code, 502)
+
+        asyncio.run(run())
+
+    def test_final_report_renders_exact_sources_and_empty_limitations_policy(self) -> None:
+        research = rt.ResearchRequest(query="Evidence", depth="quick")
+        state = make_state(3, "quick")
+        state.evidence[0] = replace(
+            state.evidence[0],
             title="Line 1\nLine 2 [S999] <b>*x*</b>",
-            hash="a" * 64,
-            relevance=1,
-            source_quality=0.8,
+            url="https://example.com/a_(b)",
         )
-        answer = rt.append_limitations_section(
-            rt.format_public_citations("Answer [S1]"),
-            ["S6、[S15]、**x** <b>y</b>は制約"],
-        )
-        answer = rt.append_sources_section(answer, [source])
-        self.assertIn("Answer [1]", answer)
-        self.assertIn(f"- {rt.neutralize_model_text('S6、[S15]、**x** <b>y</b>は制約')}", answer)
+        rt.set_collection_decision(state, "voluntary_stop")
+        state.report_sections = [
+            rt.ReportSection(
+                "Summary",
+                "Answer [S2] [S1]",
+                state.evidence_revision,
+                "summary",
+                [],
+                ["S1", "S2"],
+                "structured",
+            )
+        ]
+        report = rt.finalize_report(state, research)
+        self.assertIn("Answer [2] [1]", report.answer_markdown)
+        self.assertIn("## Limitations\n- なし", report.answer_markdown)
         self.assertIn(
             (
                 "[1] "
                 f"{rt.neutralize_model_text('Line 1 Line 2 [S999] <b>*x*</b>')} "
                 "— <https://example.com/a_(b)>"
             ),
-            answer,
+            report.answer_markdown,
         )
+        sources = report.answer_markdown.split("## Sources\n", 1)[1]
+        self.assertIn("[2] Source 2", sources)
+        self.assertNotIn("[3] Source 3", sources)
+        self.assertEqual(report.outcome, "completed")
+        with (
+            patch.object(rt, "MAX_ANSWER_CHARS", 20),
+            self.assertRaisesRegex(rt.IntegrityError, "answer limit"),
+        ):
+            rt.finalize_report(state, research)
 
     def test_target_evidence_environment_override_stays_between_minimum_and_cap(self) -> None:
         with patch.dict(
@@ -228,22 +273,21 @@ class RuntimeContractTests(RuntimeTestCase):
             research_id, request_hash, _cached, _snapshot = await rt.reserve_run(
                 self.runtime, research, key
             )
-            response = rt.ResearchResponse(
-                research_id=research_id,
+            response = rt.FinalReport(
+                version=2,
                 answer_markdown="done [S1]",
-                findings=[rt.CitationModel(claim="claim", source_ids=["S1"])],
-                sources=[
-                    rt.SourceModel(
-                        id="S1",
-                        url="https://example.com",
-                        hash="a" * 64,
-                        relevance=1,
-                        source_quality=1,
-                    )
-                ],
-                limitations=[],
-                stats={},
+                outcome="completed",
             )
+            checkpoint = rt.run_state_snapshot(make_state(1, "quick"))
+            with self.assertRaisesRegex(rt.IntegrityError, "versioned checkpoint"):
+                await rt.checkpoint_run(
+                    self.runtime,
+                    key,
+                    "completed",
+                    research_id,
+                    request_hash,
+                    response=response.model_dump(),
+                )
             await rt.checkpoint_run(
                 self.runtime,
                 key,
@@ -251,19 +295,49 @@ class RuntimeContractTests(RuntimeTestCase):
                 research_id,
                 request_hash,
                 response=response.model_dump(),
+                state=checkpoint,
             )
-            with self.assertRaises(rt.HTTPException):
+            row = self.runtime.db.execute(
+                "SELECT state_json FROM research_runs WHERE idempotency_key=?", (key,)
+            ).fetchone()
+            diagnostic = json.loads(row["state_json"])
+            self.assertEqual(diagnostic["checkpoint_version"], 2)
+            diagnostic["checkpoint_version"] = 1
+            diagnostic["stats"]["depth"] = "corrupt"
+            self.runtime.db.execute(
+                "UPDATE research_runs SET state_json=? WHERE idempotency_key=?",
+                (json.dumps(diagnostic), key),
+            )
+            self.runtime.db.commit()
+            replay_id, _, replay, replay_state = await rt.reserve_run(self.runtime, research, key)
+            self.assertEqual(replay_id, research_id)
+            self.assertEqual(replay, response.model_dump())
+            self.assertIsNone(replay_state)
+            transport = httpx.ASGITransport(app=rt.app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                cached_http = await client.post(
+                    "/research",
+                    headers={
+                        "Authorization": "Bearer test-api-key",
+                        "x-openwebui-message-id": "message",
+                    },
+                    json={"query": "sample", "depth": "quick"},
+                )
+            self.assertEqual(cached_http.text, response.answer_markdown)
+            self.assertEqual(cached_http.headers["x-deep-research-status"], response.outcome)
+            with self.assertRaises(rt.HTTPException) as conflict:
                 await rt.reserve_run(
                     self.runtime,
                     rt.ResearchRequest(query="different", depth="quick"),
                     key,
                 )
+            self.assertEqual(conflict.exception.status_code, 409)
             self.runtime.db.execute(
                 "UPDATE research_runs SET response_json='{}' WHERE idempotency_key=?",
                 (key,),
             )
             self.runtime.db.commit()
-            with self.assertRaises(rt.IntegrityError):
+            with self.assertRaisesRegex(rt.IntegrityError, "unsupported final report version"):
                 await rt.reserve_run(self.runtime, research, key)
 
             bad_key = "impossible-status"
@@ -279,6 +353,38 @@ class RuntimeContractTests(RuntimeTestCase):
             self.runtime.db.commit()
             with self.assertRaises(rt.IntegrityError):
                 await rt.reserve_run(self.runtime, research, bad_key)
+
+        asyncio.run(run())
+
+    def test_reserve_rejects_unversioned_checkpoint_without_mutating_row(self) -> None:
+        async def run() -> None:
+            research = rt.ResearchRequest(query="sample", depth="quick")
+            request_hash = rt.query_hash(research.model_dump())
+            for key, version in (("missing-version", None), ("wrong-version", 1)):
+                snapshot = rt.run_state_snapshot(make_state(1, "quick"))
+                if version is None:
+                    snapshot.pop("checkpoint_version")
+                else:
+                    snapshot["checkpoint_version"] = version
+                self.runtime.db.execute(
+                    """
+                    INSERT INTO research_runs (
+                        idempotency_key, request_hash, research_id, status,
+                        response_json, state_json, created_at, updated_at
+                    ) VALUES (?, ?, 'rid', 'failed', NULL, ?, 1, 1)
+                    """,
+                    (key, request_hash, json.dumps(snapshot)),
+                )
+                self.runtime.db.commit()
+                with (
+                    self.subTest(key=key),
+                    self.assertRaisesRegex(rt.IntegrityError, "unsupported checkpoint version"),
+                ):
+                    await rt.reserve_run(self.runtime, research, key)
+                row = self.runtime.db.execute(
+                    "SELECT status FROM research_runs WHERE idempotency_key=?", (key,)
+                ).fetchone()
+                self.assertEqual(row["status"], "failed")
 
         asyncio.run(run())
 
@@ -491,6 +597,7 @@ class RuntimeContractTests(RuntimeTestCase):
         for field in ("heading", "requirement_ids", "summary", "gap"):
             self.assertNotIn(field, schema["properties"])
         for payload in (
+            {},
             {"paragraphs": [{"text": "Body"}]},
             {"paragraphs": [{"text": "Body", "source_ids": []}]},
             {"bullets": [{"text": "Body", "source_ids": []}]},
@@ -505,8 +612,6 @@ class RuntimeContractTests(RuntimeTestCase):
         ):
             with self.subTest(payload=payload), self.assertRaises(ValidationError):
                 rt.SectionContentDraft.model_validate(payload)
-        with self.assertRaises(ValidationError):
-            rt.SectionContentDraft()
 
     def test_renderer_is_deterministic_and_neutralizes_injected_markdown(self) -> None:
         draft = section(
@@ -611,8 +716,14 @@ class RuntimeContractTests(RuntimeTestCase):
             with self.subTest(heading=heading), self.assertRaisesRegex(ValueError, "plain text"):
                 rt.validated_report_heading(heading)
 
-    def test_completion_class_fails_safe_when_extractive_count_is_present(self) -> None:
-        self.assertEqual(rt.completion_class({"report_sections_extractive": 1}), "degraded")
+    def test_final_report_schema_is_versioned_and_minimal(self) -> None:
+        schema = rt.FinalReport.model_json_schema()
+        self.assertEqual(set(schema["properties"]), {"version", "answer_markdown", "outcome"})
+        self.assertEqual(set(schema["required"]), {"version", "answer_markdown", "outcome"})
+        with self.assertRaises(ValidationError):
+            rt.FinalReport.model_validate(
+                {"version": 1, "answer_markdown": "x", "outcome": "completed"}
+            )
 
     def test_safe_section_validation_error_rejects_suffix_smuggling(self) -> None:
         self.assertEqual(
@@ -651,7 +762,7 @@ class RuntimeContractTests(RuntimeTestCase):
             )
         )
 
-    def test_deep_submit_allows_short_complete_report_and_rejects_missing_requirements(
+    def test_finalize_report_allows_short_complete_report_and_rejects_missing_sections(
         self,
     ) -> None:
         research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
@@ -659,47 +770,31 @@ class RuntimeContractTests(RuntimeTestCase):
         state.last_inspected_revision = state.evidence_revision
         state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
         rt.store_initial_plan(state, research, deep_plan_for(research))
+        rt.set_collection_decision(state, "coverage_complete")
         rt.store_report_section(
             state,
             rt.build_section_contract(research, state, "Section 1"),
             section(cited("Supported claim", "S1")),
         )
-        response = rt.validate_submit_report(
-            "rid",
-            state,
-            state.evidence_revision,
-            rt.assemble_report_sections(state.report_sections),
-            [{"claim": "Claim", "source_ids": ["S1"]}],
-            ["Known constraint"],
-            rt.make_budget("deep"),
-            "deep",
-        )
+        response = rt.finalize_report(state, research)
         self.assertIn("## Sources", response.answer_markdown)
         broken = replace(state, report_sections=[])
-        with self.assertRaisesRegex((ValueError, rt.IntegrityError), "requirement"):
-            rt.validate_submit_report(
-                "rid",
-                broken,
-                state.evidence_revision,
-                "## Section 1\n\nUnsupported [S1]",
-                [{"claim": "claim", "source_ids": ["S1"]}],
-                ["Known constraint"],
-                rt.make_budget("deep"),
-                "deep",
-            )
+        with self.assertRaisesRegex(rt.IntegrityError, "incomplete or out of order"):
+            rt.finalize_report(broken, research)
 
-    def test_next_report_action_does_not_char_repair_successful_sections(self) -> None:
+    def test_accepted_short_section_is_finalized_without_repair(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
         state = make_state(1)
         state.last_inspected_revision = state.evidence_revision
         state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
         rt.store_initial_plan(state, research, deep_plan_for(research))
+        rt.set_collection_decision(state, "coverage_complete")
         rt.store_report_section(
             state,
             rt.build_section_contract(research, state, "Section 1"),
             section(cited("Short but cited", "S1")),
         )
-        self.assertEqual(rt.next_report_action(state, research)[0], "submit")
+        self.assertEqual(rt.finalize_report(state, research).outcome, "completed")
 
     def test_compact_payload_builders_exclude_unrelated_growth(self) -> None:
         research = rt.ResearchRequest(
@@ -725,7 +820,15 @@ class RuntimeContractTests(RuntimeTestCase):
             )
         ]
         state.report_sections = [
-            rt.ReportSection("Done", "Claim [S1]", state.evidence_revision, "summary", ["R1"])
+            rt.ReportSection(
+                "Done",
+                "Claim [S1]",
+                state.evidence_revision,
+                "summary",
+                ["R1"],
+                ["S1"],
+                "structured",
+            )
         ]
         state.candidate_queue = [
             rt.Candidate(
@@ -740,10 +843,7 @@ class RuntimeContractTests(RuntimeTestCase):
         ]
         query_payload = rt.build_query_context(research, state)
         contract = rt.build_section_contract(research, state, "Section 1")
-        section_payload = rt.build_section_context(
-            research, state, "missing_plan_section", contract
-        )
-        submission_payload = rt.build_submission_context(research, state)
+        section_payload = rt.build_section_context(research, state, contract)
         self.assertNotIn("evidence", query_payload)
         self.assertNotIn("candidate_queue", query_payload)
         self.assertEqual(len(section_payload["assigned_evidence"]), 3)
@@ -778,7 +878,6 @@ class RuntimeContractTests(RuntimeTestCase):
                 }
             ],
         )
-        self.assertEqual([item["id"] for item in submission_payload["evidence"]], ["S1"])
 
     def test_section_contract_prompt_and_validator_share_exact_twelve_sources(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
@@ -831,32 +930,50 @@ class RuntimeContractTests(RuntimeTestCase):
             rt.store_report_section(state, contract, draft)
         self.assertEqual(rt.run_state_snapshot(state), before)
 
-    def test_gap_only_section_uses_runtime_partial_gap_checkpoint(self) -> None:
+    def test_gap_only_section_is_bounded_after_markdown_neutralization(self) -> None:
         research = rt.ResearchRequest(query="compare vendors", depth="deep")
-        state = make_state(1)
+        state = make_state(rt.MAX_PAYLOAD_EVIDENCE_EXCERPTS)
         state.request_fragments = rt.explicit_request_fragments(research)
+        unsafe = "[]#|<>`*_~\\"
+        summary = (unsafe * 30)[:300]
         state.requirements = [
             rt.RequirementModel(
-                id="R1", summary="compare vendors", kind="comparison", fragment_ids=["F1"]
+                id=f"R{index}", summary=summary, kind="comparison", fragment_ids=["F1"]
             )
+            for index in range(1, 6)
         ]
+        requirement_ids = [item.id for item in state.requirements]
         state.report_plan = [
             rt.ReportPlanSection(
                 heading="Comparison",
                 target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
-                requirement_ids=["R1"],
+                requirement_ids=requirement_ids,
                 source_ids=[],
                 deliverables=["compare vendors"],
             )
         ]
-        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        state.evidence = [
+            replace(
+                item,
+                relevance=0.9,
+                requirement_ids=requirement_ids,
+                url=f"https://same.example/{index}",
+                excerpt=(unsafe * 120)[:1200],
+            )
+            for index, item in enumerate(state.evidence, 1)
+        ]
         state.last_inspected_revision = state.evidence_revision
+        rt.set_collection_decision(state, "voluntary_stop")
         contract = rt.build_section_contract(research, state, "Comparison")
         self.assertEqual(contract.covered_requirement_ids, ())
         rt._store_gap_section(state, contract)
-        self.assertIn("Runtime partial evidence:", state.report_sections[0].body)
+        body = state.report_sections[0].body
+        self.assertLess(len(body), rt.MAX_REPORT_SECTION_CHARS)
+        self.assertEqual(body.count("Runtime partial evidence:"), 1)
+        self.assertEqual(body.count("Runtime coverage gap:"), 5)
+        self.assertIn(rt.safe_extractive_text(summary, 300), body)
         self.assertIn("[S1]", state.report_sections[0].body)
-        self.assertIn("Runtime coverage gap:", state.report_sections[0].body)
+        rt.validate_checkpoint_state(state, research)
 
     def test_query_context_keeps_lossless_max_input_fragments(self) -> None:
         query = "q" * rt.MAX_QUERY_CHARS
@@ -1009,7 +1126,7 @@ class RuntimeContractTests(RuntimeTestCase):
             )
         ]
         contract = rt.build_section_contract(research, state, "Compare")
-        context = rt.build_section_context(research, state, "missing_plan_section", contract)
+        context = rt.build_section_context(research, state, contract)
         self.assertEqual(
             context["section_contract"]["requirements"],
             [
@@ -1088,48 +1205,41 @@ class RuntimeContractTests(RuntimeTestCase):
                     )
                 self.assertEqual(rt.run_state_snapshot(state), before)
 
-    def test_submission_prompt_requires_plain_text_limitations(self) -> None:
-        state = make_state(1, "standard")
-        state.last_inspected_revision = state.evidence_revision
-        research = rt.ResearchRequest(query="Evidence", depth="standard")
-        rt.store_report_section(
-            state,
-            rt.build_section_contract(research, state),
-            section(cited("Body", "S1")),
-        )
-        payload = json.loads(
-            rt.build_submission_prompt(
-                rt.ResearchRequest(query="Evidence", depth="standard"), state
+    def test_runtime_limitations_are_bounded_neutralized_and_deduplicated(self) -> None:
+        state = make_state(1, "deep")
+        state.requirements = [
+            rt.RequirementModel(
+                id="R1",
+                summary="[S999] **missing**",
+                kind="direct",
+                fragment_ids=["F1"],
             )
-        )
-        self.assertTrue(
-            any("limitations must be plain text only" in item for item in payload["requirements"])
-        )
-
-    def test_validate_submit_report_neutralizes_limitations_consistently(self) -> None:
-        state = make_state(1, "standard")
-        state.last_inspected_revision = state.evidence_revision
-        research = rt.ResearchRequest(query="Evidence", depth="standard")
-        rt.store_report_section(
-            state,
-            rt.build_section_contract(research, state),
-            section(cited("Body", "S1")),
-        )
-        response = rt.validate_submit_report(
-            "rid",
-            state,
-            state.evidence_revision,
-            rt.assemble_report_sections(state.report_sections),
-            [{"claim": "Claim", "source_ids": ["S1"]}],
-            ["[S999] **bold**"],
-            rt.make_budget("standard"),
-            "standard",
-        )
-        expected = rt.neutralize_model_text("[S999] **bold**")
-        self.assertEqual(response.limitations, [expected])
-        self.assertIn(f"- {expected}", response.answer_markdown)
-        self.assertNotIn("[S999]", response.answer_markdown)
-        self.assertEqual(rt.citation_ids(response.answer_markdown), set())
+        ]
+        state.report_sections = [
+            rt.ReportSection(
+                "Fallback",
+                "Body [S1]",
+                state.evidence_revision,
+                "summary",
+                ["R1"],
+                ["S1"],
+                "extractive",
+            ),
+            rt.ReportSection(
+                "Fallback",
+                "Body [S1]",
+                state.evidence_revision,
+                "summary",
+                ["R1"],
+                ["S1"],
+                "extractive",
+            ),
+        ]
+        limitations = rt.runtime_limitations(state)
+        self.assertEqual(len(limitations), 2)
+        self.assertTrue(all(len(item) <= rt.MAX_LIMITATION_CHARS for item in limitations))
+        self.assertNotIn("[S999]", " ".join(limitations))
+        self.assertNotIn("**missing**", " ".join(limitations))
 
     def test_model_output_error_retries_but_checkpoint_corruption_stays_integrity_error(
         self,
@@ -1153,6 +1263,8 @@ class RuntimeContractTests(RuntimeTestCase):
                 "ledger_revision": state.evidence_revision,
                 "summary": "summary",
                 "requirement_ids": ["R1"],
+                "source_ids": ["S9"],
+                "mode": "structured",
             }
         ]
         loaded = rt.load_run_state(
@@ -1197,6 +1309,15 @@ class RuntimeContractTests(RuntimeTestCase):
             self.assertIsNone(cached)
             self.assertIsNone(snapshot)
             state = make_state(1, "quick")
+            with self.assertRaisesRegex(rt.IntegrityError, "versioned checkpoint"):
+                await rt.checkpoint_run(
+                    self.runtime,
+                    key,
+                    "running",
+                    research_id,
+                    request_hash,
+                    state={},
+                )
             await rt.checkpoint_run(
                 self.runtime,
                 key,
@@ -1215,98 +1336,63 @@ class RuntimeContractTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_load_run_state_backfills_missing_completion_counters_from_extractive_marker(
-        self,
-    ) -> None:
-        snapshot = rt.run_state_snapshot(make_state(2, "deep"))
-        snapshot["report_sections"] = [
-            {
-                "heading": "Structured",
-                "body": "Body [S1]",
-                "ledger_revision": 2,
-                "summary": "summary",
-                "requirement_ids": ["R1"],
-            },
-            {
-                "heading": "Extractive",
-                "body": "Gap",
-                "ledger_revision": 2,
-                "summary": rt.EXTRACTIVE_SECTION_SUMMARY,
-                "requirement_ids": ["R2"],
-            },
-        ]
-        snapshot["stats"] = {
-            **snapshot["stats"],
-            "extractive_finalization": True,
-        }
-        snapshot["stats"].pop("report_sections_structured", None)
-        snapshot["stats"].pop("report_sections_extractive", None)
-        snapshot["stats"].pop("completion_class", None)
-        state = rt.load_run_state(
-            cast(dict[str, Any], snapshot),
+    def test_checkpoint_version_rejects_missing_and_wrong_before_loading_state(self) -> None:
+        snapshot = rt.run_state_snapshot(make_state(1, "quick"))
+        self.assertEqual(snapshot["checkpoint_version"], 2)
+        for version in (None, 1, 3):
+            invalid = dict(snapshot)
+            if version is None:
+                invalid.pop("checkpoint_version")
+            else:
+                invalid["checkpoint_version"] = version
+            invalid.pop("evidence_ledger")
+            with (
+                self.subTest(version=version),
+                self.assertRaisesRegex(rt.IntegrityError, "unsupported checkpoint version"),
+            ):
+                rt.load_run_state(
+                    invalid,
+                    depth="quick",
+                    budget=rt.make_budget("quick"),
+                    wall_limit=rt.wall_budget_seconds("quick"),
+                )
+        loaded = rt.load_run_state(
+            snapshot,
+            depth="quick",
+            budget=rt.make_budget("quick"),
+            wall_limit=rt.wall_budget_seconds("quick"),
+        )
+        rt.validate_checkpoint_state(loaded, rt.ResearchRequest(query="Evidence", depth="quick"))
+
+    def test_summary_and_stats_cannot_change_mode_or_outcome(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
+        state = make_state(1)
+        state.evidence[0] = replace(state.evidence[0], requirement_ids=["R1"])
+        rt.store_initial_plan(state, research, deep_plan_for(research))
+        rt.set_collection_decision(state, "coverage_complete")
+        rt.store_report_section(
+            state,
+            rt.build_section_contract(research, state, "Section 1"),
+            section(cited("Body", "S1")),
+        )
+        state.report_sections[0] = replace(
+            state.report_sections[0], summary="検証済み証拠台帳からの抽出要約"
+        )
+        state.stats.update(
+            completion_class="degraded",
+            extractive_finalization=True,
+            report_sections_extractive=99,
+        )
+        snapshot = rt.run_state_snapshot(state)
+        loaded = rt.load_run_state(
+            snapshot,
             depth="deep",
             budget=rt.make_budget("deep"),
             wall_limit=rt.wall_budget_seconds("deep"),
         )
-        self.assertEqual(state.stats["report_sections_structured"], 1)
-        self.assertEqual(state.stats["report_sections_extractive"], 1)
-        self.assertEqual(state.stats["completion_class"], "degraded")
-
-    def test_load_run_state_keeps_existing_completion_counters(self) -> None:
-        snapshot = rt.run_state_snapshot(make_state(2, "deep"))
-        snapshot["report_sections"] = [
-            {
-                "heading": "Structured",
-                "body": "Body [S1]",
-                "ledger_revision": 2,
-                "summary": "summary",
-                "requirement_ids": ["R1"],
-            },
-            {
-                "heading": "Extractive",
-                "body": "Gap",
-                "ledger_revision": 2,
-                "summary": rt.EXTRACTIVE_SECTION_SUMMARY,
-                "requirement_ids": ["R2"],
-            },
-        ]
-        snapshot["stats"] = {
-            **snapshot["stats"],
-            "extractive_finalization": True,
-            "report_sections_structured": 1,
-            "report_sections_extractive": 1,
-            "completion_class": "degraded",
-        }
-        state = rt.load_run_state(
-            cast(dict[str, Any], snapshot),
-            depth="deep",
-            budget=rt.make_budget("deep"),
-            wall_limit=rt.wall_budget_seconds("deep"),
-        )
-        self.assertEqual(state.stats["report_sections_structured"], 1)
-        self.assertEqual(state.stats["report_sections_extractive"], 1)
-
-    def test_sync_report_section_stats_prefers_current_markers_over_stale_counters(self) -> None:
-        state = make_state(3, "deep")
-        state.report_sections = [
-            rt.ReportSection("Structured 1", "Body [S1]", 3, "summary", ["R1"]),
-            rt.ReportSection(
-                "Extractive",
-                "Gap",
-                3,
-                rt.EXTRACTIVE_SECTION_SUMMARY,
-                ["R2"],
-            ),
-            rt.ReportSection("Structured 2", "Body [S3]", 3, "summary", ["R3"]),
-        ]
-        state.stats["extractive_finalization"] = True
-        state.stats["report_sections_structured"] = 999
-        state.stats["report_sections_extractive"] = 999
-        state.stats["completion_class"] = "structured"
-        rt.sync_report_section_stats(state)
-        self.assertEqual(state.stats["report_sections_structured"], 2)
-        self.assertEqual(state.stats["report_sections_extractive"], 1)
-        self.assertEqual(state.stats["completion_class"], "degraded")
+        self.assertEqual(rt.finalize_report(loaded, research).outcome, "completed")
+        loaded.report_sections[0] = replace(loaded.report_sections[0], mode="extractive")
+        self.assertEqual(rt.finalize_report(loaded, research).outcome, "degraded")
 
     def test_relevance_refresh_and_prune_unusable_sections(self) -> None:
         table = "\n".join(f"試行{index}回 性能{300 + index}点" for index in range(12))
@@ -1323,8 +1409,12 @@ class RuntimeContractTests(RuntimeTestCase):
             excerpt="This unrelated document has enough text but no requested lexical term.",
         )
         state.report_sections = [
-            rt.ReportSection("Saved", "Claim [S1]", state.evidence_revision),
-            rt.ReportSection("Unsafe", "Claim [S2]", state.evidence_revision),
+            rt.ReportSection(
+                "Saved", "Claim [S1]", state.evidence_revision, "one", [], ["S1"], "structured"
+            ),
+            rt.ReportSection(
+                "Unsafe", "Claim [S2]", state.evidence_revision, "two", [], ["S2"], "structured"
+            ),
         ]
         self.assertTrue(rt.prune_unusable_report_sections(state))
 
@@ -1385,7 +1475,7 @@ class RuntimeContractTests(RuntimeTestCase):
             section(cited("Benchmark prose", "S1", "S2")),
         )
 
-    def test_legacy_deep_checkpoint_keeps_requirement_host_validation(self) -> None:
+    def test_checkpoint_rejects_invalid_section_mode_sources_and_revision(self) -> None:
         research = rt.ResearchRequest(query="compare vendors", depth="deep")
         state = make_state(2)
         state.request_fragments = rt.explicit_request_fragments(research)
@@ -1410,28 +1500,56 @@ class RuntimeContractTests(RuntimeTestCase):
             state.evidence[1], relevance=0.9, requirement_ids=["R1"], url="https://b.example/2"
         )
         state.last_inspected_revision = state.evidence_revision
+        rt.set_collection_decision(state, "coverage_complete")
         state.report_sections = [
             rt.ReportSection(
                 "Comparison",
-                "Legacy checkpoint cites one host [S1]",
+                "Comparison [S1] [S2]",
                 state.evidence_revision,
-                "legacy",
+                "summary",
                 ["R1"],
+                ["S1", "S2"],
+                "structured",
             )
         ]
-        with self.assertRaisesRegex(rt.ModelOutputError, "independent hosts"):
-            rt.validate_submit_report(
-                "rid",
-                state,
-                state.evidence_revision,
-                rt.assemble_report_sections(state.report_sections),
-                [{"claim": "Claim", "source_ids": ["S1"]}],
-                ["Known constraint"],
-                rt.make_budget("deep"),
-                "deep",
+        valid = rt.run_state_snapshot(state)
+        mutations = {
+            "mode": {"mode": "invalid"},
+            "source mismatch": {"source_ids": ["S1"]},
+            "unknown source": {"body": "Comparison [S9]", "source_ids": ["S9"]},
+            "stale revision": {"ledger_revision": state.evidence_revision - 1},
+        }
+        for label, update in mutations.items():
+            snapshot = json.loads(json.dumps(valid))
+            snapshot["report_sections"][0].update(update)
+            loaded = rt.load_run_state(
+                snapshot,
+                depth="deep",
+                budget=rt.make_budget("deep"),
+                wall_limit=rt.wall_budget_seconds("deep"),
             )
+            with self.subTest(label=label), self.assertRaises(rt.IntegrityError):
+                rt.validate_checkpoint_state(loaded, research)
+        unusable = json.loads(json.dumps(valid))
+        unusable["evidence_ledger"][1]["relevance"] = 0
+        with self.assertRaises(rt.IntegrityError):
+            loaded = rt.load_run_state(
+                unusable,
+                depth="deep",
+                budget=rt.make_budget("deep"),
+                wall_limit=rt.wall_budget_seconds("deep"),
+            )
+            rt.validate_checkpoint_state(loaded, research)
+        invalid_phase = rt.load_run_state(
+            {**valid, "phase": "submission"},
+            depth="deep",
+            budget=rt.make_budget("deep"),
+            wall_limit=rt.wall_budget_seconds("deep"),
+        )
+        with self.assertRaisesRegex(rt.IntegrityError, "phase"):
+            rt.validate_checkpoint_state(invalid_phase, research)
 
-    def test_extractive_finalization_reason_wording_distinguishes_remaining_sections(self) -> None:
+    def test_deterministic_extractive_section_sets_mode_and_degraded_outcome(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence; need another fact", depth="deep")
         state = make_state(1)
         fragments = rt.explicit_request_fragments(research)
@@ -1442,7 +1560,6 @@ class RuntimeContractTests(RuntimeTestCase):
             requirement_ids=["R1", "R2"],
             excerpt="Verified comparison | --- | --- | remains plain text.",
         )
-        state.stats["evidence_shortfall_salvage"] = True
         rt.store_initial_plan(
             state,
             research,
@@ -1483,9 +1600,16 @@ class RuntimeContractTests(RuntimeTestCase):
             rt.build_section_contract(research, state, "Direct evidence"),
             section(cited("Supported claim", "S1")),
         )
-        response = rt.finalize_extractively("rid", state, research, "normal_contract_unmet")
-        self.assertEqual(response.stats["extractive_finalization_reason"], "normal_contract_unmet")
-        self.assertIn("残りの節は検証済み証拠の抽出要約です。", response.answer_markdown)
+        rt.set_collection_decision(state, "coverage_complete")
+        rt._store_extractive_section(
+            state, rt.build_section_contract(research, state, "Comparison")
+        )
+        response = rt.finalize_report(state, research)
+        self.assertEqual(
+            [item.mode for item in state.report_sections], ["structured", "extractive"]
+        )
+        self.assertEqual(response.outcome, "degraded")
+        self.assertIn("Runtime extractive section", response.answer_markdown)
         self.assertNotIn("|", state.report_sections[-1].body)
 
 
