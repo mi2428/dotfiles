@@ -233,6 +233,10 @@ class RuntimeContractTests(RuntimeTestCase):
         )
         self.assertEqual(rt.model_retry_delay(wrapped, 0), 10)
         self.assertTrue(rt.is_expected_provider_failure(wrapped))
+        self.assertEqual(
+            rt.safe_model_recovery_details(wrapped),
+            ("provider_http_server_error", 503),
+        )
         exhausted = rt.EventLoopException(
             APIStatusError(
                 "provider error",
@@ -262,6 +266,18 @@ class RuntimeContractTests(RuntimeTestCase):
             [10, 20, 40, 80, 120],
         )
         self.assertTrue(rt.is_expected_provider_failure(stream_error))
+        self.assertEqual(
+            rt.safe_model_recovery_details(stream_error),
+            ("provider_internal_error", None),
+        )
+        self.assertEqual(
+            rt.safe_model_recovery_details(connection_error),
+            ("provider_connection_error", None),
+        )
+        self.assertEqual(
+            rt.safe_model_recovery_details(TimeoutError("model returned no result")),
+            ("model_empty_result", None),
+        )
 
     def test_validated_requirements_plan_maps_every_explicit_fragment(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
@@ -358,6 +374,25 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertEqual(
             rt.safe_section_validation_error("insufficient independent hosts for R7 extra"),
             "report section failed semantic validation",
+        )
+
+    def test_report_markdown_structure_rejects_flattened_blocks(self) -> None:
+        self.assertEqual(
+            rt.report_markdown_structure_error("Intro ### Detail"),
+            "Markdown headings must start on separate lines",
+        )
+        self.assertEqual(
+            rt.report_markdown_structure_error("### Detail and flattened prose"),
+            "Markdown headings must start on separate lines",
+        )
+        self.assertEqual(
+            rt.report_markdown_structure_error("| A | B | | --- | --- | | 1 | 2 |"),
+            "Markdown table rows must use separate lines",
+        )
+        self.assertIsNone(
+            rt.report_markdown_structure_error(
+                "Intro\n\n### Detail\n\n| A | B |\n| --- | --- |\n| 1 | 2 |"
+            )
         )
 
     def test_deep_submit_allows_short_complete_report_and_rejects_missing_requirements(
@@ -689,6 +724,9 @@ class RuntimeContractTests(RuntimeTestCase):
                 "assigned_evidence.requirement_ids" in item and "assigned_evidence.url" in item
                 for item in prompt_payload["requirements"]
             )
+        )
+        self.assertTrue(
+            any("every Markdown table header" in item for item in prompt_payload["requirements"])
         )
 
     def test_standard_section_prompt_does_not_require_missing_planned_mapping(self) -> None:

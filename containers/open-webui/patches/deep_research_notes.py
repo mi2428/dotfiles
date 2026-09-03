@@ -13,20 +13,22 @@ from typing import Any
 ORIGIN = "dotfiles:deep-research-runtime"
 
 
-def report_title(markdown: str, user_message: str) -> str:
-    """Choose a short title from the report heading or the first request sentence."""
-    heading = next(
-        (
-            match.group(1).strip()
-            for line in markdown.splitlines()
-            if (match := re.match(r"^#{1,2}\s+(.+)$", line.strip()))
-        ),
-        "",
-    )
-    fallback = re.sub(r"\s+", " ", user_message).strip()
-    if match := re.match(r"^(.+?[。！？])", fallback):
-        fallback = match.group(1)
-    return (heading or fallback or "Deep Research")[:120]
+def report_title(chat_title: str, user_message: str) -> str:
+    """Reuse the generated chat title, with the request as a race-safe fallback."""
+
+    title = re.sub(r"\s+", " ", chat_title).strip()
+    if title and title.casefold() != "new chat":
+        return title[:120]
+
+    request_title = re.sub(r"\s+", " ", user_message).strip()
+    if match := re.match(
+        r"^(.+?[。\N{FULLWIDTH EXCLAMATION MARK}\N{FULLWIDTH QUESTION MARK}])",
+        request_title,
+    ):
+        request_title = match.group(1)
+    if request_title:
+        return request_title[:120]
+    return "Deep Research"
 
 
 async def persist_deep_research_note(
@@ -37,6 +39,7 @@ async def persist_deep_research_note(
     user_id: str,
     message_id: str,
     chat_id: str,
+    chat_title: str,
     markdown: str,
     user_message: str,
 ) -> str:
@@ -52,7 +55,7 @@ async def persist_deep_research_note(
         "deep_research_chat_id": chat_id,
     }
     data = {"content": {"json": None, "html": "", "md": markdown}}
-    title = report_title(markdown, user_message)
+    title = report_title(chat_title, user_message)
     # ponytail: linear scan is enough for personal Notes; add an indexed origin key if volume grows.
     existing = next(
         (

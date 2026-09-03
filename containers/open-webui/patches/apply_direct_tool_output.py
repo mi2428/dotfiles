@@ -91,13 +91,16 @@ add_replacement(
                             break
                         if direct_results[0].get('deep_research_status') != 'failed':
                             try:
+                                chat_id = str(metadata.get('chat_id') or '')
+                                chat_title = await Chats.get_chat_title_by_id(chat_id)
                                 await persist_deep_research_note(
                                     notes=Notes,
                                     note_form=NoteForm,
                                     note_update_form=NoteUpdateForm,
                                     user_id=user.id,
                                     message_id=str(metadata.get('message_id') or ''),
-                                    chat_id=str(metadata.get('chat_id') or ''),
+                                    chat_id=chat_id,
+                                    chat_title=str(chat_title or ''),
                                     markdown=direct_tool_output,
                                     user_message=str(user_message or ''),
                                 )

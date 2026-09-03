@@ -13,6 +13,7 @@ import hmac
 import io
 import ipaddress
 import json
+import logging
 import os
 import re
 import socket
@@ -46,6 +47,8 @@ from strands.types.exceptions import (
 )
 
 from sakura_kimi_model import SakuraKimiModel
+
+LOG = logging.getLogger(__name__)
 
 MAX_QUERY_CHARS = 2000
 MAX_FOCUS_CHARS = 500
@@ -217,7 +220,11 @@ class StandardReportSectionDraft(StrictModel):
         default_factory=list,
         max_length=MAX_SECTION_REQUIREMENTS,
     )
-    body_markdown: str = Field(min_length=1, max_length=MAX_REPORT_SECTION_CHARS)
+    body_markdown: str = Field(
+        min_length=1,
+        max_length=MAX_REPORT_SECTION_CHARS,
+        description="Markdown with headings and table rows on separate lines.",
+    )
     summary: str = Field(default="", max_length=500)
 
 
@@ -595,6 +602,83 @@ def provider_error_state(error: BaseException) -> tuple[bool, bool]:
             if isinstance(nested, provider_errors):
                 pending.append(nested)
     return retryable, proxy_exhausted
+
+
+def safe_model_recovery_details(error: BaseException) -> tuple[str, int | None]:
+    """Return bounded diagnostics without persisting provider text or response bodies."""
+
+    if type(error) is TimeoutError:
+        if str(error) == "model returned no result":
+            return "model_empty_result", None
+        if str(error) == "model call total timeout":
+            return "model_total_timeout", None
+
+    provider_errors = (
+        EventLoopException,
+        APIConnectionError,
+        APIError,
+        APITimeoutError,
+        TimeoutError,
+    )
+    pending = [error] if isinstance(error, provider_errors) else []
+    seen: set[int] = set()
+    reason = "provider_transient_error"
+    reason_priority = 0
+    http_status: int | None = None
+
+    def choose(candidate: str, priority: int) -> None:
+        nonlocal reason, reason_priority
+        if priority > reason_priority:
+            reason = candidate
+            reason_priority = priority
+
+    while pending:
+        current = pending.pop(0)
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, APITimeoutError):
+            choose("provider_timeout", 5)
+        elif isinstance(current, APIConnectionError):
+            choose("provider_connection_error", 3)
+        elif isinstance(current, TimeoutError):
+            choose("provider_timeout", 5)
+        if isinstance(current, APIError):
+            status_code = getattr(current, "status_code", None)
+            if isinstance(status_code, int):
+                http_status = status_code
+                if status_code == 429:
+                    choose("provider_rate_limit", 6)
+                elif status_code in {408, 409}:
+                    choose("provider_http_transient", 5)
+                elif 500 <= status_code < 600:
+                    choose("provider_http_server_error", 5)
+            body = current.body if isinstance(current.body, dict) else {}
+            detail = body.get("error", body)
+            if not isinstance(detail, dict):
+                detail = {}
+            code = str(current.code or detail.get("code") or "").casefold()
+            message = str(detail.get("message") or current).strip().rstrip(".").casefold()
+            if code == "rate_limit_exceeded":
+                choose("provider_rate_limit", 6)
+            elif code == "timeout" or message in {"request timed out", "upstream timeout"}:
+                choose("provider_timeout", 6)
+            elif code in {
+                "internal_error",
+                "internal_server_error",
+                "overloaded_error",
+            } or message in {"internal server error", "server error"}:
+                choose("provider_internal_error", 6)
+            elif status_code is None:
+                choose("provider_statusless_api_error", 2)
+        for nested in (
+            getattr(current, "original_exception", None),
+            current.__cause__,
+            current.__context__,
+        ):
+            if isinstance(nested, provider_errors):
+                pending.append(nested)
+    return reason, http_status
 
 
 def model_retry_delay(error: BaseException, attempt: int) -> float | None:
@@ -1175,6 +1259,9 @@ def default_stats(depth: str, budget: Budget, wall_limit: float) -> dict[str, An
         "report_sections": 0,
         "report_chars": 0,
         "model_transient_recoveries": 0,
+        "model_transient_failures": {},
+        "model_transient_latest_reason": "",
+        "model_transient_latest_role": "",
         "research_continuations": 0,
         "research_salvages": 0,
         "evidence_shortfall_salvage": False,
@@ -1419,6 +1506,32 @@ def validated_report_heading(heading: str) -> str:
     if re.match(r"^(?:Sources|Limitations|限界|制約)", normalized, flags=re.IGNORECASE):
         raise ValueError("heading is reserved for deterministic report assembly")
     return normalized
+
+
+def report_markdown_structure_error(body: str) -> str | None:
+    """Reject block Markdown flattened onto prose or another table row."""
+
+    lines = body.splitlines()
+    for index, line in enumerate(lines):
+        markdown = re.sub(r"`[^`]*`", "", line)
+        for match in re.finditer(r"(?<!\S)#{3,6}[ \t]+", markdown):
+            if markdown[: match.start()].strip():
+                return "Markdown headings must start on separate lines"
+        heading = re.match(r"[ \t]*#{3,6}[ \t]+", markdown)
+        if heading and (
+            len(markdown[heading.end() :].strip().rstrip("#").rstrip()) > 200
+            or (index > 0 and lines[index - 1].strip())
+            or index + 1 == len(lines)
+            or lines[index + 1].strip()
+        ):
+            return "Markdown headings must start on separate lines"
+        if "|" not in markdown:
+            continue
+        cells = [cell.strip() for cell in markdown.strip().strip("|").split("|")]
+        delimiters = [bool(re.fullmatch(r":?-{3,}:?", cell)) for cell in cells]
+        if sum(delimiters) >= 2 and not all(delimiters):
+            return "Markdown table rows must use separate lines"
+    return None
 
 
 def validated_report_plan(
@@ -1797,6 +1910,7 @@ def validate_checkpoint_state(state: RunState, research: ResearchRequest) -> Non
             or item.summary != item.summary.strip()
             or (research.depth == "deep" and (not item.summary or not item.requirement_ids))
             or re.search(r"^##\s+", item.body, flags=re.MULTILINE)
+            or report_markdown_structure_error(item.body) is not None
             or len(item.summary) > 500
         ):
             raise IntegrityError("checkpointed report section structure is invalid")
@@ -2077,6 +2191,8 @@ def store_report_section(
         raise ValueError("section summary must not exceed 500 characters")
     if re.search(r"^##\s+", body, flags=re.MULTILINE):
         raise ValueError("body_markdown must not contain level-2 headings")
+    if structure_error := report_markdown_structure_error(body):
+        raise ModelOutputError(structure_error)
     known_requirements = requirement_by_id(state)
     normalized_requirements = list(dict.fromkeys(requirement_ids))
     if research.depth == "deep" and (
@@ -2722,6 +2838,8 @@ def safe_section_validation_error(error: BaseException | str) -> str:
         "unknown source IDs in report section",
         "unusable source IDs in report section",
         "report section citations are not assigned to its requirements",
+        "Markdown headings must start on separate lines",
+        "Markdown table rows must use separate lines",
     }
     if message in allowed:
         return message
@@ -2796,6 +2914,14 @@ def build_section_prompt(
             "repaired section; otherwise use a distinct plain-text heading."
         ),
         "Do not include a level-2 heading, Sources, or Limitations inside body_markdown.",
+        (
+            "Keep Markdown block structure: put every H3-H6 heading on its own line, "
+            "with blank lines between headings and prose."
+        ),
+        (
+            "Put every Markdown table header, delimiter, and data row on separate lines; "
+            "never flatten table rows onto one line."
+        ),
         "Use inline evidence citations such as [S1] for every material claim.",
         (
             "If coverage_gaps are present, state the gap explicitly and do not invent "
@@ -3784,21 +3910,54 @@ async def run_research(
             watch_task = None
             stop_task = None
 
-    async def recover_model_error(exc: BaseException) -> bool:
+    async def recover_model_error(exc: BaseException, role: str) -> bool:
         nonlocal model_recoveries
         if fatal_errors:
             raise fatal_errors[0] from exc
         if state.final_response is not None:
             return False
-        delay = model_retry_delay(exc, model_recoveries)
-        if delay is None or model_recoveries >= MODEL_TRANSIENT_RECOVERIES:
+        retryable, proxy_exhausted = provider_error_state(exc)
+        if not retryable:
             return False
-        model_recoveries += 1
-        state.stats["model_transient_recoveries"] = (
-            int(state.stats["model_transient_recoveries"]) + 1
+        reason, http_status = safe_model_recovery_details(exc)
+        can_retry = not proxy_exhausted and model_recoveries < MODEL_TRANSIENT_RECOVERIES
+        delay = (
+            min(MODEL_RETRY_MAX_SECONDS, MODEL_RETRY_BASE_SECONDS * (2**model_recoveries))
+            if can_retry
+            else 0.0
         )
-        state.stats["stop_reason"] = ""
+        failures = cast(dict[str, int], state.stats["model_transient_failures"])
+        failures[reason] = failures.get(reason, 0) + 1
+        state.stats["model_transient_latest_reason"] = reason
+        state.stats["model_transient_latest_role"] = role
+        streak = model_recoveries + 1
+        action = (
+            "retry"
+            if can_retry
+            else ("proxy_exhausted" if proxy_exhausted else "runtime_exhausted")
+        )
+        LOG.warning(
+            "model_failure research_id=%s phase=%s role=%s reason=%s exception=%s "
+            "http_status=%s action=%s streak=%d delay_s=%.3f",
+            research_id,
+            state.phase,
+            role,
+            reason,
+            type(exc).__name__,
+            http_status if http_status is not None else "none",
+            action,
+            streak,
+            delay,
+        )
+        if can_retry:
+            model_recoveries = streak
+            state.stats["model_transient_recoveries"] = (
+                int(state.stats["model_transient_recoveries"]) + 1
+            )
+            state.stats["stop_reason"] = ""
         await save("running")
+        if not can_retry:
+            return False
         if delay:
             await asyncio.sleep(delay)
         return True
@@ -3823,14 +3982,14 @@ async def run_research(
                     total_timeout=structured_role_timeout_seconds(runtime.settings, remaining),
                 )
             except (EventLoopException, APIError, TimeoutError) as exc:
-                if await recover_model_error(exc):
+                if await recover_model_error(exc, output_model.__name__):
                     continue
                 if not is_expected_provider_failure(exc):
                     raise
                 raise ExpectedResearchFailure("provider_failure") from exc
             if result is None:
                 error = TimeoutError("model returned no result")
-                if await recover_model_error(error):
+                if await recover_model_error(error, output_model.__name__):
                     continue
                 raise ExpectedResearchFailure("provider_failure")
             if fatal_errors:
@@ -4198,7 +4357,7 @@ async def run_research(
                             set_collection_decision(state, "voluntary_stop")
                             await save("running")
                             break
-                        if await recover_model_error(exc):
+                        if await recover_model_error(exc, "deep_research"):
                             continue
                         raise ExpectedResearchFailure("provider_failure") from exc
                     if added == 0:
@@ -4253,7 +4412,7 @@ async def run_research(
                             state.stats["stop_reason"] = "research_salvaged"
                             await save("running")
                             break
-                        if await recover_model_error(exc):
+                        if await recover_model_error(exc, "research_agent"):
                             continue
                         raise ExpectedResearchFailure("provider_failure") from exc
                     if fatal_errors:

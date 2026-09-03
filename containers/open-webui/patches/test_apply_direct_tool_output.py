@@ -25,9 +25,13 @@ class DirectToolOutputPatchTests(unittest.TestCase):
         self.assertIn(
             "if direct_results[0].get('deep_research_status') != 'failed':\n"
             "                            try:\n"
+            "                                chat_id = str(metadata.get('chat_id') or '')\n"
+            "                                chat_title = await "
+            "Chats.get_chat_title_by_id(chat_id)\n"
             "                                await persist_deep_research_note(",
             patched,
         )
+        self.assertIn("chat_title=str(chat_title or ''),", patched)
 
     def test_failed_direct_output_skips_note_and_reads_status_case_insensitively(self) -> None:
         patched = patch_middleware("\n".join(old for old, _new in REPLACEMENTS))

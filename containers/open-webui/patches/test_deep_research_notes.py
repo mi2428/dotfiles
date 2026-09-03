@@ -46,17 +46,13 @@ class FakeNotes:
 
 
 class DeepResearchNotesTests(unittest.IsolatedAsyncioTestCase):
-    def test_report_title_prefers_first_report_heading(self) -> None:
+    def test_report_title_reuses_chat_title_with_request_fallback(self) -> None:
+        self.assertEqual(report_title("Generated title", "First request。"), "Generated title")
         self.assertEqual(
-            report_title("intro\n# Report title\nbody", "fallback"), "Report title"
-        )
-        self.assertEqual(
-            report_title("## Answer summary", "fallback"), "Answer summary"
-        )
-        self.assertEqual(
-            report_title("No headings", "First request。More detail。"),
+            report_title("New Chat", "First request。More detail。"),
             "First request。",
         )
+        self.assertEqual(report_title("", ""), "Deep Research")
 
     async def test_persistence_is_private_exact_and_idempotent(self) -> None:
         notes = FakeNotes()
@@ -67,6 +63,7 @@ class DeepResearchNotesTests(unittest.IsolatedAsyncioTestCase):
             "user_id": "user-1",
             "message_id": "message-1",
             "chat_id": "chat-1",
+            "chat_title": "Generated title",
             "user_message": "Research request",
         }
 

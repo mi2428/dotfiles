@@ -285,6 +285,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         async def run() -> None:
             with (
+                self.assertLogs(rt.LOG.name, level="WARNING") as logs,
                 patch.object(rt, "build_research_agent", side_effect=AssertionError("deep only")),
                 patch.object(rt, "build_finalization_agent", return_value=structured),
                 patch.object(rt, "search_searxng", new=AsyncMock(side_effect=fake_search)),
@@ -300,6 +301,25 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 )
             self.assertEqual(calls, ["dup", "ok", "idle-2"])
             self.assertEqual(response.stats["model_transient_recoveries"], 2)
+            self.assertEqual(
+                response.stats["model_transient_failures"],
+                {"provider_internal_error": 2},
+            )
+            self.assertEqual(
+                response.stats["model_transient_latest_reason"],
+                "provider_internal_error",
+            )
+            self.assertEqual(response.stats["model_transient_latest_role"], "SearchBatchDraft")
+            self.assertEqual(len(logs.output), 2)
+            self.assertTrue(
+                all(
+                    "reason=provider_internal_error" in line
+                    and "exception=APIError" in line
+                    and "role=SearchBatchDraft" in line
+                    and "Internal server error" not in line
+                    for line in logs.output
+                )
+            )
             self.assertTrue(response.stats["evidence_shortfall_salvage"])
 
         asyncio.run(run())
@@ -352,6 +372,10 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 )
             self.assertEqual(response.stats["research_salvages"], 1)
             self.assertEqual(response.stats["model_transient_recoveries"], 5)
+            self.assertEqual(
+                response.stats["model_transient_failures"],
+                {"provider_internal_error": 6},
+            )
             self.assertTrue(response.stats["evidence_shortfall_salvage"])
 
         asyncio.run(run())
@@ -439,6 +463,10 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     rt.run_state_snapshot(state),
                 )
             self.assertEqual(response.stats["model_transient_recoveries"], 1)
+            self.assertEqual(
+                response.stats["model_transient_failures"],
+                {"model_empty_result": 1},
+            )
             self.assertFalse(response.stats["extractive_finalization"])
 
         asyncio.run(run())
@@ -848,8 +876,8 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             [
                 rt.ReportSectionDraft(
                     heading="Direct evidence",
-                    requirement_ids=["R9"],
-                    body_markdown="Missing citation",
+                    requirement_ids=["R1"],
+                    body_markdown="Supported [S1] ### Flattened heading",
                     summary="bad",
                 ),
                 rt.ReportSectionDraft(
@@ -890,11 +918,11 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertGreaterEqual(response.stats["structured_output_retries"], 1)
             self.assertEqual(
                 response.stats["section_validation_failures"],
-                {"unknown requirement IDs in report section": 1},
+                {"Markdown headings must start on separate lines": 1},
             )
             self.assertEqual(
                 response.stats["section_validation_latest_reason"],
-                "unknown requirement IDs in report section",
+                "Markdown headings must start on separate lines",
             )
             self.assertEqual(response.stats["collection_decision"], "voluntary_stop")
 
