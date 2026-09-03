@@ -33,7 +33,7 @@ from aiohttp.abc import AbstractResolver, ResolveResult
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import PlainTextResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from openai import APIError, APITimeoutError
+from openai import APIConnectionError, APIError, APITimeoutError
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 from pypdf import PdfReader
 from strands import Agent, tool
@@ -76,14 +76,14 @@ SEARCH_RESULT_LIMIT = 8
 TOOL_EXCERPT_CHARS = 1200
 KIMI_MAX_TOKENS = 16_384
 FINALIZER_MAX_TOKENS = 16_384
-FINALIZER_TIMEOUT_SECONDS = 1500
+FINALIZER_TIMEOUT_SECONDS = 3300
 TIMEOUT_SAFETY_MARGIN_SECONDS = 300
 # Deep finalization can require every planned section plus one submission call.
 FINALIZATION_RESERVE_SECONDS = 5_400
 DEEP_QUERY_BATCH_SIZE = 3
 DEEP_FETCH_BATCH_SIZE = 6
 AGENT_CANCEL_GRACE_SECONDS = 5
-DEFAULT_KIMI_TIMEOUT_SECONDS = 1800
+DEFAULT_KIMI_TIMEOUT_SECONDS = 3600
 # Stream errors arrive after the proxy has accepted HTTP 200, so retry them here.
 MODEL_TRANSIENT_RECOVERIES = 5
 MODEL_RETRY_BASE_SECONDS = 10.0
@@ -95,7 +95,7 @@ REPAIR_NOOP_LIMITS = {
     "deliverable_repair": 1,
 }
 
-DEFAULT_WALL_BUDGETS = {"quick": 1800, "standard": 5400, "deep": 10_350}
+DEFAULT_WALL_BUDGETS = {"quick": 3900, "standard": 5400, "deep": 10_350}
 DEFAULT_DEPTH_BUDGETS = {
     "quick": {
         "searches": 8,
@@ -517,28 +517,39 @@ def env_int(name: str, default: int, *, minimum: int = 1, maximum: int | None = 
     return value
 
 
-def model_retry_delay(error: BaseException, attempt: int) -> float | None:
-    """Return a backoff for retryable provider errors wrapped by Strands."""
+def provider_error_state(error: BaseException) -> tuple[bool, bool]:
+    """Return whether an error is transient and whether the proxy exhausted retries."""
 
-    provider_errors = (EventLoopException, APIError, APITimeoutError, TimeoutError)
+    provider_errors = (
+        EventLoopException,
+        APIConnectionError,
+        APIError,
+        APITimeoutError,
+        TimeoutError,
+    )
     pending = [error] if isinstance(error, provider_errors) else []
     seen: set[int] = set()
+    retryable = False
+    proxy_exhausted = False
     while pending:
         current = pending.pop(0)
         if id(current) in seen:
             continue
         seen.add(id(current))
         if isinstance(current, APIError):
+            response = getattr(current, "response", None)
+            if response is not None:
+                retry_count = str(response.headers.get("x-sakura-retry-count", "0"))
+                proxy_exhausted = proxy_exhausted or (
+                    retry_count.isdigit() and int(retry_count) >= MODEL_TRANSIENT_RECOVERIES
+                )
             status_code = getattr(current, "status_code", None)
             if isinstance(status_code, int):
-                if status_code == 429 or 500 <= status_code < 600:
-                    return min(
-                        MODEL_RETRY_MAX_SECONDS,
-                        MODEL_RETRY_BASE_SECONDS * (2**attempt),
-                    )
-                return None
+                retryable = retryable or status_code in {408, 409, 429} or 500 <= status_code < 600
         if isinstance(current, (APITimeoutError, TimeoutError)):
-            return 0.0
+            retryable = True
+        if isinstance(current, APIConnectionError):
+            retryable = True
         if isinstance(current, APIError):
             body = current.body if isinstance(current.body, dict) else {}
             detail = body.get("error", body)
@@ -546,13 +557,25 @@ def model_retry_delay(error: BaseException, attempt: int) -> float | None:
                 detail = {}
             code = str(current.code or detail.get("code") or "").casefold()
             message = str(detail.get("message") or current).strip().rstrip(".").casefold()
-            if code == "timeout" or message in {"request timed out", "upstream timeout"}:
-                return 0.0
-            if code == "internal_server_error" or message == "internal server error":
-                return min(
-                    MODEL_RETRY_MAX_SECONDS,
-                    MODEL_RETRY_BASE_SECONDS * (2**attempt),
-                )
+            retryable = (
+                retryable
+                or code
+                in {
+                    "internal_error",
+                    "internal_server_error",
+                    "overloaded_error",
+                    "rate_limit_exceeded",
+                    "server_error",
+                    "timeout",
+                }
+                or message
+                in {
+                    "internal server error",
+                    "request timed out",
+                    "server error",
+                    "upstream timeout",
+                }
+            )
         for nested in (
             getattr(current, "original_exception", None),
             current.__cause__,
@@ -560,13 +583,22 @@ def model_retry_delay(error: BaseException, attempt: int) -> float | None:
         ):
             if isinstance(nested, provider_errors):
                 pending.append(nested)
-    return None
+    return retryable, proxy_exhausted
+
+
+def model_retry_delay(error: BaseException, attempt: int) -> float | None:
+    """Return a backoff for transient errors not exhausted by the provider proxy."""
+
+    retryable, proxy_exhausted = provider_error_state(error)
+    if not retryable or proxy_exhausted:
+        return None
+    return min(MODEL_RETRY_MAX_SECONDS, MODEL_RETRY_BASE_SECONDS * (2**attempt))
 
 
 def is_expected_provider_failure(error: BaseException) -> bool:
     """Return whether provider failure is explicitly retryable or a timeout."""
 
-    return model_retry_delay(error, 0) is not None
+    return provider_error_state(error)[0]
 
 
 def is_public_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -3690,6 +3722,9 @@ async def run_research(
                     raise
                 raise ExpectedResearchFailure("provider_failure") from exc
             if result is None:
+                error = TimeoutError("model returned no result")
+                if await recover_model_error(error):
+                    continue
                 raise ExpectedResearchFailure("provider_failure")
             if fatal_errors:
                 raise fatal_errors[0]

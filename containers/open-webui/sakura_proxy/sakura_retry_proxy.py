@@ -1,8 +1,8 @@
 """Serve the internal OpenAI-compatible gateway for Sakura AI Engine.
 
 The proxy replaces caller credentials with round-robin account tokens, preserves streaming,
-retries bounded 429 responses, and retries one timeout at low reasoning when the request
-explicitly permits that fallback. Open WebUI-only status events require its private header.
+and retries transient provider failures with one bounded policy. Open WebUI-only status
+events require its private header.
 """
 
 from __future__ import annotations
@@ -38,6 +38,21 @@ HOP_BY_HOP_HEADERS = {
     "upgrade",
 }
 TIMEOUT_STATUSES = {408, 504}
+RETRYABLE_STATUSES = {408, 409, 429}
+RETRYABLE_ERROR_CODES = {
+    "internal_error",
+    "internal_server_error",
+    "overloaded_error",
+    "rate_limit_exceeded",
+    "server_error",
+    "timeout",
+}
+RETRYABLE_ERROR_MESSAGES = {
+    "internal server error",
+    "request timed out",
+    "server error",
+    "upstream timeout",
+}
 TIMEOUT_RETRY_EFFORTS = {"medium", "high", "max"}
 OPENWEBUI_MODE_HEADER = "X-OpenWebUI-Mode"
 RETRY_HEADER_NAMES = {
@@ -75,7 +90,7 @@ def retry_after_seconds(value: str | None) -> float | None:
 
 
 def timeout_retry_body(body: bytes) -> bytes | None:
-    """Return one safe timeout retry, unchanged when effort is unspecified."""
+    """Lower explicit expensive reasoning for retries, preserving unspecified effort."""
     try:
         payload = json.loads(body)
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -90,18 +105,37 @@ def timeout_retry_body(body: bytes) -> bytes | None:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
 
 
-def is_timeout_response(status: int, prefix: bytes) -> bool:
-    """Recognize HTTP and OpenAI-compatible timeout responses."""
+def retryable_response_reason(status: int, prefix: bytes) -> str | None:
+    """Classify retryable HTTP and OpenAI-compatible provider responses."""
+
+    if status == 429:
+        return "rate_limit"
     if status in TIMEOUT_STATUSES:
-        return True
+        return "timeout"
+    if status in RETRYABLE_STATUSES or 500 <= status < 600:
+        return "server_error"
     payload = prefix.strip()
     if payload.startswith(b"data:"):
         payload = payload.removeprefix(b"data:").strip()
     try:
-        error = json.loads(payload).get("error", {})
-    except (AttributeError, json.JSONDecodeError, UnicodeDecodeError):
-        return False
-    return isinstance(error, dict) and error.get("code") == "timeout"
+        decoded = json.loads(payload)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        message = payload.decode(errors="ignore").strip().rstrip(".").casefold()
+        return "server_error" if message in RETRYABLE_ERROR_MESSAGES else None
+    error = decoded.get("error", {}) if isinstance(decoded, dict) else {}
+    if isinstance(error, dict):
+        code = str(error.get("code") or error.get("type") or "").casefold()
+        message = str(error.get("message") or "").strip().rstrip(".").casefold()
+    else:
+        code = ""
+        message = str(error).strip().rstrip(".").casefold()
+    if code == "timeout" or message in {"request timed out", "upstream timeout"}:
+        return "timeout"
+    if code == "rate_limit_exceeded":
+        return "rate_limit"
+    if code in RETRYABLE_ERROR_CODES or message in RETRYABLE_ERROR_MESSAGES:
+        return "server_error"
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,19 +143,32 @@ class Settings:
     """Runtime settings for the internal Sakura gateway."""
 
     upstream_url: str = "https://api.ai.sakura.ad.jp"
-    max_retries: int = 10
-    base_backoff: float = 2.0
+    max_retries: int = 5
+    base_backoff: float = 10.0
     max_backoff: float = 120.0
     jitter: float = 1.0
-    retry_budget: float = 1200.0
+    retry_budget: float = 3200.0
     upstream_timeout: float = 420.0
     account_tokens: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.upstream_timeout <= 0 or self.retry_budget <= 0:
-            raise ValueError("Sakura timeout settings must be positive")
         if (
-            self.retry_budget - 2 * self.upstream_timeout
+            self.max_retries < 0
+            or self.base_backoff < 0
+            or self.max_backoff < self.base_backoff
+            or self.jitter < 0
+            or self.upstream_timeout <= 0
+            or self.retry_budget <= 0
+        ):
+            raise ValueError("Sakura timeout settings must be positive")
+        retry_waits = sum(
+            min(self.max_backoff, self.base_backoff * (2**attempt)) + self.jitter
+            for attempt in range(self.max_retries)
+        )
+        if (
+            self.retry_budget
+            - (self.max_retries + 1) * self.upstream_timeout
+            - retry_waits
             < TIMEOUT_SAFETY_MARGIN_SECONDS
         ):
             raise ValueError("Sakura retry budget lacks timeout safety margin")
@@ -162,10 +209,9 @@ def retry_delay_seconds(
 ) -> float:
     """Return capped exponential or provider-directed backoff with jitter."""
 
-    delay = (
-        retry_after if retry_after is not None else settings.base_backoff * (2**attempt)
-    )
-    return min(settings.max_backoff, delay) + random.uniform(0.0, settings.jitter)
+    exponential = min(settings.max_backoff, settings.base_backoff * (2**attempt))
+    directed = min(settings.max_backoff, retry_after or 0.0)
+    return max(exponential, directed) + random.uniform(0.0, settings.jitter)
 
 
 @dataclass(frozen=True, slots=True)
@@ -273,9 +319,9 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             return
 
         request_body = body
-        rate_limit_attempt = 0
+        retry_count = 0
         upstream_attempt = 0
-        timeout_retried = False
+        last_retry_reason: str | None = None
         effective_reasoning_effort = None
         retry_deadline = time.monotonic() + self.settings.retry_budget
         openwebui_mode = (
@@ -283,7 +329,10 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         )
         correlation_id = uuid4().hex[:12]
         while True:
+            connection: http.client.HTTPConnection | None = None
+            response: http.client.HTTPResponse | None = None
             lease: TokenLease | None = None
+            shared_wait = 0.0
             remaining = retry_deadline - time.monotonic()
             if remaining <= 0:
                 self._log_event(
@@ -298,7 +347,9 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 self._send_json(
                     504,
                     {"error": {"code": "timeout", "message": "upstream timeout"}},
-                    self._retry_headers(timeout_retried, effective_reasoning_effort),
+                    self._retry_headers(
+                        retry_count, last_retry_reason, effective_reasoning_effort
+                    ),
                 )
                 return
             try:
@@ -308,109 +359,6 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                     min(self.settings.upstream_timeout, remaining),
                     retry_deadline,
                 )
-            except TimeoutError:
-                fallback = None if timeout_retried else timeout_retry_body(request_body)
-                if fallback is not None and time.monotonic() < retry_deadline:
-                    self._log_event(
-                        correlation_id=correlation_id,
-                        token_slot=None if lease is None else lease.slot,
-                        attempt=upstream_attempt,
-                        reason="timeout",
-                        scheduled=0.0,
-                        shared_wait=0.0,
-                        status="retry",
-                    )
-                    if fallback != request_body:
-                        effective_reasoning_effort = "low"
-                    request_body = fallback
-                    timeout_retried = True
-                    rate_limit_attempt = 0
-                    continue
-                self._log_event(
-                    correlation_id=correlation_id,
-                    token_slot=None if lease is None else lease.slot,
-                    attempt=upstream_attempt,
-                    reason="timeout",
-                    scheduled=0.0,
-                    shared_wait=0.0,
-                    status=504,
-                )
-                self._send_json(
-                    504,
-                    {"error": {"code": "timeout", "message": "upstream timeout"}},
-                    self._retry_headers(timeout_retried, effective_reasoning_effort),
-                )
-                return
-            except BrokenPipeError:
-                self._log_event(
-                    correlation_id=correlation_id,
-                    token_slot=None if lease is None else lease.slot,
-                    attempt=upstream_attempt,
-                    reason="client_disconnect",
-                    scheduled=0.0,
-                    shared_wait=0.0,
-                    status="cancelled",
-                )
-                self.close_connection = True
-                return
-            except (OSError, http.client.HTTPException):
-                self._log_event(
-                    correlation_id=correlation_id,
-                    token_slot=None if lease is None else lease.slot,
-                    attempt=upstream_attempt,
-                    reason="upstream_error",
-                    scheduled=0.0,
-                    shared_wait=0.0,
-                    status=502,
-                )
-                self._send_json(
-                    502,
-                    {"error": {"message": "upstream unavailable"}},
-                    self._retry_headers(timeout_retried, effective_reasoning_effort),
-                )
-                return
-            rate_limited = False
-            token_slot = None if lease is None else lease.slot
-            if (
-                response.status == 429
-                and rate_limit_attempt < self.settings.max_retries
-            ):
-                rate_limited = True
-                retry_after = retry_after_seconds(response.getheader("Retry-After"))
-                delay = retry_delay_seconds(
-                    self.settings, rate_limit_attempt, retry_after
-                )
-                scheduled = (
-                    type(self).token_state.schedule_and_release(lease, delay)
-                    if lease is not None
-                    else delay
-                )
-                lease = None
-                if delay < retry_deadline - time.monotonic():
-                    response.read()
-                    connection.close()
-                    rate_limit_attempt += 1
-                    self._log_event(
-                        correlation_id=correlation_id,
-                        token_slot=token_slot,
-                        attempt=upstream_attempt,
-                        reason="rate_limit",
-                        scheduled=scheduled,
-                        shared_wait=shared_wait,
-                        status=429,
-                    )
-                    continue
-                self._log_event(
-                    correlation_id=correlation_id,
-                    token_slot=token_slot,
-                    attempt=upstream_attempt,
-                    reason="rate_limit",
-                    scheduled=scheduled,
-                    shared_wait=shared_wait,
-                    status=429,
-                )
-
-            try:
                 remaining = retry_deadline - time.monotonic()
                 if remaining <= 0:
                     raise TimeoutError("retry budget exhausted")
@@ -420,33 +368,41 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                     )
                 prefix = response.readline(64 * 1024)
             except TimeoutError:
-                response.close()
-                connection.close()
+                if response is not None:
+                    response.close()
+                if connection is not None:
+                    connection.close()
                 if lease is not None:
                     type(self).token_state.release(lease)
                     lease = None
-                fallback = None if timeout_retried else timeout_retry_body(request_body)
-                if fallback is not None and time.monotonic() < retry_deadline:
+                reason = "timeout"
+                delay = retry_delay_seconds(self.settings, retry_count, None)
+                if self._can_retry(retry_count, delay, retry_deadline):
+                    fallback = timeout_retry_body(request_body)
+                    if fallback is not None:
+                        if fallback != request_body:
+                            effective_reasoning_effort = "low"
+                        request_body = fallback
+                    retry_count += 1
+                    last_retry_reason = reason
                     self._log_event(
                         correlation_id=correlation_id,
-                        token_slot=token_slot,
+                        token_slot=None,
                         attempt=upstream_attempt,
-                        reason="timeout",
-                        scheduled=0.0,
+                        reason=reason,
+                        scheduled=delay,
                         shared_wait=shared_wait,
                         status="retry",
                     )
-                    if fallback != request_body:
-                        effective_reasoning_effort = "low"
-                    request_body = fallback
-                    timeout_retried = True
-                    rate_limit_attempt = 0
+                    if not self._wait_for_retry(delay, retry_deadline):
+                        self.close_connection = True
+                        return
                     continue
                 self._log_event(
                     correlation_id=correlation_id,
-                    token_slot=token_slot,
+                    token_slot=None,
                     attempt=upstream_attempt,
-                    reason="timeout",
+                    reason=reason,
                     scheduled=0.0,
                     shared_wait=shared_wait,
                     status=504,
@@ -454,40 +410,145 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 self._send_json(
                     504,
                     {"error": {"code": "timeout", "message": "upstream timeout"}},
-                    self._retry_headers(timeout_retried, effective_reasoning_effort),
+                    self._retry_headers(
+                        retry_count, last_retry_reason, effective_reasoning_effort
+                    ),
                 )
                 return
-
-            fallback = None
-            if is_timeout_response(response.status, prefix) and not timeout_retried:
-                fallback = timeout_retry_body(request_body)
-            if fallback is not None and time.monotonic() < retry_deadline:
-                response.close()
-                connection.close()
+            except BrokenPipeError:
+                self._log_event(
+                    correlation_id=correlation_id,
+                    token_slot=None if lease is None else lease.slot,
+                    attempt=upstream_attempt,
+                    reason="client_disconnect",
+                    scheduled=0.0,
+                    shared_wait=shared_wait,
+                    status="cancelled",
+                )
+                self.close_connection = True
+                return
+            except (OSError, http.client.HTTPException):
+                if response is not None:
+                    response.close()
+                if connection is not None:
+                    connection.close()
                 if lease is not None:
                     type(self).token_state.release(lease)
                     lease = None
+                reason = "upstream_error"
+                delay = retry_delay_seconds(self.settings, retry_count, None)
+                if self._can_retry(retry_count, delay, retry_deadline):
+                    retry_count += 1
+                    last_retry_reason = reason
+                    self._log_event(
+                        correlation_id=correlation_id,
+                        token_slot=None,
+                        attempt=upstream_attempt,
+                        reason=reason,
+                        scheduled=delay,
+                        shared_wait=shared_wait,
+                        status="retry",
+                    )
+                    if not self._wait_for_retry(delay, retry_deadline):
+                        self.close_connection = True
+                        return
+                    continue
+                self._log_event(
+                    correlation_id=correlation_id,
+                    token_slot=None,
+                    attempt=upstream_attempt,
+                    reason=reason,
+                    scheduled=0.0,
+                    shared_wait=shared_wait,
+                    status=502,
+                )
+                self._send_json(
+                    502,
+                    {
+                        "error": {
+                            "code": "server_error",
+                            "message": "upstream unavailable",
+                        }
+                    },
+                    self._retry_headers(
+                        retry_count, last_retry_reason, effective_reasoning_effort
+                    ),
+                )
+                return
+
+            token_slot = None if lease is None else lease.slot
+            reason = retryable_response_reason(response.status, prefix)
+            if reason is not None:
+                retry_after = (
+                    retry_after_seconds(response.getheader("Retry-After"))
+                    if reason == "rate_limit"
+                    else None
+                )
+                delay = retry_delay_seconds(self.settings, retry_count, retry_after)
+            else:
+                delay = 0.0
+            if reason is not None and self._can_retry(
+                retry_count, delay, retry_deadline
+            ):
+                if reason == "timeout":
+                    fallback = timeout_retry_body(request_body)
+                    if fallback is not None:
+                        if fallback != request_body:
+                            effective_reasoning_effort = "low"
+                        request_body = fallback
+                response.close()
+                connection.close()
+                if lease is not None:
+                    if reason == "rate_limit":
+                        type(self).token_state.schedule_and_release(lease, delay)
+                    else:
+                        type(self).token_state.release(lease)
+                    lease = None
+                retry_count += 1
+                last_retry_reason = reason
                 self._log_event(
                     correlation_id=correlation_id,
                     token_slot=token_slot,
                     attempt=upstream_attempt,
-                    reason="timeout",
-                    scheduled=0.0,
+                    reason=reason,
+                    scheduled=delay,
                     shared_wait=shared_wait,
                     status="retry",
                 )
-                if fallback != request_body:
-                    effective_reasoning_effort = "low"
-                request_body = fallback
-                timeout_retried = True
-                rate_limit_attempt = 0
+                if not self._wait_for_retry(delay, retry_deadline):
+                    self.close_connection = True
+                    return
                 continue
+
+            if reason is not None and response.status < 400:
+                response.close()
+                connection.close()
+                if lease is not None:
+                    type(self).token_state.release(lease)
+                status = 504 if reason == "timeout" else 502
+                self._log_event(
+                    correlation_id=correlation_id,
+                    token_slot=token_slot,
+                    attempt=upstream_attempt,
+                    reason=reason,
+                    scheduled=0.0,
+                    shared_wait=shared_wait,
+                    status=status,
+                )
+                self._send_json(
+                    status,
+                    {"error": {"code": reason, "message": "provider retry exhausted"}},
+                    self._retry_headers(
+                        retry_count, last_retry_reason, effective_reasoning_effort
+                    ),
+                )
+                return
 
             self._log_event(
                 correlation_id=correlation_id,
                 token_slot=token_slot,
                 attempt=upstream_attempt,
-                reason="rate_limit" if rate_limited else "response",
+                reason=reason or "response",
                 scheduled=0.0,
                 shared_wait=shared_wait,
                 status=response.status,
@@ -498,10 +559,26 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 response,
                 prefix,
                 lease,
-                self._retry_headers(timeout_retried, effective_reasoning_effort),
+                self._retry_headers(
+                    retry_count, last_retry_reason, effective_reasoning_effort
+                ),
                 openwebui_mode and effective_reasoning_effort == "low",
             )
             return
+
+    def _can_retry(self, retry_count: int, delay: float, deadline: float) -> bool:
+        return (
+            retry_count < self.settings.max_retries
+            and delay + self.settings.upstream_timeout <= deadline - time.monotonic()
+        )
+
+    def _wait_for_retry(self, delay: float, deadline: float) -> bool:
+        target = time.monotonic() + delay
+        while time.monotonic() < target:
+            if self._client_disconnected() or time.monotonic() >= deadline:
+                return False
+            time.sleep(min(0.1, target - time.monotonic()))
+        return True
 
     def _read_body(self) -> bytes | None:
         if self.headers.get("Transfer-Encoding"):
@@ -617,12 +694,16 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         )
 
     @staticmethod
-    def _retry_headers(retried: bool, effective_effort: str | None) -> dict[str, str]:
-        if not retried:
+    def _retry_headers(
+        retry_count: int,
+        retry_reason: str | None,
+        effective_effort: str | None,
+    ) -> dict[str, str]:
+        if retry_count <= 0:
             return {}
         headers = {
-            "X-Sakura-Retry-Count": "1",
-            "X-Sakura-Retry-Reason": "timeout",
+            "X-Sakura-Retry-Count": str(retry_count),
+            "X-Sakura-Retry-Reason": retry_reason or "provider_error",
         }
         if effective_effort:
             headers["X-Sakura-Effective-Reasoning-Effort"] = effective_effort

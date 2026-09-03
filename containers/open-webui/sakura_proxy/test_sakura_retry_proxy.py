@@ -22,6 +22,7 @@ from sakura_retry_proxy import (
     make_server,
     retry_after_seconds,
     retry_delay_seconds,
+    retryable_response_reason,
 )
 
 
@@ -105,6 +106,24 @@ class UpstreamHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(body)
                 return
+            if self.mode == "server_error_then_success" and self.attempts == 1:
+                body = b'{"error":{"code":"server_error"}}'
+                self.send_response(503)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if self.mode == "always_internal_error" or (
+                self.mode == "internal_error_then_success" and self.attempts == 1
+            ):
+                body = b'data: {"error":{"code":"internal_server_error"}}\n\n'
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if self.mode == "timeout_then_stream":
                 body = b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
                 self.send_response(200)
@@ -166,6 +185,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
                 base_backoff=0.01,
                 max_backoff=0.01,
                 jitter=0,
+                upstream_timeout=1,
                 account_tokens=("token-a", "token-b"),
             ),
             ("127.0.0.1", 0),
@@ -202,9 +222,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
             ["Bearer token-a", "Bearer token-b", "Bearer token-a", "Bearer token-b"],
         )
 
-    def test_shared_cooldown_keeps_following_request_off_the_limited_token(
-        self,
-    ) -> None:
+    def test_rate_limit_retry_waits_before_reusing_limited_token(self) -> None:
         UpstreamHandler.mode = "token_a_once_rate_limited"
         proxy_port = self.proxy.server_address[1]
         request = urllib.request.Request(
@@ -212,14 +230,16 @@ class SakuraRetryProxyTest(unittest.TestCase):
             data=b"{}",
         )
 
+        started = time.monotonic()
         with urllib.request.urlopen(request) as response:
             self.assertEqual(response.read(), b'{"ok":true}')
+        self.assertGreaterEqual(time.monotonic() - started, 0.008)
         with urllib.request.urlopen(request) as response:
             self.assertEqual(response.read(), b'{"ok":true}')
 
         self.assertEqual(
             UpstreamHandler.authorization_headers,
-            ["Bearer token-a", "Bearer token-b", "Bearer token-b"],
+            ["Bearer token-a", "Bearer token-b", "Bearer token-a"],
         )
 
     def test_same_token_never_allows_two_in_flight_upstream_requests(self) -> None:
@@ -298,6 +318,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
                 base_backoff=0.01,
                 max_backoff=0.01,
                 jitter=0,
+                upstream_timeout=1,
                 account_tokens=("token-a",),
             ),
             ("127.0.0.1", 0),
@@ -349,6 +370,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
                 base_backoff=0.01,
                 max_backoff=0.01,
                 jitter=0,
+                upstream_timeout=1,
             ),
             ("127.0.0.1", 0),
         )
@@ -440,41 +462,135 @@ class SakuraRetryProxyTest(unittest.TestCase):
         self.assertEqual(streamed_body, upstream_event)
         self.assertIsNone(openwebui_length)
 
-    def test_retries_timeout_only_once(self) -> None:
+    def test_retries_timeout_to_configured_limit(self) -> None:
         UpstreamHandler.mode = "always_timeout"
         proxy_port = self.proxy.server_address[1]
         request = urllib.request.Request(
             f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
             data=json.dumps({"reasoning_effort": "high"}).encode(),
         )
-        with urllib.request.urlopen(request) as response:
-            self.assertEqual(response.read(), b'data: {"error":{"code":"timeout"}}\n\n')
-        self.assertEqual(UpstreamHandler.attempts, 2)
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(request)
+        self.assertEqual(error.exception.code, 504)
+        self.assertEqual(error.exception.headers["X-Sakura-Retry-Count"], "3")
+        error.exception.close()
+        self.assertEqual(UpstreamHandler.attempts, 4)
 
-    def test_does_not_retry_none_as_low(self) -> None:
+    def test_timeout_retries_none_effort_without_rewriting_it(self) -> None:
         UpstreamHandler.mode = "always_timeout"
         proxy_port = self.proxy.server_address[1]
         request = urllib.request.Request(
             f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
             data=json.dumps({"reasoning_effort": "none"}).encode(),
         )
-        with urllib.request.urlopen(request) as response:
-            response.read()
-        self.assertEqual(UpstreamHandler.attempts, 1)
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(request)
+        error.exception.close()
+        self.assertEqual(UpstreamHandler.attempts, 4)
+        self.assertEqual(
+            [
+                json.loads(body)["reasoning_effort"]
+                for body in UpstreamHandler.request_bodies
+            ],
+            ["none"] * 4,
+        )
+
+    def test_retries_http_and_stream_provider_errors(self) -> None:
+        proxy_port = self.proxy.server_address[1]
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{proxy_port}/v1/chat/completions", data=b"{}"
+        )
+        for mode, reason in (
+            ("server_error_then_success", "server_error"),
+            ("internal_error_then_success", "server_error"),
+        ):
+            with self.subTest(mode=mode):
+                UpstreamHandler.mode = mode
+                UpstreamHandler.attempts = 0
+                with urllib.request.urlopen(request) as response:
+                    self.assertEqual(response.read(), b'{"ok":true}')
+                    self.assertEqual(response.headers["X-Sakura-Retry-Count"], "1")
+                    self.assertEqual(response.headers["X-Sakura-Retry-Reason"], reason)
+                self.assertEqual(UpstreamHandler.attempts, 2)
+
+        UpstreamHandler.mode = "always_internal_error"
+        UpstreamHandler.attempts = 0
+        handler = cast(type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass)
+        handler.settings = self.unsafe_settings(
+            max_retries=5,
+            base_backoff=0,
+            max_backoff=0,
+            upstream_timeout=1,
+        )
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(request)
+        self.assertEqual(error.exception.code, 502)
+        self.assertEqual(error.exception.headers["X-Sakura-Retry-Count"], "5")
+        error.exception.close()
+        self.assertEqual(UpstreamHandler.attempts, 6)
+
+    def test_retries_upstream_transport_error(self) -> None:
+        handler = cast(type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass)
+        original = handler._request_upstream
+        calls = 0
+
+        def flaky_request(
+            instance: SakuraRetryProxyHandler,
+            body: bytes,
+            timeout: float,
+            deadline: float,
+        ) -> tuple[
+            http.client.HTTPConnection,
+            http.client.HTTPResponse,
+            TokenLease | None,
+            float,
+        ]:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise OSError("temporary transport failure")
+            return original(instance, body, timeout, deadline)
+
+        UpstreamHandler.mode = "success"
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.proxy.server_address[1]}/v1/chat/completions",
+            data=b"{}",
+        )
+        with (
+            patch.object(handler, "_request_upstream", flaky_request),
+            urllib.request.urlopen(request) as response,
+        ):
+            self.assertEqual(response.read(), b'{"ok":true}')
+            self.assertEqual(response.headers["X-Sakura-Retry-Count"], "1")
+            self.assertEqual(
+                response.headers["X-Sakura-Retry-Reason"], "upstream_error"
+            )
+        self.assertEqual(calls, 2)
 
     def test_retry_after_parser(self) -> None:
         self.assertEqual(retry_after_seconds("2"), 2)
         self.assertIsNone(retry_after_seconds("invalid"))
+        settings = Settings(jitter=0)
+        self.assertEqual(retry_delay_seconds(settings, 0, 2), 10)
+        self.assertEqual(retry_delay_seconds(settings, 1, None), 20)
         self.assertEqual(
-            retry_delay_seconds(Settings(max_backoff=10, jitter=0), 0, 30),
-            10,
+            [retry_delay_seconds(settings, attempt, None) for attempt in range(5)],
+            [10, 20, 40, 80, 120],
         )
+        self.assertEqual(retryable_response_reason(409, b""), "server_error")
+        self.assertEqual(
+            retryable_response_reason(200, b"Internal server error."), "server_error"
+        )
+        self.assertEqual(
+            retryable_response_reason(200, b'{"error":"Internal server error."}'),
+            "server_error",
+        )
+        self.assertIsNone(retryable_response_reason(401, b""))
 
     def test_retry_budget_stops_before_an_unaffordable_backoff(self) -> None:
         UpstreamHandler.mode = "rate_limit_slow"
         handler = cast(type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass)
-        handler.settings = replace(
-            handler.settings,
+        handler.settings = self.unsafe_settings(
             max_backoff=1000,
             retry_budget=300.002,
             upstream_timeout=0.001,
@@ -550,8 +666,15 @@ class SakuraRetryProxyTest(unittest.TestCase):
 
         self.assertEqual(settings.account_tokens, ("token-a", "token-b", "token-c"))
         self.assertEqual(settings.upstream_url, "https://api.ai.sakura.ad.jp")
+        self.assertEqual((settings.max_retries, settings.base_backoff), (5, 10))
         self.assertGreaterEqual(
-            settings.retry_budget - 2 * settings.upstream_timeout,
+            settings.retry_budget
+            - (settings.max_retries + 1) * settings.upstream_timeout
+            - sum(
+                min(settings.max_backoff, settings.base_backoff * (2**attempt))
+                + settings.jitter
+                for attempt in range(settings.max_retries)
+            ),
             300,
         )
         with self.assertRaisesRegex(ValueError, "lacks timeout safety margin"):

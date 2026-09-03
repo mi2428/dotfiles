@@ -392,6 +392,52 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         asyncio.run(run())
 
+    def test_empty_provider_result_retries_before_finalization(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
+        state = make_state(1)
+        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        rt.store_initial_plan(state, research, plan_for(research))
+        rt.set_collection_decision(state, "voluntary_stop")
+        structured = StructuredAgent(
+            [
+                None,
+                rt.ReportSectionDraft(
+                    heading="Direct evidence",
+                    requirement_ids=["R1"],
+                    body_markdown="Supported evidence [S1]",
+                    summary="direct",
+                ),
+                rt.ReportSectionDraft(
+                    heading="Comparison",
+                    requirement_ids=["R2"],
+                    body_markdown="Coverage gap remains",
+                    summary="gap",
+                ),
+                rt.ReportSubmissionDraft(
+                    findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1"])],
+                    limitations=["Known constraint"],
+                ),
+            ]
+        )
+
+        async def run() -> None:
+            with (
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+                patch.object(rt, "MODEL_RETRY_BASE_SECONDS", 0.0),
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    "empty-provider-result-key",
+                    rt.run_state_snapshot(state),
+                )
+            self.assertEqual(response.stats["model_transient_recoveries"], 1)
+            self.assertFalse(response.stats["extractive_finalization"])
+
+        asyncio.run(run())
+
     def test_deep_uses_candidate_queue_past_thirty_until_requirement_done(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
         state = make_state(30)
@@ -1182,6 +1228,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             with (
                 patch.object(rt, "build_research_agent", return_value=TimeoutAgent()),
                 patch.object(rt, "MODEL_TRANSIENT_RECOVERIES", 2),
+                patch.object(rt, "MODEL_RETRY_BASE_SECONDS", 0.0),
                 self.assertRaisesRegex(rt.IncompleteResearchError, "provider_failure"),
             ):
                 await rt.run_research(

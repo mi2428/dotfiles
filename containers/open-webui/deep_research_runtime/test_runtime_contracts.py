@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 
 import aiohttp
 import httpx
-from openai import APIError, APIStatusError
+from openai import APIConnectionError, APIError, APIStatusError
 from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands.tools.executors import SequentialToolExecutor
 
@@ -198,7 +198,10 @@ class RuntimeContractTests(RuntimeTestCase):
         asyncio.run(run())
 
     def test_structured_timeout_keeps_provider_240s_inside_existing_envelope(self) -> None:
-        self.assertEqual(rt.structured_role_timeout_seconds(self.runtime.settings, 1800), 1500)
+        self.assertEqual(self.runtime.settings.kimi_timeout_seconds, 3600)
+        self.assertEqual(rt.wall_budget_seconds("quick"), 3900)
+        self.assertEqual(rt.structured_role_timeout_seconds(self.runtime.settings, 4000), 3300)
+        self.assertEqual(rt.structured_role_timeout_seconds(self.runtime.settings, 1800), 1800)
         self.assertGreater(rt.structured_role_timeout_seconds(self.runtime.settings, 1800), 240)
         self.assertEqual(rt.structured_role_timeout_seconds(self.runtime.settings, 300), 300)
 
@@ -213,7 +216,7 @@ class RuntimeContractTests(RuntimeTestCase):
         manager = cast(SlidingWindowConversationManager, agent.conversation_manager)
         research_params = cast(dict[str, Any], model.config["params"])
         finalizer_params = cast(dict[str, Any], finalizer_model.config["params"])
-        self.assertEqual(model.client_args["timeout"], 1800)
+        self.assertEqual(model.client_args["timeout"], 3600)
         self.assertEqual(model.client_args["max_retries"], 0)
         self.assertNotIn("tool_choice", research_params)
         self.assertEqual(finalizer_params["tool_choice"], "required")
@@ -228,6 +231,28 @@ class RuntimeContractTests(RuntimeTestCase):
         )
         self.assertEqual(rt.model_retry_delay(wrapped, 0), 10)
         self.assertTrue(rt.is_expected_provider_failure(wrapped))
+        exhausted = rt.EventLoopException(
+            APIStatusError(
+                "provider error",
+                response=httpx.Response(
+                    503,
+                    request=request,
+                    headers={"X-Sakura-Retry-Count": "5"},
+                ),
+                body={},
+            )
+        )
+        self.assertIsNone(rt.model_retry_delay(exhausted, 0))
+        self.assertTrue(rt.is_expected_provider_failure(exhausted))
+        connection_error = APIConnectionError(request=request)
+        self.assertEqual(rt.model_retry_delay(connection_error, 0), 10)
+        unauthorized = APIStatusError(
+            "unauthorized",
+            response=httpx.Response(401, request=request),
+            body={},
+        )
+        self.assertIsNone(rt.model_retry_delay(unauthorized, 0))
+        self.assertFalse(rt.is_expected_provider_failure(unauthorized))
         stream_error = APIError("Internal server error.", request=request, body=None)
         self.assertEqual(rt.MODEL_TRANSIENT_RECOVERIES, 5)
         self.assertEqual(

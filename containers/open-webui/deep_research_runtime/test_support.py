@@ -15,7 +15,7 @@ os.environ.setdefault("DEEP_RESEARCH_RUNTIME_API_KEY", "test-api-key")
 os.environ.setdefault("DEEP_RESEARCH_LLM_BASE_URL", "http://llm.local/v1")
 os.environ.setdefault("DEEP_RESEARCH_LLM_API_KEY", "llm-key")
 os.environ.setdefault("DEEP_RESEARCH_MODEL", "preview/Kimi-K2.7-Code")
-os.environ.setdefault("DEEP_RESEARCH_KIMI_TIMEOUT_SECONDS", "1800")
+os.environ.setdefault("DEEP_RESEARCH_KIMI_TIMEOUT_SECONDS", "3600")
 os.environ.setdefault("SEARXNG_URL", "http://searxng.local")
 os.environ.setdefault(
     "DEEP_RESEARCH_DB_PATH",
@@ -79,13 +79,13 @@ class FakeSession:
 
 
 class StructuredAgent:
-    def __init__(self, outputs: list[rt.StrictModel | Exception]) -> None:
+    def __init__(self, outputs: list[rt.StrictModel | Exception | None]) -> None:
         self.outputs = outputs
         self.models: list[type[rt.StrictModel]] = []
         self.limits: list[dict[str, int]] = []
         self.prompts: list[str] = []
 
-    async def invoke_async(self, prompt: str, **kwargs: Any) -> SimpleNamespace:
+    async def invoke_async(self, prompt: str, **kwargs: Any) -> SimpleNamespace | None:
         model = cast(type[rt.StrictModel], kwargs["structured_output_model"])
         output = self.outputs.pop(0)
         self.models.append(model)
@@ -93,6 +93,8 @@ class StructuredAgent:
         self.prompts.append(prompt)
         if isinstance(output, Exception):
             raise output
+        if output is None:
+            return None
         if not isinstance(output, model):
             raise AssertionError(f"expected {model.__name__}, got {type(output).__name__}")
         return SimpleNamespace(
