@@ -61,6 +61,50 @@ def plan_for(
     )
 
 
+def cited(text: str, *source_ids: str) -> rt.CitedPlainText:
+    return rt.CitedPlainText(text=text, source_ids=list(source_ids))
+
+
+def deep_section(
+    heading: str,
+    *paragraphs: rt.CitedPlainText,
+    requirement_ids: list[str],
+    bullets: list[rt.CitedPlainText] | None = None,
+    tables: list[rt.ReportTable] | None = None,
+    summary: str,
+) -> rt.ReportSectionDraft:
+    return rt.ReportSectionDraft(
+        heading=heading,
+        requirement_ids=requirement_ids,
+        paragraphs=list(paragraphs),
+        bullets=bullets or [],
+        tables=tables or [],
+        summary=summary,
+    )
+
+
+def standard_section(
+    heading: str,
+    *paragraphs: rt.CitedPlainText,
+    requirement_ids: list[str] | None = None,
+    bullets: list[rt.CitedPlainText] | None = None,
+    tables: list[rt.ReportTable] | None = None,
+    summary: str = "",
+) -> rt.StandardReportSectionDraft:
+    return rt.StandardReportSectionDraft(
+        heading=heading,
+        requirement_ids=requirement_ids or [],
+        paragraphs=list(paragraphs),
+        bullets=bullets or [],
+        tables=tables or [],
+        summary=summary,
+    )
+
+
+def gap_text(text: str) -> rt.CitedPlainText:
+    return rt.CitedPlainText(text=text, source_ids=[])
+
+
 class RuntimeOrchestrationTests(RuntimeTestCase):
     def test_standard_agent_path_completes_without_deep_loop(self) -> None:
         class StandardAgent:
@@ -71,10 +115,10 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         structured = StructuredAgent(
             [
-                rt.StandardReportSectionDraft(
-                    heading="Summary",
+                standard_section(
+                    "Summary",
+                    cited("Answer supported by evidence", "S1", "S2"),
                     requirement_ids=[],
-                    body_markdown="Answer supported by evidence [S1] [S2]",
                     summary="summary",
                 ),
                 rt.ReportSubmissionDraft(
@@ -152,16 +196,16 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         structured = StructuredAgent(
             [
                 initial,
-                rt.ReportSectionDraft(
-                    heading="Direct evidence",
+                deep_section(
+                    "Direct evidence",
+                    cited("Supported direct claim", "S1"),
                     requirement_ids=["R1"],
-                    body_markdown="Supported direct claim [S1]",
                     summary="direct",
                 ),
-                rt.ReportSectionDraft(
-                    heading="Comparison",
+                deep_section(
+                    "Comparison",
+                    cited("Comparison across two hosts", "S2", "S3"),
                     requirement_ids=["R2"],
-                    body_markdown="Comparison across two hosts [S2] [S3]",
                     summary="comparison",
                 ),
                 rt.ReportSubmissionDraft(
@@ -225,6 +269,9 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 all(item["turns"] == rt.STRUCTURED_OUTPUT_TURNS for item in structured.limits)
             )
             self.assertFalse(response.stats["extractive_finalization"])
+            self.assertEqual(response.stats["report_sections_structured"], 2)
+            self.assertEqual(response.stats["report_sections_extractive"], 0)
+            self.assertEqual(response.stats["completion_class"], "structured")
             self.assertEqual(structured.models[1], rt.ReportSectionDraft)
             self.assertIn("Comparison across two hosts", response.answer_markdown)
 
@@ -255,16 +302,16 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                         )
                     ]
                 ),
-                rt.ReportSectionDraft(
-                    heading="Direct evidence",
+                deep_section(
+                    "Direct evidence",
+                    cited("Supported evidence", "S1"),
                     requirement_ids=["R1"],
-                    body_markdown="Supported evidence [S1]",
                     summary="direct",
                 ),
-                rt.ReportSectionDraft(
-                    heading="Comparison",
+                deep_section(
+                    "Comparison",
+                    gap_text("Coverage gap remains"),
                     requirement_ids=["R2"],
-                    body_markdown="Coverage gap remains",
                     summary="gap",
                 ),
                 rt.ReportSubmissionDraft(
@@ -367,6 +414,8 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertIn("reason=os_error", operation_logs[0])
             self.assertNotIn("search failed", operation_logs[0])
             self.assertTrue(response.stats["evidence_shortfall_salvage"])
+            self.assertFalse(response.stats["extractive_finalization"])
+            self.assertEqual(response.stats["completion_class"], "structured")
 
         asyncio.run(run())
 
@@ -384,16 +433,16 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 APIError("Internal server error.", request=request, body=None),
                 APIError("Internal server error.", request=request, body=None),
                 APIError("Internal server error.", request=request, body=None),
-                rt.ReportSectionDraft(
-                    heading="Direct evidence",
+                deep_section(
+                    "Direct evidence",
+                    cited("Supported evidence", "S1"),
                     requirement_ids=["R1"],
-                    body_markdown="Supported evidence [S1]",
                     summary="direct",
                 ),
-                rt.ReportSectionDraft(
-                    heading="Comparison",
+                deep_section(
+                    "Comparison",
+                    gap_text("Coverage gap remains"),
                     requirement_ids=["R2"],
-                    body_markdown="Coverage gap remains",
                     summary="gap",
                 ),
                 rt.ReportSubmissionDraft(
@@ -423,6 +472,8 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 {"provider_internal_error": 6},
             )
             self.assertTrue(response.stats["evidence_shortfall_salvage"])
+            self.assertFalse(response.stats["extractive_finalization"])
+            self.assertEqual(response.stats["completion_class"], "structured")
 
         asyncio.run(run())
 
@@ -460,10 +511,103 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertTrue(response.stats["extractive_finalization"])
             self.assertEqual(response.stats["extractive_finalization_reason"], "provider_failure")
             self.assertEqual(response.stats["model_transient_recoveries"], 5)
+            self.assertEqual(response.stats["report_sections_structured"], 0)
+            self.assertEqual(response.stats["completion_class"], "degraded")
             self.assertIn("検証済み証拠台帳から抽出的に構成", response.answer_markdown)
             self.assertIn("全節は検証済み証拠の抽出要約です。", response.answer_markdown)
             self.assertIn("Runtime coverage gap", response.answer_markdown)
             self.assertEqual(len(response.sources), 1)
+
+        asyncio.run(run())
+
+    def test_partial_extractive_fallback_resume_preserves_structured_count(self) -> None:
+        research = rt.ResearchRequest(query="Need evidence", depth="deep")
+        state = make_state(3)
+        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        state.evidence[1] = replace(state.evidence[1], relevance=0.9, requirement_ids=[])
+        state.evidence[2] = replace(state.evidence[2], relevance=0.9, requirement_ids=["R3"])
+        state.request_fragments = [rt.RequestFragmentModel(id="F1", text="Need evidence")]
+        state.requirements = [
+            rt.RequirementModel(id="R1", summary="fact 1", kind="direct", fragment_ids=["F1"]),
+            rt.RequirementModel(id="R2", summary="fact 2", kind="direct", fragment_ids=["F1"]),
+            rt.RequirementModel(id="R3", summary="fact 3", kind="direct", fragment_ids=["F1"]),
+        ]
+        state.report_plan = [
+            rt.ReportPlanSection(
+                heading="Direct evidence",
+                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
+                requirement_ids=["R1"],
+                source_ids=["S1"],
+                deliverables=["fact 1"],
+            ),
+            rt.ReportPlanSection(
+                heading="Comparison",
+                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
+                requirement_ids=["R2"],
+                source_ids=[],
+                deliverables=["fact 2"],
+            ),
+            rt.ReportPlanSection(
+                heading="Third fact",
+                target_chars=rt.DEEP_PLAN_MIN_SECTION_CHARS,
+                requirement_ids=["R3"],
+                source_ids=["S3"],
+                deliverables=["fact 3"],
+            ),
+        ]
+        rt.set_collection_decision(state, "voluntary_stop")
+        state.last_inspected_revision = state.evidence_revision
+        rt.store_report_section(
+            state,
+            research,
+            state.evidence_revision,
+            "Direct evidence",
+            ["R1"],
+            "Supported evidence [S1]",
+            "direct",
+        )
+        state.report_sections.append(
+            rt.ReportSection(
+                "Comparison",
+                "生成モデル中断後に、検証済み証拠台帳から抽出的に構成した節です。",
+                state.evidence_revision,
+                rt.EXTRACTIVE_SECTION_SUMMARY,
+                ["R2"],
+            )
+        )
+        state.stats["evidence_shortfall_salvage"] = True
+        state.stats["extractive_finalization"] = True
+        state.stats["report_sections_structured"] = 1
+        state.stats["report_sections_extractive"] = 1
+        state.stats["completion_class"] = "degraded"
+        request = httpx.Request("POST", "http://llm.local/v1/chat/completions")
+        structured = StructuredAgent(
+            [
+                APIError("Internal server error.", request=request, body=None),
+                APIError("Internal server error.", request=request, body=None),
+                APIError("Internal server error.", request=request, body=None),
+                APIError("Internal server error.", request=request, body=None),
+                APIError("Internal server error.", request=request, body=None),
+                APIError("Internal server error.", request=request, body=None),
+            ]
+        )
+
+        async def run() -> None:
+            with (
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+                patch.object(rt, "MODEL_RETRY_BASE_SECONDS", 0.0),
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    "partial-fallback-resume-key",
+                    rt.run_state_snapshot(state),
+                )
+            self.assertEqual(response.stats["report_sections_structured"], 1)
+            self.assertEqual(response.stats["report_sections_extractive"], 2)
+            self.assertEqual(response.stats["completion_class"], "degraded")
 
         asyncio.run(run())
 
@@ -476,16 +620,16 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         structured = StructuredAgent(
             [
                 None,
-                rt.ReportSectionDraft(
-                    heading="Direct evidence",
+                deep_section(
+                    "Direct evidence",
+                    cited("Supported evidence", "S1"),
                     requirement_ids=["R1"],
-                    body_markdown="Supported evidence [S1]",
                     summary="direct",
                 ),
-                rt.ReportSectionDraft(
-                    heading="Comparison",
+                deep_section(
+                    "Comparison",
+                    gap_text("Coverage gap remains"),
                     requirement_ids=["R2"],
-                    body_markdown="Coverage gap remains",
                     summary="gap",
                 ),
                 rt.ReportSubmissionDraft(
@@ -557,16 +701,16 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                         )
                     ]
                 ),
-                rt.ReportSectionDraft(
-                    heading="Direct evidence",
+                deep_section(
+                    "Direct evidence",
+                    cited("Supported direct claim", "S1"),
                     requirement_ids=["R1"],
-                    body_markdown="Supported direct claim [S1]",
                     summary="direct",
                 ),
-                rt.ReportSectionDraft(
-                    heading="Comparison",
+                deep_section(
+                    "Comparison",
+                    cited("Comparison across two hosts", "S31", "S32"),
                     requirement_ids=["R2"],
-                    body_markdown="Comparison across two hosts [S31] [S32]",
                     summary="comparison",
                 ),
                 rt.ReportSubmissionDraft(
@@ -673,10 +817,10 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         ]
         structured = StructuredAgent(
             [
-                rt.ReportSectionDraft(
-                    heading="Direct evidence",
+                deep_section(
+                    "Direct evidence",
+                    cited("Supported claim", "S1", "S2"),
                     requirement_ids=["R1"],
-                    body_markdown="Supported claim [S1] [S2]",
                     summary="summary",
                 ),
                 rt.ReportSubmissionDraft(
@@ -873,16 +1017,16 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                         )
                     ]
                 ),
-                rt.ReportSectionDraft(
-                    heading="Direct",
+                deep_section(
+                    "Direct",
+                    cited("Supported", "S1"),
                     requirement_ids=["R1"],
-                    body_markdown="Supported [S1]",
                     summary="direct",
                 ),
-                rt.ReportSectionDraft(
-                    heading="Compare",
+                deep_section(
+                    "Compare",
+                    gap_text("Coverage gap remains"),
                     requirement_ids=["R2"],
-                    body_markdown="Coverage gap remains",
                     summary="gap",
                 ),
                 rt.ReportSubmissionDraft(
@@ -909,34 +1053,28 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertTrue(response.stats["evidence_shortfall_salvage"])
             self.assertTrue(any("Runtime coverage gap" in item for item in response.limitations))
             self.assertEqual(response.stats["collection_decision"], "voluntary_stop")
+            self.assertFalse(response.stats["extractive_finalization"])
+            self.assertEqual(response.stats["completion_class"], "structured")
 
         asyncio.run(run())
 
     def test_retryable_section_semantic_error_retries_then_completes(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        state = make_state(1)
-        state.last_inspected_revision = state.evidence_revision
-        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
-        rt.store_initial_plan(state, research, plan_for(research))
+        research = rt.ResearchRequest(query="Evidence", depth="standard")
+        state = make_state(4, "standard")
+        rt.set_collection_decision(state, "target_reached")
         structured = StructuredAgent(
             [
-                rt.ReportSectionDraft(
-                    heading="Direct evidence",
-                    requirement_ids=["R1"],
-                    body_markdown="Supported [S1] ### Flattened heading",
+                standard_section(
+                    "Limitations",
+                    cited("Bad", "S1"),
+                    requirement_ids=[],
                     summary="bad",
                 ),
-                rt.ReportSectionDraft(
-                    heading="Direct evidence",
-                    requirement_ids=["R1"],
-                    body_markdown="Valid citation [S1]",
+                standard_section(
+                    "Summary",
+                    cited("Valid citation", "S1"),
+                    requirement_ids=[],
                     summary="ok",
-                ),
-                rt.ReportSectionDraft(
-                    heading="Comparison",
-                    requirement_ids=["R2"],
-                    body_markdown="Coverage gap",
-                    summary="gap",
                 ),
                 rt.ReportSubmissionDraft(
                     findings=[rt.SubmitFinding(claim="Claim", source_ids=["S1"])],
@@ -944,13 +1082,12 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 ),
             ]
         )
-        state.searched_queries = {
-            f"q{index}" for index in range(rt.make_budget("deep").search_limit)
-        }
 
         async def run() -> None:
             with (
-                patch.object(rt, "build_research_agent", side_effect=AssertionError("deep only")),
+                patch.object(
+                    rt, "build_research_agent", side_effect=AssertionError("standard only")
+                ),
                 patch.object(rt, "build_finalization_agent", return_value=structured),
             ):
                 response = await rt.run_research(
@@ -964,13 +1101,13 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertGreaterEqual(response.stats["structured_output_retries"], 1)
             self.assertEqual(
                 response.stats["section_validation_failures"],
-                {"Markdown headings must start on separate lines": 1},
+                {"heading is reserved for deterministic report assembly": 1},
             )
             self.assertEqual(
                 response.stats["section_validation_latest_reason"],
-                "Markdown headings must start on separate lines",
+                "heading is reserved for deterministic report assembly",
             )
-            self.assertEqual(response.stats["collection_decision"], "voluntary_stop")
+            self.assertEqual(response.stats["completion_class"], "structured")
 
         asyncio.run(run())
 
@@ -1030,10 +1167,10 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         }
         structured = StructuredAgent(
             [
-                rt.ReportSectionDraft(
-                    heading="Direct evidence",
+                deep_section(
+                    "Direct evidence",
+                    cited("Valid citation", "S1"),
                     requirement_ids=["R1"],
-                    body_markdown="Valid citation [S1]",
                     summary="ok",
                 )
             ]
@@ -1082,10 +1219,10 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         state.stats["finalization_reserved"] = True
         structured = StructuredAgent(
             [
-                rt.ReportSectionDraft(
-                    heading="Direct evidence",
+                deep_section(
+                    "Direct evidence",
+                    cited("Supported direct claim", "S1"),
                     requirement_ids=["R1"],
-                    body_markdown="Supported direct claim [S1]",
                     summary="summary",
                 ),
                 rt.MaxTokensReachedException("partial"),
@@ -1185,16 +1322,16 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
         }
         structured = StructuredAgent(
             [
-                rt.ReportSectionDraft(
-                    heading="Direct evidence",
+                deep_section(
+                    "Direct evidence",
+                    cited("Body", "S1"),
                     requirement_ids=["R9"],
-                    body_markdown="Body [S1]",
                     summary="bad requirement",
                 ),
-                rt.ReportSectionDraft(
-                    heading="Direct evidence",
+                deep_section(
+                    "Direct evidence",
+                    cited("Body", "S9"),
                     requirement_ids=["R1"],
-                    body_markdown="Body [S9]",
                     summary="bad source",
                 ),
                 rt.MaxTokensReachedException("partial"),
@@ -1372,10 +1509,10 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             [
                 rt.MaxTokensReachedException("partial structured output"),
                 rt.StructuredOutputException("invalid payload"),
-                rt.StandardReportSectionDraft(
-                    heading="Limitations",
+                standard_section(
+                    "Limitations",
+                    cited("invalid", "S1"),
                     requirement_ids=[],
-                    body_markdown="invalid",
                     summary="Invalid",
                 ),
             ]

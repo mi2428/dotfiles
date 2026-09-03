@@ -45,6 +45,58 @@ def deep_plan_for(research: rt.ResearchRequest) -> rt.InitialPlanDraft:
     )
 
 
+def cited(text: str, *source_ids: str) -> rt.CitedPlainText:
+    return rt.CitedPlainText(text=text, source_ids=list(source_ids))
+
+
+def table_row(cells: list[str], *source_ids: str) -> rt.ReportTableRow:
+    return rt.ReportTableRow(cells=cells, source_ids=list(source_ids))
+
+
+def table(headers: list[str], rows: list[rt.ReportTableRow], title: str = "") -> rt.ReportTable:
+    return rt.ReportTable(title=title, headers=headers, rows=rows)
+
+
+def standard_section(
+    heading: str,
+    *paragraphs: rt.CitedPlainText,
+    requirement_ids: list[str] | None = None,
+    bullets: list[rt.CitedPlainText] | None = None,
+    tables: list[rt.ReportTable] | None = None,
+    summary: str = "",
+) -> rt.StandardReportSectionDraft:
+    return rt.StandardReportSectionDraft(
+        heading=heading,
+        requirement_ids=requirement_ids or [],
+        paragraphs=list(paragraphs),
+        bullets=bullets or [],
+        tables=tables or [],
+        summary=summary,
+    )
+
+
+def deep_section(
+    heading: str,
+    *paragraphs: rt.CitedPlainText,
+    requirement_ids: list[str],
+    bullets: list[rt.CitedPlainText] | None = None,
+    tables: list[rt.ReportTable] | None = None,
+    summary: str,
+) -> rt.ReportSectionDraft:
+    return rt.ReportSectionDraft(
+        heading=heading,
+        requirement_ids=requirement_ids,
+        paragraphs=list(paragraphs),
+        bullets=bullets or [],
+        tables=tables or [],
+        summary=summary,
+    )
+
+
+def gap_text(text: str) -> rt.CitedPlainText:
+    return rt.CitedPlainText(text=text, source_ids=[])
+
+
 class RuntimeContractTests(RuntimeTestCase):
     def test_openapi_auth_and_cached_markdown(self) -> None:
         async def run() -> None:
@@ -81,6 +133,45 @@ class RuntimeContractTests(RuntimeTestCase):
                     )
                 self.assertEqual(response.text, "done [S1]")
                 self.assertEqual(response.headers["x-openwebui-direct-output"], "true")
+                self.assertEqual(response.headers["x-deep-research-status"], "completed")
+
+        asyncio.run(run())
+
+    def test_openapi_cached_degraded_report_uses_degraded_status_header(self) -> None:
+        async def run() -> None:
+            transport = httpx.ASGITransport(app=rt.app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                cached = rt.ResearchResponse(
+                    research_id="rid",
+                    answer_markdown=(
+                        "> Degraded report\n\n## Summary\n\nBody [S1]\n\n"
+                        "## Limitations\n- gap\n\n## Sources\n"
+                        "[1] https://example.com — <https://example.com>"
+                    ),
+                    findings=[rt.CitationModel(claim="claim", source_ids=["S1"])],
+                    sources=[
+                        rt.SourceModel(
+                            id="S1",
+                            url="https://example.com",
+                            hash="a" * 64,
+                            relevance=1,
+                            source_quality=1,
+                        )
+                    ],
+                    limitations=["gap"],
+                    stats={"completion_class": "degraded", "extractive_finalization": True},
+                ).model_dump()
+                with patch.object(
+                    rt,
+                    "reserve_run",
+                    new=AsyncMock(return_value=("rid", "hash", cached, None)),
+                ):
+                    response = await client.post(
+                        "/research",
+                        headers={"Authorization": "Bearer test-api-key"},
+                        json={"query": "cached"},
+                    )
+            self.assertEqual(response.headers["x-deep-research-status"], "degraded")
 
         asyncio.run(run())
 
@@ -107,19 +198,26 @@ class RuntimeContractTests(RuntimeTestCase):
         source = rt.SourceModel(
             id="S1",
             url="https://example.com/a_(b)",
-            title="Line 1\nLine 2",
+            title="Line 1\nLine 2 [S999] <b>*x*</b>",
             hash="a" * 64,
             relevance=1,
             source_quality=0.8,
         )
         answer = rt.append_limitations_section(
             rt.format_public_citations("Answer [S1]"),
-            [rt.format_public_citations("S6、S15、S16は制約", bare=True)],
+            ["S6、[S15]、**x** <b>y</b>は制約"],
         )
         answer = rt.append_sources_section(answer, [source])
         self.assertIn("Answer [1]", answer)
-        self.assertIn("- [6][15][16]は制約", answer)
-        self.assertIn("[1] Line 1 Line 2 — <https://example.com/a_(b)>", answer)
+        self.assertIn(f"- {rt.neutralize_model_text('S6、[S15]、**x** <b>y</b>は制約')}", answer)
+        self.assertIn(
+            (
+                "[1] "
+                f"{rt.neutralize_model_text('Line 1 Line 2 [S999] <b>*x*</b>')} "
+                "— <https://example.com/a_(b)>"
+            ),
+            answer,
+        )
 
     def test_target_evidence_environment_override_stays_between_minimum_and_cap(self) -> None:
         with patch.dict(
@@ -399,19 +497,25 @@ class RuntimeContractTests(RuntimeTestCase):
         standard_schema = rt.StandardReportSectionDraft.model_json_schema()
         self.assertEqual(
             set(schema["required"]),
-            {"heading", "requirement_ids", "body_markdown", "summary"},
+            {"heading", "requirement_ids", "paragraphs", "summary"},
         )
+        self.assertNotIn("body_markdown", schema["properties"])
+        self.assertNotIn("body_markdown", standard_schema["properties"])
         self.assertNotIn("requirement_ids", set(standard_schema.get("required", [])))
         self.assertNotIn("summary", set(standard_schema.get("required", [])))
         with self.assertRaises(ValidationError):
             rt.ReportSectionDraft.model_validate(
-                {"heading": "Summary", "body_markdown": "Body [S1]", "summary": "ok"}
+                {
+                    "heading": "Summary",
+                    "paragraphs": [{"text": "Body", "source_ids": ["S1"]}],
+                    "summary": "ok",
+                }
             )
         with self.assertRaises(ValidationError):
-            rt.ReportSectionDraft(
-                heading="Summary",
+            deep_section(
+                "Summary",
+                cited("Body", "S1"),
                 requirement_ids=[],
-                body_markdown="Body [S1]",
                 summary="ok",
             )
         with self.assertRaises(ValidationError):
@@ -419,16 +523,126 @@ class RuntimeContractTests(RuntimeTestCase):
                 {
                     "heading": "Summary",
                     "requirement_ids": ["R1"],
-                    "body_markdown": "Body [S1]",
+                    "paragraphs": [{"text": "Body", "source_ids": ["S1"]}],
                     "summary": "",
                 }
             )
-        rt.StandardReportSectionDraft(
-            heading="Summary",
+        standard_section(
+            "Summary",
+            cited("Body", "S1"),
             requirement_ids=[],
-            body_markdown="Body [S1]",
             summary="",
         )
+        standard_section("Gap", gap_text("No verified support yet"), summary="")
+
+    def test_renderer_is_deterministic_and_neutralizes_injected_markdown(self) -> None:
+        draft = standard_section(
+            "Summary",
+            cited("First\nline ### fake [S999] <b>tag</b>", "S1", "S2"),
+            bullets=[cited("- list | cell", "S3")],
+            tables=[
+                table(
+                    ["H1", "H2|"],
+                    [table_row(["A", "B [S999]\n### x <i>ok</i>"], "S4")],
+                    title="T|itle",
+                )
+            ],
+            summary="summary",
+        )
+        expected = "\n\n".join(
+            [
+                f"{rt.neutralize_model_text('First\nline ### fake [S999] <b>tag</b>')} [S1] [S2]",
+                f"- {rt.neutralize_model_text('- list | cell')} [S3]",
+                "\n".join(
+                    [
+                        rt.neutralize_model_text("T|itle"),
+                        "",
+                        f"| {rt.neutralize_model_text('H1')} | {rt.neutralize_model_text('H2|')} |",
+                        "| --- | --- |",
+                        (
+                            f"| {rt.neutralize_model_text('A')} | "
+                            f"{rt.neutralize_model_text('B [S999]\n### x <i>ok</i>')} [S4] |"
+                        ),
+                    ]
+                ),
+            ]
+        )
+        rendered = rt.render_section_markdown(draft)
+        self.assertEqual(rendered, expected)
+        self.assertEqual(rt.render_section_markdown(draft), expected)
+        self.assertEqual(rt.citation_ids(rendered), {"S1", "S2", "S3", "S4"})
+        self.assertIsNone(rt.report_markdown_structure_error(rendered))
+
+    def test_table_rows_render_one_per_line_and_reject_width_mismatch(self) -> None:
+        rendered = rt.render_section_markdown(
+            standard_section(
+                "Table",
+                cited("Intro", "S1"),
+                tables=[
+                    table(
+                        ["A", "B"],
+                        [table_row(["1", "2"], "S2"), table_row(["3", "4"], "S3")],
+                    )
+                ],
+            )
+        )
+        self.assertIn("| 1 | 2 [S2] |\n| 3 | 4 [S3] |", rendered)
+        with self.assertRaises(ValidationError):
+            table(["A", "B"], [table_row(["1", "2", "3"], "S1")])
+
+    def test_element_length_and_blank_validation(self) -> None:
+        with self.assertRaises(ValidationError):
+            table(["A" * 201, "B"], [table_row(["1", "2"], "S1")])
+        with self.assertRaises(ValidationError):
+            table(["A", "B"], [table_row(["1", "x" * 501], "S1")])
+        with self.assertRaises(ValidationError):
+            standard_section("Summary", gap_text("   "), summary="")
+
+    def test_renderer_neutralizes_links_emphasis_backslashes_lists_and_rules(self) -> None:
+        rendered = rt.render_section_markdown(
+            standard_section(
+                "Summary",
+                cited(r"[label](https://x) **bold** _em_ ~~~ `code` \\path", "S1"),
+                bullets=[cited("--- * item", "S2")],
+                summary="summary",
+            )
+        )
+        self.assertNotIn("[label]", rendered)
+        self.assertNotIn("**bold**", rendered)
+        self.assertNotIn("_em_", rendered)
+        self.assertNotIn("~~~", rendered)
+        self.assertNotIn("\\path", rendered)
+        self.assertNotIn("---", rendered.replace("| --- | --- |", ""))
+        self.assertNotRegex(rendered, r"\[[^\]]+\]\([^)]*\)")
+        self.assertNotRegex(rendered, r"\*\*[^*]+\*\*")
+        self.assertNotRegex(rendered, r"_[^_]+_")
+        self.assertIn("[S1]", rendered)
+        self.assertIn("[S2]", rendered)
+
+    def test_extractive_text_uses_the_same_plain_text_boundary(self) -> None:
+        rendered = rt.safe_extractive_text(r"--- [S999] | **bold** \\path")
+
+        self.assertNotIn("---", rendered)
+        self.assertNotIn("[S999]", rendered)
+        self.assertNotIn("|", rendered)
+        self.assertNotIn("**bold**", rendered)
+        self.assertNotIn("\\path", rendered)
+        self.assertEqual(rt.citation_ids(rendered), set())
+
+    def test_report_heading_rejects_inline_markdown(self) -> None:
+        for heading in (
+            "[x](y)",
+            "**bold**",
+            "A|B",
+            "<b>x</b>",
+            "[S1] title",
+            "A\rB",
+        ):
+            with self.subTest(heading=heading), self.assertRaisesRegex(ValueError, "plain text"):
+                rt.validated_report_heading(heading)
+
+    def test_completion_class_fails_safe_when_extractive_count_is_present(self) -> None:
+        self.assertEqual(rt.completion_class({"report_sections_extractive": 1}), "degraded")
 
     def test_safe_section_validation_error_rejects_suffix_smuggling(self) -> None:
         self.assertEqual(
@@ -781,6 +995,11 @@ class RuntimeContractTests(RuntimeTestCase):
         prompt_payload = json.loads(prompt)
         self.assertIn("unsupported claims", prompt)
         self.assertIn("assigned_evidence", prompt)
+        self.assertNotIn("body_markdown", prompt)
+        self.assertTrue(any("paragraphs.text" in item for item in prompt_payload["requirements"]))
+        self.assertTrue(
+            any("Use source_ids only" in item for item in prompt_payload["requirements"])
+        )
         self.assertIn(
             "Return requirement_ids exactly equal to planned_section.requirement_ids.",
             prompt_payload["requirements"],
@@ -798,13 +1017,17 @@ class RuntimeContractTests(RuntimeTestCase):
             )
         )
         self.assertTrue(
-            any("every Markdown table header" in item for item in prompt_payload["requirements"])
+            any(
+                "runtime renders all headings, bullets, tables" in item
+                for item in prompt_payload["requirements"]
+            )
         )
 
     def test_standard_section_prompt_does_not_require_missing_planned_mapping(self) -> None:
         research = rt.ResearchRequest(query="Evidence", depth="standard")
         state = make_state(1, "standard")
         prompt_payload = json.loads(rt.build_section_prompt(research, state))
+        self.assertNotIn("body_markdown", json.dumps(prompt_payload, ensure_ascii=False))
         self.assertNotIn(
             "Return requirement_ids exactly equal to planned_section.requirement_ids.",
             prompt_payload["requirements"],
@@ -813,6 +1036,56 @@ class RuntimeContractTests(RuntimeTestCase):
             "Return requirement_ids only when the prompt explicitly provides planned requirements.",
             prompt_payload["requirements"],
         )
+
+    def test_submission_prompt_requires_plain_text_limitations(self) -> None:
+        state = make_state(1, "standard")
+        state.last_inspected_revision = state.evidence_revision
+        rt.store_report_section(
+            state,
+            rt.ResearchRequest(query="Evidence", depth="standard"),
+            state.evidence_revision,
+            "Summary",
+            [],
+            "Body [S1]",
+            "summary",
+        )
+        payload = json.loads(
+            rt.build_submission_prompt(
+                rt.ResearchRequest(query="Evidence", depth="standard"), state
+            )
+        )
+        self.assertTrue(
+            any("limitations must be plain text only" in item for item in payload["requirements"])
+        )
+
+    def test_validate_submit_report_neutralizes_limitations_consistently(self) -> None:
+        state = make_state(1, "standard")
+        state.last_inspected_revision = state.evidence_revision
+        rt.store_report_section(
+            state,
+            rt.ResearchRequest(query="Evidence", depth="standard"),
+            state.evidence_revision,
+            "Summary",
+            [],
+            "Body [S1]",
+            "summary",
+        )
+        response = rt.validate_submit_report(
+            "rid",
+            state,
+            state.evidence_revision,
+            rt.assemble_report_sections(state.report_sections),
+            [{"claim": "Claim", "source_ids": ["S1"]}],
+            ["[S999] **bold**"],
+            rt.make_budget("standard"),
+            "standard",
+            "Evidence",
+        )
+        expected = rt.neutralize_model_text("[S999] **bold**")
+        self.assertEqual(response.limitations, [expected])
+        self.assertIn(f"- {expected}", response.answer_markdown)
+        self.assertNotIn("[S999]", response.answer_markdown)
+        self.assertEqual(rt.citation_ids(response.answer_markdown), set())
 
     def test_model_output_error_retries_but_checkpoint_corruption_stays_integrity_error(
         self,
@@ -901,6 +1174,99 @@ class RuntimeContractTests(RuntimeTestCase):
             self.assertIsNotNone(resumed_snapshot)
 
         asyncio.run(run())
+
+    def test_load_run_state_backfills_missing_completion_counters_from_extractive_marker(
+        self,
+    ) -> None:
+        snapshot = rt.run_state_snapshot(make_state(2, "deep"))
+        snapshot["report_sections"] = [
+            {
+                "heading": "Structured",
+                "body": "Body [S1]",
+                "ledger_revision": 2,
+                "summary": "summary",
+                "requirement_ids": ["R1"],
+            },
+            {
+                "heading": "Extractive",
+                "body": "Gap",
+                "ledger_revision": 2,
+                "summary": rt.EXTRACTIVE_SECTION_SUMMARY,
+                "requirement_ids": ["R2"],
+            },
+        ]
+        snapshot["stats"] = {
+            **snapshot["stats"],
+            "extractive_finalization": True,
+        }
+        snapshot["stats"].pop("report_sections_structured", None)
+        snapshot["stats"].pop("report_sections_extractive", None)
+        snapshot["stats"].pop("completion_class", None)
+        state = rt.load_run_state(
+            cast(dict[str, Any], snapshot),
+            depth="deep",
+            budget=rt.make_budget("deep"),
+            wall_limit=rt.wall_budget_seconds("deep"),
+        )
+        self.assertEqual(state.stats["report_sections_structured"], 1)
+        self.assertEqual(state.stats["report_sections_extractive"], 1)
+        self.assertEqual(state.stats["completion_class"], "degraded")
+
+    def test_load_run_state_keeps_existing_completion_counters(self) -> None:
+        snapshot = rt.run_state_snapshot(make_state(2, "deep"))
+        snapshot["report_sections"] = [
+            {
+                "heading": "Structured",
+                "body": "Body [S1]",
+                "ledger_revision": 2,
+                "summary": "summary",
+                "requirement_ids": ["R1"],
+            },
+            {
+                "heading": "Extractive",
+                "body": "Gap",
+                "ledger_revision": 2,
+                "summary": rt.EXTRACTIVE_SECTION_SUMMARY,
+                "requirement_ids": ["R2"],
+            },
+        ]
+        snapshot["stats"] = {
+            **snapshot["stats"],
+            "extractive_finalization": True,
+            "report_sections_structured": 1,
+            "report_sections_extractive": 1,
+            "completion_class": "degraded",
+        }
+        state = rt.load_run_state(
+            cast(dict[str, Any], snapshot),
+            depth="deep",
+            budget=rt.make_budget("deep"),
+            wall_limit=rt.wall_budget_seconds("deep"),
+        )
+        self.assertEqual(state.stats["report_sections_structured"], 1)
+        self.assertEqual(state.stats["report_sections_extractive"], 1)
+
+    def test_sync_report_section_stats_prefers_current_markers_over_stale_counters(self) -> None:
+        state = make_state(3, "deep")
+        state.report_sections = [
+            rt.ReportSection("Structured 1", "Body [S1]", 3, "summary", ["R1"]),
+            rt.ReportSection(
+                "Extractive",
+                "Gap",
+                3,
+                rt.EXTRACTIVE_SECTION_SUMMARY,
+                ["R2"],
+            ),
+            rt.ReportSection("Structured 2", "Body [S3]", 3, "summary", ["R3"]),
+        ]
+        state.stats["extractive_finalization"] = True
+        state.stats["report_sections_structured"] = 999
+        state.stats["report_sections_extractive"] = 999
+        state.stats["completion_class"] = "structured"
+        rt.sync_report_section_stats(state)
+        self.assertEqual(state.stats["report_sections_structured"], 2)
+        self.assertEqual(state.stats["report_sections_extractive"], 1)
+        self.assertEqual(state.stats["completion_class"], "degraded")
 
     def test_relevance_refresh_and_prune_unusable_sections(self) -> None:
         table = "\n".join(f"試行{index}回 性能{300 + index}点" for index in range(12))
