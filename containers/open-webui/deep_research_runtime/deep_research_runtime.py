@@ -265,7 +265,7 @@ class CitedPlainText(StrictModel):
     """Plain text plus validated source IDs for deterministic rendering."""
 
     text: PlainParagraphText
-    source_ids: list[SourceId] = Field(default_factory=list, max_length=MAX_FINDING_SOURCE_IDS)
+    source_ids: list[SourceId] = Field(min_length=1, max_length=MAX_FINDING_SOURCE_IDS)
 
     @field_validator("text")
     @classmethod
@@ -326,29 +326,12 @@ class ReportTable(StrictModel):
         return rows
 
 
-class StandardReportSectionDraft(StrictModel):
-    """Structured section draft for non-deep reports without requirement mapping."""
+class SectionContentDraft(StrictModel):
+    """Only model-authored, cited blocks for one runtime-owned section."""
 
-    heading: str = Field(min_length=1, max_length=200)
-    requirement_ids: list[RequirementId] = Field(
-        default_factory=list,
-        max_length=MAX_SECTION_REQUIREMENTS,
-    )
     paragraphs: list[CitedPlainText] = Field(min_length=1, max_length=20)
     bullets: list[CitedPlainText] = Field(default_factory=list, max_length=20)
     tables: list[ReportTable] = Field(default_factory=list, max_length=8)
-    summary: str = Field(default="", max_length=500)
-
-
-class ReportSectionDraft(StandardReportSectionDraft):
-    """One deep structured-output section awaiting runtime validation."""
-
-    requirement_ids: list[RequirementId] = Field(
-        default=...,
-        min_length=1,
-        max_length=MAX_SECTION_REQUIREMENTS,
-    )
-    summary: str = Field(default=..., min_length=1, max_length=500)
 
 
 class ReportPlanSection(StrictModel):
@@ -535,6 +518,20 @@ class Evidence:
     search_query: str = ""
     purpose: str = ""
     requirement_ids: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class SectionContract:
+    """The complete runtime-owned contract for one generated report section."""
+
+    heading: str
+    ledger_revision: int
+    evidence: tuple[Evidence, ...]
+    requirements: tuple[RequirementModel, ...]
+    covered_requirement_ids: tuple[str, ...]
+    gap_requirement_ids: tuple[str, ...]
+    host_thresholds: tuple[tuple[str, int], ...]
+    requires_comparison_table: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -1965,13 +1962,43 @@ def render_cited_block(prefix: str, item: CitedPlainText) -> str:
     ).strip()
 
 
-def render_section_markdown(draft: StandardReportSectionDraft) -> str:
+def render_gap_markdown(contract: SectionContract) -> str:
+    blocks: list[str] = []
+    requirements = {item.id: item for item in contract.requirements}
+    thresholds = dict(contract.host_thresholds)
+    for requirement_id in contract.gap_requirement_ids:
+        requirement = requirements[requirement_id]
+        supporting = [item for item in contract.evidence if requirement_id in item.requirement_ids]
+        seen_hosts: set[str] = set()
+        for evidence in supporting:
+            host = urlparse(evidence.url).hostname or evidence.url
+            if host in seen_hosts:
+                continue
+            seen_hosts.add(host)
+            blocks.append(
+                f"Runtime partial evidence: {safe_extractive_text(evidence.excerpt)} "
+                f"[{evidence.id}]"
+            )
+        gap = (
+            "supporting evidence unavailable"
+            if not seen_hosts
+            else f"only {len(seen_hosts)}/{thresholds[requirement_id]} independent hosts available"
+        )
+        blocks.append(
+            f"Runtime coverage gap: {neutralize_model_text(requirement.summary)} ({gap})."
+        )
+    return "\n\n".join(blocks)
+
+
+def render_section_markdown(contract: SectionContract, draft: SectionContentDraft) -> str:
     blocks = [
         *(render_cited_block("", item) for item in draft.paragraphs),
         *(render_cited_block("- ", item) for item in draft.bullets),
         *(render_table_markdown(table) for table in draft.tables),
     ]
-    return "\n\n".join(block for block in blocks if block.strip())
+    if gap := render_gap_markdown(contract):
+        blocks.append(gap)
+    return "\n\n".join(blocks)
 
 
 def completion_class(stats: dict[str, Any]) -> Literal["structured", "degraded"]:
@@ -2273,6 +2300,113 @@ def requirement_gap_error(state: RunState, requirement_id: str) -> str | None:
     if not hosts:
         return f"{requirement_id}: supporting evidence unavailable"
     return f"{requirement_id}: only {len(hosts)}/{required_hosts} independent hosts available"
+
+
+def build_section_contract(
+    research: ResearchRequest,
+    state: RunState,
+    repair_heading: str | None = None,
+) -> SectionContract:
+    """Freeze the exact evidence and obligations used for one section call."""
+
+    if research.depth == "deep":
+        completed = {item.heading.casefold() for item in state.report_sections}
+        planned = next(
+            (
+                item
+                for item in state.report_plan
+                if (
+                    item.heading.casefold() == repair_heading.casefold()
+                    if repair_heading is not None
+                    else item.heading.casefold() not in completed
+                )
+            ),
+            None,
+        )
+        if planned is None:
+            raise IntegrityError("section contract requires a planned report section")
+        requirement_map = requirement_by_id(state)
+        try:
+            requirements = tuple(requirement_map[item] for item in planned.requirement_ids)
+        except KeyError as exc:
+            raise IntegrityError("section contract contains an unknown requirement") from exc
+        evidence_map = {item.id: item for item in state.evidence if item.relevance > 0}
+        evidence = tuple(
+            evidence_map[source_id]
+            for source_id in section_evidence_ids(state, planned.requirement_ids)
+            if source_id in evidence_map
+        )
+        heading = planned.heading
+    else:
+        heading = repair_heading or "Summary"
+        requirements = ()
+        evidence = tuple(item for item in state.evidence if item.relevance > 0)[
+            :MAX_PAYLOAD_EVIDENCE_EXCERPTS
+        ]
+
+    host_thresholds = tuple(
+        (item.id, required_independent_hosts(item.kind)) for item in requirements
+    )
+    covered = tuple(
+        item.id
+        for item in requirements
+        if len(
+            {
+                urlparse(evidence.url).hostname or evidence.url
+                for evidence in evidence
+                if item.id in evidence.requirement_ids
+            }
+        )
+        >= required_independent_hosts(item.kind)
+    )
+    gaps = tuple(item.id for item in requirements if item.id not in covered)
+    requires_comparison_table = any(
+        item.id in covered and item.kind == "comparison" for item in requirements
+    ) or (
+        not requirements
+        and classify_requirement_kind(f"{research.query} {research.focus or ''}") == "comparison"
+    )
+    return SectionContract(
+        heading=validated_report_heading(heading),
+        ledger_revision=state.evidence_revision,
+        evidence=evidence,
+        requirements=requirements,
+        covered_requirement_ids=covered,
+        gap_requirement_ids=gaps,
+        host_thresholds=host_thresholds,
+        requires_comparison_table=requires_comparison_table,
+    )
+
+
+def validate_section_draft(contract: SectionContract, draft: SectionContentDraft) -> None:
+    """Validate model-authored blocks only against their prompt-visible contract."""
+
+    if not contract.covered_requirement_ids and contract.gap_requirement_ids:
+        raise IntegrityError("gap-only section contract must use the runtime path")
+    blocks = [
+        *draft.paragraphs,
+        *draft.bullets,
+        *(row for table in draft.tables for row in table.rows),
+    ]
+    cited_ids = {source_id for block in blocks for source_id in block.source_ids}
+    visible_ids = {item.id for item in contract.evidence}
+    if cited_ids - visible_ids:
+        raise ModelOutputError("source IDs are not in the section contract")
+    if contract.requires_comparison_table and not draft.tables:
+        raise ModelOutputError("comparison section requires a table")
+
+    thresholds = dict(contract.host_thresholds)
+    for requirement_id in contract.covered_requirement_ids:
+        cited = [
+            item
+            for item in contract.evidence
+            if item.id in cited_ids and requirement_id in item.requirement_ids
+        ]
+        if not cited:
+            raise ModelOutputError(f"missing cited evidence for {requirement_id}")
+        hosts = {urlparse(item.url).hostname or item.url for item in cited}
+        if len(hosts) < thresholds[requirement_id]:
+            raise ModelOutputError(f"insufficient independent hosts for {requirement_id}")
 
 
 def allows_gap_finalization(state: RunState, depth: str) -> bool:
@@ -2589,23 +2723,29 @@ def finalize_extractively(
 
     if research.depth != "deep" or not state.report_plan or usable_evidence_count(state) == 0:
         raise ExpectedResearchFailure(reason)
+    state.report_sections = [
+        section
+        for section in state.report_sections
+        if any(requirement_gap_error(state, item) is None for item in section.requirement_ids)
+    ]
     existing_sections = len(state.report_sections)
     state.stats["extractive_finalization"] = True
     state.stats["extractive_finalization_reason"] = reason
     sync_report_section_stats(state)
     state.phase = "sections"
     existing_headings = {item.heading.casefold() for item in state.report_sections}
-    evidence_groups = evidence_by_requirement(state)
     for planned in state.report_plan:
         if planned.heading.casefold() in existing_headings:
             continue
+        contract = build_section_contract(research, state, planned.heading)
         lines = ["生成モデル中断後に、検証済み証拠台帳から抽出的に構成した節です。"]
-        for requirement_id in planned.requirement_ids:
-            requirement = requirement_by_id(state)[requirement_id]
+        for requirement in contract.requirements:
             summary = safe_extractive_text(requirement.summary, 300)
             seen_hosts: set[str] = set()
             evidence_items = []
-            for evidence in evidence_groups.get(requirement_id, []):
+            for evidence in contract.evidence:
+                if requirement.id not in evidence.requirement_ids:
+                    continue
                 host = urlparse(evidence.url).hostname or evidence.url
                 if host in seen_hosts:
                     continue
@@ -2620,12 +2760,9 @@ def finalize_extractively(
             for evidence in evidence_items:
                 excerpt = safe_extractive_text(evidence.excerpt)
                 lines.append(f"- {excerpt} [{evidence.id}]")
-        store_report_section(
+        _checkpoint_report_section(
             state,
-            research,
-            state.evidence_revision,
-            planned.heading,
-            planned.requirement_ids,
+            contract,
             "\n".join(lines),
             EXTRACTIVE_SECTION_SUMMARY,
         )
@@ -2668,82 +2805,42 @@ def finalize_extractively(
     return response
 
 
-def store_report_section(
+def _checkpoint_report_section(
     state: RunState,
-    research: ResearchRequest,
-    ledger_revision: int,
-    heading: str,
-    requirement_ids: list[str],
+    contract: SectionContract,
     body: str,
-    summary: str = "",
-) -> dict[str, Any]:
-    """Validate and checkpoint one report section in memory."""
+    summary: str,
+) -> None:
+    """Checkpoint already-rendered runtime or validated model content."""
 
-    normalized_heading = validated_report_heading(heading)
     body = body.strip()
     compact_summary = summary.strip()
-    if ledger_revision != state.evidence_revision:
+    if contract.ledger_revision != state.evidence_revision:
         raise IntegrityError("ledger_revision must match the latest evidence revision")
     if state.last_inspected_revision != state.evidence_revision:
         raise IntegrityError("inspect_evidence_ledger must follow the latest evidence update")
     if not body or len(body) > MAX_REPORT_SECTION_CHARS:
         raise ValueError(f"section body must contain 1 to {MAX_REPORT_SECTION_CHARS} characters")
-    if research.depth == "deep" and not compact_summary:
-        raise ValueError("deep report sections require a compact summary")
-    if len(compact_summary) > 500:
-        raise ValueError("section summary must not exceed 500 characters")
     if re.search(r"^##\s+", body, flags=re.MULTILINE):
         raise ValueError("section body must not contain level-2 headings")
     if structure_error := report_markdown_structure_error(body):
         raise ModelOutputError(structure_error)
-    known_requirements = requirement_by_id(state)
-    normalized_requirements = list(dict.fromkeys(requirement_ids))
-    if research.depth == "deep" and (
-        not normalized_requirements or set(normalized_requirements) - known_requirements.keys()
-    ):
-        raise ModelOutputError("unknown requirement IDs in report section")
-    evidence_ids = {item.id for item in state.evidence}
-    unknown = sorted(citation_ids(body) - evidence_ids, key=numeric_source_id)
-    if unknown:
-        raise ModelOutputError("unknown source IDs in report section")
-    unusable = sorted(
-        citation_ids(body) - {item.id for item in state.evidence if item.relevance > 0},
-        key=numeric_source_id,
-    )
-    if unusable:
-        raise ModelOutputError("unusable source IDs in report section")
-
-    if research.depth == "deep":
-        allowed = set()
-        for requirement_id in normalized_requirements:
-            allowed.update(
-                item.id for item in evidence_by_requirement(state).get(requirement_id, [])
-            )
-        cited_ids = citation_ids(body)
-        if cited_ids - allowed:
-            raise ModelOutputError("report section citations are not assigned to its requirements")
-        for requirement_id in normalized_requirements:
-            if (
-                allows_gap_finalization(state, research.depth)
-                and requirement_gap_error(state, requirement_id) is not None
-            ):
-                continue
-            if error := requirement_citation_error(state, requirement_id, cited_ids):
-                raise ModelOutputError(error)
+    if citation_ids(body) - {item.id for item in contract.evidence}:
+        raise ModelOutputError("source IDs are not in the section contract")
 
     section = ReportSection(
-        normalized_heading,
+        contract.heading,
         body,
-        ledger_revision,
+        contract.ledger_revision,
         compact_summary,
-        normalized_requirements,
+        [item.id for item in contract.requirements],
     )
     sections = list(state.report_sections)
     existing = next(
         (
             index
             for index, item in enumerate(sections)
-            if item.heading.casefold() == normalized_heading.casefold()
+            if item.heading.casefold() == contract.heading.casefold()
         ),
         None,
     )
@@ -2761,53 +2858,41 @@ def store_report_section(
     state.final_response = None
     state.stats["report_sections"] = len(sections)
     state.stats["report_chars"] = len(answer)
-    return {
-        "ok": True,
-        "section_count": len(sections),
-        "report_chars": len(answer),
-        "headings": [item.heading for item in sections],
-    }
+
+
+def store_report_section(
+    state: RunState,
+    contract: SectionContract,
+    draft: SectionContentDraft,
+) -> None:
+    """Validate, render, and checkpoint one model-generated section."""
+
+    validate_section_draft(contract, draft)
+    summary = neutralize_model_text(draft.paragraphs[0].text)[:500]
+    _checkpoint_report_section(
+        state,
+        contract,
+        render_section_markdown(contract, draft),
+        summary,
+    )
+
+
+def _store_gap_section(
+    state: RunState,
+    contract: SectionContract,
+) -> None:
+    if contract.covered_requirement_ids or not contract.gap_requirement_ids:
+        raise IntegrityError("runtime gap path requires a gap-only section contract")
+    _checkpoint_report_section(
+        state,
+        contract,
+        render_gap_markdown(contract),
+        contract.heading,
+    )
 
 
 def limitations_adapter() -> TypeAdapter[list[Limitation]]:
     return TypeAdapter(list[Limitation])
-
-
-def report_request_error(answer: str, depth: str, request_text: str) -> str | None:
-    """Return a hard comparison-table citation defect, if any."""
-
-    if depth != "deep":
-        return None
-    matches = list(re.finditer(r"^##\s+\S.*$", answer, flags=re.MULTILINE))
-    sections = [
-        (
-            match.group().removeprefix("##").strip(),
-            answer[
-                match.end() : (
-                    matches[index + 1].start() if index + 1 < len(matches) else len(answer)
-                )
-            ].strip(),
-        )
-        for index, match in enumerate(matches)
-    ]
-    for heading, body in sections:
-        lines = body.splitlines()
-        table_rows = [
-            line.strip()
-            for index, line in enumerate(lines)
-            if line.strip().startswith("|")
-            and line.strip().endswith("|")
-            and not re.fullmatch(r"\|[\s:|-]+\|", line.strip())
-            and not (
-                index + 1 < len(lines) and re.fullmatch(r"\|[\s:|-]+\|", lines[index + 1].strip())
-            )
-        ]
-        if any(not citation_ids(row) for row in table_rows):
-            return (
-                f'comparison table data rows in section "{heading}" need inline citations; '
-                "repair this section using its exact heading"
-            )
-    return None
 
 
 def validate_submit_report(
@@ -2819,7 +2904,6 @@ def validate_submit_report(
     limitations: list[str],
     budget: Budget,
     depth: str,
-    request_text: str = "",
 ) -> ResearchResponse:
     answer = answer_markdown.strip()
     if not answer:
@@ -2862,19 +2946,17 @@ def validate_submit_report(
         ]
         if missing_headings:
             raise ValueError("deep report is missing planned sections")
+        # Keep v1 checkpoint defense until the atomic checkpoint-v2 cutover.
         for section in state.report_sections:
             cited_ids = citation_ids(section.body)
             for requirement_id in section.requirement_ids:
-                gap_allowed = (
+                if (
                     allows_gap_finalization(state, depth)
                     and requirement_gap_error(state, requirement_id) is not None
-                )
-                if gap_allowed:
+                ):
                     continue
                 if error := requirement_citation_error(state, requirement_id, cited_ids):
                     raise ModelOutputError(error)
-    if requirement_error := report_request_error(answer, depth, request_text):
-        raise ValueError(requirement_error)
     if len(findings) == 0 or len(findings) > MAX_FINDINGS:
         raise ValueError(f"findings must contain 1 to {MAX_FINDINGS} items")
     usable_count = usable_evidence_count(state)
@@ -2952,7 +3034,6 @@ def accept_report(
         [*limitations, *runtime_gap_limitations(state)],
         make_budget(research.depth),
         research.depth,
-        f"{research.query}\n{research.focus or ''}",
     )
     state.final_response = response.model_dump()
     return response
@@ -3045,21 +3126,6 @@ def next_report_action(
     for planned in state.report_plan:
         if planned.heading.casefold() not in sections:
             return "missing_plan_section", planned.heading, "write the next planned section"
-    answer = assemble_report_sections(state.report_sections)
-    if requirement_error := report_request_error(
-        answer,
-        research.depth,
-        f"{research.query}\n{research.focus or ''}",
-    ):
-        repair_heading = next(
-            (
-                section.heading
-                for section in state.report_sections
-                if f'"{section.heading}"' in requirement_error
-            ),
-            state.report_sections[0].heading,
-        )
-        return "deliverable_repair", repair_heading, requirement_error
     for section in state.report_sections:
         if not citation_ids(section.body) and not (
             research.depth == "deep"
@@ -3200,66 +3266,55 @@ def build_section_context(
     research: ResearchRequest,
     state: RunState,
     action: str,
-    repair_heading: str | None,
+    contract: SectionContract,
 ) -> dict[str, Any]:
-    assign_report_plan_sources(state)
-    requirements = requirement_by_id(state)
-    planned = next((item for item in state.report_plan if item.heading == repair_heading), None)
     existing = next(
-        (item for item in state.report_sections if item.heading == repair_heading), None
+        (item for item in state.report_sections if item.heading == contract.heading), None
     )
-    requirement_ids = planned.requirement_ids if planned is not None else []
-    requirement_id_set = set(requirement_ids)
-    assigned_ids = section_evidence_ids(state, requirement_ids)
-    evidence_map = {item.id: item for item in state.evidence if item.relevance > 0}
+    thresholds = dict(contract.host_thresholds)
     coverage_gaps = [
         {
             "requirement_id": requirement_id,
-            "summary": requirements[requirement_id].summary,
-            "available_hosts": len(evidence_hosts_for_requirement(state, requirement_id)),
-            "required_hosts": required_independent_hosts(requirements[requirement_id].kind),
+            "available_hosts": len(
+                {
+                    urlparse(item.url).hostname or item.url
+                    for item in contract.evidence
+                    if requirement_id in item.requirement_ids
+                }
+            ),
+            "required_hosts": thresholds[requirement_id],
         }
-        for requirement_id in requirement_ids
-        if requirement_gap_error(state, requirement_id) is not None
+        for requirement_id in contract.gap_requirement_ids
     ]
+    requirement_ids = {item.id for item in contract.requirements}
     return {
         "query": research.query,
         "focus": research.focus,
         "depth": research.depth,
-        "ledger_revision": state.evidence_revision,
         "action": action,
-        "repair_heading": repair_heading,
-        "planned_section": (
-            {
-                "heading": planned.heading,
-                "target_chars": planned.target_chars,
-                "deliverables": planned.deliverables,
-                "requirement_ids": requirement_ids,
-                "assigned_source_ids": assigned_ids,
-            }
-            if planned is not None
-            else None
-        ),
-        "planned_requirements": [
-            {
-                "id": requirement_id,
-                "summary": requirements[requirement_id].summary,
-                "kind": requirements[requirement_id].kind,
-                "required_independent_host_count": required_independent_hosts(
-                    requirements[requirement_id].kind
-                ),
-                "assigned_source_ids": [
-                    source_id
-                    for source_id in assigned_ids
-                    if requirement_id in evidence_map[source_id].requirement_ids
-                ],
-            }
-            for requirement_id in requirement_ids
-        ],
+        "section_contract": {
+            "heading": contract.heading,
+            "ledger_revision": contract.ledger_revision,
+            "requirements": [
+                {
+                    "id": requirement.id,
+                    "summary": requirement.summary,
+                    "kind": requirement.kind,
+                    "required_independent_host_count": thresholds[requirement.id],
+                    "assigned_source_ids": [
+                        item.id
+                        for item in contract.evidence
+                        if requirement.id in item.requirement_ids
+                    ],
+                }
+                for requirement in contract.requirements
+            ],
+            "covered_requirement_ids": list(contract.covered_requirement_ids),
+            "gap_requirement_ids": list(contract.gap_requirement_ids),
+            "requires_comparison_table": contract.requires_comparison_table,
+        },
         "section_to_repair": (
             {
-                "heading": existing.heading,
-                "summary": existing.summary,
                 "source_ids": sorted(citation_ids(existing.body), key=numeric_source_id),
                 "chars": len(existing.body),
             }
@@ -3267,9 +3322,7 @@ def build_section_context(
             else None
         ),
         "assigned_evidence": [
-            compact_assigned_evidence_payload(evidence_map[source_id], requirement_id_set)
-            for source_id in assigned_ids
-            if source_id in evidence_map
+            compact_assigned_evidence_payload(item, requirement_ids) for item in contract.evidence
         ],
         "coverage_gaps": coverage_gaps,
         "completed_sections": [
@@ -3280,7 +3333,7 @@ def build_section_context(
                 "source_ids": sorted(citation_ids(section.body), key=numeric_source_id),
             }
             for section in state.report_sections
-            if section.heading != repair_heading
+            if section.heading != contract.heading
         ],
     }
 
@@ -3332,16 +3385,8 @@ def safe_section_validation_error(error: BaseException | str) -> str:
     message = str(error)
     allowed = {
         f"section body must contain 1 to {MAX_REPORT_SECTION_CHARS} characters",
-        "deep report sections require a compact summary",
-        "section summary must not exceed 500 characters",
-        "section body must not contain level-2 headings",
-        "heading must contain 1 to 200 characters",
-        "heading must be plain text without Markdown heading markers",
-        "heading is reserved for deterministic report assembly",
-        "unknown requirement IDs in report section",
-        "unknown source IDs in report section",
-        "unusable source IDs in report section",
-        "report section citations are not assigned to its requirements",
+        "source IDs are not in the section contract",
+        "comparison section requires a table",
         "Markdown headings must start on separate lines",
         "Markdown table rows must use separate lines",
         "table row width must match headers",
@@ -3406,21 +3451,21 @@ def build_plan_prompt(
 def build_section_prompt(
     research: ResearchRequest,
     state: RunState,
+    contract: SectionContract,
     action: ReportAction = "missing_plan_section",
     validation_error: str = "",
-    repair_heading: str | None = None,
 ) -> str:
     """Request one new or corrected report section as forced structured output."""
 
-    payload = build_section_context(research, state, action, repair_heading)
+    payload = build_section_context(research, state, action, contract)
     section_requirements = [
         (
-            "If repair_heading is present, use that exact target heading for the new or "
-            "repaired section; otherwise use a distinct plain-text heading."
+            "Return only model-authored paragraphs, bullets, and tables; runtime owns the "
+            "fixed heading, requirement mapping, summary, and gap prose."
         ),
         (
-            "Return plain text only for heading, summary, paragraphs.text, bullets.text, "
-            "table titles, headers, and cells."
+            "Return plain text only for paragraphs.text, bullets.text, table titles, headers, "
+            "and cells."
         ),
         (
             "Do not write Markdown, HTML, or inline citations inside text fields; runtime "
@@ -3432,33 +3477,26 @@ def build_section_prompt(
         ),
         "Use source_ids only to cite evidence for every material paragraph, bullet, and table row.",
         (
-            "If coverage_gaps are present, state the gap explicitly and do not invent "
-            "unsupported claims."
+            "Do not write content for coverage_gaps; runtime adds deterministic partial-evidence "
+            "and gap prose. Do not invent unsupported claims."
         ),
         "Never cite evidence outside assigned_evidence.",
-        "Cover the planned requirements and explicit deliverables only; do not invent new asks.",
+        "Cover only section_contract.requirements; do not invent new asks.",
         (
             "Maintain information density: every section must add non-redundant evidence, "
             "data analysis, comparison, or implications."
         ),
         (
-            "If the query requests comparison, include a dedicated comparison table with "
-            "source_ids on every material row. Add empirical benchmark analysis only when "
-            "the query explicitly requests it."
-        ),
-        (
             "If the query explicitly requests architecture or a roadmap, cover it and use "
             "the requested horizon. Do not invent an implementation plan for other topics."
         ),
-        "Return a compact summary for future section prompts; do not repeat the full body.",
-        f"Treat planned target_chars as soft; never exceed {MAX_REPORT_SECTION_CHARS} chars.",
+        f"Keep the deterministically rendered section within {MAX_REPORT_SECTION_CHARS} chars.",
     ]
-    if research.depth == "deep" and payload.get("planned_section") is not None:
+    if research.depth == "deep":
         section_requirements[1:1] = [
-            "Return requirement_ids exactly equal to planned_section.requirement_ids.",
             (
                 "Unless coverage_gaps say otherwise, for each planned requirement cite evidence "
-                "from planned_requirements.assigned_source_ids covering at least its "
+                "from section_contract.requirements.assigned_source_ids covering at least its "
                 "required_independent_host_count distinct hosts."
             ),
             (
@@ -3466,14 +3504,11 @@ def build_section_prompt(
                 "to determine the source-to-requirement and host mapping for those citations."
             ),
         ]
-    elif research.depth != "deep":
-        section_requirements.insert(
-            1,
-            "Return requirement_ids only when the prompt explicitly provides planned requirements.",
-        )
+    if contract.requires_comparison_table:
+        section_requirements.append("Return at least one table for this comparison section.")
     payload.update(
         {
-            "task": "Generate exactly one new or corrected level-2 report section.",
+            "task": "Generate only the cited content blocks for exactly one report section.",
             "requirements": section_requirements,
             "previous_validation_error": validation_error or None,
         }
@@ -4163,43 +4198,6 @@ def build_research_tools(
             )
 
     @tool
-    async def write_report_section(
-        ledger_revision: int,
-        heading: str,
-        requirement_ids: list[str] | str,
-        body: str | None = None,
-    ) -> dict[str, Any]:
-        """Checkpoint one H2 section per turn; heading <=200 and body <=4000 characters."""
-
-        try:
-            normalized_requirement_ids = []
-            normalized_body = body
-            if isinstance(requirement_ids, str) and body is None:
-                normalized_body = requirement_ids
-            elif isinstance(requirement_ids, list):
-                normalized_requirement_ids = requirement_ids
-            else:
-                raise ValueError("invalid write_report_section arguments")
-            result = store_report_section(
-                state,
-                research,
-                ledger_revision,
-                heading,
-                normalized_requirement_ids,
-                cast(str, normalized_body),
-            )
-            await save("running")
-            return tool_success(result)
-        except IntegrityError as exc:
-            record_fatal(exc)
-            return tool_error("integrity_error", "section checkpoint integrity failure")
-        except ValueError as exc:
-            return tool_error("invalid_report_section", str(exc))
-        except Exception as exc:  # pragma: no cover - defensive fail-closed path
-            record_fatal(exc)
-            return tool_error("internal_error", "section save failed due to an internal error")
-
-    @tool
     async def submit_report(
         ledger_revision: int,
         findings: list[dict[str, Any]],
@@ -4229,7 +4227,7 @@ def build_research_tools(
             return tool_error("internal_error", "submit failed due to an internal runtime error")
 
     return (
-        [search_web, fetch_source, inspect_evidence_ledger, write_report_section, submit_report],
+        [search_web, fetch_source, inspect_evidence_ledger, submit_report],
         allowlisted_results,
         fatal_errors,
     )
@@ -4738,9 +4736,6 @@ async def run_research(
         state.phase = "sections"
         section_attempts = 0
         validation_error = ""
-        section_output_model = (
-            ReportSectionDraft if research.depth == "deep" else StandardReportSectionDraft
-        )
         while True:
             action, repair_heading, action_error = next_report_action(state, research)
             if action == "submit":
@@ -4750,66 +4745,61 @@ async def run_research(
                 raise ExpectedResearchFailure("normal_contract_unmet")
             repairs = cast(dict[str, int], state.stats["repair_actions"])
             repairs[action] = repairs.get(action, 0) + 1
-            stored = False
-            for _attempt in range(STRUCTURED_OUTPUT_ATTEMPTS):
-                section_attempts += 1
-                if section_attempts > MAX_REPORT_SECTIONS * STRUCTURED_OUTPUT_ATTEMPTS:
-                    raise ExpectedResearchFailure("normal_contract_unmet")
-                try:
-                    report_before = assemble_report_sections(state.report_sections)
-                    state.stats["section_calls"] += 1
-                    draft = cast(
-                        StandardReportSectionDraft,
-                        await invoke_structured(
-                            build_section_prompt(
-                                research,
-                                state,
-                                action,
-                                validation_error or action_error,
-                                repair_heading,
-                            ),
-                            section_output_model,
-                            remaining=max(1.0, deadline - time.monotonic()),
-                        ),
-                    )
-                    store_report_section(
-                        state,
-                        research,
-                        state.evidence_revision,
-                        repair_heading or draft.heading,
-                        draft.requirement_ids,
-                        render_section_markdown(draft),
-                        draft.summary,
-                    )
-                    next_action = next_report_action(state, research)[0]
-                    state.unmet_requirements = [] if next_action == "submit" else [next_action]
-                    noop_limit_reached = repair_heading is not None and record_repair_noop(
-                        state,
-                        action,
-                        repair_heading,
-                        report_before,
-                    )
-                    await save("running")
-                    if noop_limit_reached:
+            contract = build_section_contract(research, state, repair_heading)
+            report_before = assemble_report_sections(state.report_sections)
+            if not contract.covered_requirement_ids and contract.gap_requirement_ids:
+                _store_gap_section(state, contract)
+            else:
+                stored = False
+                for _attempt in range(STRUCTURED_OUTPUT_ATTEMPTS):
+                    section_attempts += 1
+                    if section_attempts > MAX_REPORT_SECTIONS * STRUCTURED_OUTPUT_ATTEMPTS:
                         raise ExpectedResearchFailure("normal_contract_unmet")
-                    validation_error = ""
-                    stored = True
-                    break
-                except IntegrityError:
-                    raise
-                except (
-                    ValueError,
-                    MaxTokensReachedException,
-                    StructuredOutputException,
-                ) as exc:
-                    if fatal_errors:
-                        raise fatal_errors[0] from exc
-                    validation_error = record_section_validation_failure(state, exc)
-                    state.stats["structured_output_retries"] += 1
-                    await save("running")
-            if not stored:
-                raise ExpectedResearchFailure("structured_section_attempts")
+                    try:
+                        state.stats["section_calls"] += 1
+                        draft = cast(
+                            SectionContentDraft,
+                            await invoke_structured(
+                                build_section_prompt(
+                                    research,
+                                    state,
+                                    contract,
+                                    action,
+                                    validation_error or action_error,
+                                ),
+                                SectionContentDraft,
+                                remaining=max(1.0, deadline - time.monotonic()),
+                            ),
+                        )
+                        store_report_section(state, contract, draft)
+                        stored = True
+                        break
+                    except IntegrityError:
+                        raise
+                    except (
+                        ValueError,
+                        MaxTokensReachedException,
+                        StructuredOutputException,
+                    ) as exc:
+                        if fatal_errors:
+                            raise fatal_errors[0] from exc
+                        validation_error = record_section_validation_failure(state, exc)
+                        state.stats["structured_output_retries"] += 1
+                        await save("running")
+                if not stored:
+                    raise ExpectedResearchFailure("structured_section_attempts")
+            next_action = next_report_action(state, research)[0]
+            state.unmet_requirements = [] if next_action == "submit" else [next_action]
+            noop_limit_reached = repair_heading is not None and record_repair_noop(
+                state, action, repair_heading, report_before
+            )
+            await save("running")
+            if noop_limit_reached:
+                raise ExpectedResearchFailure("normal_contract_unmet")
+            validation_error = ""
 
+        if not citation_ids(assemble_report_sections(state.report_sections)):
+            raise ExpectedResearchFailure("normal_contract_unmet")
         state.phase = "submission"
         state.unmet_requirements = ["findings", "limitations"]
         await save("running")
