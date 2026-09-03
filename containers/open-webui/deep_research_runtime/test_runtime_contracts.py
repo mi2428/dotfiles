@@ -226,13 +226,13 @@ class RuntimeContractTests(RuntimeTestCase):
         wrapped = rt.EventLoopException(
             APIStatusError("provider error", response=response, body={})
         )
-        self.assertEqual(rt.model_retry_delay(wrapped, 0), 2)
+        self.assertEqual(rt.model_retry_delay(wrapped, 0), 10)
         self.assertTrue(rt.is_expected_provider_failure(wrapped))
         stream_error = APIError("Internal server error.", request=request, body=None)
-        self.assertEqual(rt.MODEL_TRANSIENT_RECOVERIES, 3)
+        self.assertEqual(rt.MODEL_TRANSIENT_RECOVERIES, 5)
         self.assertEqual(
-            [rt.model_retry_delay(stream_error, attempt) for attempt in range(3)],
-            [2, 4, 8],
+            [rt.model_retry_delay(stream_error, attempt) for attempt in range(5)],
+            [10, 20, 40, 80, 120],
         )
         self.assertTrue(rt.is_expected_provider_failure(stream_error))
 
