@@ -8,6 +8,8 @@ RUN grep -Fq 'href="/static/custom.css"' /app/build/index.html \
 COPY patches/deep_research_notes.py /app/backend/open_webui/utils/deep_research_notes.py
 COPY patches/apply_direct_tool_output.py /tmp/apply_direct_tool_output.py
 RUN python /tmp/apply_direct_tool_output.py \
+ && grep -Fq 'dotfiles: UI requests inherit declarative model tools when omitted' \
+      /app/backend/open_webui/utils/middleware.py \
  && grep -Fq 'dotfiles: trusted external tool direct output' \
       /app/backend/open_webui/utils/middleware.py \
  && python -m py_compile /app/backend/open_webui/utils/deep_research_notes.py \

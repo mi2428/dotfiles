@@ -6,6 +6,18 @@ from apply_direct_tool_output import REPLACEMENTS, patch_middleware, replace_onc
 
 
 class DirectToolOutputPatchTests(unittest.TestCase):
+    def test_ui_only_inherits_model_tools_when_caller_omits_tool_ids(self) -> None:
+        patched = patch_middleware("\n".join(old for old, _new in REPLACEMENTS))
+
+        self.assertIn(
+            "tool_ids = form_data.pop('tool_ids', None)\n"
+            "    # dotfiles: UI requests inherit declarative model tools when omitted\n"
+            "    if tool_ids is None and metadata.get('session_id'):\n"
+            "        tool_ids = model.get('info', {}).get('meta', {}).get('toolIds', [])",
+            patched,
+        )
+        self.assertNotIn("if not tool_ids and metadata.get('session_id')", patched)
+
     def test_replace_once_rejects_missing_or_ambiguous_fragments(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "patch guard failed"):
             replace_once("source", "missing", "replacement")
@@ -36,7 +48,9 @@ class DirectToolOutputPatchTests(unittest.TestCase):
         self.assertIn("chat_id=deep_research_chat_id,", patched)
         self.assertIn("chat_title=str(chat_title or ''),", patched)
 
-    def test_failed_direct_output_skips_note_and_reads_status_case_insensitively(self) -> None:
+    def test_failed_direct_output_skips_note_and_reads_status_case_insensitively(
+        self,
+    ) -> None:
         patched = patch_middleware("\n".join(old for old, _new in REPLACEMENTS))
 
         self.assertIn(

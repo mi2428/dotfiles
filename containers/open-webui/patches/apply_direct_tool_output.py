@@ -1,4 +1,4 @@
-"""Patch pinned Open WebUI middleware for trusted direct research output.
+"""Patch pinned Open WebUI middleware for declarative tools and direct research output.
 
 The upstream middleware normally feeds external tool results back to the model. Deep
 Research instead marks exact Markdown for direct display; this patch stores that report as
@@ -20,6 +20,19 @@ def replace_once(source: str, old: str, new: str) -> str:
     if source.count(old) != 1:
         raise RuntimeError(f"OpenWebUI middleware patch guard failed: {old[:80]!r}")
     return source.replace(old, new)
+
+
+add_replacement(
+    """    tool_ids = form_data.pop('tool_ids', None)
+    terminal_id = form_data.pop('terminal_id', None)
+""",
+    """    tool_ids = form_data.pop('tool_ids', None)
+    # dotfiles: UI requests inherit declarative model tools when omitted
+    if tool_ids is None and metadata.get('session_id'):
+        tool_ids = model.get('info', {}).get('meta', {}).get('toolIds', [])
+    terminal_id = form_data.pop('terminal_id', None)
+""",
+)
 
 
 add_replacement(
