@@ -3010,6 +3010,13 @@ def build_section_prompt(
                 "Use assigned_evidence.requirement_ids together with each assigned_evidence.url "
                 "to determine the source-to-requirement and host mapping for those citations."
             ),
+            (
+                "When assigned evidence supports it, aim for 5 to 6 non-redundant narrative "
+                "blocks (paragraphs and substantive bullet items); table rows do not count "
+                "toward this target. Each block should add a distinct evidence-backed fact, "
+                "comparison, causal link, caveat, or implication. If evidence is thin, use "
+                "fewer blocks rather than repeat, pad, or speculate."
+            ),
         ]
     if contract.requires_comparison_table:
         section_requirements.append("Return at least one table for this comparison section.")
