@@ -345,7 +345,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_repeated_stream_provider_error_salvages_collected_evidence(self) -> None:
+    def test_query_provider_exhaustion_continues_with_validated_plan_queries(self) -> None:
         research = rt.ResearchRequest(
             query="Need direct evidence", focus="compare vendors", depth="deep"
         )
@@ -362,12 +362,36 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 APIError("Internal server error.", request=request, body=None),
                 APIError("Internal server error.", request=request, body=None),
                 section(cited("Supported direct claim", "S1")),
+                comparison_section("Recovered comparison", "S2", "S3"),
             ]
         )
+        search_calls: list[str] = []
+
+        async def fake_search(*args: Any) -> list[rt.SearchResult]:
+            query = cast(str, args[1])
+            search_calls.append(query)
+            return [
+                rt.SearchResult("https://b.example/2", "B", "", "engine", query),
+                rt.SearchResult("https://c.example/3", "C", "", "engine", query),
+            ]
+
+        async def fake_extract(result: rt.SearchResult, *_args: Any) -> rt.Evidence:
+            return rt.Evidence(
+                url=result.url,
+                title=result.title,
+                publisher=result.title,
+                published_at="2026-01-01",
+                excerpt="Independent evidence supporting the comparison requirement.",
+                hash=(result.title.lower() * 64)[:64],
+                relevance=0.9,
+                source_quality=0.7,
+            )
 
         async def run() -> None:
             with (
                 patch.object(rt, "build_finalization_agent", return_value=structured),
+                patch.object(rt, "search_searxng", new=AsyncMock(side_effect=fake_search)),
+                patch.object(rt, "extract_evidence", new=AsyncMock(side_effect=fake_extract)),
                 patch.object(rt, "MODEL_RETRY_BASE_SECONDS", 0.0),
             ):
                 response = await rt.run_research(
@@ -378,8 +402,11 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "provider-salvage-key",
                     rt.run_state_snapshot(state),
                 )
-            self.assertEqual(response.outcome, "degraded")
+            self.assertEqual(response.outcome, "completed")
             self.assertIn("Supported direct claim", response.answer_markdown)
+            self.assertIn("Recovered comparison", response.answer_markdown)
+            self.assertEqual(len(search_calls), rt.DEEP_QUERY_BATCH_SIZE)
+            self.assertEqual(len(set(search_calls)), rt.DEEP_QUERY_BATCH_SIZE)
             row = self.runtime.db.execute(
                 "SELECT status, state_json FROM research_runs WHERE idempotency_key=?",
                 ("provider-salvage-key",),
@@ -390,8 +417,30 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertEqual(stats["model_transient_failures"]["provider_internal_error"], 6)
             self.assertEqual(len(stats["model_transient_events"]), 6)
             self.assertEqual(stats["research_salvages"], 1)
+            self.assertEqual(stats["query_batch_calls"], 0)
+            self.assertEqual(stats["searches"], rt.DEEP_QUERY_BATCH_SIZE)
+            self.assertEqual(stats["requirement_coverage"]["R2"]["covered"], True)
 
         asyncio.run(run())
+
+    def test_deterministic_query_batch_is_bounded_and_exhaustible(self) -> None:
+        research = rt.ResearchRequest(
+            query="Need direct evidence", focus="compare vendors", depth="deep"
+        )
+        state = make_state(1)
+        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
+        rt.store_initial_plan(state, research, plan_for(research))
+
+        batch = rt.deterministic_query_batch(state, rt.DEEP_QUERY_BATCH_SIZE)
+
+        self.assertIsNotNone(batch)
+        queries = cast(rt.SearchBatchDraft, batch).queries
+        self.assertEqual(len(queries), rt.DEEP_QUERY_BATCH_SIZE)
+        self.assertEqual({item.requirement_id for item in queries}, {"R2"})
+        self.assertEqual(len({item.query for item in queries}), len(queries))
+        self.assertTrue(all(len(item.query) <= rt.MAX_QUERY_CHARS for item in queries))
+        state.searched_queries.update(item.query for item in queries)
+        self.assertIsNone(rt.deterministic_query_batch(state, rt.DEEP_QUERY_BATCH_SIZE))
 
     def test_section_provider_exhaustion_falls_back_locally_then_next_section_succeeds(
         self,

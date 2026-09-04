@@ -3034,6 +3034,54 @@ def build_query_batch_prompt(research: ResearchRequest, state: RunState) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def deterministic_query_batch(state: RunState, search_slots: int) -> SearchBatchDraft | None:
+    """Build bounded queries from the validated plan when query generation is unavailable."""
+
+    limit = min(DEEP_QUERY_BATCH_SIZE, search_slots)
+    if limit <= 0:
+        return None
+    requirements = requirement_by_id(state)
+    fragments = {item.id: item.text for item in state.request_fragments}
+    headings: dict[str, list[str]] = {item.id: [] for item in state.requirements}
+    for section in state.report_plan:
+        for requirement_id in section.requirement_ids:
+            headings[requirement_id].append(section.heading)
+    uncovered = set(uncovered_requirement_ids(state))
+    ordered_ids = list(
+        dict.fromkeys(
+            requirement_id
+            for section in state.report_plan
+            for requirement_id in section.requirement_ids
+            if requirement_id in uncovered
+        )
+    )
+    seen = set(state.searched_queries)
+    queries: list[SearchBatchEntry] = []
+    # ponytail: three plan-derived variants; add query synthesis only if recall data demands it.
+    for variant in ("summary", "headings", "fragments"):
+        for requirement_id in ordered_ids:
+            requirement = requirements[requirement_id]
+            context = {
+                "summary": "",
+                "headings": " ".join(headings[requirement_id]),
+                "fragments": " ".join(fragments[item] for item in requirement.fragment_ids),
+            }[variant]
+            query = " ".join(filter(None, (requirement.summary, context)))[:MAX_QUERY_CHARS].strip()
+            if query in seen:
+                continue
+            seen.add(query)
+            queries.append(
+                SearchBatchEntry(
+                    query=bounded_query(query),
+                    purpose=bounded_purpose(requirement.summary),
+                    requirement_id=requirement_id,
+                )
+            )
+            if len(queries) == limit:
+                return SearchBatchDraft(queries=queries)
+    return SearchBatchDraft(queries=queries) if queries else None
+
+
 def enqueue_candidates(
     state: RunState,
     results: list[SearchResult],
@@ -4019,15 +4067,23 @@ async def run_research(
         search_slots = remaining_budgets(state, budget)["searches"]
         if search_slots <= 0:
             return 0
-        draft = cast(
-            SearchBatchDraft,
-            await invoke_structured(
-                build_query_batch_prompt(research, state),
+        try:
+            draft = cast(
                 SearchBatchDraft,
-                remaining=max(1.0, deadline - time.monotonic()),
-            ),
-        )
-        state.stats["query_batch_calls"] += 1
+                await invoke_structured(
+                    build_query_batch_prompt(research, state),
+                    SearchBatchDraft,
+                    remaining=max(1.0, deadline - time.monotonic()),
+                ),
+            )
+            state.stats["query_batch_calls"] += 1
+        except ExpectedResearchFailure as exc:
+            if exc.reason != "provider_failure":
+                raise
+            draft = deterministic_query_batch(state, search_slots)
+            if draft is None:
+                raise
+            state.stats["research_salvages"] += 1
         raw_entries = draft.queries[:search_slots]
         entries: list[SearchBatchEntry] = []
         batch_seen: set[str] = set()
