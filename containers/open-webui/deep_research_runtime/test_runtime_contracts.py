@@ -1293,15 +1293,13 @@ class RuntimeContractTests(RuntimeTestCase):
         )
         self.assertTrue(
             any(
-                "aim for about 10 non-duplicate cited information units" in item
-                and "including about 6 cited narrative units from paragraphs and bullets" in item
-                and "table rows count toward the total but not the narrative subtarget" in item
+                "aim for about 8 non-duplicate cited information units" in item
+                and "paragraphs, substantive bullet items, and table rows" in item
                 and "Prefer fewer units over padding" in item
                 for item in prompt_payload["requirements"]
             )
         )
-        self.assertNotIn("hard 10", prompt)
-        self.assertNotIn("hard 6", prompt)
+        self.assertNotIn("hard 8", prompt)
         self.assertNotIn("validator", prompt)
 
     def test_standard_and_quick_section_prompts_receive_usable_evidence(self) -> None:
@@ -1314,13 +1312,11 @@ class RuntimeContractTests(RuntimeTestCase):
                 self.assertNotIn("body_markdown", json.dumps(prompt_payload, ensure_ascii=False))
                 self.assertFalse(
                     any(
-                        "aim for about 10 non-duplicate cited information units" in item
+                        "aim for about 8 non-duplicate cited information units" in item
                         for item in prompt_payload["requirements"]
                     )
                 )
-                payload_text = json.dumps(prompt_payload, ensure_ascii=False)
-                self.assertNotIn("hard 10", payload_text)
-                self.assertNotIn("hard 6", payload_text)
+                self.assertNotIn("hard 8", json.dumps(prompt_payload, ensure_ascii=False))
                 self.assertNotIn("validator", json.dumps(prompt_payload, ensure_ascii=False))
                 self.assertEqual(
                     [item["id"] for item in prompt_payload["assigned_evidence"]], ["S1"]

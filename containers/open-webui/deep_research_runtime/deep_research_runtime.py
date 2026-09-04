@@ -3089,12 +3089,11 @@ def build_section_prompt(
                 "to determine the source-to-requirement and host mapping for those citations."
             ),
             (
-                "When assigned evidence supports it, aim for about 10 non-duplicate cited "
-                "information units across paragraphs, substantive bullet items, and table rows, "
-                "including about 6 cited narrative units from paragraphs and bullets; table rows "
-                "count toward the total but not the narrative subtarget. Each unit should add a "
-                "distinct evidence-backed fact, comparison, causal link, caveat, or implication. "
-                "Prefer fewer units over padding, repetition, or speculation."
+                "When assigned evidence supports it, aim for about 8 non-duplicate cited "
+                "information units across paragraphs, substantive bullet items, and table rows. "
+                "Each unit should add a distinct evidence-backed fact, comparison, causal link, "
+                "caveat, or implication. Prefer fewer units over padding, repetition, or "
+                "speculation."
             ),
         ]
     if contract.requires_comparison_table:
