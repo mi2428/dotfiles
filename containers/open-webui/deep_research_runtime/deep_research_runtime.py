@@ -4427,9 +4427,12 @@ async def run_research(
                     query_batches = (
                         bonus_hosts + DEEP_QUERY_BATCH_SIZE - 1
                     ) // DEEP_QUERY_BATCH_SIZE
+                    fetch_batches = (
+                        bonus_hosts + DEEP_FETCH_BATCH_SIZE - 1
+                    ) // DEEP_FETCH_BATCH_SIZE
                     enrichment_window = query_batches * (
                         SEARCH_TIMEOUT + AGENT_CANCEL_GRACE_SECONDS
-                    ) + bonus_hosts * (DOC_TIMEOUT + AGENT_CANCEL_GRACE_SECONDS)
+                    ) + fetch_batches * (DOC_TIMEOUT + AGENT_CANCEL_GRACE_SECONDS)
                     enrichment_deadline = min(
                         deadline - FINALIZATION_RESERVE_SECONDS,
                         time.monotonic() + enrichment_window,

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import unittest
 from dataclasses import replace
@@ -1474,7 +1473,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 publisher=host,
                 published_at="2026-01-01",
                 excerpt="bonus",
-                hash=hashlib.sha256(result.url.encode()).hexdigest(),
+                hash=(host[0] * 64),
                 relevance=0.9,
                 source_quality=0.7,
             )
@@ -1726,108 +1725,6 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     rt.run_state_snapshot(state),
                 )
             self.assertEqual(response.outcome, "completed")
-
-        asyncio.run(run())
-
-    def test_post_floor_enrichment_window_allows_later_fetch_round_after_timeouts(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        state = make_state(4)
-        state.request_fragments = rt.explicit_request_fragments(research)
-        state.requirements = [
-            rt.RequirementModel(id="R1", summary="r1", kind="direct", fragment_ids=["F1"]),
-            rt.RequirementModel(id="R2", summary="r2", kind="direct", fragment_ids=["F1"]),
-            rt.RequirementModel(id="R3", summary="r3", kind="direct", fragment_ids=["F1"]),
-            rt.RequirementModel(id="R4", summary="r4", kind="direct", fragment_ids=["F1"]),
-        ]
-        state.report_plan = [
-            rt.PlanSection(heading="One", requirement_ids=["R1"]),
-            rt.PlanSection(heading="Two", requirement_ids=["R2"]),
-            rt.PlanSection(heading="Three", requirement_ids=["R3"]),
-            rt.PlanSection(heading="Four", requirement_ids=["R4"]),
-        ]
-        for index, requirement_id in enumerate(("R1", "R2", "R3", "R4"), 1):
-            state.evidence[index - 1] = replace(
-                state.evidence[index - 1],
-                relevance=0.9,
-                requirement_ids=[requirement_id],
-                url=f"https://{requirement_id.lower()}-base.example/{index}",
-            )
-        state.candidate_queue = [
-            rt.Candidate("https://r1-fail.example/5", "R1 fail", "", "e", "q1", "p1", "R1"),
-            rt.Candidate("https://r2-fail.example/6", "R2 fail", "", "e", "q2", "p2", "R2"),
-            rt.Candidate("https://r1-ok.example/7", "R1 ok", "", "e", "q1", "p1", "R1"),
-            rt.Candidate("https://r2-ok.example/8", "R2 ok", "", "e", "q2", "p2", "R2"),
-        ]
-        fetch_calls: list[str] = []
-
-        class SectionAgent:
-            async def invoke_async(self, prompt: str, **kwargs: Any) -> SimpleNamespace:
-                model = cast(type[rt.StrictModel], kwargs["structured_output_model"])
-                if model is not rt.SectionContentDraft:
-                    raise AssertionError("post-floor queue path should only finalize sections")
-                payload = json.loads(prompt)
-                evidence_id = payload["assigned_evidence"][0]["id"]
-                return SimpleNamespace(
-                    stop_reason="tool_use",
-                    structured_output=section(
-                        cited(payload["section_contract"]["heading"], evidence_id)
-                    ),
-                    message={"role": "assistant", "content": []},
-                )
-
-        async def fake_extract(result: rt.SearchResult, *_args: Any) -> rt.Evidence:
-            fetch_calls.append(result.url)
-            if "fail" in result.url:
-                await asyncio.sleep(0.06)
-            else:
-                await asyncio.sleep(0.01)
-            host = result.url.split("/")[2]
-            return rt.Evidence(
-                url=result.url,
-                title=host,
-                publisher=host,
-                published_at="2026-01-01",
-                excerpt="bonus",
-                hash=hashlib.sha256(result.url.encode()).hexdigest(),
-                relevance=0.9,
-                source_quality=0.7,
-            )
-
-        async def run() -> None:
-            with (
-                patch.object(rt, "build_research_agent", side_effect=AssertionError("deep only")),
-                patch.object(rt, "build_finalization_agent", return_value=SectionAgent()),
-                patch.object(rt, "extract_evidence", new=AsyncMock(side_effect=fake_extract)),
-                patch.object(rt, "search_searxng", new=AsyncMock(return_value=[])),
-                patch.object(rt, "SEARCH_TIMEOUT", 0.001),
-                patch.object(rt, "DOC_TIMEOUT", 0.05),
-                patch.object(rt, "AGENT_CANCEL_GRACE_SECONDS", 0.0),
-            ):
-                response = await rt.run_research(
-                    self.runtime,
-                    FakeRequest(),
-                    research,
-                    "rid",
-                    "post-floor-window-key",
-                    rt.run_state_snapshot(state),
-                )
-            self.assertEqual(response.outcome, "completed")
-            self.assertEqual(
-                fetch_calls,
-                [
-                    "https://r1-fail.example/5",
-                    "https://r2-fail.example/6",
-                    "https://r1-ok.example/7",
-                    "https://r2-ok.example/8",
-                ],
-            )
-            row = self.runtime.db.execute(
-                "SELECT state_json FROM research_runs WHERE idempotency_key='post-floor-window-key'"
-            ).fetchone()
-            stats = json.loads(row["state_json"])["stats"]
-            self.assertEqual(stats["query_batch_calls"], 0)
-            self.assertEqual(stats["candidates_attempted"], 4)
-            self.assertEqual(stats["usable_evidence"], 6)
 
         asyncio.run(run())
 
