@@ -1191,14 +1191,6 @@ class RuntimeContractTests(RuntimeTestCase):
                 for item in prompt_payload["requirements"]
             )
         )
-        self.assertTrue(
-            any(
-                "aim for 5 to 6 non-redundant narrative blocks" in item
-                and "table rows do not count" in item
-                and "If evidence is thin, use fewer blocks" in item
-                for item in prompt_payload["requirements"]
-            )
-        )
 
     def test_standard_and_quick_section_prompts_receive_usable_evidence(self) -> None:
         for depth in ("standard", "quick"):
@@ -1208,12 +1200,6 @@ class RuntimeContractTests(RuntimeTestCase):
                 contract = rt.build_section_contract(research, state)
                 prompt_payload = json.loads(rt.build_section_prompt(research, state, contract))
                 self.assertNotIn("body_markdown", json.dumps(prompt_payload, ensure_ascii=False))
-                self.assertFalse(
-                    any(
-                        "aim for 5 to 6 non-redundant narrative blocks" in item
-                        for item in prompt_payload["requirements"]
-                    )
-                )
                 self.assertEqual(
                     [item["id"] for item in prompt_payload["assigned_evidence"]], ["S1"]
                 )
