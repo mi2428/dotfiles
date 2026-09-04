@@ -54,6 +54,22 @@ def plan_for(research: rt.ResearchRequest) -> rt.PlanDraft:
     )
 
 
+def covered_deep_state(research: rt.ResearchRequest) -> rt.RunState:
+    state = make_state(3)
+    assignments = [("R1", "direct"), ("R2", "compare-a"), ("R2", "compare-b")]
+    state.evidence = [
+        replace(
+            item,
+            requirement_ids=[requirement_id],
+            url=f"https://{host}.example/doc",
+            search_query=research.query,
+        )
+        for item, (requirement_id, host) in zip(state.evidence, assignments, strict=True)
+    ]
+    rt.store_initial_plan(state, research, plan_for(research))
+    return state
+
+
 def cited(text: str, *source_ids: str) -> rt.CitedPlainText:
     return rt.CitedPlainText(text=text, source_ids=list(source_ids))
 
@@ -916,6 +932,356 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             rt.next_candidate_batch(queued_state("quick"), budget),
             rt.next_candidate_batch(queued_state("deep"), budget),
         )
+
+    def test_surplus_selection_is_pure_ordered_and_bounded(self) -> None:
+        state = make_state(rt.MAX_PAYLOAD_EVIDENCE_EXCERPTS)
+        state.request_fragments = [rt.RequestFragmentModel(id="F1", text="Need evidence")]
+        state.requirements = [
+            rt.RequirementModel(
+                id=f"R{i}", summary=f"requirement {i}", kind="direct", fragment_ids=["F1"]
+            )
+            for i in range(1, 8)
+        ]
+        state.report_plan = [
+            rt.PlanSection(heading=f"Section {i}", requirement_ids=[f"R{i}"])
+            for i in [7, 1, 2, 3, 4, 5, 6]
+        ]
+        state.evidence = [
+            replace(
+                item,
+                requirement_ids=["R7", *(["R1"] if index == 0 else [])],
+            )
+            for index, item in enumerate(state.evidence)
+        ]
+        state.failed_candidates = [
+            rt.FailedCandidate("https://failed.example/doc", "timeout", "fetch")
+        ]
+        pairs = [
+            ("https://r7-new.example/doc", "R7"),
+            (state.evidence[0].url, "R1"),
+            ("https://failed.example/doc", "R1"),
+            ("https://example.com/other", "R1"),
+            ("https://r1-new.example/doc", "R1"),
+            ("https://r1-second.example/doc", "R1"),
+            *[(f"https://r{i}-new.example/doc", f"R{i}") for i in range(6, 1, -1)],
+            ("https://invalid.example/doc", "R999"),
+        ]
+        state.candidate_queue = [
+            rt.Candidate(url, rid, "", "e", "q", "p", rid) for url, rid in pairs
+        ]
+        before = rt.run_state_snapshot(state)
+
+        selected = rt.select_surplus_candidates(state, rt.make_budget("deep"))
+        capped = rt.select_surplus_candidates(
+            state, replace(rt.make_budget("deep"), evidence=len(state.evidence) + 5)
+        )
+
+        self.assertEqual([item.requirement_id for item in selected], [f"R{i}" for i in range(1, 7)])
+        self.assertEqual([item.requirement_id for item in capped], [f"R{i}" for i in range(1, 6)])
+        self.assertEqual(rt.run_state_snapshot(state), before)
+
+    def test_fresh_coverage_checkpoint_precedes_one_concurrent_surplus_wave(self) -> None:
+        research = rt.ResearchRequest(query="Need evidence", depth="deep")
+        state = covered_deep_state(research)
+        state.candidate_queue = [
+            rt.Candidate(
+                f"https://surplus{i}.example/doc", f"Surplus {i}", "", "e", "q", "p", f"R{i}"
+            )
+            for i in (2, 1)
+        ]
+        structured = StructuredAgent(
+            [
+                section(cited("R1 uses all evidence", "S1", "S4")),
+                comparison_section("R2 uses all evidence", "S2", "S3", "S5"),
+            ]
+        )
+        checkpoints: list[tuple[str | None, int]] = []
+        started: list[str] = []
+        both_started = asyncio.Event()
+        original_checkpoint = rt.checkpoint_run
+
+        async def capture_checkpoint(*args: Any, **kwargs: Any) -> None:
+            snapshot = cast(dict[str, Any], kwargs["state"])
+            checkpoints.append((snapshot["collection_decision"], len(snapshot["evidence_ledger"])))
+            await original_checkpoint(*args, **kwargs)
+
+        async def fake_extract(result: rt.SearchResult, *_args: Any) -> rt.Evidence:
+            self.assertEqual(checkpoints, [("coverage_complete", 3)])
+            started.append(result.url)
+            if len(started) == 2:
+                both_started.set()
+            await asyncio.wait_for(both_started.wait(), 0.5)
+            index = 1 if "surplus1" in result.url else 2
+            return rt.Evidence(
+                result.url,
+                result.title,
+                "publisher",
+                "",
+                "Additional evidence",
+                str(index) * 64,
+                0.9,
+                0.7,
+            )
+
+        async def run() -> None:
+            with (
+                patch.object(rt, "checkpoint_run", new=capture_checkpoint),
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+                patch.object(rt, "search_searxng", new=AsyncMock()) as search,
+                patch.object(
+                    rt, "extract_evidence", new=AsyncMock(side_effect=fake_extract)
+                ) as extract,
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    "surplus-success-key",
+                    rt.run_state_snapshot(state),
+                )
+            self.assertEqual(response.outcome, "completed")
+            self.assertEqual(
+                [call.args[0].url for call in extract.await_args_list],
+                ["https://surplus1.example/doc", "https://surplus2.example/doc"],
+            )
+            search.assert_not_awaited()
+            self.assertEqual(structured.models, [rt.SectionContentDraft, rt.SectionContentDraft])
+            self.assertIn(("coverage_complete", 5), checkpoints)
+            self.assertTrue(all(decision == "coverage_complete" for decision, _ in checkpoints))
+            self.assertIn("https://surplus1.example/doc", response.answer_markdown)
+            self.assertIn("https://surplus2.example/doc", response.answer_markdown)
+
+        asyncio.run(run())
+
+    def test_surplus_sweep_skips_short_reserve_and_resumed_floor(self) -> None:
+        research = rt.ResearchRequest(query="Need evidence", depth="deep")
+        short = covered_deep_state(research)
+        short.candidate_queue = [
+            rt.Candidate("https://surplus.example/doc", "Surplus", "", "e", "q", "p", "R1")
+        ]
+        resumed = covered_deep_state(research)
+        resumed.candidate_queue = list(short.candidate_queue)
+        rt.set_collection_decision(resumed, "coverage_complete")
+        structured = StructuredAgent(
+            [
+                section(cited("Existing R1", "S1")),
+                comparison_section("Existing R2", "S2", "S3"),
+            ]
+            * 2
+        )
+
+        async def run() -> None:
+            with (
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+                patch.object(rt, "search_searxng", new=AsyncMock()) as search,
+                patch.object(rt, "extract_evidence", new=AsyncMock()) as extract,
+            ):
+                with patch.object(
+                    rt,
+                    "wall_budget_seconds",
+                    return_value=rt.FINALIZATION_RESERVE_SECONDS + rt.DOC_TIMEOUT - 1.0,
+                ):
+                    short_response = await rt.run_research(
+                        self.runtime,
+                        FakeRequest(),
+                        research,
+                        "short-rid",
+                        "surplus-short-key",
+                        rt.run_state_snapshot(short),
+                    )
+                resumed_response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "resume-rid",
+                    "surplus-resume-key",
+                    rt.run_state_snapshot(resumed),
+                )
+            self.assertEqual([short_response.outcome, resumed_response.outcome], ["completed"] * 2)
+            extract.assert_not_awaited()
+            search.assert_not_awaited()
+
+        asyncio.run(run())
+
+    def test_surplus_expected_failures_preserve_completed_floor(self) -> None:
+        research = rt.ResearchRequest(query="Need evidence", depth="deep")
+        state = covered_deep_state(research)
+        state.candidate_queue = [
+            rt.Candidate(f"https://failure{i}.example/doc", "Failure", "", "e", "q", "p", f"R{i}")
+            for i in (1, 2)
+        ]
+        structured = StructuredAgent(
+            [
+                section(cited("Existing R1", "S1")),
+                comparison_section("Existing R2", "S2", "S3"),
+            ]
+        )
+
+        async def run() -> None:
+            with (
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+                patch.object(
+                    rt, "extract_evidence", new=AsyncMock(side_effect=[OSError(), TimeoutError()])
+                ) as extract,
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    "surplus-failures-key",
+                    rt.run_state_snapshot(state),
+                )
+            self.assertEqual(response.outcome, "completed")
+            self.assertEqual(extract.await_count, 2)
+            row = self.runtime.db.execute(
+                "SELECT status, state_json FROM research_runs WHERE idempotency_key=?",
+                ("surplus-failures-key",),
+            ).fetchone()
+            snapshot = json.loads(row["state_json"])
+            self.assertEqual(row["status"], "completed")
+            self.assertEqual(snapshot["collection_decision"], "coverage_complete")
+            self.assertEqual(len(snapshot["evidence_ledger"]), 3)
+
+        asyncio.run(run())
+
+    def test_surplus_deadline_timeout_preserves_completed_floor(self) -> None:
+        research = rt.ResearchRequest(query="Need evidence", depth="deep")
+        state = covered_deep_state(research)
+        state.candidate_queue = [
+            rt.Candidate("https://slow.example/doc", "Slow", "", "e", "q", "p", "R1")
+        ]
+        structured = StructuredAgent(
+            [
+                section(cited("Existing R1", "S1")),
+                comparison_section("Existing R2", "S2", "S3"),
+            ]
+        )
+        started = asyncio.Event()
+        never = asyncio.Event()
+
+        async def slow_extract(*_args: Any) -> rt.Evidence:
+            started.set()
+            await never.wait()
+            raise AssertionError("unreachable")
+
+        async def run() -> None:
+            with (
+                patch.object(rt, "DOC_TIMEOUT", 0.01),
+                patch.object(
+                    rt,
+                    "wall_budget_seconds",
+                    return_value=rt.FINALIZATION_RESERVE_SECONDS + 0.02,
+                ),
+                patch.object(rt, "build_finalization_agent", return_value=structured),
+                patch.object(rt, "extract_evidence", new=AsyncMock(side_effect=slow_extract)),
+            ):
+                response = await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    "rid",
+                    "surplus-timeout-key",
+                    rt.run_state_snapshot(state),
+                )
+            self.assertTrue(started.is_set())
+            self.assertEqual(response.outcome, "completed")
+            row = self.runtime.db.execute(
+                "SELECT status, state_json FROM research_runs WHERE idempotency_key=?",
+                ("surplus-timeout-key",),
+            ).fetchone()
+            snapshot = json.loads(row["state_json"])
+            self.assertEqual(row["status"], "completed")
+            self.assertEqual(snapshot["collection_decision"], "coverage_complete")
+            self.assertEqual(snapshot["phase"], "sections")
+            self.assertEqual(len(snapshot["evidence_ledger"]), 3)
+
+        asyncio.run(run())
+
+    def test_surplus_cancel_and_unexpected_failures_preserve_floor_snapshot(self) -> None:
+        research = rt.ResearchRequest(query="Need evidence", depth="deep")
+
+        async def cancelled_run() -> None:
+            state = covered_deep_state(research)
+            state.candidate_queue = [
+                rt.Candidate("https://cancel.example/doc", "Cancel", "", "e", "q", "p", "R1")
+            ]
+            started = asyncio.Event()
+            never = asyncio.Event()
+
+            async def slow_extract(*_args: Any) -> rt.Evidence:
+                started.set()
+                await never.wait()
+                raise AssertionError("unreachable")
+
+            with patch.object(rt, "extract_evidence", new=AsyncMock(side_effect=slow_extract)):
+                task = asyncio.create_task(
+                    rt.run_research(
+                        self.runtime,
+                        FakeRequest(),
+                        research,
+                        "cancel-rid",
+                        "surplus-cancel-key",
+                        rt.run_state_snapshot(state),
+                    )
+                )
+                await asyncio.wait_for(started.wait(), 0.5)
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+            row = self.runtime.db.execute(
+                "SELECT status, state_json FROM research_runs WHERE idempotency_key=?",
+                ("surplus-cancel-key",),
+            ).fetchone()
+            snapshot = json.loads(row["state_json"])
+            self.assertEqual(row["status"], "cancelled")
+            self.assertEqual(snapshot["collection_decision"], "coverage_complete")
+            self.assertEqual(snapshot["phase"], "sections")
+
+        async def fail_closed_run(error: BaseException, key: str) -> None:
+            state = covered_deep_state(research)
+            state.candidate_queue = [
+                rt.Candidate("https://success.example/doc", "Success", "", "e", "q", "p", "R1"),
+                rt.Candidate("https://failure.example/doc", "Failure", "", "e", "q", "p", "R2"),
+            ]
+            success = rt.Evidence(
+                "https://success.example/doc",
+                "Success",
+                "publisher",
+                "",
+                "Additional evidence",
+                "a" * 64,
+                0.9,
+                0.7,
+            )
+            with (
+                patch.object(rt, "extract_evidence", new=AsyncMock(side_effect=[success, error])),
+                self.assertRaises(type(error)) as raised,
+            ):
+                await rt.run_research(
+                    self.runtime,
+                    FakeRequest(),
+                    research,
+                    f"{key}-rid",
+                    key,
+                    rt.run_state_snapshot(state),
+                )
+            self.assertIs(raised.exception, error)
+            row = self.runtime.db.execute(
+                "SELECT status, state_json FROM research_runs WHERE idempotency_key=?", (key,)
+            ).fetchone()
+            snapshot = json.loads(row["state_json"])
+            self.assertEqual(row["status"], "failed")
+            self.assertEqual(snapshot["collection_decision"], "coverage_complete")
+            self.assertEqual(snapshot["phase"], "sections")
+            self.assertEqual(len(snapshot["evidence_ledger"]), 3)
+
+        asyncio.run(cancelled_run())
+        asyncio.run(
+            fail_closed_run(rt.IntegrityError("surplus integrity"), "surplus-integrity-key")
+        )
+        asyncio.run(fail_closed_run(RuntimeError("surplus programmer"), "surplus-programmer-key"))
 
     def test_section_evidence_context_deduplicates_shared_balanced_prefix(self) -> None:
         state = make_state(rt.MAX_PAYLOAD_EVIDENCE_EXCERPTS)

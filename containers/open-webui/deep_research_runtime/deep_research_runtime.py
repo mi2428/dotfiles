@@ -3210,6 +3210,62 @@ def next_candidate_batch(state: RunState, budget: Budget) -> list[Candidate]:
     return selected
 
 
+def select_surplus_candidates(state: RunState, budget: Budget) -> list[Candidate]:
+    """Select one final queued candidate per requirement without mutating state."""
+
+    max_batch = min(DEEP_FETCH_BATCH_SIZE, max(0, budget.evidence - len(state.evidence)))
+    if max_batch == 0:
+        return []
+    requirement_order = list(
+        dict.fromkeys(
+            requirement_id
+            for section in state.report_plan
+            for requirement_id in section.requirement_ids
+        )
+    )
+    requirements = requirement_by_id(state)
+    known_urls = {item.url for item in state.evidence}
+    known_urls.update(item.url for item in state.failed_candidates)
+    selected_urls: set[str] = set()
+    section_counts = [
+        len(section_evidence_ids(state, section.requirement_ids)) for section in state.report_plan
+    ]
+    selected: list[Candidate] = []
+    for requirement_id in requirement_order:
+        if len(selected) >= max_batch:
+            break
+        if requirement_id not in requirements:
+            continue
+        owner_indexes = [
+            index
+            for index, section in enumerate(state.report_plan)
+            if requirement_id in section.requirement_ids
+        ]
+        if not any(
+            section_counts[index] < MAX_PAYLOAD_EVIDENCE_EXCERPTS for index in owner_indexes
+        ):
+            continue
+        hosts = evidence_hosts_for_requirement(state, requirement_id)
+        candidate = next(
+            (
+                item
+                for item in state.candidate_queue
+                if item.requirement_id == requirement_id
+                and item.url not in known_urls
+                and item.url not in selected_urls
+                and (urlparse(item.url).hostname or item.url) not in hosts
+            ),
+            None,
+        )
+        if candidate is None:
+            continue
+        selected.append(candidate)
+        selected_urls.add(candidate.url)
+        for index in owner_indexes:
+            section_counts[index] += 1
+    return selected
+
+
 def apply_evidence_update(state: RunState, evidence: Evidence) -> None:
     state.evidence.append(replace(evidence, id=source_id(len(state.evidence))))
     state.evidence_revision += 1
@@ -4155,6 +4211,99 @@ async def run_research(
         await save("running")
         return added
 
+    async def run_surplus_sweep() -> None:
+        collection_deadline = deadline - FINALIZATION_RESERVE_SECONDS
+        if collection_deadline - time.monotonic() < DOC_TIMEOUT:
+            return
+        candidates = select_surplus_candidates(state, budget)
+        if not candidates:
+            return
+        state.stats["candidates_attempted"] = int(state.stats["candidates_attempted"]) + len(
+            candidates
+        )
+        tasks = [
+            asyncio.create_task(
+                extract_evidence(
+                    SearchResult(
+                        candidate.url,
+                        candidate.title,
+                        candidate.snippet,
+                        candidate.engine,
+                        candidate.search_query,
+                    ),
+                    research.query,
+                    "; ".join(
+                        filter(
+                            None,
+                            [
+                                research.focus or "",
+                                candidate.purpose,
+                                requirement_by_id(state)[candidate.requirement_id].summary,
+                            ],
+                        )
+                    ),
+                )
+            )
+            for candidate in candidates
+        ]
+        try:
+            async with asyncio.timeout_at(collection_deadline):
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+        except TimeoutError:
+            await cancel_tasks_bounded(tasks)
+            return
+        except BaseException:
+            await cancel_tasks_bounded(tasks)
+            raise
+
+        expected_errors = (aiohttp.ClientError, OSError, TimeoutError, ValueError)
+        for result in results:
+            if isinstance(result, IntegrityError):
+                raise result
+            if isinstance(result, BaseException) and not isinstance(result, expected_errors):
+                raise result
+            if not isinstance(result, (Evidence, BaseException)):
+                raise TypeError("surplus extractor returned an invalid result")
+
+        accepted: list[Evidence] = []
+        known_urls = {item.url for item in state.evidence}
+        known_hashes = {item.hash for item in state.evidence}
+        for candidate, result in zip(candidates, results, strict=True):
+            if isinstance(result, BaseException):
+                details = safe_operation_error_details(result)
+                state.stats["source_skips"] += 1
+                state.stats["candidates_failed"] = int(state.stats["candidates_failed"]) + 1
+                record_operation_failure(
+                    state,
+                    research_id,
+                    "fetch",
+                    "request",
+                    details,
+                )
+                record_failed_candidate(state, candidate, details)
+                continue
+            evidence = replace(result, requirement_ids=[candidate.requirement_id])
+            if evidence.relevance <= 0:
+                state.stats["source_skips"] += 1
+                continue
+            host = urlparse(evidence.url).hostname or evidence.url
+            requirement_hosts = evidence_hosts_for_requirement(state, candidate.requirement_id)
+            if evidence.url in known_urls or evidence.hash in known_hashes:
+                state.stats["duplicate_sources"] += 1
+                continue
+            if host in requirement_hosts:
+                state.stats["source_skips"] += 1
+                continue
+            accepted.append(evidence)
+            known_urls.add(evidence.url)
+            known_hashes.add(evidence.hash)
+
+        for evidence in accepted:
+            apply_evidence_update(state, evidence)
+        if accepted:
+            set_collection_decision(state, "coverage_complete")
+        await save("running")
+
     async def finalize_sections() -> FinalReport:
         nonlocal model_recoveries
         if fatal_errors:
@@ -4236,6 +4385,8 @@ async def run_research(
                         await save("running")
                         if decision == "evidence_cap_exhausted":
                             raise ExpectedResearchFailure("evidence_exhausted")
+                        if decision == "coverage_complete":
+                            await run_surplus_sweep()
                         break
                     if state.candidate_queue:
                         fetch_batch = next_candidate_batch(state, budget)
