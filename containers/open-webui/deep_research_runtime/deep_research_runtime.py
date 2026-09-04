@@ -2111,6 +2111,84 @@ def evidence_hosts_for_requirement(state: RunState, requirement_id: str) -> set[
     }
 
 
+def requirement_floor(requirement: RequirementModel) -> int:
+    return required_independent_hosts(requirement.kind)
+
+
+def total_required_hosts(state: RunState) -> int:
+    return sum(requirement_floor(item) for item in state.requirements)
+
+
+def capped_requirement_host_score(state: RunState, requirement: RequirementModel) -> int:
+    return min(
+        len(evidence_hosts_for_requirement(state, requirement.id)),
+        requirement_floor(requirement) + 1,
+    )
+
+
+def enrichment_target_hosts(state: RunState) -> int:
+    return (total_required_hosts(state) * 13 + 9) // 10
+
+
+def enrichment_host_score(state: RunState) -> int:
+    return sum(capped_requirement_host_score(state, item) for item in state.requirements)
+
+
+def requirement_excerpt_chars(state: RunState, requirement_id: str) -> int:
+    requirement = requirement_by_id(state).get(requirement_id)
+    if requirement is None:
+        return 0
+    chars = 0
+    seen_hosts: set[str] = set()
+    for evidence in evidence_by_requirement(state).get(requirement_id, []):
+        host = urlparse(evidence.url).hostname or evidence.url
+        if host in seen_hosts:
+            continue
+        seen_hosts.add(host)
+        chars += min(len(evidence.excerpt), TOOL_EXCERPT_CHARS)
+    return chars
+
+
+def active_requirement_ids(state: RunState) -> list[str]:
+    order = {
+        requirement_id: index
+        for index, requirement_id in enumerate(
+            dict.fromkeys(
+                requirement_id
+                for section in state.report_plan
+                for requirement_id in section.requirement_ids
+            )
+        )
+    }
+    order.update(
+        {
+            requirement.id: len(order) + index
+            for index, requirement in enumerate(state.requirements)
+            if requirement.id not in order
+        }
+    )
+    if not all_requirements_covered(state):
+        return [item.id for item in state.requirements if not requirement_is_covered(state, item)]
+    target = enrichment_target_hosts(state)
+    score = enrichment_host_score(state)
+    if score >= target:
+        return []
+    active = [
+        item
+        for item in state.requirements
+        if capped_requirement_host_score(state, item) < requirement_floor(item) + 1
+    ]
+    active.sort(
+        key=lambda item: (
+            -(requirement_floor(item) + 1 - capped_requirement_host_score(state, item)),
+            len(evidence_hosts_for_requirement(state, item.id)),
+            requirement_excerpt_chars(state, item.id),
+            order.get(item.id, len(order)),
+        )
+    )
+    return [item.id for item in active]
+
+
 def requirement_gap_error(state: RunState, requirement_id: str) -> str | None:
     requirement = requirement_by_id(state).get(requirement_id)
     if requirement is None:
@@ -3011,11 +3089,11 @@ def build_section_prompt(
                 "to determine the source-to-requirement and host mapping for those citations."
             ),
             (
-                "When assigned evidence supports it, aim for 5 to 6 non-redundant narrative "
-                "blocks (paragraphs and substantive bullet items); table rows do not count "
-                "toward this target. Each block should add a distinct evidence-backed fact, "
-                "comparison, causal link, caveat, or implication. If evidence is thin, use "
-                "fewer blocks rather than repeat, pad, or speculate."
+                "When assigned evidence supports it, aim for about 8 non-duplicate cited "
+                "information units across paragraphs, substantive bullet items, and table rows. "
+                "Each unit should add a distinct evidence-backed fact, comparison, causal link, "
+                "caveat, or implication. Prefer fewer units over padding, repetition, or "
+                "speculation."
             ),
         ]
     if contract.requires_comparison_table:
@@ -3041,7 +3119,11 @@ def build_query_batch_prompt(research: ResearchRequest, state: RunState) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
-def deterministic_query_batch(state: RunState, search_slots: int) -> SearchBatchDraft | None:
+def deterministic_query_batch(
+    state: RunState,
+    search_slots: int,
+    research: ResearchRequest | None = None,
+) -> SearchBatchDraft | None:
     """Build bounded queries from the validated plan when query generation is unavailable."""
 
     limit = min(DEEP_QUERY_BATCH_SIZE, search_slots)
@@ -3053,25 +3135,21 @@ def deterministic_query_batch(state: RunState, search_slots: int) -> SearchBatch
     for section in state.report_plan:
         for requirement_id in section.requirement_ids:
             headings[requirement_id].append(section.heading)
-    uncovered = set(uncovered_requirement_ids(state))
-    ordered_ids = list(
-        dict.fromkeys(
-            requirement_id
-            for section in state.report_plan
-            for requirement_id in section.requirement_ids
-            if requirement_id in uncovered
-        )
-    )
+    ordered_ids = active_requirement_ids(state)
     seen = set(state.searched_queries)
     queries: list[SearchBatchEntry] = []
-    # ponytail: three plan-derived variants; add query synthesis only if recall data demands it.
-    for variant in ("summary", "headings", "fragments"):
+    variants = ["summary", "headings", "fragments"]
+    if research is not None:
+        variants.extend(["query", "focus"])
+    for variant in variants:
         for requirement_id in ordered_ids:
             requirement = requirements[requirement_id]
             context = {
                 "summary": "",
                 "headings": " ".join(headings[requirement_id]),
                 "fragments": " ".join(fragments[item] for item in requirement.fragment_ids),
+                "query": research.query if research is not None else "",
+                "focus": (research.focus or "") if research is not None else "",
             }[variant]
             query = " ".join(filter(None, (requirement.summary, context)))[:MAX_QUERY_CHARS].strip()
             if query in seen:
@@ -3095,8 +3173,8 @@ def enqueue_candidates(
     requirement_id: str,
     purpose: str,
 ) -> int:
-    if requirement_id not in set(uncovered_requirement_ids(state)):
-        raise ValueError("candidate enqueue requires an uncovered requirement")
+    if requirement_id not in set(active_requirement_ids(state)):
+        raise ValueError("candidate enqueue requires an active requirement")
     known_urls = {item.url for item in state.evidence}
     known_urls.update(item.url for item in state.candidate_queue)
     known_urls.update(item.url for item in state.failed_candidates)
@@ -3184,35 +3262,85 @@ def record_failed_candidate(
 
 
 def next_candidate_batch(state: RunState, budget: Budget) -> list[Candidate]:
+    active_ids = active_requirement_ids(state)
+    if not active_ids:
+        return []
     selected: list[Candidate] = []
-    round_hosts: dict[str, set[str]] = {}
-    round_counts: dict[str, int] = {}
+    round_hosts: dict[str, set[str]] = {requirement_id: set() for requirement_id in active_ids}
     requirements = requirement_by_id(state)
-    remaining: list[Candidate] = []
+    floor_complete = all_requirements_covered(state)
+    capacities = {
+        requirement_id: (
+            1
+            if floor_complete
+            else max(
+                0,
+                requirement_floor(requirements[requirement_id])
+                - len(evidence_hosts_for_requirement(state, requirement_id)),
+            )
+        )
+        for requirement_id in active_ids
+        if requirement_id in requirements
+    }
     evidence_slots = max(0, budget.evidence - len(state.evidence))
     max_batch = min(DEEP_FETCH_BATCH_SIZE, evidence_slots)
-    for candidate in state.candidate_queue:
-        if len(selected) >= max_batch:
-            remaining.append(candidate)
-            continue
-        requirement_id = candidate.requirement_id
-        host = urlparse(candidate.url).hostname or candidate.url
-        requirement = requirements.get(requirement_id)
-        if requirement is None or requirement_is_covered(state, requirement):
-            state.stats["candidates_skipped"] += 1
-            continue
-        missing_hosts = required_independent_hosts(requirement.kind) - len(
-            evidence_hosts_for_requirement(state, requirement_id)
+    if floor_complete:
+        max_batch = min(
+            max_batch,
+            enrichment_target_hosts(state) - enrichment_host_score(state),
         )
-        if missing_hosts <= 0 or host in round_hosts.setdefault(requirement_id, set()):
+    remaining: list[Candidate] = []
+    by_requirement: dict[str, list[Candidate]] = {
+        requirement_id: [] for requirement_id in active_ids
+    }
+    for candidate in state.candidate_queue:
+        requirement_id = candidate.requirement_id
+        requirement = requirements.get(requirement_id)
+        if requirement is None:
             state.stats["candidates_skipped"] += 1
             continue
-        if round_counts.get(requirement_id, 0) >= missing_hosts:
-            remaining.append(candidate)
+        if any(item.url == candidate.url for item in state.evidence) or any(
+            item.url == candidate.url for item in state.failed_candidates
+        ):
+            state.stats["candidates_skipped"] += 1
             continue
-        selected.append(candidate)
-        round_hosts[requirement_id].add(host)
-        round_counts[requirement_id] = round_counts.get(requirement_id, 0) + 1
+        host = urlparse(candidate.url).hostname or candidate.url
+        if host in evidence_hosts_for_requirement(state, requirement_id):
+            state.stats["candidates_skipped"] += 1
+            continue
+        if requirement_id not in by_requirement:
+            continue
+        by_requirement[requirement_id].append(candidate)
+    while len(selected) < max_batch:
+        progress = False
+        for requirement_id in active_ids:
+            bucket = by_requirement[requirement_id]
+            if len(round_hosts[requirement_id]) >= capacities.get(requirement_id, 0):
+                continue
+            while bucket:
+                candidate = bucket.pop(0)
+                host = urlparse(candidate.url).hostname or candidate.url
+                if host in round_hosts[requirement_id]:
+                    state.stats["candidates_skipped"] += 1
+                    continue
+                selected.append(candidate)
+                round_hosts[requirement_id].add(host)
+                progress = True
+                break
+            if len(selected) >= max_batch:
+                break
+        if not progress:
+            break
+    selected_urls = {item.url for item in selected}
+    for requirement_id in active_ids:
+        remaining.extend(
+            item for item in by_requirement[requirement_id] if item.url not in selected_urls
+        )
+    remaining.extend(
+        item
+        for item in state.candidate_queue
+        if item.requirement_id not in by_requirement and item.url not in selected_urls
+    )
     state.candidate_queue = remaining
     return selected
 
@@ -3259,8 +3387,8 @@ def structured_role_timeout_seconds(settings: Settings, remaining: float) -> flo
 
 
 def validated_query_entry(state: RunState, entry: SearchBatchEntry) -> SearchBatchEntry:
-    if entry.requirement_id not in set(uncovered_requirement_ids(state)):
-        raise ValueError("query entry must target an uncovered requirement")
+    if entry.requirement_id not in set(active_requirement_ids(state)):
+        raise ValueError("query entry must target an active requirement")
     return SearchBatchEntry(
         query=bounded_query(entry.query),
         purpose=bounded_purpose(entry.purpose),
@@ -4069,25 +4197,48 @@ async def run_research(
         raise ExpectedResearchFailure("structured_plan_invalid")
 
     async def run_deep_query_batch() -> int:
+        nonlocal last_query_batch_deterministic
         state.phase = "research"
         state.stats["requirement_coverage"] = requirement_coverage_snapshot(state)
         search_slots = remaining_budgets(state, budget)["searches"]
         if search_slots <= 0:
             return 0
+        floor_complete = all_requirements_covered(state)
+        last_query_batch_deterministic = floor_complete
+
+        def collection_timeout(limit: float) -> float | None:
+            remaining = collection_deadline() - time.monotonic()
+            if remaining <= 0:
+                return None
+            return min(remaining, limit)
+
         try:
-            draft = cast(
-                SearchBatchDraft,
-                await invoke_structured(
-                    build_query_batch_prompt(research, state),
+            if floor_complete:
+                draft = deterministic_query_batch(state, search_slots, research)
+                if draft is None:
+                    return 0
+            else:
+                last_query_batch_deterministic = False
+                timeout = collection_timeout(SEARCH_TIMEOUT + AGENT_CANCEL_GRACE_SECONDS)
+                if timeout is None:
+                    return 0
+                draft = cast(
                     SearchBatchDraft,
-                    remaining=max(1.0, deadline - time.monotonic()),
-                ),
-            )
-            state.stats["query_batch_calls"] += 1
+                    await asyncio.wait_for(
+                        invoke_structured(
+                            build_query_batch_prompt(research, state),
+                            SearchBatchDraft,
+                            remaining=max(1.0, deadline - time.monotonic()),
+                        ),
+                        timeout=timeout,
+                    ),
+                )
+                state.stats["query_batch_calls"] += 1
         except ExpectedResearchFailure as exc:
             if exc.reason != "provider_failure":
                 raise
-            draft = deterministic_query_batch(state, search_slots)
+            last_query_batch_deterministic = True
+            draft = deterministic_query_batch(state, search_slots, research)
             if draft is None:
                 raise
             state.stats["research_salvages"] += 1
@@ -4116,17 +4267,23 @@ async def run_research(
             batch_seen.add(validated.query)
             entries.append(validated)
         added = 0
+        timeout = collection_timeout(SEARCH_TIMEOUT)
+        if timeout is None:
+            return 0
         for entry in entries:
             state.searched_queries.add(entry.query)
         state.stats["searches"] = len(state.searched_queries)
         results = await asyncio.gather(
             *[
-                search_searxng(
-                    runtime.settings,
-                    entry.query,
-                    research.language,
-                    research.recency_days,
-                    SEARCH_RESULT_LIMIT,
+                asyncio.wait_for(
+                    search_searxng(
+                        runtime.settings,
+                        entry.query,
+                        research.language,
+                        research.recency_days,
+                        SEARCH_RESULT_LIMIT,
+                    ),
+                    timeout=timeout,
                 )
                 for entry in entries
             ],
@@ -4231,96 +4388,177 @@ async def run_research(
             if research.depth == "deep":
                 await ensure_deep_plan()
                 idle_batches = 0
+                enrichment_deadline: float | None = None
+                last_query_batch_deterministic = False
+
+                def collection_deadline() -> float:
+                    return min(
+                        deadline - FINALIZATION_RESERVE_SECONDS,
+                        enrichment_deadline if enrichment_deadline is not None else float("inf"),
+                    )
+
+                def collection_time_left(limit: float) -> float | None:
+                    remaining = collection_deadline() - time.monotonic()
+                    if remaining <= 0:
+                        return None
+                    return min(remaining, limit)
+
+                async def finalize_after_collection_deadline() -> None:
+                    if usable_evidence_count(state) <= 0:
+                        raise ExpectedResearchFailure("evidence_exhausted")
+                    set_collection_decision(
+                        state,
+                        (
+                            "coverage_complete"
+                            if all_requirements_covered(state)
+                            else "voluntary_stop"
+                        ),
+                    )
+                    await save("running")
+
+                def start_enrichment_deadline() -> None:
+                    nonlocal enrichment_deadline
+                    if enrichment_deadline is not None or not all_requirements_covered(state):
+                        return
+                    bonus_hosts = max(
+                        0, enrichment_target_hosts(state) - enrichment_host_score(state)
+                    )
+                    query_batches = (
+                        bonus_hosts + DEEP_QUERY_BATCH_SIZE - 1
+                    ) // DEEP_QUERY_BATCH_SIZE
+                    fetch_batches = (
+                        bonus_hosts + DEEP_FETCH_BATCH_SIZE - 1
+                    ) // DEEP_FETCH_BATCH_SIZE
+                    enrichment_window = query_batches * (
+                        SEARCH_TIMEOUT + AGENT_CANCEL_GRACE_SECONDS
+                    ) + fetch_batches * (DOC_TIMEOUT + AGENT_CANCEL_GRACE_SECONDS)
+                    enrichment_deadline = min(
+                        deadline - FINALIZATION_RESERVE_SECONDS,
+                        time.monotonic() + enrichment_window,
+                    )
+
                 while state.collection_decision is None:
                     state.stats["requirement_coverage"] = requirement_coverage_snapshot(state)
+                    floor_complete = all_requirements_covered(state)
+                    reached_soft_target = enrichment_host_score(state) >= enrichment_target_hosts(
+                        state
+                    )
+                    if floor_complete:
+                        start_enrichment_deadline()
+                        if (
+                            time.monotonic() >= collection_deadline()
+                            and usable_evidence_count(state) > 0
+                        ):
+                            set_collection_decision(state, "coverage_complete")
+                            await save("running")
+                            break
                     if should_reserve_finalization(deadline) and usable_evidence_count(state) > 0:
                         set_collection_decision(state, "voluntary_stop")
                         await save("running")
                         break
                     decision = evidence_limit_decision(state, budget)
                     if decision is not None:
-                        set_collection_decision(state, decision)
-                        await save("running")
-                        if decision == "evidence_cap_exhausted":
-                            raise ExpectedResearchFailure("evidence_exhausted")
+                        if (
+                            decision == "coverage_complete"
+                            and floor_complete
+                            and not reached_soft_target
+                        ):
+                            decision = None
+                        else:
+                            set_collection_decision(state, decision)
+                            await save("running")
+                            if decision == "evidence_cap_exhausted":
+                                raise ExpectedResearchFailure("evidence_exhausted")
+                            break
+                    if collection_deadline() - time.monotonic() <= 0:
+                        await finalize_after_collection_deadline()
                         break
                     if state.candidate_queue:
                         fetch_batch = next_candidate_batch(state, budget)
                         if not fetch_batch:
                             await save("running")
-                            continue
-                        state.stats["candidates_attempted"] = int(
-                            state.stats["candidates_attempted"]
-                        ) + len(fetch_batch)
-                        results = await asyncio.gather(
-                            *[
-                                extract_evidence(
-                                    SearchResult(
-                                        candidate.url,
-                                        candidate.title,
-                                        candidate.snippet,
-                                        candidate.engine,
-                                        candidate.search_query,
-                                    ),
-                                    research.query,
-                                    "; ".join(
-                                        filter(
-                                            None,
-                                            [
-                                                research.focus or "",
-                                                candidate.purpose,
-                                                requirement_by_id(state)[
-                                                    candidate.requirement_id
-                                                ].summary,
-                                            ],
-                                        )
-                                    ),
-                                )
-                                for candidate in fetch_batch
-                            ],
-                            return_exceptions=True,
-                        )
-                        for candidate, result in zip(fetch_batch, results, strict=True):
-                            if isinstance(result, Exception):
-                                if isinstance(result, (TypeError, KeyError, IndexError)):
-                                    raise result
-                                if isinstance(
-                                    result, (aiohttp.ClientError, OSError, TimeoutError, ValueError)
-                                ):
-                                    details = safe_operation_error_details(result)
-                                    state.stats["source_skips"] += 1
-                                    state.stats["candidates_failed"] = (
-                                        int(state.stats["candidates_failed"]) + 1
-                                    )
-                                    record_operation_failure(
-                                        state,
-                                        research_id,
-                                        "fetch",
-                                        "request",
-                                        details,
-                                    )
-                                    record_failed_candidate(state, candidate, details)
-                                    await save("running")
-                                    continue
-                                raise result
-                            evidence = replace(
-                                cast(Evidence, result),
-                                requirement_ids=[candidate.requirement_id],
-                            )
-                            if any(
-                                item.url == evidence.url or item.hash == evidence.hash
-                                for item in state.evidence
-                            ):
-                                state.stats["duplicate_sources"] += 1
-                                continue
-                            apply_evidence_update(state, evidence)
-                            await save("running")
-                            if evidence_limit_decision(state, budget) is not None:
+                        else:
+                            timeout = collection_time_left(DOC_TIMEOUT)
+                            if timeout is None:
+                                await finalize_after_collection_deadline()
                                 break
-                        continue
+                            state.stats["candidates_attempted"] = int(
+                                state.stats["candidates_attempted"]
+                            ) + len(fetch_batch)
+                            results = await asyncio.gather(
+                                *[
+                                    asyncio.wait_for(
+                                        extract_evidence(
+                                            SearchResult(
+                                                candidate.url,
+                                                candidate.title,
+                                                candidate.snippet,
+                                                candidate.engine,
+                                                candidate.search_query,
+                                            ),
+                                            research.query,
+                                            "; ".join(
+                                                filter(
+                                                    None,
+                                                    [
+                                                        research.focus or "",
+                                                        candidate.purpose,
+                                                        requirement_by_id(state)[
+                                                            candidate.requirement_id
+                                                        ].summary,
+                                                    ],
+                                                )
+                                            ),
+                                        ),
+                                        timeout=timeout,
+                                    )
+                                    for candidate in fetch_batch
+                                ],
+                                return_exceptions=True,
+                            )
+                            for candidate, result in zip(fetch_batch, results, strict=True):
+                                if isinstance(result, Exception):
+                                    if isinstance(result, (TypeError, KeyError, IndexError)):
+                                        raise result
+                                    if isinstance(
+                                        result,
+                                        (aiohttp.ClientError, OSError, TimeoutError, ValueError),
+                                    ):
+                                        details = safe_operation_error_details(result)
+                                        state.stats["source_skips"] += 1
+                                        state.stats["candidates_failed"] = (
+                                            int(state.stats["candidates_failed"]) + 1
+                                        )
+                                        record_operation_failure(
+                                            state,
+                                            research_id,
+                                            "fetch",
+                                            "request",
+                                            details,
+                                        )
+                                        record_failed_candidate(state, candidate, details)
+                                        await save("running")
+                                        continue
+                                    raise result
+                                evidence = replace(
+                                    cast(Evidence, result),
+                                    requirement_ids=[candidate.requirement_id],
+                                )
+                                if any(
+                                    item.url == evidence.url or item.hash == evidence.hash
+                                    for item in state.evidence
+                                ):
+                                    state.stats["duplicate_sources"] += 1
+                                    continue
+                                apply_evidence_update(state, evidence)
+                                await save("running")
+                            continue
                     if remaining_budgets(state, budget)["searches"] <= 0:
                         if usable_evidence_count(state) > 0:
-                            set_collection_decision(state, "voluntary_stop")
+                            set_collection_decision(
+                                state,
+                                "coverage_complete" if floor_complete else "voluntary_stop",
+                            )
                             await save("running")
                             break
                         raise ExpectedResearchFailure("evidence_exhausted")
@@ -4329,6 +4567,11 @@ async def run_research(
                     except ExpectedResearchFailure as exc:
                         if exc.reason != "provider_failure":
                             raise
+                        if usable_evidence_count(state) > 0 and floor_complete:
+                            state.stats["research_salvages"] += 1
+                            set_collection_decision(state, "coverage_complete")
+                            await save("running")
+                            break
                         if usable_evidence_count(state) > 0:
                             state.stats["research_salvages"] += 1
                             set_collection_decision(state, "voluntary_stop")
@@ -4338,6 +4581,11 @@ async def run_research(
                     except (EventLoopException, APIError, TimeoutError) as exc:
                         if not is_expected_provider_failure(exc):
                             raise
+                        if usable_evidence_count(state) > 0 and floor_complete:
+                            state.stats["research_salvages"] += 1
+                            set_collection_decision(state, "coverage_complete")
+                            await save("running")
+                            break
                         if usable_evidence_count(state) > 0:
                             state.stats["research_salvages"] += 1
                             set_collection_decision(state, "voluntary_stop")
@@ -4347,6 +4595,36 @@ async def run_research(
                             continue
                         raise ExpectedResearchFailure("provider_failure") from exc
                     if added == 0:
+                        if floor_complete:
+                            if (
+                                deterministic_query_batch(
+                                    state, remaining_budgets(state, budget)["searches"], research
+                                )
+                                is not None
+                            ):
+                                await save("running")
+                                continue
+                            set_collection_decision(state, "coverage_complete")
+                            await save("running")
+                            break
+                        if collection_deadline() - time.monotonic() <= 0:
+                            await finalize_after_collection_deadline()
+                            break
+                        if (
+                            last_query_batch_deterministic
+                            and deterministic_query_batch(
+                                state,
+                                remaining_budgets(state, budget)["searches"],
+                                research,
+                            )
+                            is not None
+                        ):
+                            idle_batches = 0
+                            state.stats["research_continuations"] = (
+                                int(state.stats["research_continuations"]) + 1
+                            )
+                            await save("running")
+                            continue
                         idle_batches += 1
                         if idle_batches >= 2:
                             if usable_evidence_count(state) > 0:
