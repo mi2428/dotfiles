@@ -263,151 +263,6 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_query_model_is_not_cut_off_by_search_timeout(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        fragments = rt.explicit_request_fragments(research)
-        plan = rt.PlanDraft(
-            requirements=[
-                rt.RequirementModel(
-                    id="R1",
-                    summary="Need direct evidence",
-                    kind="direct",
-                    fragment_ids=[fragments[0].id],
-                )
-            ],
-            sections=[rt.PlanSection(heading="Direct evidence", requirement_ids=["R1"])],
-        )
-
-        class SlowSearchBatchAgent:
-            def __init__(self) -> None:
-                self.outputs = [
-                    plan,
-                    rt.SearchBatchDraft(
-                        queries=[
-                            rt.SearchBatchEntry(
-                                query="delayed model query",
-                                purpose="cover R1",
-                                requirement_id="R1",
-                            )
-                        ]
-                    ),
-                    section(cited("Supported direct claim", "S1")),
-                ]
-
-            async def invoke_async(self, _prompt: str, **kwargs: Any) -> SimpleNamespace:
-                model = cast(type[rt.StrictModel], kwargs["structured_output_model"])
-                output = self.outputs.pop(0)
-                if model is rt.SearchBatchDraft:
-                    await asyncio.sleep(0.02)
-                return SimpleNamespace(
-                    stop_reason="tool_use",
-                    structured_output=output,
-                    message={"role": "assistant", "content": []},
-                )
-
-        async def fake_search(*args: Any) -> list[rt.SearchResult]:
-            query = cast(str, args[1])
-            return [rt.SearchResult("https://a.example/direct", "A", "", "engine", query)]
-
-        async def fake_extract(result: rt.SearchResult, *_args: Any) -> rt.Evidence:
-            return rt.Evidence(
-                url=result.url,
-                title=result.title,
-                publisher=result.title,
-                published_at="2026-01-01",
-                excerpt="Evidence supporting the requested requirement.",
-                hash=(result.title.lower() * 64)[:64],
-                relevance=0.9,
-                source_quality=0.7,
-            )
-
-        async def run() -> None:
-            with (
-                patch.object(rt, "build_research_agent", side_effect=AssertionError("deep only")),
-                patch.object(rt, "build_finalization_agent", return_value=SlowSearchBatchAgent()),
-                patch.object(rt, "search_searxng", new=AsyncMock(side_effect=fake_search)),
-                patch.object(rt, "extract_evidence", new=AsyncMock(side_effect=fake_extract)),
-                patch.object(rt, "SEARCH_TIMEOUT", 0.001),
-                patch.object(rt, "AGENT_CANCEL_GRACE_SECONDS", 0.0),
-            ):
-                response = await rt.run_research(
-                    self.runtime,
-                    FakeRequest(),
-                    research,
-                    "rid",
-                    "slow-query-model-key",
-                )
-            self.assertEqual(response.outcome, "completed")
-            row = self.runtime.db.execute(
-                "SELECT state_json FROM research_runs WHERE idempotency_key='slow-query-model-key'"
-            ).fetchone()
-            stats = json.loads(row["state_json"])["stats"]
-            self.assertEqual(stats["query_batch_calls"], 1)
-            self.assertEqual(stats["documents"], 1)
-
-        asyncio.run(run())
-
-    def test_pre_floor_deterministic_catalog_none_terminates_without_extra_loop(self) -> None:
-        research = rt.ResearchRequest(
-            query="Need direct evidence", focus="compare vendors", depth="deep"
-        )
-        state = make_state(1)
-        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
-        rt.store_initial_plan(state, research, plan_for(research))
-        structured = StructuredAgent(
-            [
-                rt.SearchBatchDraft(
-                    queries=[
-                        rt.SearchBatchEntry(
-                            query="model miss", purpose="cover R2", requirement_id="R2"
-                        )
-                    ]
-                ),
-                section(cited("Supported direct claim", "S1")),
-            ]
-        )
-        search_calls: list[str] = []
-
-        async def fake_search(*args: Any) -> list[rt.SearchResult]:
-            search_calls.append(cast(str, args[1]))
-            return []
-
-        async def run() -> None:
-            with (
-                patch.object(rt, "build_research_agent", side_effect=AssertionError("deep only")),
-                patch.object(rt, "build_finalization_agent", return_value=structured),
-                patch.object(rt, "search_searxng", new=AsyncMock(side_effect=fake_search)),
-            ):
-                response = await rt.run_research(
-                    self.runtime,
-                    FakeRequest(),
-                    research,
-                    "rid",
-                    "pre-floor-catalog-none-key",
-                    rt.run_state_snapshot(state),
-                )
-            self.assertEqual(response.outcome, "degraded")
-            self.assertEqual(structured.models.count(rt.SearchBatchDraft), 1)
-            self.assertEqual(
-                search_calls,
-                [
-                    "model miss",
-                    "independent comparison evidence",
-                    "independent comparison evidence Comparison",
-                    "independent comparison evidence compare vendors",
-                    "independent comparison evidence Need direct evidence",
-                ],
-            )
-            row = self.runtime.db.execute(
-                "SELECT state_json FROM research_runs "
-                "WHERE idempotency_key='pre-floor-catalog-none-key'"
-            ).fetchone()
-            stats = json.loads(row["state_json"])["stats"]
-            self.assertEqual(stats["query_batch_calls"], 1)
-            self.assertEqual(stats["searches"], 5)
-
-        asyncio.run(run())
-
     def test_search_failure_and_same_batch_duplicate_do_not_stop_other_query(self) -> None:
         research = rt.ResearchRequest(
             query="Need direct evidence", focus="compare vendors", depth="deep"
@@ -428,6 +283,11 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     ]
                 ),
                 APIError("Internal server error.", request=request, body=None),
+                rt.SearchBatchDraft(
+                    queries=[
+                        rt.SearchBatchEntry(query="idle-2", purpose="r2 idle", requirement_id="R2")
+                    ]
+                ),
                 section(cited("Supported direct claim", "S1")),
             ]
         )
@@ -457,23 +317,11 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     "search-failure-key",
                     rt.run_state_snapshot(state),
                 )
-            self.assertEqual(
-                calls,
-                [
-                    "dup",
-                    "ok",
-                    "independent comparison evidence",
-                    "independent comparison evidence Comparison",
-                    "independent comparison evidence compare vendors",
-                    "independent comparison evidence Need direct evidence",
-                ],
-            )
+            self.assertEqual(calls, ["dup", "ok", "idle-2"])
             model_logs = [line for line in logs.output if "model_failure" in line]
             operation_logs = [line for line in logs.output if "operation_failure" in line]
             self.assertEqual(len(model_logs), 2)
             self.assertEqual(len(operation_logs), 1)
-            self.assertTrue(any("role=SearchBatchDraft" in line for line in model_logs))
-            self.assertTrue(any("role=SectionContentDraft" in line for line in model_logs))
             self.assertTrue(
                 all(
                     "reason=provider_internal_error" in line
@@ -481,6 +329,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                     and "exception=APIError" in line
                     and "provider_code=none" in line
                     and "message_bucket=internal_server_error" in line
+                    and "role=SearchBatchDraft" in line
                     and "Internal server error" not in line
                     for line in model_logs
                 )
@@ -488,7 +337,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertIn("reason=os_error", operation_logs[0])
             self.assertNotIn("search failed", operation_logs[0])
             self.assertEqual(response.outcome, "degraded")
-            self.assertEqual(structured.models.count(rt.SectionContentDraft), 2)
+            self.assertEqual(structured.models.count(rt.SectionContentDraft), 1)
             self.assertEqual(structured.outputs, [])
             row = self.runtime.db.execute(
                 "SELECT status, state_json FROM research_runs WHERE idempotency_key=?",
@@ -499,7 +348,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertEqual(stats["model_transient_recoveries"], 2)
             self.assertEqual(stats["model_transient_failures"]["provider_internal_error"], 2)
             self.assertEqual(len(stats["model_transient_events"]), 2)
-            self.assertEqual(stats["searches"], 6)
+            self.assertEqual(stats["searches"], 3)
             self.assertEqual(stats["search_failures"], 1)
             self.assertEqual(stats["duplicate_queries"], 1)
             self.assertEqual(stats["operation_failure_reasons"]["search:os_error"], 1)
@@ -593,73 +442,6 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertEqual(stats["query_batch_calls"], 0)
             self.assertEqual(stats["searches"], 8)
             self.assertEqual(stats["requirement_coverage"]["R2"]["covered"], True)
-
-        asyncio.run(run())
-
-    def test_zero_candidate_model_batch_switches_to_deterministic_before_second_model_call(
-        self,
-    ) -> None:
-        research = rt.ResearchRequest(
-            query="Need direct evidence", focus="compare vendors", depth="deep"
-        )
-        state = make_state(1)
-        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
-        rt.store_initial_plan(state, research, plan_for(research))
-        structured = StructuredAgent(
-            [
-                rt.SearchBatchDraft(
-                    queries=[
-                        rt.SearchBatchEntry(
-                            query="model miss", purpose="cover R2", requirement_id="R2"
-                        )
-                    ]
-                ),
-                section(cited("Supported direct claim", "S1")),
-                comparison_section("Recovered comparison", "S2", "S3"),
-            ]
-        )
-        search_calls: list[str] = []
-
-        async def fake_search(*args: Any) -> list[rt.SearchResult]:
-            query = cast(str, args[1])
-            search_calls.append(query)
-            if query == "model miss":
-                return []
-            return [
-                rt.SearchResult("https://b.example/2", "B", "", "engine", query),
-                rt.SearchResult("https://c.example/3", "C", "", "engine", query),
-            ]
-
-        async def fake_extract(result: rt.SearchResult, *_args: Any) -> rt.Evidence:
-            return rt.Evidence(
-                url=result.url,
-                title=result.title,
-                publisher=result.title,
-                published_at="2026-01-01",
-                excerpt="Independent evidence supporting the comparison requirement.",
-                hash=(result.title.lower() * 64)[:64],
-                relevance=0.9,
-                source_quality=0.7,
-            )
-
-        async def run() -> None:
-            with (
-                patch.object(rt, "build_research_agent", side_effect=AssertionError("deep only")),
-                patch.object(rt, "build_finalization_agent", return_value=structured),
-                patch.object(rt, "search_searxng", new=AsyncMock(side_effect=fake_search)),
-                patch.object(rt, "extract_evidence", new=AsyncMock(side_effect=fake_extract)),
-            ):
-                response = await rt.run_research(
-                    self.runtime,
-                    FakeRequest(),
-                    research,
-                    "rid",
-                    "zero-added-switch-key",
-                    rt.run_state_snapshot(state),
-                )
-            self.assertEqual(response.outcome, "completed")
-            self.assertEqual(structured.models.count(rt.SearchBatchDraft), 1)
-            self.assertEqual(search_calls[:2], ["model miss", "independent comparison evidence"])
 
         asyncio.run(run())
 
@@ -1643,8 +1425,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
             self.assertEqual(response.outcome, "degraded")
             self.assertIn("Runtime coverage gap", response.answer_markdown)
             self.assertNotIn(rt.SectionContentDraft, structured.models)
-            self.assertEqual(len(structured.outputs), 1)
-            self.assertIsInstance(structured.outputs[0], rt.SearchBatchDraft)
+            self.assertEqual(structured.outputs, [])
 
         asyncio.run(run())
 

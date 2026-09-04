@@ -4197,28 +4197,29 @@ async def run_research(
         raise ExpectedResearchFailure("structured_plan_invalid")
 
     async def run_deep_query_batch() -> int:
-        nonlocal pre_floor_deterministic_mode
+        nonlocal last_query_batch_deterministic
         state.phase = "research"
         state.stats["requirement_coverage"] = requirement_coverage_snapshot(state)
         search_slots = remaining_budgets(state, budget)["searches"]
         if search_slots <= 0:
             return 0
         floor_complete = all_requirements_covered(state)
-        use_deterministic = floor_complete or pre_floor_deterministic_mode
+        last_query_batch_deterministic = floor_complete
 
-        def collection_timeout(limit: float | None = None) -> float | None:
+        def collection_timeout(limit: float) -> float | None:
             remaining = collection_deadline() - time.monotonic()
             if remaining <= 0:
                 return None
-            return remaining if limit is None else min(remaining, limit)
+            return min(remaining, limit)
 
         try:
-            if use_deterministic:
+            if floor_complete:
                 draft = deterministic_query_batch(state, search_slots, research)
                 if draft is None:
                     return 0
             else:
-                timeout = collection_timeout()
+                last_query_batch_deterministic = False
+                timeout = collection_timeout(SEARCH_TIMEOUT + AGENT_CANCEL_GRACE_SECONDS)
                 if timeout is None:
                     return 0
                 draft = cast(
@@ -4227,7 +4228,7 @@ async def run_research(
                         invoke_structured(
                             build_query_batch_prompt(research, state),
                             SearchBatchDraft,
-                            remaining=timeout,
+                            remaining=max(1.0, deadline - time.monotonic()),
                         ),
                         timeout=timeout,
                     ),
@@ -4236,6 +4237,7 @@ async def run_research(
         except ExpectedResearchFailure as exc:
             if exc.reason != "provider_failure":
                 raise
+            last_query_batch_deterministic = True
             draft = deterministic_query_batch(state, search_slots, research)
             if draft is None:
                 raise
@@ -4314,10 +4316,6 @@ async def run_research(
                 entry.requirement_id,
                 entry.purpose,
             )
-        if floor_complete or added > 0:
-            pre_floor_deterministic_mode = False
-        elif not use_deterministic:
-            pre_floor_deterministic_mode = True
         await save("running")
         return added
 
@@ -4389,8 +4387,9 @@ async def run_research(
         async with asyncio.timeout(wall_limit):
             if research.depth == "deep":
                 await ensure_deep_plan()
+                idle_batches = 0
                 enrichment_deadline: float | None = None
-                pre_floor_deterministic_mode = False
+                last_query_batch_deterministic = False
 
                 def collection_deadline() -> float:
                     return min(
@@ -4611,25 +4610,30 @@ async def run_research(
                         if collection_deadline() - time.monotonic() <= 0:
                             await finalize_after_collection_deadline()
                             break
-                        if pre_floor_deterministic_mode:
-                            if (
-                                deterministic_query_batch(
-                                    state,
-                                    remaining_budgets(state, budget)["searches"],
-                                    research,
-                                )
-                                is not None
-                            ):
-                                state.stats["research_continuations"] = (
-                                    int(state.stats["research_continuations"]) + 1
-                                )
-                                await save("running")
-                                continue
+                        if (
+                            last_query_batch_deterministic
+                            and deterministic_query_batch(
+                                state,
+                                remaining_budgets(state, budget)["searches"],
+                                research,
+                            )
+                            is not None
+                        ):
+                            idle_batches = 0
+                            state.stats["research_continuations"] = (
+                                int(state.stats["research_continuations"]) + 1
+                            )
+                            await save("running")
+                            continue
+                        idle_batches += 1
+                        if idle_batches >= 2:
                             if usable_evidence_count(state) > 0:
                                 set_collection_decision(state, "voluntary_stop")
                                 await save("running")
                                 break
                             raise ExpectedResearchFailure("no_progress")
+                    else:
+                        idle_batches = 0
                     state.stats["research_continuations"] = (
                         int(state.stats["research_continuations"]) + 1
                     )
