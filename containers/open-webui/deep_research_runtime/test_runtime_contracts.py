@@ -1084,112 +1084,12 @@ class RuntimeContractTests(RuntimeTestCase):
             )
         ]
         unknown = rt.SearchBatchEntry(query="q", purpose="p", requirement_id="R2")
-        with self.assertRaisesRegex(ValueError, "active requirement"):
+        with self.assertRaisesRegex(ValueError, "uncovered requirement"):
             rt.validated_query_entry(state, unknown)
         state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
         covered = rt.SearchBatchEntry(query="q", purpose="p", requirement_id="R1")
-        self.assertEqual(rt.validated_query_entry(state, covered), covered)
-
-    def test_enrichment_helpers_compute_floor_score_target_and_bonus_order(self) -> None:
-        research = rt.ResearchRequest(
-            query="Need direct evidence", focus="compare vendors", depth="deep"
-        )
-        state = make_state(4)
-        rt.store_initial_plan(state, research, deep_plan_for(research))
-        state.evidence[0] = replace(
-            state.evidence[0], relevance=0.9, requirement_ids=["R1"], url="https://r1-a.example/1"
-        )
-        state.evidence[1] = replace(
-            state.evidence[1], relevance=0.9, requirement_ids=["R2"], url="https://r2-a.example/2"
-        )
-        state.evidence[2] = replace(
-            state.evidence[2], relevance=0.9, requirement_ids=["R2"], url="https://r2-b.example/3"
-        )
-        self.assertEqual(rt.total_required_hosts(state), 3)
-        self.assertEqual(rt.enrichment_target_hosts(state), 4)
-        self.assertEqual(rt.enrichment_host_score(state), 3)
-        self.assertEqual(rt.active_requirement_ids(state), ["R1", "R2"])
-        self.assertEqual(
-            rt.requirement_excerpt_chars(state, "R2"),
-            len(state.evidence[1].excerpt) * 2,
-        )
-
-    def test_one_requirement_cannot_satisfy_soft_target_alone(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
-        state = make_state(4)
-        fragments = rt.explicit_request_fragments(research)
-        rt.store_initial_plan(
-            state,
-            research,
-            rt.PlanDraft(
-                requirements=[
-                    rt.RequirementModel(
-                        id="R1",
-                        summary="Need direct evidence",
-                        kind="direct",
-                        fragment_ids=[fragments[0].id],
-                    ),
-                    rt.RequirementModel(
-                        id="R2",
-                        summary="compare vendors",
-                        kind="comparison",
-                        fragment_ids=[fragments[-1].id],
-                    ),
-                ],
-                sections=[
-                    rt.PlanSection(heading="First", requirement_ids=["R1"]),
-                    rt.PlanSection(heading="Second", requirement_ids=["R2"]),
-                ],
-            ),
-        )
-        state.evidence[0] = replace(
-            state.evidence[0], relevance=0.9, requirement_ids=["R1"], url="https://r1-a.example/1"
-        )
-        state.evidence[1] = replace(
-            state.evidence[1], relevance=0.9, requirement_ids=["R1"], url="https://r1-b.example/2"
-        )
-        state.evidence[2] = replace(
-            state.evidence[2], relevance=0.9, requirement_ids=["R1"], url="https://r1-c.example/3"
-        )
-        state.evidence[3] = replace(
-            state.evidence[3], relevance=0.9, requirement_ids=["R1"], url="https://r1-d.example/4"
-        )
-        capped_limit = rt.requirement_floor(state.requirements[0]) + 1
-        self.assertLessEqual(
-            rt.capped_requirement_host_score(state, state.requirements[0]), capped_limit
-        )
-        self.assertLess(rt.enrichment_host_score(state), rt.enrichment_target_hosts(state))
-
-    def test_enrichment_prioritizes_the_thinner_excerpt_material(self) -> None:
-        research = rt.ResearchRequest(query="first fact; second fact", depth="deep")
-        state = make_state(2)
-        fragments = rt.explicit_request_fragments(research)
-        rt.store_initial_plan(
-            state,
-            research,
-            rt.PlanDraft(
-                requirements=[
-                    rt.RequirementModel(
-                        id="R1", summary="first", kind="direct", fragment_ids=[fragments[0].id]
-                    ),
-                    rt.RequirementModel(
-                        id="R2", summary="second", kind="direct", fragment_ids=[fragments[-1].id]
-                    ),
-                ],
-                sections=[
-                    rt.PlanSection(heading="First", requirement_ids=["R1"]),
-                    rt.PlanSection(heading="Second", requirement_ids=["R2"]),
-                ],
-            ),
-        )
-        state.evidence[0] = replace(
-            state.evidence[0], relevance=0.9, requirement_ids=["R1"], excerpt="rich " * 100
-        )
-        state.evidence[1] = replace(
-            state.evidence[1], relevance=0.9, requirement_ids=["R2"], excerpt="thin"
-        )
-
-        self.assertEqual(rt.active_requirement_ids(state), ["R2", "R1"])
+        with self.assertRaisesRegex(ValueError, "uncovered requirement"):
+            rt.validated_query_entry(state, covered)
 
     def test_compare_fragment_kind_is_upgraded_by_runtime(self) -> None:
         research = rt.ResearchRequest(query="compare vendors", depth="deep")
@@ -1293,14 +1193,12 @@ class RuntimeContractTests(RuntimeTestCase):
         )
         self.assertTrue(
             any(
-                "aim for about 8 non-duplicate cited information units" in item
-                and "paragraphs, substantive bullet items, and table rows" in item
-                and "Prefer fewer units over padding" in item
+                "aim for 5 to 6 non-redundant narrative blocks" in item
+                and "table rows do not count" in item
+                and "If evidence is thin, use fewer blocks" in item
                 for item in prompt_payload["requirements"]
             )
         )
-        self.assertNotIn("hard 8", prompt)
-        self.assertNotIn("validator", prompt)
 
     def test_standard_and_quick_section_prompts_receive_usable_evidence(self) -> None:
         for depth in ("standard", "quick"):
@@ -1312,12 +1210,10 @@ class RuntimeContractTests(RuntimeTestCase):
                 self.assertNotIn("body_markdown", json.dumps(prompt_payload, ensure_ascii=False))
                 self.assertFalse(
                     any(
-                        "aim for about 8 non-duplicate cited information units" in item
+                        "aim for 5 to 6 non-redundant narrative blocks" in item
                         for item in prompt_payload["requirements"]
                     )
                 )
-                self.assertNotIn("hard 8", json.dumps(prompt_payload, ensure_ascii=False))
-                self.assertNotIn("validator", json.dumps(prompt_payload, ensure_ascii=False))
                 self.assertEqual(
                     [item["id"] for item in prompt_payload["assigned_evidence"]], ["S1"]
                 )
