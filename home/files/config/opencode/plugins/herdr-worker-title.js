@@ -5,11 +5,11 @@ export const HerdrWorkerTitle = async ({ client, directory, $ }) => {
   const supervisorEnvironments = new Map();
   const hooks = {
     "chat.message": async ({ sessionID, agent }) => {
-      if (!sessionID || agent !== SUPERVISOR) {
-        supervisorEnvironments.delete(sessionID);
-        return;
-      }
-      if (supervisorEnvironments.has(sessionID)) return;
+      if (
+        !sessionID ||
+        agent !== SUPERVISOR ||
+        supervisorEnvironments.has(sessionID)
+      ) return;
 
       try {
         const response = await $`herdr pane list`.json();

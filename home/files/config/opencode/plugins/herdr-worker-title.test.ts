@@ -86,6 +86,10 @@ describe("Herdr worker session title", () => {
       sessionID: "ses_supervisor",
       agent: "Herdr Supervisor",
     });
+    await hooks["chat.message"]({
+      sessionID: "ses_supervisor",
+      agent: "build",
+    });
     const output = { env: {} };
     await hooks["shell.env"]({ sessionID: "ses_supervisor" }, output);
 
