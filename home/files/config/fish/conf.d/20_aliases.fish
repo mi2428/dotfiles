@@ -563,7 +563,7 @@ if command -sq opencode
                 end
             end
 
-            command env HAPPIER_OPENCODE_BACKEND_MODE=acp happier opencode --permission-mode yolo $agent_args $argv
+            command env HAPPIER_OPENCODE_BACKEND_MODE=server happier opencode --permission-mode yolo $agent_args $argv
         end
     end
 

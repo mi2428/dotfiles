@@ -42,7 +42,7 @@ You remain accountable for the final result.
   Treat a non-empty value as the canonical signal that this supervisor is running through Happier; record the result as `HAPPIER_MODE` for the batch instead of relying on process-name heuristics.
 - When `HAPPIER_MODE=1`, require `happier` in `PATH` and launch every OpenCode worker through a fresh `happier opencode --permission-mode yolo` session.
   Never explicitly resume or propagate the parent's Happier session, and never fall back to direct `opencode` startup if the Happier path fails.
-- Require Happier-managed supervisors and workers to use `HAPPIER_OPENCODE_BACKEND_MODE=acp`; this keeps each OpenCode process session-scoped and makes `HAPPIER_SESSION_ID` available for reliable detection and title synchronization.
+- Require Happier-managed supervisors and workers to use `HAPPIER_OPENCODE_BACKEND_MODE=server`; unlike ACP mode, this starts the OpenCode runtime immediately and supports the local TUI.
 - When `HAPPIER_MODE=0`, keep using direct OpenCode worker startup.
 - If Happier startup is required but unavailable or cannot be validated, keep the task local only when safe; otherwise report the failure and ask the user to resolve the Happier installation.
 
@@ -81,7 +81,7 @@ You remain accountable for the final result.
   ```sh
   test "$(basename "$SHELL")" = fish
   command -v happier >/dev/null 2>&1
-  herdr pane run "$worker_pane" 'set -gx HERDR_HAPPIER_WORKER 1; function opencode; functions -e opencode; command env HAPPIER_OPENCODE_BACKEND_MODE=acp happier opencode --permission-mode yolo $argv; end; printf "__HERDR_HAPPIER_READY__\n"'
+  herdr pane run "$worker_pane" 'set -gx HERDR_HAPPIER_WORKER 1; function opencode; functions -e opencode; command env HAPPIER_OPENCODE_BACKEND_MODE=server happier opencode --permission-mode yolo $argv; end; printf "__HERDR_HAPPIER_READY__\n"'
   herdr pane wait-output "$worker_pane" --match "__HERDR_HAPPIER_READY__" --timeout 5000
   herdr agent start "$WORKER_NAME" --kind opencode --pane "$worker_pane" -- \
     --agent-mode "Herdr Worker" --model "$MODEL"
