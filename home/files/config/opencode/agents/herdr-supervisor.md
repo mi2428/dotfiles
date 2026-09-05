@@ -34,7 +34,7 @@ You remain accountable for the final result.
    - `speed`: use when the user specifies urgency or independent workstreams provide meaningful latency reduction; accept higher aggregate token usage.
 4. Choose the smallest useful worker pool.
    Do not derive worker count from the number of queued assignments.
-   Unless the user explicitly authorizes a different limit, never run more than five subordinate agents concurrently across all delegation mechanisms.
+   Unless the user explicitly authorizes a different limit, never run more than seven subordinate agents concurrently across all delegation mechanisms.
 
 ## Detect Happier launch
 
@@ -55,7 +55,7 @@ You remain accountable for the final result.
   After setup, retry the Skill's plugin check before creating any worker.
 - Regardless of whether the objective is `cost` or `speed`, delegation must use only visible top-level Herdr agents.
   Never invoke OpenCode `task` subagents or any other invisible worker, and do not allow workers to create invisible descendants.
-- Limit the Herdr worker pool to five simultaneously running workers.
+- Limit the Herdr worker pool to seven simultaneously running workers.
 - If `HERDR_ENV` is not `1` or Herdr setup fails, do not delegate or infer success.
   Keep the task local only when safe; otherwise report the failure and ask the user to restart it in Herdr.
 
@@ -81,13 +81,13 @@ You remain accountable for the final result.
   ```sh
   test "$(basename "$SHELL")" = fish
   command -v happier >/dev/null 2>&1
-  herdr pane run "$worker_pane" 'set -gx HERDR_HAPPIER_WORKER 1; function opencode; functions -e opencode; command env HAPPIER_OPENCODE_BACKEND_MODE=server happier opencode --permission-mode yolo $argv; end; printf "__HERDR_HAPPIER_READY__\n"'
+  herdr pane run "$worker_pane" 'set -gx HERDR_HAPPIER_WORKER 1; function opencode; functions -e opencode; set -l model; set -l model_index (contains -i -- --model $argv); if test -n "$model_index"; and test "$model_index" -lt (count $argv); set model $argv[(math $model_index + 1)]; end; command env HAPPIER_OPENCODE_BACKEND_MODE=server OPENCODE_HAPPIER_AGENT="Herdr Worker" OPENCODE_HAPPIER_MODEL="$model" happier opencode --permission-mode yolo $argv; end; printf "__HERDR_HAPPIER_READY__\n"'
   herdr pane wait-output "$worker_pane" --match "__HERDR_HAPPIER_READY__" --timeout 5000
   herdr agent start "$WORKER_NAME" --kind opencode --pane "$worker_pane" -- \
     --agent-mode "Herdr Worker" --model "$MODEL"
   ```
 
-  `--agent-mode` is Happier's session-mode flag; do not substitute OpenCode's native `--agent` in this branch.
+  `--agent-mode` is Happier's session-mode flag. `OPENCODE_HAPPIER_AGENT` and `OPENCODE_HAPPIER_MODEL` independently select the local OpenCode TUI agent and model; server mode does not apply Happier's metadata overrides to local TUI prompts.
   Do not launch the whole worker with `herdr pane run`, because that bypasses `agent start` readiness checks and managed-agent naming.
   If the shim, marker, or startup check fails, inspect the exact error and stop rather than retrying with direct `opencode`.
 

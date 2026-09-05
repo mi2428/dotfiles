@@ -556,14 +556,29 @@ if command -sq opencode
     if command -sq happier
         function oc+++ --wraps opencode
             set -l agent_args
+            set -l tui_agent
+            set -l tui_model
+            set -l take_model 0
 
             if set -q HERDR_ENV; and test "$HERDR_ENV" = 1; and command -sq herdr
                 if not contains -- --agent-mode $argv; and not string match -q -- '--agent-mode=*' $argv
                     set agent_args --agent-mode 'Herdr Supervisor'
                 end
+                set tui_agent 'Herdr Supervisor'
             end
 
-            command env HAPPIER_OPENCODE_BACKEND_MODE=server happier opencode --permission-mode yolo $agent_args $argv
+            for arg in $argv
+                if test $take_model = 1
+                    set tui_model $arg
+                    set take_model 0
+                else if test "$arg" = --model
+                    set take_model 1
+                else if string match -q -- '--model=*' "$arg"
+                    set tui_model (string replace -- '--model=' '' "$arg")
+                end
+            end
+
+            command env HAPPIER_OPENCODE_BACKEND_MODE=server OPENCODE_HAPPIER_AGENT="$tui_agent" OPENCODE_HAPPIER_MODEL="$tui_model" happier opencode --permission-mode yolo $agent_args $argv
         end
     end
 
