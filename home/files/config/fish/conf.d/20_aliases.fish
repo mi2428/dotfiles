@@ -553,6 +553,12 @@ if command -sq opencode
         __dotfiles_run_opencode opencode --auto $argv
     end
 
+    if command -sq happier
+        function oc+++ --wraps opencode
+            command happier opencode --permission-mode yolo $argv
+        end
+    end
+
     if command -sq oc-omo
         function ocomo --wraps oc-omo
             __dotfiles_run_opencode oc-omo $argv
