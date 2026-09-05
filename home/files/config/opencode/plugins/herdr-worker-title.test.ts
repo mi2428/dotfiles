@@ -60,4 +60,40 @@ describe("Herdr worker session title", () => {
       },
     ]);
   });
+
+  it("restores the Herdr pane environment for supervisor sessions", async () => {
+    delete process.env[variable];
+    const shell = () => ({
+      json: async () => ({
+        result: {
+          panes: [
+            {
+              pane_id: "workspace:pane",
+              tab_id: "workspace:tab",
+              workspace_id: "workspace",
+              agent_session: {
+                source: "herdr:opencode",
+                value: "ses_supervisor",
+              },
+            },
+          ],
+        },
+      }),
+    });
+    const hooks = await HerdrWorkerTitle({ client: {}, directory: "/repo", $: shell });
+
+    await hooks["chat.message"]({
+      sessionID: "ses_supervisor",
+      agent: "Herdr Supervisor",
+    });
+    const output = { env: {} };
+    await hooks["shell.env"]({ sessionID: "ses_supervisor" }, output);
+
+    assert.deepEqual(output.env, {
+      HERDR_ENV: "1",
+      HERDR_PANE_ID: "workspace:pane",
+      HERDR_TAB_ID: "workspace:tab",
+      HERDR_WORKSPACE_ID: "workspace",
+    });
+  });
 });
