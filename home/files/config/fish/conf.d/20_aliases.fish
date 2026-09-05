@@ -555,7 +555,15 @@ if command -sq opencode
 
     if command -sq happier
         function oc+++ --wraps opencode
-            command happier opencode --permission-mode yolo $argv
+            set -l agent_args
+
+            if set -q HERDR_ENV; and test "$HERDR_ENV" = 1; and command -sq herdr
+                if not contains -- --agent-mode $argv; and not string match -q -- '--agent-mode=*' $argv
+                    set agent_args --agent-mode 'Herdr Supervisor'
+                end
+            end
+
+            command env HAPPIER_OPENCODE_BACKEND_MODE=acp happier opencode --permission-mode yolo $agent_args $argv
         end
     end
 
