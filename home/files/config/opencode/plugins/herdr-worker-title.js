@@ -37,11 +37,6 @@ export const HerdrWorkerTitle = async ({ client, directory, $ }) => {
 
   if (process.env.HERDR_AGENT_LAYOUT_WORKER !== "1") return hooks;
 
-  const happierSessionId = process.env.HERDR_HAPPIER_WORKER === "1"
-    ? process.env.HAPPIER_SESSION_ID
-    : undefined;
-  let lastHappierTitle;
-
   return {
     ...hooks,
     event: async ({ event }) => {
@@ -66,11 +61,6 @@ export const HerdrWorkerTitle = async ({ client, directory, $ }) => {
           query: { directory },
           body: { title },
         });
-      }
-
-      if (happierSessionId && title !== lastHappierTitle) {
-        await $`happier session set-title ${happierSessionId} ${title}`;
-        lastHappierTitle = title;
       }
     },
   };

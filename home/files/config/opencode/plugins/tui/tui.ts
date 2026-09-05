@@ -57,88 +57,6 @@ const PANEL_TOP = 0;
 const PANEL_CHROME_HEIGHT = 3;
 const TODO_LINE_ID_PREFIX = "opencode-todo-line";
 const graphemes = new Intl.Segmenter();
-const HAPPIER_AGENT = "OPENCODE_HAPPIER_AGENT";
-const HAPPIER_MODEL = "OPENCODE_HAPPIER_MODEL";
-
-export type HappierSessionSelection = {
-  agent?: string;
-  model?: { providerID: string; id: string };
-};
-
-export function happierSessionSelectionFromEnvironment(
-  environment: Record<string, string | undefined>,
-): HappierSessionSelection {
-  const agent = environment[HAPPIER_AGENT]?.trim();
-  const model = environment[HAPPIER_MODEL]?.trim();
-  const separator = model?.indexOf("/") ?? -1;
-  return {
-    ...(agent ? { agent } : {}),
-    ...(model && separator > 0 && separator < model.length - 1
-      ? {
-          model: {
-            providerID: model.slice(0, separator),
-            id: model.slice(separator + 1),
-          },
-        }
-      : {}),
-  };
-}
-
-export async function applyHappierSessionSelection(
-  client: Parameters<TuiPlugin>[0]["client"],
-  sessionID: string,
-  selection: HappierSessionSelection,
-): Promise<void> {
-  if (selection.agent) {
-    await client.v2.session.switchAgent(
-      { sessionID, agent: selection.agent },
-      { throwOnError: true },
-    );
-  }
-  if (selection.model) {
-    await client.v2.session.switchModel(
-      { sessionID, model: selection.model },
-      { throwOnError: true },
-    );
-  }
-}
-
-export function registerHappierSessionSelection(api: Parameters<TuiPlugin>[0]): void {
-  const environment = (
-    globalThis as typeof globalThis & {
-      process?: { env?: Record<string, string | undefined> };
-    }
-  ).process?.env ?? {};
-  const selection = happierSessionSelectionFromEnvironment(environment);
-  if (!selection.agent && !selection.model) return;
-
-  const applied = new Set<string>();
-  const applying = new Set<string>();
-  const applyCurrent = async () => {
-    const sessionID = sessionIDFromRoute(api.route.current);
-    if (!sessionID || applied.has(sessionID) || applying.has(sessionID)) return;
-    applying.add(sessionID);
-    try {
-      await applyHappierSessionSelection(api.client, sessionID, selection);
-      applied.add(sessionID);
-    } catch (error) {
-      api.ui.toast({
-        variant: "error",
-        message: `Failed to select Happier agent/model: ${String(error)}`,
-      });
-    } finally {
-      applying.delete(sessionID);
-    }
-  };
-
-  void applyCurrent();
-  const unsubscribeCreated = api.event.on("session.created", () => void applyCurrent());
-  const unsubscribeUpdated = api.event.on("session.updated", () => void applyCurrent());
-  api.lifecycle.onDispose(() => {
-    unsubscribeCreated();
-    unsubscribeUpdated();
-  });
-}
 
 const SPLIT_BORDER_CHARS = {
   topLeft: "",
@@ -506,7 +424,6 @@ export const tui: TuiPlugin = async (api) => {
     import("@opentui/solid"),
     import("solid-js"),
   ]);
-  registerHappierSessionSelection(api);
   registerMessageLabelColors(api);
   registerTodoOverlay(api, { ...solid, createSignal });
 };
