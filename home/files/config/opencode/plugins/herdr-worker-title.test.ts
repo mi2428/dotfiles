@@ -4,15 +4,28 @@ import { HerdrWorkerTitle } from "./herdr-worker-title.js";
 
 const variable = "HERDR_AGENT_LAYOUT_WORKER";
 const original = process.env[variable];
+const happierWorkerVariable = "HERDR_HAPPIER_WORKER";
+const originalHappierWorker = process.env[happierWorkerVariable];
+const happierSessionVariable = "HAPPIER_SESSION_ID";
+const originalHappierSession = process.env[happierSessionVariable];
 
 afterEach(() => {
   if (original === undefined) delete process.env[variable];
   else process.env[variable] = original;
+  if (originalHappierWorker === undefined) delete process.env[happierWorkerVariable];
+  else process.env[happierWorkerVariable] = originalHappierWorker;
+  if (originalHappierSession === undefined) delete process.env[happierSessionVariable];
+  else process.env[happierSessionVariable] = originalHappierSession;
 });
 
 describe("Herdr worker session title", () => {
-  it("prefixes generated root-session titles only in worker panes", async () => {
+  it("prefixes worker titles and syncs Happier once", async () => {
     const updates: unknown[] = [];
+    const commands: unknown[] = [];
+    const shell = (strings: TemplateStringsArray, ...values: unknown[]) => {
+      commands.push({ strings: [...strings], values });
+      return Promise.resolve();
+    };
     const client = { session: { update: async (input: unknown) => updates.push(input) } };
     const event = (title: string) => ({
       event: {
@@ -25,16 +38,25 @@ describe("Herdr worker session title", () => {
     assert.equal((await HerdrWorkerTitle({ client, directory: "/repo" })).event, undefined);
 
     process.env[variable] = "1";
-    const hooks = await HerdrWorkerTitle({ client, directory: "/repo" });
+    process.env[happierWorkerVariable] = "1";
+    process.env[happierSessionVariable] = "happier_worker";
+    const hooks = await HerdrWorkerTitle({ client, directory: "/repo", $: shell });
     await hooks.event(event("New session - 2026-08-10T00:00:00.000Z"));
-    await hooks.event(event("[Subagent] Existing title"));
     await hooks.event(event("Review the change"));
+    await hooks.event(event("[Subagent] Review the change"));
 
     assert.deepEqual(updates, [
       {
         path: { id: "ses_worker" },
         query: { directory: "/repo" },
         body: { title: "[Subagent] Review the change" },
+      },
+    ]);
+
+    assert.deepEqual(commands, [
+      {
+        strings: ["happier session set-title ", " ", ""],
+        values: ["happier_worker", "[Subagent] Review the change"],
       },
     ]);
   });

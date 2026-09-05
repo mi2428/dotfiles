@@ -1,7 +1,12 @@
 const PREFIX = "[Subagent] ";
 
-export const HerdrWorkerTitle = async ({ client, directory }) => {
+export const HerdrWorkerTitle = async ({ client, directory, $ }) => {
   if (process.env.HERDR_AGENT_LAYOUT_WORKER !== "1") return {};
+
+  const happierSessionId = process.env.HERDR_HAPPIER_WORKER === "1"
+    ? process.env.HAPPIER_SESSION_ID
+    : undefined;
+  let lastHappierTitle;
 
   return {
     event: async ({ event }) => {
@@ -10,17 +15,28 @@ export const HerdrWorkerTitle = async ({ client, directory }) => {
       const session = event.properties?.info;
       if (
         !session?.id ||
-        session.title.startsWith(PREFIX) ||
+        typeof session.title !== "string" ||
         session.title.startsWith("New session - ")
       ) {
         return;
       }
 
-      await client.session.update({
-        path: { id: session.id },
-        query: { directory },
-        body: { title: `${PREFIX}${session.title}` },
-      });
+      const title = session.title.startsWith(PREFIX)
+        ? session.title
+        : `${PREFIX}${session.title}`;
+
+      if (title !== session.title) {
+        await client.session.update({
+          path: { id: session.id },
+          query: { directory },
+          body: { title },
+        });
+      }
+
+      if (happierSessionId && title !== lastHappierTitle) {
+        await $`happier session set-title ${happierSessionId} ${title}`;
+        lastHappierTitle = title;
+      }
     },
   };
 };
