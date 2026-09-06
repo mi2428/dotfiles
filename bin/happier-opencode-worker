@@ -1,0 +1,67 @@
+#!/bin/sh
+
+set -eu
+
+die() {
+    printf 'happier-opencode-worker: %s\n' "$*" >&2
+    exit 2
+}
+
+[ "${HERDR_AGENT_LAYOUT_WORKER:-}" = 1 ] || die 'not running in an Agent Layout worker pane'
+
+parent_session=${HERDR_HAPPIER_PARENT_SESSION_ID:-}
+worker_name=${HERDR_HAPPIER_WORKER_NAME:-}
+case "$parent_session" in
+    '' | *[!A-Za-z0-9_-]*) die 'invalid parent Happier session id' ;;
+esac
+case "$worker_name" in
+    '' | [!a-z]* | *[!a-z0-9_-]*) die 'invalid Herdr worker name' ;;
+esac
+
+model=
+agent_mode=
+next=
+for arg in "$@"; do
+    if [ -n "$next" ]; then
+        case "$next" in
+            model) model=$arg ;;
+            agent_mode) agent_mode=$arg ;;
+        esac
+        next=
+        continue
+    fi
+    case "$arg" in
+        --model) next=model ;;
+        --agent-mode) next=agent_mode ;;
+        --model=* | --agent-mode=*) die 'use separate --model and --agent-mode values' ;;
+    esac
+done
+[ -z "$next" ] || die 'missing option value'
+[ "$agent_mode" = 'Herdr Worker' ] || die 'expected --agent-mode Herdr Worker'
+case "$model" in
+    */*)
+        [ -n "${model%%/*}" ] && [ -n "${model#*/}" ] || die 'invalid OpenCode model id'
+        ;;
+    *) die 'expected --model provider/model' ;;
+esac
+
+command -v happier >/dev/null 2>&1 || die 'happier is not installed'
+command -v jq >/dev/null 2>&1 || die 'jq is not installed'
+
+config=$(jq -cn \
+    --arg schema "https://opencode.ai/config.json#herdr-$parent_session-$worker_name" \
+    --arg model "$model" \
+    '{"$schema":$schema,default_agent:"Herdr Worker",model:$model}')
+
+# The caller is a Happier session, but this command must create a fresh one.
+unset HAPPIER_SESSION_ID \
+    HAPPIER_OPENCODE_SERVER_STATE_PATH \
+    HAPPIER_OPENCODE_SERVER_URL \
+    HAPPIER_OPENCODE_SERVER_URL_EXPLICIT \
+    HAPPIER_OPENCODE_SERVER_XDG_ROOT_DIR
+
+exec env \
+    HERDR_HAPPIER_WORKER=1 \
+    HAPPIER_OPENCODE_BACKEND_MODE=server \
+    OPENCODE_CONFIG_CONTENT="$config" \
+    happier opencode --permission-mode yolo "$@"

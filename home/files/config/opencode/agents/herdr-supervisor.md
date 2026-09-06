@@ -38,8 +38,14 @@ You remain accountable for the final result.
 
 ## Happier launch
 
-- Happier-managed supervisors must use `HAPPIER_OPENCODE_BACKEND_MODE=server`; unlike ACP mode, this starts the OpenCode runtime immediately and supports the local TUI.
-- Always start visible Herdr workers directly with OpenCode. Do not route workers through Happier's shared OpenCode server: local TUI prompts do not apply Happier's per-session agent/model metadata, while changing `OPENCODE_CONFIG_CONTENT` per worker would restart the shared server.
+- Immediately before dispatch, inspect `HAPPIER_OPENCODE_BACKEND_MODE` and `HAPPIER_SESSION_ID` once.
+  If both identify a server-backed Happier session, record `HAPPIER_MODE=1`; if both are absent, record `HAPPIER_MODE=0`.
+  Stop rather than dispatch when only one is present: the Happier CLI or running OpenCode session is stale or incompatible.
+- Happier-managed supervisors and workers must use `HAPPIER_OPENCODE_BACKEND_MODE=server`; unlike ACP mode, this starts the OpenCode runtime immediately and supports the local TUI.
+- When `HAPPIER_MODE=1`, require `happier-opencode-worker` and `happier` in `PATH` and launch every OpenCode worker through a fresh Happier session.
+  The helper gives each worker a unique managed-server fingerprint and an OpenCode config whose default agent and model match the worker, so it neither reuses nor restarts the supervisor's server.
+- When `HAPPIER_MODE=0`, keep using direct OpenCode worker startup.
+- If Happier startup is required but unavailable or cannot be validated, keep the task local only when safe; otherwise report the failure and ask the user to repair or update Happier.
 
 ## Select the delegation mechanism
 
@@ -63,12 +69,30 @@ You remain accountable for the final result.
   opencode models "${MODEL%%/*}" | rg -Fx "$MODEL"
   ```
 
-- Start the worker directly:
+- When `HAPPIER_MODE=0`, start the worker directly:
 
   ```sh
   herdr agent start "$WORKER_NAME" --kind opencode --pane "$worker_pane" -- \
     --agent "Herdr Worker" --model "$MODEL"
   ```
+
+- When `HAPPIER_MODE=1`, Herdr still owns readiness and lifecycle validation for the OpenCode TUI.
+  Require Fish, install a one-shot `opencode` function in the worker shell, wait for its marker, then use the normal `herdr agent start` surface:
+
+  ```sh
+  test "$(basename "$SHELL")" = fish
+  command -v happier-opencode-worker >/dev/null 2>&1
+  parent_session_q=$(fish -c 'string escape -- $argv[1]' "$HAPPIER_SESSION_ID")
+  worker_name_q=$(fish -c 'string escape -- $argv[1]' "$WORKER_NAME")
+  herdr pane run "$worker_pane" "set -gx HERDR_HAPPIER_PARENT_SESSION_ID $parent_session_q; set -gx HERDR_HAPPIER_WORKER_NAME $worker_name_q; function opencode; functions -e opencode; command happier-opencode-worker \$argv; end; printf '__HERDR_HAPPIER_READY__\\n'"
+  herdr pane wait-output "$worker_pane" --match "__HERDR_HAPPIER_READY__" --timeout 5000
+  herdr agent start "$WORKER_NAME" --kind opencode --pane "$worker_pane" -- \
+    --agent-mode "Herdr Worker" --model "$MODEL"
+  ```
+
+  `--agent-mode` is Happier's session-mode flag; do not substitute OpenCode's native `--agent` in this branch.
+  Do not launch the whole worker with `herdr pane run`, because that bypasses `agent start` readiness checks and managed-agent naming.
+  If the shim, marker, or startup check fails, inspect the exact error and stop rather than retrying with direct `opencode`.
 
 - `opencode --help` supports `-m, --model provider/model`; it has no `--variant` option.
   Configure reasoning through an agent/profile or deliberately use the model default. Never retry with guessed flags; identify the exact error first.
@@ -99,7 +123,7 @@ You remain accountable for the final result.
 - Reuse an existing `SESSION_DIR` for the same OpenCode session.
   If it contains an interrupted batch, read `context.md` before taking another orchestration action.
 - Before the first worker prompt, create `SESSION_DIR`, `SESSION_DIR/workers`, and `SESSION_DIR/artifacts`, then write `context.md`.
-  Keep `context.md` concise and record the full OpenCode session ID, goal, constraints, repository and worktree revisions, assignment boundaries, worker registry and state, important decisions, accepted or rejected results, blockers, and next action.
+  Keep `context.md` concise and record the full OpenCode session ID, `HAPPIER_MODE`, goal, constraints, repository and worktree revisions, assignment boundaries, worker registry and state, important decisions, accepted or rejected results, blockers, and next action.
 - The supervisor is the only writer of `context.md`.
   Update it after assignment-boundary changes, important decisions, blocks, result acceptance or rejection, deliberate worker replacement or shutdown, and batch completion.
 - Persist every supervisor-created orchestration artifact that would otherwise be written under `/tmp` or `${TMPDIR}` inside `SESSION_DIR` instead.
@@ -118,6 +142,8 @@ Every assignment brief must include:
 5. Repository guardrails and required verification.
 6. The absolute `SESSION_DIR` and a unique handoff file under `SESSION_DIR/workers/<worker-name>/` for this assignment.
 7. Relevant shared context, with instructions to read other persisted files only when specifically needed.
+8. When `HAPPIER_MODE=1`, require the worker to verify before assignment work that `HERDR_HAPPIER_WORKER=1` and a non-empty `HAPPIER_SESSION_ID` are present.
+   Require its final verification to run `happier session status "$HAPPIER_SESSION_ID" --json | jq -e '.ok == true and (.data.session.title | startswith("[Subagent]"))'`; it must report `BLOCKED` without continuing if either identity or title validation fails, and must not include either Happier session ID in its report.
 Require concise Japanese progress only at meaningful milestones.
 Require each final report to contain status, changes or findings, verification, residual risks, and the supervisor's next action.
 Write the complete brief to its handoff file before prompting the worker, then make the prompt self-contained.
@@ -146,6 +172,7 @@ Do not request full transcripts or file dumps.
   Ask the user to decide when a high-risk action is ambiguous, not already authorized, or broader than the worker's stated boundary.
 - Monitor workers with compact status snapshots rather than repeatedly reading complete histories.
 - Review actual diffs, tests, lint, type checks, logs, or live behavior as appropriate; do not accept a worker's success claim without evidence.
+- In Happier mode, do not accept a worker until its Happier identity and `[Subagent]` title verification succeeds.
 - If work is wrong or incomplete, send a concrete correction to the same compatible worker and review it again.
 - Accept an assignment before marking its worker idle, then dispatch queued compatible work to that reusable worker before creating another one.
 - Integrate results, resolve conflicts, and make final architectural and quality decisions yourself.
