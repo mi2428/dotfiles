@@ -80,3 +80,9 @@ hide_tab_bar_when_single_tab = true
 agent_panel_sort = "spaces"
 # Name workspaces up front so agent groups stay identifiable in the sidebar.
 prompt_new_workspace_name = true
+
+[ui.sidebar.agents]
+rows = [
+  ["state_icon", "agent"],
+  ["workspace", "tab"],
+]
