@@ -4,10 +4,6 @@ onboarding = false
 default_shell = ""
 shell_mode = "login"
 
-[experimental]
-# terminal-browser renders through the Kitty graphics protocol inside panes.
-kitty_graphics = true
-
 [keys]
 prefix = "ctrl+t"
 
@@ -59,6 +55,8 @@ dark_name = "catppuccin"
 
 [theme.custom]
 panel_bg = "reset"
+
+[theme.custom.dark]
 accent = "#cba6f7"
 # Herdr 0.8.2 gives the sidebar and its highlighted rows dedicated tokens.
 sidebar_bg = "#1e1e2e"
