@@ -6880,6 +6880,13 @@ async def edit_candidate(
             "Required output schema: "
             + json.dumps(EditResult.model_json_schema(), separators=(",", ":"))
         )
+        admitted_passages = {item["id"] for item in passages}
+
+        def accept_edit(content: str) -> str:
+            value = EditResult.model_validate(parse_json_object(content))
+            apply_editor_result(markdown, blocks, value, findings, admitted_passages)
+            return json.dumps(value.model_dump(), ensure_ascii=False, separators=(",", ":"))
+
         try:
             edit = EditResult.model_validate(
                 parse_json_object(
@@ -6889,11 +6896,7 @@ async def edit_candidate(
                         f"candidate_{candidate_no}_edit",
                         system,
                         prompt,
-                        lambda content: json.dumps(
-                            EditResult.model_validate(parse_json_object(content)).model_dump(),
-                            ensure_ascii=False,
-                            separators=(",", ":"),
-                        ),
+                        accept_edit,
                     )
                 )
             )
@@ -6902,7 +6905,7 @@ async def edit_candidate(
                 blocks,
                 edit,
                 findings,
-                {item["id"] for item in passages},
+                admitted_passages,
             )
         except IntegrityError:
             raise

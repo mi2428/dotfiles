@@ -425,7 +425,7 @@ class ResearchJobTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_material_finding_is_dismissed_once_and_rechecked_once(self) -> None:
+    def test_semantically_invalid_edit_is_corrected_and_rechecked_once(self) -> None:
         async def run() -> None:
             outputs = [
                 *research_outputs(),
@@ -437,6 +437,7 @@ class ResearchJobTests(RuntimeTestCase):
                     '"reason":"Verify the material condition."}],"notes":[],'
                     '"regenerate_reason":null}'
                 ),
+                completion('{"base_revision":1,"replacements":[],"dismissals":[]}'),
                 completion(
                     '{"base_revision":1,"replacements":[],"dismissals":[{'
                     '"finding_id":"F001","reason":"The source already supports it.",'
@@ -453,7 +454,10 @@ class ResearchJobTests(RuntimeTestCase):
                     "SELECT assignment_key FROM research_attempts WHERE job_id = ?", (job_id,)
                 )
             ]
-            self.assertEqual(sum("_edit" in item for item in assignments), 1)
+            self.assertEqual(
+                {item for item in assignments if "_edit" in item},
+                {"candidate_1_edit", "candidate_1_edit:format-repair"},
+            )
             self.assertEqual(sum("review_recheck" in item for item in assignments), 1)
             raw, edited = self.runtime.db.execute(
                 "SELECT kind, markdown FROM editorial_revisions WHERE job_id = ? "
