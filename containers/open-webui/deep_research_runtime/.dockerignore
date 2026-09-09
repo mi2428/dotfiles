@@ -4,7 +4,4 @@
 !pyproject.toml
 !sakura_kimi_model.py
 !source_extraction.py
-!token_accounting.py
-!token_data/
-!token_data/**
 !uv.lock

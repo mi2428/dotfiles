@@ -48,13 +48,6 @@ from sakura_kimi_model import (
     prepare_research_request,
 )
 from source_extraction import extract_document
-from token_accounting import (
-    OUTPUT_RESERVE_TOKENS,
-    count_fresh_prompt_tokens,
-    create_profile_tables,
-    profile_is_verified,
-    verified_input_ceiling,
-)
 
 LOG = logging.getLogger(__name__)
 
@@ -1491,8 +1484,6 @@ def open_db(path: str) -> sqlite3.Connection:
             deadline_at_ms INTEGER NOT NULL,
             max_attempts INTEGER NOT NULL,
             attempts_used INTEGER NOT NULL DEFAULT 0,
-            token_allowance INTEGER NOT NULL DEFAULT 0,
-            tokens_reserved INTEGER NOT NULL DEFAULT 0,
             candidate_no INTEGER NOT NULL DEFAULT 0,
             revision INTEGER NOT NULL DEFAULT 0,
             cancel_requested INTEGER NOT NULL DEFAULT 0,
@@ -1518,9 +1509,6 @@ def open_db(path: str) -> sqlite3.Connection:
             request_hash TEXT NOT NULL,
             result_receipt TEXT,
             result_receipt_hash TEXT,
-            input_tokens_estimated INTEGER,
-            output_tokens_reserved INTEGER,
-            accounting_profile TEXT,
             resolution_action_id TEXT UNIQUE,
             resolution_operator_id TEXT,
             resolution_risk_ack TEXT,
@@ -1662,19 +1650,6 @@ def open_db(path: str) -> sqlite3.Connection:
     }.items():
         if name not in existing_attempt_columns:
             db.execute(f"ALTER TABLE research_attempts ADD COLUMN {name} {definition}")
-    for name, definition in {
-        "input_tokens_estimated": "INTEGER",
-        "output_tokens_reserved": "INTEGER",
-        "accounting_profile": "TEXT",
-    }.items():
-        if name not in existing_attempt_columns:
-            db.execute(f"ALTER TABLE research_attempts ADD COLUMN {name} {definition}")
-    existing_job_columns = {
-        str(row["name"]) for row in db.execute("PRAGMA table_info(research_jobs)")
-    }
-    for name in ("token_allowance", "tokens_reserved"):
-        if name not in existing_job_columns:
-            db.execute(f"ALTER TABLE research_jobs ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
     db.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS research_attempts_resolution_action "
         "ON research_attempts(resolution_action_id) WHERE resolution_action_id IS NOT NULL"
@@ -1691,7 +1666,6 @@ def open_db(path: str) -> sqlite3.Connection:
     db.execute(
         "UPDATE research_jobs SET delivery_status = 'pending' WHERE delivery_status = 'ready'"
     )
-    create_profile_tables(db)
     db.commit()
     return db
 
@@ -4570,16 +4544,6 @@ async def submit_research_job(
             }
         else:
             job_id = uuid.uuid4().hex
-            accounting = verified_input_ceiling(
-                runtime.db, runtime.settings.model, runtime.settings.llm_base_url
-            )
-            if accounting is None:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="token accounting profile is not verified",
-                )
-            _profile_fingerprint, input_ceiling = accounting
-            token_allowance = max_attempts * (input_ceiling + OUTPUT_RESERVE_TOKENS)
             try:
                 ensure_storage_capacity(runtime, logical_bytes(request_json, research_json, "[]"))
             except StorageQuotaExceeded:
@@ -4591,9 +4555,9 @@ async def submit_research_job(
                 """
                 INSERT INTO research_jobs (
                     job_id, owner_id, action_id, request_hash, request_json, status, phase,
-                    profile, units, deadline_at_ms, max_attempts, token_allowance, research_json,
+                    profile, units, deadline_at_ms, max_attempts, research_json,
                     created_at_ms, updated_at_ms
-                ) VALUES (?, ?, ?, ?, ?, 'queued', 'scoping', ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, 'queued', 'scoping', ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_id,
@@ -4605,7 +4569,6 @@ async def submit_research_job(
                     request.units,
                     now + wall_seconds * 1000,
                     max_attempts,
-                    token_allowance,
                     research_json,
                     now,
                     now,
@@ -4653,11 +4616,28 @@ async def unknown_dispatch_blocked(runtime: Runtime) -> bool:
     return row is not None
 
 
-async def token_accounting_ready(runtime: Runtime) -> bool:
+async def reported_job_usage(runtime: Runtime, job_id: str) -> dict[str, Any]:
+    """Report provider measurements only; missing usage is not zero usage."""
     async with runtime.db_lock:
-        return profile_is_verified(
-            runtime.db, runtime.settings.model, runtime.settings.llm_base_url
-        )
+        row = runtime.db.execute(
+            "SELECT COUNT(*) AS attempts, SUM(prompt_tokens) AS prompt_tokens, "
+            "SUM(completion_tokens) AS completion_tokens, SUM(total_tokens) AS total_tokens, "
+            "COUNT(CASE WHEN prompt_tokens IS NOT NULL OR completion_tokens IS NOT NULL "
+            "OR total_tokens IS NOT NULL THEN 1 END) AS reported_attempts, "
+            "COUNT(CASE WHEN prompt_tokens IS NOT NULL AND completion_tokens IS NOT NULL "
+            "AND total_tokens IS NOT NULL THEN 1 END) AS complete_attempts "
+            "FROM research_attempts WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+    return {
+        "source": "provider_usage",
+        "reported_prompt_tokens": row["prompt_tokens"],
+        "reported_completion_tokens": row["completion_tokens"],
+        "reported_total_tokens": row["total_tokens"],
+        "reported_attempts": row["reported_attempts"],
+        "attempts": row["attempts"],
+        "usage_complete": row["attempts"] > 0 and row["complete_attempts"] == row["attempts"],
+    }
 
 
 def safe_job_error_code(value: Any) -> str | None:
@@ -4691,10 +4671,7 @@ async def research_job_status(runtime: Runtime, owner_id: str, job_id: str) -> d
             "used": int(row["attempts_used"]),
             "limit": int(row["max_attempts"]),
         },
-        "tokens": {
-            "reserved": int(row["tokens_reserved"]),
-            "allowance": int(row["token_allowance"]),
-        },
+        "tokens": await reported_job_usage(runtime, job_id),
         "deadline_at_ms": int(row["deadline_at_ms"]),
         "cancel_requested": bool(row["cancel_requested"]),
         "dispatch_blocked": blocked,
@@ -5533,10 +5510,6 @@ async def invoke_job_model(
         raise JobIncomplete("request_not_admitted") from exc
     if len(body) > JOB_REQUEST_BYTES:
         raise JobIncomplete("request_not_admitted")
-    try:
-        input_tokens = count_fresh_prompt_tokens(system_prompt, user_prompt)
-    except (OSError, RuntimeError, ValueError) as exc:
-        raise JobIncomplete("request_not_admitted") from exc
     body_hash = hashlib.sha256(body).hexdigest()
     async with runtime.provider_lock:
         anchor_unix_ms = unix_ms()
@@ -5568,18 +5541,9 @@ async def invoke_job_model(
                 "SELECT 1 FROM research_attempts WHERE state = 'unknown' LIMIT 1"
             ).fetchone():
                 raise JobPaused()
-            accounting = verified_input_ceiling(
-                runtime.db, runtime.settings.model, runtime.settings.llm_base_url
-            )
-            if accounting is None:
-                raise JobIncomplete("request_not_admitted")
-            accounting_profile, input_ceiling = accounting
-            reservation = input_tokens + OUTPUT_RESERVE_TOKENS
-            if input_tokens > input_ceiling:
-                raise JobIncomplete("request_not_admitted")
             row = runtime.db.execute(
                 "SELECT status, cancel_requested, deadline_at_ms, attempts_used, "
-                "max_attempts, candidate_no, token_allowance, tokens_reserved "
+                "max_attempts, candidate_no "
                 "FROM research_jobs WHERE job_id = ?",
                 (job_id,),
             ).fetchone()
@@ -5595,23 +5559,18 @@ async def invoke_job_model(
                 raise JobIncomplete("deadline_expired")
             if int(row["attempts_used"]) >= int(row["max_attempts"]):
                 raise JobIncomplete("attempt_budget_exhausted")
-            if int(row["tokens_reserved"]) + reservation > int(row["token_allowance"]):
-                raise JobIncomplete("request_not_admitted")
             ensure_storage_capacity(runtime, logical_bytes(assignment_key, assignment_key))
             runtime.db.execute(
                 "INSERT INTO research_attempts (attempt_id, job_id, assignment, assignment_key, "
-                "candidate_no, input_tokens_estimated, output_tokens_reserved, accounting_profile, "
+                "candidate_no, "
                 "state, expires_at_ms, request_hash, created_at_ms, updated_at_ms) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'dispatched', ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, 'dispatched', ?, ?, ?, ?)",
                 (
                     attempt_id,
                     job_id,
                     assignment_key,
                     assignment_key,
                     int(row["candidate_no"]),
-                    input_tokens,
-                    OUTPUT_RESERVE_TOKENS,
-                    accounting_profile,
                     request_expiry,
                     body_hash,
                     anchor_unix_ms,
@@ -5620,9 +5579,9 @@ async def invoke_job_model(
             )
             runtime.db.execute(
                 "UPDATE research_jobs SET attempts_used = attempts_used + 1, "
-                "tokens_reserved = tokens_reserved + ?, revision = revision + 1, "
+                "revision = revision + 1, "
                 "updated_at_ms = ? WHERE job_id = ?",
-                (reservation, anchor_unix_ms, job_id),
+                (anchor_unix_ms, job_id),
             )
             runtime.db.commit()
         lease = AttemptLease(
@@ -7207,13 +7166,9 @@ def build_app() -> FastAPI:
 
     @app.get("/health", include_in_schema=False)
     async def health() -> dict[str, Any]:
-        ready = await token_accounting_ready(get_runtime(app))
         return {
-            "status": "ok" if ready else "not_ready",
-            "token_accounting": {
-                "ready": ready,
-                "reason": None if ready else "verified calibration receipt missing or stale",
-            },
+            "status": "ok",
+            "token_accounting": {"mode": "provider_usage"},
         }
 
     @app.post("/research/jobs", status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)

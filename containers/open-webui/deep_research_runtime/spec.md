@@ -5,7 +5,9 @@
 This document defines the target design. A first runtime implementation now exists
 in this branch; Sections 12.9 and 12.10 distinguish the initial runtime slice and
 the completed pre-E2E integration from live verification and production gates.
-The new integration has not been deployed or subjected to full E2E testing.
+The integration is deployed, but full E2E testing remains separate. There is no
+post-deployment token-calibration prerequisite; Section 12.11 supersedes that
+earlier operating policy.
 **Decision: use one author with source-grounded review and bounded correction
 for the initial implementation. Do not make independent chapter contributors
 the default.** The magazine-style candidate was implemented as a limited
@@ -408,16 +410,16 @@ selection modes. A complete response with invalid structure is a known failed
 assignment, not grounds for hidden SDK repair loops. `finish_reason=length` is
 not an accepted finished draft.
 
-Before each physical attempt, account for system instructions, tool schemas,
-retained messages and required reasoning replay, source passages, draft/editorial
-state, and output reservation under the provider's token rules. A message count
-or character-to-token guess is not a certified token budget.
+Before each physical attempt, enforce the serialized request-byte cap, the
+configured output-token ceiling, and the remaining job attempt/time limits.
+Include the actual system instructions, source passages, and editorial state in
+that byte admission check. Do not claim a byte or character count is an exact
+token count or certify the provider's entire advertised context window.
 
-Use a verified tokenizer/accounting method and a conservative operating ceiling
-below the documented model maximum. Confirm the estimator against provider
-`usage` on representative Japanese and English inputs. If a valid bound cannot
-be established, do not admit arbitrarily larger prompts or claim long-context
-safety. Context admission methodology is a release gate.
+Record provider-reported usage when available; do not invent values when it is
+missing. Matching a local tokenizer to the serving API is not an admission or
+readiness requirement. A deployment must accept normal research without extra
+calibration requests. Provider errors still fail visibly within the same bounds.
 
 The working set is bounded while original evidence remains in durable storage.
 Select passages and reopen neighboring spans; do not repeatedly summarize
@@ -433,9 +435,10 @@ do not invent replacement reasoning to resume the same turn.
 ### 4.3 Whole-job budgets
 
 Admission MUST enforce both per-assignment limits and shared job limits:
-physical attempts, admitted tokens, searches, fetched documents/bytes, stored
-bytes, elapsed time, and active provider requests. Reservations and actual
-consumption are different counters; never report an allowance as measured usage.
+physical attempts, output-token ceilings, serialized request/response bytes,
+searches, fetched documents/bytes, stored bytes, elapsed time, and active provider
+requests. Record provider usage separately; never report an allowance or estimate
+as measured consumption.
 
 Before scheduling more research, reserve capacity for the remaining writing,
 source-grounded review, correction, and publication. Stop scheduling work that
@@ -575,7 +578,7 @@ The first runtime implementation exposes these private job endpoints and removes
 the old synchronous `/research` endpoint. They are deliberately excluded from
 OpenAPI tool discovery: the former generic LLM-driven adapter must not manufacture
 the owner header while inheriting a service credential. The managed Pipe migration
-is implemented but has not been applied to the running deployment. Use an authenticated adapter identity plus a trusted owner
+is implemented and deployed. Use an authenticated adapter identity plus a trusted owner
 binding; an unpredictable job ID is not authorization. Never trust an owner ID
 supplied in model-generated text.
 
@@ -1673,26 +1676,12 @@ undelivered publications are protected. Small owner/action/request-hash tombston
 prevent purging from turning a duplicate submit into a new generation. Note
 content is not deleted by runtime retention; expiry is reported explicitly.
 
-#### Token counting and the live preflight boundary
+#### Earlier token-calibration policy (superseded)
 
-The offline counter uses only `tiktoken` plus the pinned public Kimi K2.7 Code
-token data and the fixed fresh system/user template. No model weights or remote
-tokenizer Python code are executed. The accompanying Modified MIT license and
-asset provenance are retained with the data.
-
-The calibration command is implemented but **has not been run against Sakura**.
-It uses the existing one-send transport, records intent and reservations before
-sending, and compares local counts with reported prompt usage for English,
-Japanese, mixed, and near-64-KiB requests. Receipts bind model, gateway, assets,
-counter implementation/version, case hashes, and observed/local counts. Admission
-is limited to the verified input ceiling, not a claim that the advertised 256K
-window has been validated. Missing or inconsistent calibration makes readiness
-`not_ready` and rejects new dispatch. Fake receipts belong only to tests.
-
-Input and output token reservations are persisted before each admitted attempt;
-missing usage and UNKNOWN do not refund those reservations. Live calibration is
-a separately authorized, bounded first step before full E2E, not an unimplemented
-counter that must be written later.
+This checkpoint originally required an offline tokenizer and a live calibration
+receipt before dispatch. That additional operational gate was subsequently
+removed at the user's request; see Section 12.11. It is not a current deployment
+step or a prerequisite for asking a research question.
 
 #### Provisioning, builds, and remaining execution
 
@@ -1727,9 +1716,30 @@ Historical untracked diagnostic files were not included in these accepted suites
 or commits. Component containers used no production volumes, credentials, or
 external network, and were removed after their checks.
 
-Full browser/provider E2E, live calibration, live migration, and deployment remain
-unexecuted. Passing source checks, fixtures, and image builds is not a claim of
-live provider compatibility or the target research-quality success rate. The next
-authorized execution must follow the runbook, preserve the finite budgets, and
+At this checkpoint full browser/provider E2E and deployment were unexecuted.
+Deployment has since been performed without live calibration. Passing source
+checks, fixtures, and image builds is not a claim of the target research-quality
+success rate. Future authorized E2E checks must preserve the finite budgets and
 verify new chat, existing chat, Regenerate, reconnection/restart, Stop, private
 Note delivery, and ordinary-chat non-regression on the real integration.
+
+### 12.11 Normal admission without token calibration
+
+The mandatory calibration gate, calibration CLI, bundled tokenizer data, and
+`tiktoken` dependency are removed. Health reports `status=ok` with
+`token_accounting.mode=provider_usage`; an ordinary authenticated submission
+does not require a matching profile or a post-deployment enablement command.
+
+Input remains bounded at 64 KiB, output at 16,384 tokens per call, response at
+4 MiB, and request time at 240 seconds. Shared job attempt/deadline/storage
+limits, owner/authentication checks, idempotency, and UNKNOWN admission/replay
+protection are unchanged. Neither restart nor this change resets saved deadlines
+or consumed attempts.
+
+Status exposes only reported usage totals and whether they cover all attempts.
+Absent usage is null, not zero; partial totals are explicitly labelled. Existing
+historical calibration/estimate columns or tables are left intact in an upgraded
+database but do not authorize or block current execution. No new local token
+estimates or calibration profiles are created. Regression checks cover fresh
+installation, stale prior schema, ordinary dispatch, reported/missing usage,
+byte/output/attempt limits, authentication, and UNKNOWN without replay.

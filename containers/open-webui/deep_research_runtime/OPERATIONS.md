@@ -24,31 +24,21 @@ put credentials in command arguments, shell history, logs, or `docker compose co
 - `DEEP_RESEARCH_DB_PATH=/data/deep-research.sqlite3` in both services.
 - `DEEP_RESEARCH_RETENTION_DAYS=30` and
   `DEEP_RESEARCH_GLOBAL_LOGICAL_BYTES=536870912` unless intentionally changed.
-## First startup and calibration
-Calibration is live, billable work: four bounded research requests, including a
-65,535-byte boundary fixture. Obtain explicit approval and budget first. The
-research transport has a 240-second absolute deadline and no hidden retry.
-Start only the dependencies, proxy, and runtime. `exec` works while the runtime
-health JSON is `not_ready`, so WebUI dependency gating cannot deadlock calibration.
+## Startup
+There is no calibration or manual enablement step after deployment. Start the
+stack with the protected environment wrapper, check health, and submit research
+through the managed Pipe. Do not send calibration requests merely to enable use.
 ```bash
-cd containers/open-webui
-docker compose up -d sakura-proxy searxng
-docker compose up -d --no-deps deep-research-runtime
-# Expected before first calibration: status=not_ready, token_accounting.ready=false.
-docker compose exec -T deep-research-runtime python -c \
-  'import json,urllib.request; print(json.dumps(json.load(urllib.request.urlopen("http://127.0.0.1:8000/health")),indent=2))'
-# Uses service env for DB, model, gateway, actor, and API key; timeout maximum is 240.
-docker compose exec -T deep-research-runtime \
-  python token_accounting.py calibrate --timeout 240
-# Gate on JSON, not merely HTTP 200 or Compose's container-health label.
-docker compose exec -T deep-research-runtime python -c \
-  'import json,urllib.request; v=json.load(urllib.request.urlopen("http://127.0.0.1:8000/health")); print(json.dumps(v,indent=2)); raise SystemExit(0 if v["token_accounting"]["ready"] else 1)'
-docker compose up -d open-webui
+# From the repository root:
+bash scripts/open-webui.sh "$PWD" compose up -d --build --wait
+bash scripts/open-webui.sh "$PWD" compose exec -T deep-research-runtime python -c \
+  'import json,urllib.request; v=json.load(urllib.request.urlopen("http://127.0.0.1:8000/health")); print(json.dumps(v)); raise SystemExit(0 if v["status"] == "ok" else 1)'
 ```
-Without a matching receipt, health remains `not_ready`, new submissions return
-503, and attempt dispatch fails closed. A receipt is bound to the serving model,
-gateway, fixed assets, 64 KiB cases, verified input ceiling, and counter code.
-Changing any binding requires a new explicitly approved calibration.
+Input requests remain capped at 64 KiB, generation at 16,384 tokens, responses at
+4 MiB, and each request at 240 seconds. Job attempt/deadline/storage limits remain
+enforced. The `tokens` status object reports provider-supplied usage only: totals
+are partial when `usage_complete=false`, and unavailable values remain null rather
+than becoming zero. Local tokenizer matching is not a readiness condition.
 ## Internal API helper
 The helper reads credentials from the already-running container environment and
 request JSON from stdin. Credential values therefore do not enter process args.
@@ -73,7 +63,7 @@ except urllib.error.HTTPError as e:
 ```
 ## Obtain exact unresolved IDs (read-only)
 Never invent or infer IDs. This prints metadata only, not prompts, responses, or
-tokens. `lease_id == attempt_id` correlates a research/calibration send.
+tokens. `lease_id == attempt_id` correlates a research send.
 ```bash
 docker compose exec -T deep-research-runtime python -c '
 import os,sqlite3
@@ -81,8 +71,7 @@ p=os.environ["DEEP_RESEARCH_DB_PATH"]
 d=sqlite3.connect(f"file:{p}?mode=ro",uri=True)
 queries={
  "research": "SELECT j.owner_id,j.action_id,a.job_id,a.attempt_id,a.assignment_key,a.state,j.revision,j.status FROM research_attempts a JOIN research_jobs j ON j.job_id=a.job_id WHERE a.state IN (\"unknown\",\"dispatched\")",
- "accounts": "SELECT account_id,lease_id,purpose,state,updated_at_ms FROM account_admissions WHERE state=\"unknown\"",
- "calibration": "SELECT attempt_id,run_id,case_name,state,model_alias,gateway_fingerprint,input_tokens_estimated,output_tokens_reserved,observed_prompt_tokens FROM token_calibration_attempts WHERE state IN (\"unknown\",\"dispatched\")"
+ "accounts": "SELECT account_id,lease_id,purpose,state,updated_at_ms FROM account_admissions WHERE state=\"unknown\""
 }
 for name,sql in queries.items(): print(name,*d.execute(sql).fetchall(),sep="\n")
 ' </dev/null
@@ -93,7 +82,7 @@ for name,sql in queries.items(): print(name,*d.execute(sql).fetchall(),sep="\n")
 Use the exact risk acknowledgement below. Generate one unique operator action ID
 per approval and reuse that same ID/body if the response is lost. A new action ID
 is not a retry. Approval accepts possible duplicate execution/charge; it does not
-assert success, `not_sent`, or a refund. Reservations are not refunded.
+assert success, `not_sent`, or a refund. Attempt allowances are not restored.
 ```bash
 export RISK_ACK='possible duplicate execution or charge; no refund; no replay'
 export OPERATOR_ACTION_ID="$(uuidgen)"   # preserve for an idempotent retry
@@ -110,22 +99,14 @@ print(json.dumps({"job_id":os.environ["JOB_ID"],"attempt_id":os.environ["ATTEMPT
  "risk_ack":os.environ["RISK_ACK"]}))
 PY
 ```
-For an unknown account with no matching research attempt (normal chat or
-calibration), export its exact `ACCOUNT_ID` and `LEASE_ID` from `account_admissions`:
+For an unknown account with no matching research attempt (for example normal
+chat), export its exact `ACCOUNT_ID` and `LEASE_ID` from `account_admissions`:
 ```bash
 python3 - <<'PY' | runtime_call operator POST /internal/research/accounts/abandon
 import json,os
 print(json.dumps({"account_id":os.environ["ACCOUNT_ID"],"lease_id":os.environ["LEASE_ID"],
  "action_id":os.environ["OPERATOR_ACTION_ID"],"risk_ack":os.environ["RISK_ACK"]}))
 PY
-```
-A calibration UNKNOWN also needs its own durable attempt abandoned; use a second
-unique action ID, then start a new explicitly approved calibration (not a replay):
-```bash
-export OPERATOR_ACTION_ID="$(uuidgen)"
-docker compose exec -T deep-research-runtime python token_accounting.py abandon \
-  --attempt-id "$CALIBRATION_ATTEMPT_ID" --action-id "$OPERATOR_ACTION_ID" \
-  --risk-ack "$RISK_ACK"
 ```
 An unresolved account is unavailable to both research and ordinary chat; known
 normal-chat retry/cooldown behavior otherwise remains unchanged.

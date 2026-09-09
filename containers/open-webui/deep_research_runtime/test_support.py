@@ -25,7 +25,6 @@ os.environ.setdefault(
 )
 
 import deep_research_runtime as rt
-import token_accounting as accounting
 
 
 class FakeRequest:
@@ -113,18 +112,6 @@ class RuntimeTestCase(unittest.TestCase):
         os.environ["DEEP_RESEARCH_DB_PATH"] = str(Path(self.tmpdir.name) / "runtime.db")
         settings = rt.Settings.from_environment()
         self.runtime = rt.Runtime(settings, rt.open_db(settings.db_path), asyncio.Lock())
-        expected = accounting.expected_profile(settings.model, settings.llm_base_url)
-        local_counts = expected["local_counts"]
-        if not isinstance(local_counts, dict):
-            raise AssertionError("invalid accounting fixture")
-        accounting.record_verified_profile(
-            self.runtime.db,
-            settings.model,
-            settings.llm_base_url,
-            local_counts,
-            "synthetic-test-fixture",
-        )
-        self.runtime.db.commit()
         rt.app.state.runtime = self.runtime
 
     def tearDown(self) -> None:
