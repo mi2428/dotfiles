@@ -129,6 +129,23 @@ SAFE_JOB_ERROR_CODES = frozenset(
         "unknown_attempt",
     }
 )
+SAFE_MODEL_VALIDATION_HINTS = frozenset(
+    {
+        "model output is not one JSON object",
+        "invalid visible Markdown",
+        "internal generation marker in visible Markdown",
+        "mixed action and visible Markdown",
+        "duplicated report root",
+        "reserved publication section",
+        "author unit heading is invalid",
+        "author unit heading does not match its outline",
+        "author citations are invalid",
+        "author unit has no admitted citation",
+        "author unit is shorter than 1200 substantive characters",
+        "numeric claim lacks an admitted citation",
+        "numeric derivation lacks assumptions or sensitivity",
+    }
+)
 UNKNOWN_RISK_ACK = "possible duplicate execution or charge; no refund; no replay"
 
 MARKDOWN_NEUTRALIZERS = str.maketrans(
@@ -1288,10 +1305,17 @@ def neutralize_model_text(value: str) -> str:
 class JobIncomplete(Exception):
     """A safe, explicit terminal reason for the new job workflow."""
 
-    def __init__(self, code: str, *, quality_outcome: str | None = None) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        quality_outcome: str | None = None,
+        validation_hint: str | None = None,
+    ) -> None:
         super().__init__(code)
         self.code = code
         self.quality_outcome = quality_outcome
+        self.validation_hint = validation_hint
 
 
 class StorageQuotaExceeded(Exception):
@@ -1567,7 +1591,10 @@ def validate_numeric_derivations(markdown: str) -> None:
         if not passage_ids(block):
             raise ValueError("numeric claim lacks an admitted citation")
         derived = re.search(
-            r"(?:算出|推計|試算|estimate|derive|formula|[=\u00D7\u00F7])", block, re.I
+            r"(?:算出|推計|試算|estimate|derive|formula|[\u00D7\u00F7])", block, re.I
+        )
+        derived = derived or re.search(
+            r"\d+(?:[.,]\d+)?\s*(?:[+*/]|-\s+)\s*\d+(?:[.,]\d+)?\s*=", block
         )
         assumptions = re.search(r"(?:仮定|前提|感度|範囲|assum|sensitivity|range)", block, re.I)
         if derived and not assumptions:
@@ -2915,6 +2942,7 @@ async def invoke_job_model(
     accept: Callable[[str], str],
 ) -> str:
     repair_key = assignment_key + ":format-repair"
+    validation_hint = None
     async with runtime.db_lock:
         repaired = runtime.db.execute(
             "SELECT 1 FROM research_attempts WHERE job_id=? AND assignment_key=?",
@@ -2926,6 +2954,7 @@ async def invoke_job_model(
                 runtime, job_id, assignment_key, system_prompt, user_prompt, accept
             )
         except JobIncomplete as error:
+            validation_hint = error.validation_hint
             if error.code not in {
                 "assignment_result_invalid",
                 "assignment_result_unavailable",
@@ -2953,14 +2982,19 @@ async def invoke_job_model(
                 raise
     # One fresh, charged correction per assignment; job limits still bound total work.
     # Unknown transport is never retried.
+    correction = (
+        "VALIDATION CORRECTION: The completed response did not validate. "
+        "Satisfy every schema and semantic constraint in the request. Return only the requested "
+        "format. For JSON, emit one object with exactly the specified fields and length limits, "
+        "not an array or commentary. No internal markers."
+    )
+    if validation_hint is not None:
+        correction += f" Correct this specific violation: {validation_hint}."
     return await _invoke_job_model_once(
         runtime,
         job_id,
         repair_key,
-        system_prompt + "\nVALIDATION CORRECTION: The completed response did not validate. "
-        "Satisfy every schema and semantic constraint in the request. Return only the requested "
-        "format. For JSON, emit one object with exactly the specified fields and length limits, "
-        "not an array or commentary. No internal markers.",
+        system_prompt + "\n" + correction,
         user_prompt,
         accept,
     )
@@ -3080,6 +3114,7 @@ async def _invoke_job_model_once(
                 await update_attempt(runtime, job_id, attempt_id, completion, None)
                 raise
             except (ValueError, ValidationError) as error:
+                validation_hint = str(error) if str(error) in SAFE_MODEL_VALIDATION_HINTS else None
                 kinds = (
                     sorted(
                         {
@@ -3098,13 +3133,16 @@ async def _invoke_job_model_once(
                     else "schema_validation"
                 )
                 LOG.warning(
-                    "model_output_invalid assignment=%s kinds=%s reason=%s",
+                    "model_output_invalid assignment=%s kinds=%s reason=%s hint=%s",
                     assignment_key,
                     kinds,
                     reason,
+                    validation_hint,
                 )
                 await update_attempt(runtime, job_id, attempt_id, completion, None)
-                raise JobIncomplete("assignment_result_invalid") from None
+                raise JobIncomplete(
+                    "assignment_result_invalid", validation_hint=validation_hint
+                ) from None
         await update_attempt(runtime, job_id, attempt_id, completion, receipt)
         if await job_cancel_requested(runtime, job_id):
             raise asyncio.CancelledError()

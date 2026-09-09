@@ -443,6 +443,11 @@ class RuntimeContractTests(RuntimeTestCase):
         )
         self.assertEqual(accepted, short)
 
+    def test_numeric_derivation_ignores_directive_assignment_as_arithmetic(self) -> None:
+        rt.validate_numeric_derivations("Use s-maxage=60 as specified. [S1:P0-80]")
+        with self.assertRaisesRegex(ValueError, "assumptions or sensitivity"):
+            rt.validate_numeric_derivations("The result is 10 * 20 = 200. [S1:P0-80]")
+
     def test_repeated_filler_and_content_before_the_unit_heading_are_rejected(self) -> None:
         outline = rt.DecisionLedger.model_validate_json(ledger_json("S1:P0-80")).outline[0]
         repeated = "## Unit 1\n\n" + ("Repeated filler sentence. " * 100) + "[S1:P0-80]"

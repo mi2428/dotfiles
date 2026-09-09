@@ -83,6 +83,11 @@ class FormatRepairTests(RuntimeTestCase):
                     good,
                 )
                 self.assertEqual(provider.await_count, 2)
+                repair_request = json.loads(provider.await_args_list[1].args[2])
+                self.assertIn(
+                    "model output is not one JSON object",
+                    repair_request["messages"][0]["content"],
+                )
                 self.assertEqual(
                     await rt.invoke_job_model(
                         self.runtime, job_id, "candidate_1_ledger", "JSON schema", "q", accept
