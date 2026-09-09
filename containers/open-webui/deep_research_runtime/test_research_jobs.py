@@ -348,6 +348,29 @@ class ResearchJobTests(RuntimeTestCase):
 
         asyncio.run(run())
 
+    def test_recoverable_action_error_is_feedback_not_a_terminal_job_error(self) -> None:
+        async def run() -> None:
+            outputs = [
+                completion('{"action":"search","query":"primary evidence"}'),
+                completion('{"action":"read","source_id":"S1","start":0,"end":80}'),
+                *research_outputs()[1:],
+                completion(ledger_json()),
+                completion("## Unit 1\n\nSupported finding [S1:P0-80]"),
+                completion('{"patches":[],"notes":[],"regenerate_reason":null}'),
+            ]
+            job_id, provider = await self.run_path(outputs)
+            status = await rt.research_job_status(self.runtime, "owner-1", job_id)
+            self.assertEqual(status["status"], "completed")
+            prompt_after_error = json.loads(
+                json.loads(provider.bodies[2])["messages"][1]["content"]
+            )
+            self.assertEqual(
+                prompt_after_error["last_result"],
+                {"action": "read", "error": "source_not_found"},
+            )
+
+        asyncio.run(run())
+
     def test_search_obeys_absolute_job_deadline_and_research_preserves_editorial_reserve(
         self,
     ) -> None:

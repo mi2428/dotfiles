@@ -6014,68 +6014,83 @@ async def run_job_research(
         if isinstance(action, SearchJobAction):
             query = bounded_query(action.query)
             if query in state_value["searched_queries"]:
-                raise JobIncomplete("duplicate_research_action")
-            try:
-                async with asyncio.timeout(await remaining_job_seconds(runtime, job_id)):
-                    results = await search_searxng(
-                        runtime.settings,
-                        query,
-                        request.language,
-                        request.recency_days,
-                        SEARCH_RESULT_LIMIT,
-                    )
-            except TimeoutError:
-                raise JobIncomplete("deadline_expired") from None
-            state_value["searched_queries"].append(query)
-            for result in results:
-                url = validate_public_url(result.url)
-                state_value["allowlisted_results"][url] = {
-                    "url": url,
-                    "title": result.title,
-                    "content": result.content,
-                    "engine": result.engine,
-                    "search_query": query,
+                state_value["last_result"] = {
+                    "action": "search",
+                    "error": "duplicate_query",
                 }
-            state_value["last_result"] = {"action": "search", "count": len(results)}
+            else:
+                try:
+                    async with asyncio.timeout(await remaining_job_seconds(runtime, job_id)):
+                        results = await search_searxng(
+                            runtime.settings,
+                            query,
+                            request.language,
+                            request.recency_days,
+                            SEARCH_RESULT_LIMIT,
+                        )
+                except TimeoutError:
+                    raise JobIncomplete("deadline_expired") from None
+                except (aiohttp.ClientError, OSError, ValueError):
+                    state_value["last_result"] = {
+                        "action": "search",
+                        "error": "search_failed",
+                    }
+                else:
+                    state_value["searched_queries"].append(query)
+                    for result in results:
+                        url = validate_public_url(result.url)
+                        state_value["allowlisted_results"][url] = {
+                            "url": url,
+                            "title": result.title,
+                            "content": result.content,
+                            "engine": result.engine,
+                            "search_query": query,
+                        }
+                    state_value["last_result"] = {"action": "search", "count": len(results)}
         elif isinstance(action, FetchJobAction):
             url = validate_public_url(action.url)
             item = state_value["allowlisted_results"].get(url)
             if not isinstance(item, dict):
-                raise JobIncomplete("source_not_allowlisted")
-            stored = await stored_source_blob(runtime, job_id, url)
-            if stored is None:
-                try:
-                    async with asyncio.timeout(await remaining_job_seconds(runtime, job_id)):
-                        source = await fetch_source_blob(
-                            SearchResult(
-                                url=url,
-                                title=str(item["title"]),
-                                content=str(item["content"]),
-                                engine=str(item["engine"]),
-                                search_query=str(item["search_query"]),
-                            )
-                        )
-                except TimeoutError:
-                    raise JobIncomplete("deadline_expired") from None
-                source_id_value = await store_source_blob(runtime, job_id, source)
+                state_value["last_result"] = {
+                    "action": "fetch",
+                    "error": "source_not_allowlisted",
+                }
             else:
-                source_id_value, source = stored
-            extraction = await stored_extraction(runtime, job_id, source_id_value)
-            if extraction is None:
                 try:
-                    async with asyncio.timeout(await remaining_job_seconds(runtime, job_id)):
-                        extraction = await extract_source_blob(source)
+                    stored = await stored_source_blob(runtime, job_id, url)
+                    if stored is None:
+                        async with asyncio.timeout(await remaining_job_seconds(runtime, job_id)):
+                            source = await fetch_source_blob(
+                                SearchResult(
+                                    url=url,
+                                    title=str(item["title"]),
+                                    content=str(item["content"]),
+                                    engine=str(item["engine"]),
+                                    search_query=str(item["search_query"]),
+                                )
+                            )
+                        source_id_value = await store_source_blob(runtime, job_id, source)
+                    else:
+                        source_id_value, source = stored
+                    extraction = await stored_extraction(runtime, job_id, source_id_value)
+                    if extraction is None:
+                        async with asyncio.timeout(await remaining_job_seconds(runtime, job_id)):
+                            extraction = await extract_source_blob(source)
+                        await store_source_extraction(runtime, job_id, source_id_value, extraction)
                 except TimeoutError:
                     raise JobIncomplete("deadline_expired") from None
-                except (ValueError, OSError) as exc:
-                    raise JobIncomplete("source_extraction_failed") from exc
-                await store_source_extraction(runtime, job_id, source_id_value, extraction)
-            state_value["last_result"] = {
-                "action": "fetch",
-                "source_id": source_id_value,
-                "chars": len(extraction.extracted_text),
-                "limitations": extraction.limitations,
-            }
+                except (aiohttp.ClientError, OSError, ValueError):
+                    state_value["last_result"] = {
+                        "action": "fetch",
+                        "error": "source_fetch_failed",
+                    }
+                else:
+                    state_value["last_result"] = {
+                        "action": "fetch",
+                        "source_id": source_id_value,
+                        "chars": len(extraction.extracted_text),
+                        "limitations": extraction.limitations,
+                    }
         elif isinstance(action, ReadJobAction):
             async with runtime.db_lock:
                 source_row = runtime.db.execute(
@@ -6084,34 +6099,56 @@ async def run_job_research(
                     (job_id, action.source_id),
                 ).fetchone()
             if source_row is None:
-                raise JobIncomplete("source_not_found")
-            source_text = str(source_row["extracted_text"])
-            if not 0 <= action.start < action.end <= len(source_text):
-                raise JobIncomplete("invalid_source_range")
-            if action.end - action.start > MAX_READ_CHARS:
-                raise JobIncomplete("source_range_too_large")
-            passage_id = f"{action.source_id}:P{action.start}-{action.end}"
-            passage = {
-                "id": passage_id,
-                "source_id": action.source_id,
-                "start": action.start,
-                "end": action.end,
-                "hash": hashlib.sha256(source_text[action.start : action.end].encode()).hexdigest(),
-            }
-            if passage not in state_value["passages"]:
-                state_value["passages"].append(passage)
-            state_value["last_result"] = {"action": "read", "passage_id": passage_id}
+                state_value["last_result"] = {
+                    "action": "read",
+                    "error": "source_not_found",
+                }
+            else:
+                source_text = str(source_row["extracted_text"])
+                if not 0 <= action.start < action.end <= len(source_text):
+                    state_value["last_result"] = {
+                        "action": "read",
+                        "error": "invalid_source_range",
+                        "source_chars": len(source_text),
+                    }
+                elif action.end - action.start > MAX_READ_CHARS:
+                    state_value["last_result"] = {
+                        "action": "read",
+                        "error": "source_range_too_large",
+                        "read_chars": MAX_READ_CHARS,
+                    }
+                else:
+                    passage_id = f"{action.source_id}:P{action.start}-{action.end}"
+                    passage = {
+                        "id": passage_id,
+                        "source_id": action.source_id,
+                        "start": action.start,
+                        "end": action.end,
+                        "hash": hashlib.sha256(
+                            source_text[action.start : action.end].encode()
+                        ).hexdigest(),
+                    }
+                    if passage not in state_value["passages"]:
+                        state_value["passages"].append(passage)
+                    state_value["last_result"] = {
+                        "action": "read",
+                        "passage_id": passage_id,
+                    }
         else:
             finish = cast(FinishJobAction, action)
             admitted_passages = {item["id"] for item in state_value["passages"]}
             if any(set(item.passage_ids) - admitted_passages for item in finish.findings):
-                raise JobIncomplete("finding_reference_invalid")
-            state_value["findings"] = [item.model_dump() for item in finish.findings]
-            state_value["gaps"] = [item.strip()[:500] for item in finish.gaps if item.strip()]
-            state_value["last_result"] = {"action": "finish"}
-            state_value["steps"] = step
-            await save_research_state(runtime, job_id, state_value, phase="writing")
-            return state_value
+                state_value["last_result"] = {
+                    "action": "finish",
+                    "error": "finding_reference_invalid",
+                }
+            else:
+                state_value["findings"] = [item.model_dump() for item in finish.findings]
+                state_value["gaps"] = [item.strip()[:500] for item in finish.gaps if item.strip()]
+                state_value["last_result"] = {"action": "finish"}
+                state_value["steps"] = step
+                await save_research_state(runtime, job_id, state_value, phase="writing")
+                return state_value
         state_value["steps"] = step
         await save_research_state(runtime, job_id, state_value)
 
