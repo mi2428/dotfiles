@@ -19,9 +19,10 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
             job_id, provider = await fixture.run_path(
                 [
                     *fixtures.research_outputs(),
-                    fixtures.completion(fixtures.ledger_json()),
-                    fixtures.completion("## Unit 1\n\n公開本文です。[S1:P0-80]"),
-                    fixtures.completion('{"patches":[],"notes":[],"regenerate_reason":null}'),
+                    fixtures.completion(fixtures.ledger_json("S1:P0-80")),
+                    fixtures.completion(fixtures.unit_markdown(1, "S1:P0-80")),
+                    fixtures.completion(fixtures.unit_markdown(2, "S1:P0-80")),
+                    fixtures.completion(fixtures.clean_review_json()),
                 ]
             )
             saved = await rt.editorial_revision(self.runtime, job_id, 1, "ledger")
@@ -35,7 +36,7 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
             self.runtime.db.commit()
             with self.assertRaises(rt.IntegrityError):
                 await rt.editorial_revision(self.runtime, job_id, 1, "ledger")
-            self.assertEqual(len(provider.bodies), 3)
+            self.assertEqual(len(provider.bodies), 7)
 
         asyncio.run(run())
 
@@ -46,13 +47,15 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
             provider = fixtures.FakeProvider(
                 [
                     *fixtures.research_outputs(),
-                    fixtures.completion(fixtures.ledger_json()),
-                    fixtures.completion("## Unit 1\n\n確認が必要な条件です。[S1:P0-80]"),
+                    fixtures.completion(fixtures.ledger_json("S1:P0-80")),
+                    fixtures.completion(fixtures.unit_markdown(1, "S1:P0-80")),
+                    fixtures.completion(fixtures.unit_markdown(2, "S1:P0-80")),
                     fixtures.completion(
                         '{"patches":[{"block_ids":["D:c1:r1:b002"],'
-                        '"ledger_ids":["K-FACT"],"source_ids":["S1:P0-80"],'
+                        '"checklist_ids":["C1"],"ledger_ids":["K-FACT"],'
+                        '"source_ids":["S1:P0-80"],'
                         '"reason":"The condition must be corrected."}],'
-                        '"notes":[],"regenerate_reason":null}'
+                        '"notes":[],"unsupported":[],"regenerate_reason":null}'
                     ),
                 ]
             )
@@ -68,10 +71,10 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
                     self.assertRaises(asyncio.CancelledError),
                 ):
                     await rt.execute_research_job(self.runtime, job_id)
-                self.assertEqual(len(provider.bodies), 3)
+                self.assertEqual(len(provider.bodies), 7)
                 self.runtime.db.execute(
                     "UPDATE review_records SET result_json = ? WHERE job_id = ?",
-                    ('{"patches":[],"notes":[],"regenerate_reason":null}', job_id),
+                    (fixtures.clean_review_json(), job_id),
                 )
                 self.runtime.db.commit()
                 status = await rt.research_job_status(self.runtime, "owner-1", job_id)
@@ -79,7 +82,7 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
                 await rt.execute_research_job(self.runtime, job_id)
             status = await rt.research_job_status(self.runtime, "owner-1", job_id)
             self.assertEqual(status["status"], "failed")
-            self.assertEqual(len(provider.bodies), 3)
+            self.assertEqual(len(provider.bodies), 7)
             self.assertEqual(
                 self.runtime.db.execute(
                     "SELECT COUNT(*) FROM publications WHERE job_id = ?", (job_id,)
@@ -169,9 +172,10 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
             job_id, provider = await fixture.run_path(
                 [
                     *fixtures.research_outputs(),
-                    fixtures.completion(fixtures.ledger_json()),
-                    fixtures.completion("## Unit 1\n\n根拠のある公開本文です。[S1:P0-80]"),
-                    fixtures.completion('{"patches":[],"notes":[],"regenerate_reason":null}'),
+                    fixtures.completion(fixtures.ledger_json("S1:P0-80")),
+                    fixtures.completion(fixtures.unit_markdown(1, "S1:P0-80")),
+                    fixtures.completion(fixtures.unit_markdown(2, "S1:P0-80")),
+                    fixtures.completion(fixtures.clean_review_json()),
                 ]
             )
             status = await rt.research_job_status(self.runtime, "owner-1", job_id)
@@ -183,7 +187,7 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
             self.runtime.db.commit()
             with self.assertRaises(rt.IntegrityError):
                 await rt.research_job_result(self.runtime, "owner-1", job_id)
-            self.assertEqual(len(provider.bodies), 3)
+            self.assertEqual(len(provider.bodies), 7)
 
         asyncio.run(run())
 
@@ -224,9 +228,10 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
             provider = fixtures.FakeProvider(
                 [
                     *fixtures.research_outputs(),
-                    fixtures.completion(fixtures.ledger_json()),
-                    fixtures.completion("## Unit 1\n\n公開資料に基づく本文です。[S1:P0-80]"),
-                    fixtures.completion('{"patches":[],"notes":[],"regenerate_reason":null}'),
+                    fixtures.completion(fixtures.ledger_json("S1:P0-80")),
+                    fixtures.completion(fixtures.unit_markdown(1, "S1:P0-80")),
+                    fixtures.completion(fixtures.unit_markdown(2, "S1:P0-80")),
+                    fixtures.completion(fixtures.clean_review_json()),
                 ]
             )
             fixture = fixtures.ResearchJobTests()
@@ -259,7 +264,7 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
                 "SELECT error_code FROM research_jobs WHERE job_id = ?", (job_id,)
             ).fetchone()["error_code"]
             self.assertEqual(status["status"], "completed", str(error))
-            self.assertEqual(len(provider.bodies), 3)
+            self.assertEqual(len(provider.bodies), 7)
             self.assertFalse(provider.outputs)
 
         asyncio.run(run())

@@ -730,11 +730,9 @@ async def persist_deep_research_intent(metadata: dict[str, Any]) -> None:
 def research_job_payload(query: str, action_id: str) -> dict[str, Any]:
     return {
         "query": query,
-        "depth": "deep",
-        "language": "auto",
         "action_id": action_id,
-        "profile": "single_unit",
-        "units": 1,
+        "profile": "deep",
+        "max_units": 4,
     }
 
 

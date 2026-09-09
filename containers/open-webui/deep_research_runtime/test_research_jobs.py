@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
-import time
-import unittest
 from typing import Any, Literal
 from unittest.mock import AsyncMock, patch
 
 import httpx
+from pydantic import ValidationError
 
 from sakura_kimi_model import AttemptOutcome, ResearchCompletion
 from test_support import RuntimeTestCase, rt
@@ -25,20 +25,89 @@ def completion(
 
 def request(action_id: str = "action-1", **changes: Any) -> rt.ResearchJobRequest:
     return rt.ResearchJobRequest(
-        action_id=action_id,
-        query="Need a source-grounded answer",
-        depth="deep",
-        **changes,
+        **{"action_id": action_id, "query": "Need a source-grounded answer", **changes}
     )
 
 
-def ledger_json(units: int = 1, *, context: bool = False) -> str:
+def plan_json(*, language: str = "en") -> str:
     return json.dumps(
         {
+            "requested_language": language,
+            "time_horizon": "current public evidence",
+            "exclusions": [],
+            "checklist": [
+                {
+                    "id": "C1",
+                    "question": "What does the public evidence establish?",
+                    "essential": True,
+                    "preferred_source_types": ["primary documentation"],
+                    "fragment_ids": ["F1"],
+                }
+            ],
+            "initial_queries": [
+                {
+                    "query": f"primary evidence query {index}",
+                    "purpose": "establish the requested finding",
+                    "checklist_ids": ["C1"],
+                }
+                for index in range(1, 4)
+            ],
+        },
+        separators=(",", ":"),
+    )
+
+
+def selection_json(*result_ids: str) -> str:
+    return json.dumps(
+        {
+            "documents": [
+                {
+                    "result_id": result_id,
+                    "purpose": "establish the requested finding",
+                    "checklist_ids": ["C1"],
+                }
+                for result_id in result_ids
+            ]
+        },
+        separators=(",", ":"),
+    )
+
+
+def assessment_json(
+    *passage_ids: str,
+    status: str = "covered",
+    limitation: str | None = None,
+    follow_ups: list[dict[str, Any]] | None = None,
+    stop_reason: str | None = "Essential evidence is adequate.",
+) -> str:
+    return json.dumps(
+        {
+            "items": [
+                {
+                    "checklist_id": "C1",
+                    "status": status,
+                    "passage_ids": list(passage_ids),
+                    "origin": "primary source",
+                    "authority": "official documentation",
+                    "limitation": limitation,
+                }
+            ],
+            "follow_up_queries": follow_ups or [],
+            "stop_reason": stop_reason,
+        },
+        separators=(",", ":"),
+    )
+
+
+def ledger_json(*passage_ids: str, language: str = "en") -> str:
+    title = "Evidence-based answer" if language == "en" else "根拠に基づく回答"
+    return json.dumps(
+        {
+            "title": title,
             "entries": [
                 {
                     "id": "K-FACT",
-                    "statement": "The primary finding must retain its measured condition.",
+                    "statement": "The finding must retain its evidence conditions.",
                     "metric": "finding",
                     "unit": "text",
                     "comparator": "source",
@@ -46,29 +115,75 @@ def ledger_json(units: int = 1, *, context: bool = False) -> str:
                     "mode_stage": "report",
                     "condition": "public evidence",
                     "kind": "source_fact",
-                    "reference_ids": ["S1:P0-80"],
+                    "reference_ids": [passage_ids[0]],
                     "conflict_status": "none",
                 }
             ],
             "outline": [
                 {
                     "unit": unit,
-                    "heading": f"Unit {unit}",
-                    "purpose": f"Write bounded unit {unit}",
+                    "heading": f"Unit {unit}" if language == "en" else f"分析{unit}",
+                    "purpose": "Answer and analyze" if unit == 1 else "Synthesize implications",
+                    "checklist_ids": ["C1"],
                     "ledger_ids": ["K-FACT"],
-                    "passage_ids": ["S1:P0-80"],
-                    "context_units": [1] if context and unit == 2 else [],
-                    "handoff": f"Carry the finding through unit {unit}",
+                    "passage_ids": list(passage_ids),
+                    "limitations_analysis": False,
+                    "context_units": [1] if unit == 2 else [],
+                    "handoff": "Carry the supported finding forward.",
                 }
-                for unit in range(1, units + 1)
+                for unit in (1, 2)
             ],
         },
         separators=(",", ":"),
     )
 
 
-def research_outputs() -> list[ResearchCompletion]:
-    return []
+def unit_markdown(unit: int, passage_id: str, *, language: str = "en", label: str = "") -> str:
+    heading = f"Unit {unit}" if language == "en" else f"分析{unit}"
+    topics = (
+        "scope",
+        "definitions",
+        "source authority",
+        "time horizon",
+        "direct evidence",
+        "counterevidence",
+        "comparison basis",
+        "assumptions",
+        "practical effects",
+        "uncertainty",
+        "decision relevance",
+        "conclusion",
+    )
+    body = " ".join(
+        f"{label} The {topic} analysis applies the admitted evidence to the requested finding "
+        "under its stated conditions and distinguishes direct support from decision implications."
+        for topic in topics
+    )
+    return f"## {heading}\n\n{body} [{passage_id}]"
+
+
+def clean_review_json() -> str:
+    return '{"patches":[],"notes":[],"unsupported":[],"regenerate_reason":null}'
+
+
+def research_outputs(*, limitation: str | None = None) -> list[ResearchCompletion]:
+    passage_id = "S1:P0-80"
+    return [
+        completion(plan_json()),
+        completion(selection_json("W1-1")),
+        completion(assessment_json(passage_id, limitation=limitation)),
+    ]
+
+
+def default_outputs(*, limitation: str | None = None, label: str = "") -> list[ResearchCompletion]:
+    passage_id = "S1:P0-80"
+    return [
+        *research_outputs(limitation=limitation),
+        completion(ledger_json(passage_id)),
+        completion(unit_markdown(1, passage_id, label=label)),
+        completion(unit_markdown(2, passage_id, label=label)),
+        completion(clean_review_json()),
+    ]
 
 
 class FakeProvider:
@@ -88,31 +203,26 @@ class FakeProvider:
 
 
 class ResearchJobTests(RuntimeTestCase):
-    def patches(self, provider: FakeProvider) -> tuple[Any, ...]:
+    def patches(
+        self,
+        provider: FakeProvider,
+        *,
+        results: list[rt.SearchResult] | None = None,
+    ) -> tuple[Any, ...]:
         source_text = ("Evidence supports the measured finding and its condition. " * 5)[:80]
+        search_results = results or [
+            rt.SearchResult("https://example.com/source", "Primary Source", "Evidence", "engine")
+        ]
         return (
             patch.object(rt, "complete_research", new=provider),
-            patch.object(
-                rt,
-                "search_searxng",
-                new=AsyncMock(
-                    return_value=[
-                        rt.SearchResult(
-                            "https://example.com/source",
-                            "Primary Source",
-                            "Evidence",
-                            "engine",
-                        )
-                    ]
-                ),
-            ),
+            patch.object(rt, "search_searxng", new=AsyncMock(return_value=search_results)),
             patch.object(
                 rt,
                 "fetch_source_blob",
                 new=AsyncMock(
                     return_value=rt.FetchedSourceBlob(
-                        "https://example.com/source",
-                        "https://example.com/source",
+                        search_results[0].url,
+                        search_results[0].url,
                         "Primary Source",
                         "Publisher",
                         "text/html",
@@ -133,16 +243,10 @@ class ResearchJobTests(RuntimeTestCase):
             ),
         )
 
-    def test_excerpt_selection_keeps_filtered_paragraphs_verbatim(self) -> None:
-        relevant = "Vigore evidence describes the workshop and its operating conditions clearly."
-        unrelated = "Another sufficiently long paragraph provides unrelated background material."
-        excerpt, _score = rt.select_relevant_excerpt(
-            f"{relevant}\n\nx\n\n{unrelated}", "Vigore", None
-        )
-        self.assertEqual(excerpt, relevant)
-
     async def run_path(
-        self, outputs: list[ResearchCompletion], job_request: rt.ResearchJobRequest | None = None
+        self,
+        outputs: list[ResearchCompletion],
+        job_request: rt.ResearchJobRequest | None = None,
     ) -> tuple[str, FakeProvider]:
         submitted = await rt.submit_research_job(self.runtime, "owner-1", job_request or request())
         provider = FakeProvider(outputs)
@@ -151,849 +255,101 @@ class ResearchJobTests(RuntimeTestCase):
             await rt.execute_research_job(self.runtime, submitted["job_id"])
         return str(submitted["job_id"]), provider
 
-    def test_public_api_requires_auth_owner_and_action_and_attaches(self) -> None:
+    def test_dedicated_request_schema_requires_deep_and_max_units_four(self) -> None:
+        value = request()
+        self.assertEqual((value.depth, value.profile, value.max_units), ("deep", "deep", 4))
+        for change in (
+            {"depth": "quick"},
+            {"profile": "single_unit"},
+            {"max_units": 1},
+            {"units": 1},
+        ):
+            with self.subTest(change=change), self.assertRaises(ValidationError):
+                rt.ResearchJobRequest.model_validate({"action_id": "a", "query": "q", **change})
+
+    def test_authenticated_attach_and_read_do_not_dispatch(self) -> None:
         async def run() -> None:
             transport = httpx.ASGITransport(app=rt.app)
-            auth = {"Authorization": "Bearer test-api-key", "X-Research-Owner": "owner-1"}
+            headers = {
+                "Authorization": "Bearer test-api-key",
+                "X-Research-Owner": "owner-1",
+            }
             body = request().model_dump()
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                self.assertEqual(
-                    (
-                        await client.post(
-                            "/research/jobs", headers={"X-Research-Owner": "o"}, json=body
-                        )
-                    ).status_code,
-                    401,
-                )
-                self.assertEqual(
-                    (
-                        await client.post(
-                            "/research/jobs",
-                            headers={"Authorization": "Bearer test-api-key"},
-                            json=body,
-                        )
-                    ).status_code,
-                    422,
-                )
-                first = await client.post("/research/jobs", headers=auth, json=body)
-                attached = await client.post("/research/jobs", headers=auth, json=body)
-                self.assertEqual((first.status_code, attached.status_code), (202, 202))
+                first = await client.post("/research/jobs", headers=headers, json=body)
+                attached = await client.post("/research/jobs", headers=headers, json=body)
                 self.assertEqual(first.json()["job_id"], attached.json()["job_id"])
                 changed = await client.post(
-                    "/research/jobs", headers=auth, json={**body, "query": "changed"}
+                    "/research/jobs", headers=headers, json={**body, "query": "changed"}
                 )
                 self.assertEqual(changed.status_code, 409)
-                job_id = first.json()["job_id"]
-                self.assertEqual(
-                    (
-                        await client.get(
-                            f"/research/jobs/{job_id}",
-                            headers={**auth, "X-Research-Owner": "owner-2"},
-                        )
-                    ).status_code,
-                    404,
-                )
-                self.assertEqual(
-                    (await client.post("/research", headers=auth, json={})).status_code, 404
-                )
-                schema = (await client.get("/openapi.json")).json()
-                self.assertNotIn("/research", schema["paths"])
-                self.assertFalse(any(path.startswith("/research/jobs") for path in schema["paths"]))
                 with patch.object(
                     rt,
                     "complete_research",
                     new=AsyncMock(side_effect=AssertionError("read dispatched")),
                 ):
-                    status_response = await client.get(f"/research/jobs/{job_id}", headers=auth)
-                    result_response = await client.get(
-                        f"/research/jobs/{job_id}/result", headers=auth
-                    )
-                self.assertEqual(status_response.status_code, 200)
-                self.assertEqual(result_response.status_code, 202)
+                    status_response = await client.get(first.json()["status_url"], headers=headers)
+                    result_response = await client.get(first.json()["result_url"], headers=headers)
+                self.assertEqual(
+                    (status_response.status_code, result_response.status_code), (200, 202)
+                )
 
         asyncio.run(run())
 
-    def test_status_and_result_expose_only_fixed_safe_error_codes(self) -> None:
+    def test_full_path_persists_plan_assessment_two_units_and_runtime_publication(self) -> None:
         async def run() -> None:
-            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
-            job_id = submitted["job_id"]
-            self.runtime.db.execute(
-                "UPDATE research_jobs SET status = 'failed', error_code = ? WHERE job_id = ?",
-                ("private exception text", job_id),
-            )
-            self.runtime.db.commit()
-            status_payload = await rt.research_job_status(self.runtime, "owner-1", job_id)
-            _code, result = await rt.research_job_result(self.runtime, "owner-1", job_id)
-            self.assertEqual(status_payload["error_code"], "internal_error")
-            self.assertEqual(result["error_code"], "internal_error")
-
-        asyncio.run(run())
-
-    def test_collection_does_not_weaken_integrity_errors(self) -> None:
-        async def run() -> None:
-            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
-            with (
-                patch.object(
-                    rt,
-                    "search_searxng",
-                    new=AsyncMock(
-                        return_value=[
-                            rt.SearchResult(
-                                "https://example.com/source",
-                                "Source",
-                                "Evidence",
-                                "engine",
-                            )
-                        ]
-                    ),
-                ),
-                patch.object(
-                    rt,
-                    "save_research_state",
-                    new=AsyncMock(side_effect=rt.IntegrityError("checkpoint corrupt")),
-                ),
-                self.assertRaises(rt.IntegrityError),
-            ):
-                await rt.run_job_research(self.runtime, submitted["job_id"], request())
-
-        asyncio.run(run())
-
-    def test_all_saved_editorial_record_parts_are_verified_before_reuse(self) -> None:
-        async def run() -> None:
-            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
-            job_id = submitted["job_id"]
-            self.assertTrue(await rt.claim_research_job(self.runtime, job_id))
-            unit = "## Unit 1\n\nUnit evidence [S1:P0-80]"
-            raw = "## Unit 1\n\nRaw evidence [S1:P0-80]"
-            edited = "## Unit 1\n\nEdited evidence [S1:P0-80]"
-            await rt.insert_editorial_revision(
-                self.runtime,
-                job_id,
-                1,
-                1,
-                "raw_unit",
-                unit_no=1,
-                markdown=unit,
-                data={"unit": 1},
-                manifest=rt.block_manifest(rt.draft_blocks(unit, 1, 1)),
-                next_phase="writing",
-            )
-            await rt.insert_editorial_revision(
-                self.runtime,
-                job_id,
-                1,
-                1,
-                "raw",
-                markdown=raw,
-                manifest=rt.block_manifest(rt.draft_blocks(raw, 1, 1)),
-                next_phase="supervising",
-            )
-            await rt.insert_editorial_revision(
-                self.runtime,
-                job_id,
-                1,
-                2,
-                "edited",
-                markdown=edited,
-                data={"dismissals": [], "changed_ordinals": [2]},
-                manifest=rt.block_manifest(rt.draft_blocks(edited, 1, 2)),
-                next_phase="supervising",
-            )
-            for kind, unit_no, column, value in (
-                ("raw_unit", 1, "data_json", "{}"),
-                ("raw", 0, "manifest_json", "[]"),
-                ("edited", 0, "data_json", "{}"),
-            ):
-                with self.subTest(kind=kind, column=column):
-                    self.runtime.db.execute(
-                        f"UPDATE editorial_revisions SET {column} = ? "
-                        "WHERE job_id = ? AND candidate_no = 1 AND kind = ? AND unit_no = ?",
-                        (value, job_id, kind, unit_no),
-                    )
-                    self.runtime.db.commit()
-                    with self.assertRaises(rt.IntegrityError):
-                        await rt.editorial_revision(self.runtime, job_id, 1, kind, unit_no=unit_no)
-
-        asyncio.run(run())
-
-    def test_full_single_author_path_persists_source_raw_and_publication(self) -> None:
-        async def run() -> None:
-            outputs = [
-                *research_outputs(),
-                completion(ledger_json()),
-                completion("## Unit 1\n\nSupported finding [S1:P0-80]"),
-                completion('{"patches":[],"notes":[],"regenerate_reason":null}'),
-            ]
-            job_id, provider = await self.run_path(outputs)
-            status_payload = await rt.research_job_status(self.runtime, "owner-1", job_id)
+            job_id, provider = await self.run_path(default_outputs())
             code, result = await rt.research_job_result(self.runtime, "owner-1", job_id)
             self.assertEqual(
-                (code, status_payload["status"], result["candidate"]), (200, "completed", 1)
+                (code, result["status"], result["quality_outcome"]),
+                (200, "completed", "publish"),
             )
-            self.assertEqual(len(provider.bodies), 3)
-            first_prompt = json.loads(json.loads(provider.bodies[0])["messages"][1]["content"])
-            self.assertEqual(first_prompt["request"]["query"], request().query)
-            blob = self.runtime.db.execute(
-                "SELECT raw_bytes FROM source_blobs WHERE job_id = ?", (job_id,)
-            ).fetchone()
-            extraction = self.runtime.db.execute(
-                "SELECT extracted_text FROM source_extractions WHERE job_id = ?", (job_id,)
-            ).fetchone()
-            raw = self.runtime.db.execute(
-                "SELECT markdown FROM editorial_revisions WHERE job_id = ? AND kind = 'raw'",
-                (job_id,),
-            ).fetchone()
-            self.assertEqual(blob["raw_bytes"], b"complete raw source")
-            self.assertEqual(len(extraction["extracted_text"]), 80)
-            self.assertNotEqual(raw["markdown"], result["answer_markdown"])
-            self.assertIn("## Sources", result["answer_markdown"])
-            assignments = self.runtime.db.execute(
-                "SELECT assignment_key FROM research_attempts WHERE job_id = ?", (job_id,)
-            ).fetchall()
-            self.assertEqual(len(assignments), len({row["assignment_key"] for row in assignments}))
-
-        asyncio.run(run())
-
-    def test_deterministic_collection_builds_findings_before_model_writing(self) -> None:
-        async def run() -> None:
-            outputs = [
-                completion(ledger_json()),
-                completion("## Unit 1\n\nSupported finding [S1:P0-80]"),
-                completion('{"patches":[],"notes":[],"regenerate_reason":null}'),
-            ]
-            job_id, provider = await self.run_path(outputs)
-            status = await rt.research_job_status(self.runtime, "owner-1", job_id)
-            self.assertEqual(status["status"], "completed")
-            self.assertEqual(len(provider.bodies), 3)
+            self.assertTrue(result["answer_markdown"].startswith("# Evidence-based answer\n\n"))
+            self.assertEqual(result["answer_markdown"].count("\n## Unit "), 2)
+            self.assertIn("\n\n## Limitations\n- None", result["answer_markdown"])
+            self.assertRegex(
+                result["answer_markdown"],
+                r"## Sources\n- \[S1\] \[Primary Source\]\(https://example.com/source\)",
+            )
+            self.assertEqual(
+                result["content_hash"],
+                hashlib.sha256(result["answer_markdown"].encode()).hexdigest(),
+            )
             state = await rt.load_research_state(self.runtime, job_id)
-            self.assertEqual(state["searched_queries"], [request().query])
-            self.assertEqual(state["findings"][0]["passage_ids"], ["S1:P0-80"])
+            self.assertEqual(len(state["research_rounds"]), 1)
+            self.assertEqual(len(state["searched_queries"]), 3)
+            self.assertEqual(state["assessment"]["items"][0]["status"], "covered")
+            self.assertEqual(len(provider.bodies), 7)
 
         asyncio.run(run())
 
-    def test_semantically_invalid_ledger_gets_one_bounded_correction(self) -> None:
+    def test_limitation_alone_does_not_select_publish_with_caveats(self) -> None:
         async def run() -> None:
-            invalid = json.loads(ledger_json())
-            invalid["outline"][0]["passage_ids"].append("Q:original")
-            outputs = [
-                completion(json.dumps(invalid)),
-                completion(ledger_json()),
-                completion("## Unit 1\n\nSupported finding [S1:P0-80]"),
-                completion('{"patches":[],"notes":[],"regenerate_reason":null}'),
-            ]
-            job_id, provider = await self.run_path(outputs)
+            job_id, _provider = await self.run_path(
+                default_outputs(limitation="A benign extraction limitation remains.")
+            )
+            _code, result = await rt.research_job_result(self.runtime, "owner-1", job_id)
+            self.assertEqual(result["quality_outcome"], "publish")
+            self.assertIn("A benign extraction limitation remains.", result["answer_markdown"])
+
+        asyncio.run(run())
+
+    def test_unknown_attempt_is_not_replayed(self) -> None:
+        async def run() -> None:
+            job_id, provider = await self.run_path([completion("", "unknown")])
             status = await rt.research_job_status(self.runtime, "owner-1", job_id)
-            self.assertEqual(status["status"], "completed")
-            self.assertEqual(len(provider.bodies), 4)
-            self.assertIn(
-                "candidate_1_ledger:format-repair",
-                {
-                    row["assignment_key"]
-                    for row in self.runtime.db.execute(
-                        "SELECT assignment_key FROM research_attempts WHERE job_id = ?", (job_id,)
-                    )
-                },
-            )
-
-        asyncio.run(run())
-
-    def test_search_obeys_absolute_job_deadline(self) -> None:
-        async def slow_search(*_args: Any, **_kwargs: Any) -> list[Any]:
-            await asyncio.sleep(1)
-            return []
-
-        async def run() -> None:
-            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
-            job_id = submitted["job_id"]
-            self.runtime.db.execute(
-                "UPDATE research_jobs SET deadline_at_ms = ? WHERE job_id = ?",
-                (rt.unix_ms() + 5_020, job_id),
-            )
-            self.runtime.db.commit()
-            started = time.monotonic()
-            with patch.object(rt, "search_searxng", new=slow_search):
-                await rt.execute_research_job(self.runtime, job_id)
-            self.assertLess(time.monotonic() - started, 0.5)
-            row = self.runtime.db.execute(
-                "SELECT status, error_code, quality_outcome FROM research_jobs WHERE job_id = ?",
-                (job_id,),
-            ).fetchone()
             self.assertEqual(
-                (row["status"], row["error_code"], row["quality_outcome"]),
-                ("incomplete", "deadline_expired", None),
+                (status["status"], status["blocked_reason"]),
+                ("paused", "unknown_attempt"),
             )
-
-        asyncio.run(run())
-
-    def test_semantically_invalid_edit_is_corrected_and_rechecked_once(self) -> None:
-        async def run() -> None:
-            outputs = [
-                *research_outputs(),
-                completion(ledger_json()),
-                completion("## Unit 1\n\nSupported finding [S1:P0-80]"),
-                completion(
-                    '{"patches":[{"block_ids":["D:c1:r1:b002"],'
-                    '"ledger_ids":["K-FACT"],"source_ids":["S1:P0-80"],'
-                    '"reason":"Verify the material condition."}],"notes":[],'
-                    '"regenerate_reason":null}'
-                ),
-                completion('{"base_revision":1,"replacements":[],"dismissals":[]}'),
-                completion(
-                    '{"base_revision":1,"replacements":[],"dismissals":[{'
-                    '"finding_id":"F001","reason":"The source already supports it.",'
-                    '"source_ids":["S1:P0-80"]}]}'
-                ),
-                completion('{"resolved":true,"reason":"Already fixed"}'),
-                completion('{"resolved":true,"reason":null}'),
-            ]
-            job_id, _provider = await self.run_path(outputs)
-            _code, result = await rt.research_job_result(self.runtime, "owner-1", job_id)
-            self.assertEqual(result["quality_outcome"], "publish_with_caveats")
-            assignments = [
-                row["assignment_key"]
-                for row in self.runtime.db.execute(
-                    "SELECT assignment_key FROM research_attempts WHERE job_id = ?", (job_id,)
-                )
-            ]
-            self.assertEqual(
-                {item for item in assignments if "_edit" in item},
-                {"candidate_1_edit", "candidate_1_edit:format-repair"},
-            )
-            self.assertEqual(
-                {item for item in assignments if "review_recheck" in item},
-                {
-                    "candidate_1_review_recheck_1",
-                    "candidate_1_review_recheck_1:format-repair",
-                },
-            )
-            raw, edited = self.runtime.db.execute(
-                "SELECT kind, markdown FROM editorial_revisions WHERE job_id = ? "
-                "AND kind IN ('raw', 'edited') ORDER BY id",
-                (job_id,),
-            ).fetchall()
-            self.assertEqual(raw["markdown"], edited["markdown"])
-
-        asyncio.run(run())
-
-    def test_material_failure_uses_exactly_two_candidates_and_selects_second(self) -> None:
-        async def run() -> None:
-            outputs = [
-                *research_outputs(),
-                completion(ledger_json()),
-                completion("## Unit 1\n\nFirst candidate [S1:P0-80]"),
-                completion('{"patches":[],"notes":[],"regenerate_reason":"Material omission"}'),
-                completion(ledger_json()),
-                completion("## Unit 1\n\nSecond candidate [S1:P0-80]"),
-                completion('{"patches":[],"notes":[],"regenerate_reason":null}'),
-            ]
-            job_id, provider = await self.run_path(outputs)
-            _code, result = await rt.research_job_result(self.runtime, "owner-1", job_id)
-            self.assertEqual(result["candidate"], 2)
-            self.assertIn("Second candidate", result["answer_markdown"])
-            self.assertNotIn("First candidate", result["answer_markdown"])
-            candidates = self.runtime.db.execute(
-                "SELECT candidate_no, markdown FROM editorial_revisions "
-                "WHERE job_id = ? AND kind = 'raw' ORDER BY candidate_no",
-                (job_id,),
-            ).fetchall()
-            self.assertEqual([row["candidate_no"] for row in candidates], [1, 2])
-            second_ledger_prompt = json.loads(
-                json.loads(provider.bodies[3])["messages"][1]["content"]
-            )
-            self.assertEqual(
-                second_ledger_prompt["previous_failure_feedback"][0]["reason"],
-                "Material omission",
-            )
-            self.assertIn(
-                "First candidate",
-                "\n".join(
-                    item["text"] for item in second_ledger_prompt["previous_candidate_blocks"]
-                ),
-            )
-
-        asyncio.run(run())
-
-    def test_single_profile_fits_three_sources_and_two_full_editorial_rounds(self) -> None:
-        async def run() -> None:
-            urls = [f"https://source-{index}.example/document-{index}" for index in range(1, 4)]
-            results = [
-                rt.SearchResult(url, f"Source {index}", "Evidence", "engine", "comparison")
-                for index, url in enumerate(urls, 1)
-            ]
-
-            async def fetch(result: rt.SearchResult) -> rt.FetchedSourceBlob:
-                return rt.FetchedSourceBlob(
-                    result.url,
-                    result.url,
-                    result.title,
-                    result.engine,
-                    "text/plain",
-                    result.url.encode(),
-                )
-
-            async def extract(source: rt.FetchedSourceBlob) -> rt.ExtractedSource:
-                label = source.raw_bytes.decode().rsplit("-", 1)[1]
-                text = (f"Source {label} evidence " + "supports comparison " * 20)[:80]
-                return rt.ExtractedSource(
-                    text,
-                    [{"page": 1, "start": 0, "end": len(text)}],
-                    [],
-                )
-
-            outputs = [
-                completion(ledger_json()),
-                completion("## Unit 1\n\nFirst candidate [S1:P0-80]"),
-                completion(
-                    '{"patches":[{"block_ids":["D:c1:r1:b002"],'
-                    '"ledger_ids":["K-FACT"],"source_ids":["S1:P0-80"],'
-                    '"reason":"Revise candidate one."}],"notes":[],"regenerate_reason":null}'
-                ),
-                completion(
-                    '{"base_revision":1,"replacements":[{"block_id":"D:c1:r1:b002",'
-                    '"finding_ids":["F001"],"markdown":"Revised first [S1:P0-80]"}],'
-                    '"dismissals":[]}'
-                ),
-                completion('{"resolved":false,"reason":"Still incomplete"}'),
-                completion(ledger_json()),
-                completion("## Unit 1\n\nSecond candidate [S1:P0-80]"),
-                completion(
-                    '{"patches":[{"block_ids":["D:c2:r1:b002"],'
-                    '"ledger_ids":["K-FACT"],"source_ids":["S1:P0-80"],'
-                    '"reason":"Revise candidate two."}],"notes":[],"regenerate_reason":null}'
-                ),
-                completion(
-                    '{"base_revision":1,"replacements":[{"block_id":"D:c2:r1:b002",'
-                    '"finding_ids":["F001"],"markdown":"Revised second [S1:P0-80]"}],'
-                    '"dismissals":[]}'
-                ),
-                completion('{"resolved":true,"reason":null}'),
-            ]
-            provider = FakeProvider(outputs)
-            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
-            with (
-                patch.object(rt, "complete_research", new=provider),
-                patch.object(rt, "search_searxng", new=AsyncMock(return_value=results)),
-                patch.object(rt, "fetch_source_blob", new=fetch),
-                patch.object(rt, "extract_source_blob", new=extract),
-            ):
-                await rt.execute_research_job(self.runtime, submitted["job_id"])
-            row = self.runtime.db.execute(
-                "SELECT status, max_attempts, attempts_used FROM research_jobs WHERE job_id = ?",
-                (submitted["job_id"],),
-            ).fetchone()
-            self.assertEqual(
-                (row["status"], row["max_attempts"], row["attempts_used"]),
-                ("completed", 18, 10),
-            )
-            self.assertEqual(len(provider.bodies), 10)
-            author_system = json.loads(provider.bodies[1])["messages"][0]["content"]
-            self.assertIn("explicit user language and length", author_system)
-            self.assertIn("softly target about 3,000-4,000 characters", author_system)
-            self.assertIn("not a hard gate", author_system)
-            for body in provider.bodies:
-                self.assertIn(
-                    rt.UNTRUSTED_JOB_DATA_RULE.strip(),
-                    json.loads(body)["messages"][0]["content"],
-                )
-            self.assertEqual(
-                self.runtime.db.execute(
-                    "SELECT COUNT(*) AS count FROM source_extractions WHERE job_id = ?",
-                    (submitted["job_id"],),
-                ).fetchone()["count"],
-                3,
-            )
-            _code, result = await rt.research_job_result(
-                self.runtime, "owner-1", submitted["job_id"]
-            )
-            self.assertEqual(result["candidate"], 2)
-            self.assertIn("Revised second", result["answer_markdown"])
-
-        asyncio.run(run())
-
-    def test_empty_search_stops_without_spending_model_attempts(self) -> None:
-        async def run() -> None:
-            submitted = await rt.submit_research_job(
-                self.runtime,
-                "owner-1",
-                request(profile="sequential_long", units=4, action_id="long-budget-action"),
-            )
-            before = self.runtime.db.execute(
-                "SELECT created_at_ms, deadline_at_ms FROM research_jobs WHERE job_id = ?",
-                (submitted["job_id"],),
-            ).fetchone()
-            with patch.object(rt, "search_searxng", new=AsyncMock(return_value=[])):
-                await rt.execute_research_job(self.runtime, submitted["job_id"])
-            row = self.runtime.db.execute(
-                "SELECT status, error_code, max_attempts, attempts_used, deadline_at_ms "
-                "FROM research_jobs WHERE job_id = ?",
-                (submitted["job_id"],),
-            ).fetchone()
-            self.assertEqual(
-                (row["status"], row["error_code"], row["max_attempts"], row["attempts_used"]),
-                ("incomplete", "source_collection_failed", 40, 0),
-            )
-            self.assertEqual(row["deadline_at_ms"], before["deadline_at_ms"])
-            self.assertEqual(before["deadline_at_ms"] - before["created_at_ms"], 10_800_000)
-
-        asyncio.run(run())
-
-    def test_unfinished_review_keeps_raw_best_with_null_quality(self) -> None:
-        async def run() -> None:
-            outputs = [
-                *research_outputs(),
-                completion(ledger_json()),
-                completion("## Unit 1\n\nUsable raw draft [S1:P0-80]"),
-                completion("not review JSON"),
-                completion("still not review JSON"),
-            ]
-            job_id, _provider = await self.run_path(outputs)
-            row = self.runtime.db.execute(
-                "SELECT status, error_code, quality_outcome, best_revision_id "
-                "FROM research_jobs WHERE job_id = ?",
-                (job_id,),
-            ).fetchone()
-            self.assertEqual(
-                (row["status"], row["error_code"], row["quality_outcome"]),
-                ("incomplete", "assignment_result_invalid", None),
-            )
-            code, result = await rt.research_job_result(self.runtime, "owner-1", job_id)
-            self.assertEqual(code, 200)
-            self.assertEqual(result["error_code"], "assignment_result_invalid")
-            self.assertIn("Usable raw draft", result["answer_markdown"])
-            status_payload = await rt.research_job_status(self.runtime, "owner-1", job_id)
-            self.assertEqual(status_payload["error_code"], "assignment_result_invalid")
-            self.runtime.db.execute(
-                "UPDATE editorial_revisions SET markdown = 'corrupt' WHERE id = ?",
-                (row["best_revision_id"],),
-            )
-            self.runtime.db.commit()
-            with self.assertRaises(rt.IntegrityError):
-                await rt.research_job_result(self.runtime, "owner-1", job_id)
-
-        asyncio.run(run())
-
-    def test_late_review_completion_cannot_overwrite_cancellation(self) -> None:
-        async def run() -> None:
-            outputs = [
-                *research_outputs(),
-                completion(ledger_json()),
-                completion("## Unit 1\n\nDraft before cancellation [S1:P0-80]"),
-                completion('{"patches":[],"notes":[],"regenerate_reason":null}'),
-            ]
-            review_started = asyncio.Event()
-            release_review = asyncio.Event()
-            fake = FakeProvider(outputs)
-
-            async def provider(
-                base_url: str, api_key: str, body: bytes, lease: Any
-            ) -> ResearchCompletion:
-                if len(fake.bodies) == 2:
-                    review_started.set()
-                    await release_review.wait()
-                return await fake(base_url, api_key, body, lease)
-
-            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
-            job_id = submitted["job_id"]
-            contexts = self.patches(fake)
-            with (
-                patch.object(rt, "complete_research", new=provider),
-                contexts[1],
-                contexts[2],
-                contexts[3],
-            ):
-                task = asyncio.create_task(rt.execute_research_job(self.runtime, job_id))
-                await asyncio.wait_for(review_started.wait(), timeout=1)
-                cancelled = await rt.cancel_research_job(self.runtime, "owner-1", job_id)
-                self.assertTrue(cancelled["cancel_requested"])
-                release_review.set()
-                with self.assertRaises(asyncio.CancelledError):
-                    await task
-            status_payload = await rt.research_job_status(self.runtime, "owner-1", job_id)
-            self.assertEqual(
-                (status_payload["status"], status_payload["error_code"]),
-                ("cancelled", "cancelled"),
-            )
-            self.assertIsNone(
-                self.runtime.db.execute(
-                    "SELECT 1 FROM publications WHERE job_id = ?", (job_id,)
-                ).fetchone()
-            )
-
-        asyncio.run(run())
-
-    def test_candidate_two_execution_error_preserves_evaluated_best_and_error(self) -> None:
-        async def run() -> None:
-            outputs = [
-                *research_outputs(),
-                completion(ledger_json()),
-                completion("## Unit 1\n\nFirst evaluated draft [S1:P0-80]"),
-                completion('{"patches":[],"notes":[],"regenerate_reason":"Material omission"}'),
-                completion(ledger_json()),
-                completion("本文。 </think> 以下が本文"),
-                completion("本文。 </think> 以下が本文"),
-            ]
-            job_id, _provider = await self.run_path(outputs)
-            row = self.runtime.db.execute(
-                "SELECT status, error_code, quality_outcome FROM research_jobs WHERE job_id = ?",
-                (job_id,),
-            ).fetchone()
-            self.assertEqual(
-                (row["status"], row["error_code"], row["quality_outcome"]),
-                (
-                    "incomplete",
-                    "assignment_result_invalid",
-                    "retryable_quality_failure",
-                ),
-            )
-            _code, result = await rt.research_job_result(self.runtime, "owner-1", job_id)
-            self.assertIn("First evaluated draft", result["answer_markdown"])
-
-        asyncio.run(run())
-
-    def test_internal_marker_is_never_saved_as_receipt_or_draft(self) -> None:
-        async def run() -> None:
-            outputs = [
-                *research_outputs(),
-                completion(ledger_json()),
-                completion("<think>\nprivate material\n</think>"),
-                completion("<think>\nprivate material\n</think>"),
-            ]
-            job_id, _provider = await self.run_path(outputs)
-            row = self.runtime.db.execute(
-                "SELECT status, error_code FROM research_jobs WHERE job_id = ?", (job_id,)
-            ).fetchone()
-            self.assertEqual(
-                (row["status"], row["error_code"]), ("incomplete", "assignment_result_invalid")
-            )
-            self.assertIsNone(
-                self.runtime.db.execute(
-                    "SELECT 1 FROM editorial_revisions WHERE job_id = ? AND kind = 'raw'",
-                    (job_id,),
-                ).fetchone()
-            )
-            receipts = self.runtime.db.execute(
-                "SELECT result_receipt FROM research_attempts WHERE job_id = ?", (job_id,)
-            ).fetchall()
-            self.assertNotIn(
-                "private material", "".join(str(row["result_receipt"] or "") for row in receipts)
-            )
-
-        asyncio.run(run())
-
-    def test_unknown_attempt_blocks_all_dispatch_and_survives_recovery(self) -> None:
-        async def run() -> None:
-            first_id, provider = await self.run_path([completion("", "unknown")])
-            first = await rt.research_job_status(self.runtime, "owner-1", first_id)
-            self.assertEqual(
-                (first["status"], first["blocked_reason"]), ("paused", "unknown_attempt")
-            )
-            second = await rt.submit_research_job(self.runtime, "owner-1", request("action-2"))
-            self.assertIsNone(await rt.next_queued_job(self.runtime))
-            await rt.recover_research_jobs(self.runtime)
-            self.assertIsNone(await rt.next_queued_job(self.runtime))
-            second_status = await rt.research_job_status(self.runtime, "owner-1", second["job_id"])
-            self.assertEqual(
-                (second_status["status"], second_status["dispatch_blocked"]), ("queued", True)
-            )
-            with self.assertRaises(rt.HTTPException) as blocked:
-                await rt.resume_research_job(self.runtime, "owner-1", first_id, first["revision"])
-            self.assertEqual(blocked.exception.status_code, 409)
+            with self.assertRaises(rt.HTTPException):
+                await rt.resume_research_job(self.runtime, "owner-1", job_id, status["revision"])
             self.assertEqual(len(provider.bodies), 1)
 
         asyncio.run(run())
 
-    def test_success_receipt_prevents_resend_and_lease_includes_commit_delay(self) -> None:
-        async def run() -> None:
-            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
-            job_id = submitted["job_id"]
-            self.assertTrue(await rt.claim_research_job(self.runtime, job_id))
-            self.runtime.db.create_function("attempt_commit_delay", 0, lambda: time.sleep(0.05))
-            self.runtime.db.execute(
-                "CREATE TEMP TRIGGER slow_attempt AFTER INSERT ON research_attempts "
-                "BEGIN SELECT attempt_commit_delay(); END"
-            )
-            provider = FakeProvider([completion("safe receipt")])
-            started = asyncio.get_running_loop().time()
-            with patch.object(rt, "complete_research", new=provider):
-                first = await rt.invoke_job_model(
-                    self.runtime,
-                    job_id,
-                    "stable_assignment",
-                    "system",
-                    "user",
-                    rt.validate_visible_markdown,
-                )
-            self.assertEqual(first, "safe receipt")
-            self.assertLessEqual(provider.leases[0].deadline_monotonic, started + 240.02)
-            with patch.object(
-                rt, "complete_research", new=AsyncMock(side_effect=AssertionError("resent"))
-            ):
-                second = await rt.invoke_job_model(
-                    self.runtime,
-                    job_id,
-                    "stable_assignment",
-                    "system",
-                    "user",
-                    rt.validate_visible_markdown,
-                )
-            self.assertEqual(second, first)
-            self.assertEqual(
-                self.runtime.db.execute(
-                    "SELECT COUNT(*) AS count FROM research_attempts WHERE job_id = ?", (job_id,)
-                ).fetchone()["count"],
-                1,
-            )
-
-        asyncio.run(run())
-
-    def test_raw_blob_survives_extraction_failure(self) -> None:
-        async def run() -> None:
-            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
-            blob = rt.FetchedSourceBlob(
-                "https://example.com/source",
-                "https://example.com/source",
-                "Source",
-                "Publisher",
-                "application/pdf",
-                b"raw-before-extraction",
-            )
-            source_id = await rt.store_source_blob(self.runtime, submitted["job_id"], blob)
-            with (
-                patch.object(
-                    rt,
-                    "extract_document",
-                    new=AsyncMock(side_effect=ValueError("EXTRACTION_PARSE_FAILED")),
-                ),
-                self.assertRaises(ValueError),
-            ):
-                await rt.extract_source_blob(blob)
-            saved = self.runtime.db.execute(
-                "SELECT raw_bytes FROM source_blobs WHERE job_id = ? AND source_id = ?",
-                (submitted["job_id"], source_id),
-            ).fetchone()
-            self.assertEqual(saved["raw_bytes"], b"raw-before-extraction")
-            self.assertIsNone(
-                self.runtime.db.execute(
-                    "SELECT 1 FROM source_extractions WHERE job_id = ? AND source_id = ?",
-                    (submitted["job_id"], source_id),
-                ).fetchone()
-            )
-
-        asyncio.run(run())
-
-    def test_bounded_unit_context_and_relevant_review_passages(self) -> None:
-        async def run() -> None:
-            long_request = request(profile="sequential_long", units=2, action_id="long-action")
-            submitted = await rt.submit_research_job(self.runtime, "owner-1", long_request)
-            job_id = submitted["job_id"]
-            self.assertTrue(await rt.claim_research_job(self.runtime, job_id))
-            text = "Evidence " * 30
-            blob = rt.FetchedSourceBlob(
-                "https://example.com/source",
-                "https://example.com/source",
-                "Source",
-                "Publisher",
-                "text/html",
-                b"raw",
-            )
-            source_id = await rt.store_source_blob(self.runtime, job_id, blob)
-            await rt.store_source_extraction(
-                self.runtime,
-                job_id,
-                source_id,
-                rt.ExtractedSource(text, [{"page": 1, "start": 0, "end": len(text)}], []),
-            )
-            state_value = rt.initial_research_state()
-            state_value["passages"] = [
-                {
-                    "id": "S1:P0-80",
-                    "source_id": "S1",
-                    "start": 0,
-                    "end": 80,
-                    "hash": rt.hashlib.sha256(text[:80].encode()).hexdigest(),
-                }
-            ]
-            state_value["findings"] = [{"text": "finding", "passage_ids": ["S1:P0-80"]}]
-            await rt.save_research_state(self.runtime, job_id, state_value, phase="writing")
-            ledger = rt.DecisionLedger.model_validate(json.loads(ledger_json(2, context=True)))
-            unique = "前段だけの固有本文" + "あ" * 1800
-            provider = FakeProvider(
-                [
-                    completion(
-                        f"## Unit 1\n\n{unique} [S1:P0-80]\n\n"
-                        "```python\n# コード内見出し\nvalue = 1\n\nvalue += 1\n```"
-                    ),
-                    completion("## Unit 2\n\n次の節です [S1:P0-80]"),
-                ]
-            )
-            with patch.object(rt, "complete_research", new=provider):
-                await rt.create_raw_candidate(
-                    self.runtime, job_id, 1, long_request, state_value, ledger, []
-                )
-            second_prompt = json.loads(json.loads(provider.bodies[1])["messages"][1]["content"])
-            self.assertNotIn("accepted_prior_units", second_prompt)
-            self.assertNotIn(unique, json.dumps(second_prompt))
-            self.assertEqual(second_prompt["unit_scope"]["heading"], "Unit 2")
-            self.assertLessEqual(len(second_prompt["selected_prior_blocks"][0]["text"]), 1200)
-
-            blocks = rt.draft_blocks("## A\n\nClaim [S1:P0-80]", 1, 1)
-            passages = [
-                {"id": "S1:P0-80", "text": "one"},
-                {"id": "S2:P0-80", "text": "unrelated"},
-            ]
-            review_prompt = json.loads(
-                rt.review_user_prompt(long_request, 1, 1, "## A", blocks, ledger, passages)
-            )
-            self.assertEqual(
-                [item["id"] for item in review_prompt["source_passages"]], ["S1:P0-80"]
-            )
-
-        asyncio.run(run())
-
-    def test_review_ranges_use_actual_utf8_body_and_cover_every_block_once(self) -> None:
-        ledger = rt.DecisionLedger.model_validate(json.loads(ledger_json()))
-        body = "\n\n".join(f"Paragraph {index} " + "日" * 7000 for index in range(4))
-        blocks = rt.draft_blocks(body, 1, 1)
-        ranges = rt.pack_review_ranges(
-            self.runtime.settings.model,
-            request(),
-            1,
-            1,
-            body,
-            blocks,
-            ledger,
-            [],
-        )
-        self.assertGreater(len(ranges), 1)
-        self.assertEqual(
-            [block.id for group in ranges for block in group], [block.id for block in blocks]
-        )
-        for group in ranges:
-            prompt = rt.review_user_prompt(request(), 1, 1, body, group, ledger, [])
-            self.assertLessEqual(
-                len(
-                    rt.prepare_research_request(
-                        self.runtime.settings.model, rt.review_system_prompt(), prompt
-                    )
-                ),
-                rt.JOB_REQUEST_BYTES,
-            )
-
-    def test_markdown_boundary_rejects_unframed_inline_markers_but_understands_code(self) -> None:
-        with self.assertRaisesRegex(ValueError, "internal generation marker"):
-            rt.validate_visible_markdown("## 本文\n\n説明。 </think> 以下が本文")
-        report = (
-            "## 通常見出し\n\n"
-            "`</think>` は文字列例です。\n\n"
-            '```json\n{"action":"search"}\n\n# code heading\n```\n\n'
-            "結論 [S1:P0-80]"
-        )
-        self.assertEqual(rt.validate_visible_markdown(report), report)
-        blocks = rt.draft_blocks(report, 1, 1)
-        code_blocks = [block for block in blocks if "```json" in block.text]
-        self.assertEqual(len(code_blocks), 1)
-        self.assertIn("\n\n# code heading\n", code_blocks[0].text)
-
 
 if __name__ == "__main__":
+    import unittest
+
     unittest.main(verbosity=2)

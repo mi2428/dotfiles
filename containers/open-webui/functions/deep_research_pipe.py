@@ -15,7 +15,8 @@ from typing import Any
 
 ACTIVE = {"queued", "running"}
 TERMINAL = {"completed", "incomplete", "failed", "cancelled"}
-ADAPTER_MAX_SECONDS = 4_800
+ADAPTER_FINALIZATION_MARGIN_SECONDS = 300
+ADAPTER_MAX_SECONDS = 10_800 + ADAPTER_FINALIZATION_MARGIN_SECONDS
 PHASES = {
     "scoping": "調査範囲を整理しています…",
     "researching": "情報源を調査しています…",
@@ -33,7 +34,11 @@ def shorten_adapter_deadline(
         or deadline_at_ms <= 0
     ):
         raise RuntimeError("Deep Research Runtime returned an invalid deadline")
-    runtime_deadline = monotonic_now + max(0, deadline_at_ms - now_ms) / 1_000
+    runtime_deadline = (
+        monotonic_now
+        + max(0, deadline_at_ms - now_ms) / 1_000
+        + ADAPTER_FINALIZATION_MARGIN_SECONDS
+    )
     return min(current_deadline, runtime_deadline)
 
 

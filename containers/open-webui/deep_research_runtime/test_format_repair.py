@@ -7,15 +7,18 @@ from test_support import RuntimeTestCase, rt
 
 
 class FormatRepairTests(RuntimeTestCase):
-    def test_json_fence_and_repeated_objects_use_the_first_complete_object(self) -> None:
+    def test_json_fence_accepts_one_object_and_rejects_trailing_content(self) -> None:
         for text in (
             '```json{"value":"q"}```',
             '```json\n{"value":"q"}\n```',
-            '```json{"value":"q"}{"extra":1}```',
         ):
             self.assertEqual(rt.parse_json_object(text)["value"], "q")
-        with self.assertRaises(ValueError):
-            rt.parse_json_object('{"value":"q"} trailing prose')
+        for text in (
+            '```json{"value":"q"}{"extra":1}```',
+            '{"value":"q"} trailing prose',
+        ):
+            with self.assertRaises(ValueError):
+                rt.parse_json_object(text)
 
     def test_completed_empty_research_response_gets_one_charged_correction(self) -> None:
         async def run() -> None:
@@ -149,74 +152,37 @@ class FormatRepairTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_rate_limit_gets_one_new_bounded_attempt(self) -> None:
+    def test_rate_limit_is_not_retried(self) -> None:
         async def run() -> None:
-            for suffix, outputs, succeeds in (
-                (
-                    "recovers",
-                    [
-                        ResearchCompletion(
-                            "", AttemptOutcome("known_failed", 429, None, None, None, None, 10)
-                        ),
-                        ResearchCompletion(
-                            "receipt", AttemptOutcome("succeeded", 200, "stop", 1, 1, 2, 10)
-                        ),
-                    ],
-                    True,
-                ),
-                (
-                    "stops",
-                    [
-                        ResearchCompletion(
-                            "", AttemptOutcome("known_failed", 429, None, None, None, None, 10)
-                        ),
-                        ResearchCompletion(
-                            "", AttemptOutcome("known_failed", 429, None, None, None, None, 10)
-                        ),
-                    ],
-                    False,
-                ),
-            ):
-                job = await rt.submit_research_job(
-                    self.runtime,
-                    "owner",
-                    rt.ResearchJobRequest(action_id=f"rate-{suffix}", query="q"),
+            job = await rt.submit_research_job(
+                self.runtime,
+                "owner",
+                rt.ResearchJobRequest(action_id="rate-stops", query="q"),
+            )
+            job_id = job["job_id"]
+            await rt.claim_research_job(self.runtime, job_id)
+            provider = AsyncMock(
+                return_value=ResearchCompletion(
+                    "", AttemptOutcome("known_failed", 429, None, None, None, None, 10)
                 )
-                job_id = job["job_id"]
-                await rt.claim_research_job(self.runtime, job_id)
-                provider = AsyncMock(side_effect=outputs)
-                with patch.object(rt, "complete_research", new=provider):
-                    if succeeds:
-                        self.assertEqual(
-                            await rt.invoke_job_model(
-                                self.runtime,
-                                job_id,
-                                "candidate_1_author_unit_1",
-                                "system",
-                                "user",
-                                str,
-                            ),
-                            "receipt",
+            )
+            with patch.object(rt, "complete_research", new=provider):
+                for _ in range(2):
+                    with self.assertRaises(rt.JobIncomplete):
+                        await rt.invoke_job_model(
+                            self.runtime,
+                            job_id,
+                            "candidate_1_author_unit_1",
+                            "system",
+                            "user",
+                            str,
                         )
-                    else:
-                        with self.assertRaises(rt.JobIncomplete):
-                            await rt.invoke_job_model(
-                                self.runtime,
-                                job_id,
-                                "candidate_1_author_unit_1",
-                                "system",
-                                "user",
-                                str,
-                            )
-                        with self.assertRaises(rt.JobIncomplete):
-                            await rt.invoke_job_model(
-                                self.runtime,
-                                job_id,
-                                "candidate_1_author_unit_1",
-                                "system",
-                                "user",
-                                str,
-                            )
-                self.assertEqual(provider.await_count, 2)
+            self.assertEqual(provider.await_count, 1)
+            self.assertEqual(
+                self.runtime.db.execute(
+                    "SELECT COUNT(*) FROM research_attempts WHERE job_id = ?", (job_id,)
+                ).fetchone()[0],
+                1,
+            )
 
         asyncio.run(run())

@@ -2,821 +2,499 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import unittest
-from dataclasses import replace
-from typing import Any, cast
+from typing import cast
 from unittest.mock import AsyncMock, patch
 
 import aiohttp
-import httpx
-from openai import APIConnectionError, APIError, APIStatusError
 from pydantic import ValidationError
-from strands.agent.conversation_manager import SlidingWindowConversationManager
-from strands.tools.executors import SequentialToolExecutor
-from strands.tools.structured_output import convert_pydantic_to_tool_spec
 
-from test_support import FakeResponse, FakeSession, RuntimeTestCase, make_state, rt
+import test_research_jobs as research_jobs
+from test_research_jobs import (
+    FakeProvider,
+    assessment_json,
+    completion,
+    ledger_json,
+    plan_json,
+    request,
+    selection_json,
+    unit_markdown,
+)
+from test_support import FakeResponse, FakeSession, RuntimeTestCase, rt
 
 
-def deep_plan_for(research: rt.ResearchRequest) -> rt.PlanDraft:
-    fragments = rt.explicit_request_fragments(research)
-    requirements = [
-        rt.RequirementModel(
-            id=f"R{index}",
-            summary=fragment.text,
-            kind=rt.classify_requirement_kind(fragment.text),
-            fragment_ids=[fragment.id],
-        )
-        for index, fragment in enumerate(fragments, 1)
+def follow_up_queries(round_no: int) -> list[dict[str, object]]:
+    return [
+        {
+            "query": f"follow up round {round_no} query {index}",
+            "purpose": "resolve the essential evidence gap",
+            "checklist_ids": ["C1"],
+        }
+        for index in range(1, 4)
     ]
-    sections = [
-        rt.PlanSection(
-            heading=f"Section {index}",
-            requirement_ids=[requirement.id],
-        )
-        for index, requirement in enumerate(requirements, 1)
-    ]
-    return rt.PlanDraft(
-        requirements=requirements,
-        sections=sections,
-    )
 
 
-def cited(text: str, *source_ids: str) -> rt.CitedPlainText:
-    return rt.CitedPlainText(text=text, source_ids=list(source_ids))
-
-
-def table_row(cells: list[str], *source_ids: str) -> rt.ReportTableRow:
-    return rt.ReportTableRow(cells=cells, source_ids=list(source_ids))
-
-
-def table(headers: list[str], rows: list[rt.ReportTableRow], title: str = "") -> rt.ReportTable:
-    return rt.ReportTable(title=title, headers=headers, rows=rows)
-
-
-def section(
-    *paragraphs: rt.CitedPlainText,
-    bullets: list[rt.CitedPlainText] | None = None,
-    tables: list[rt.ReportTable] | None = None,
-) -> rt.SectionContentDraft:
-    return rt.SectionContentDraft(
-        paragraphs=list(paragraphs),
-        bullets=bullets or [],
-        tables=tables or [],
-    )
-
-
-def render_contract() -> rt.SectionContract:
-    return rt.SectionContract(
-        heading="Summary",
-        ledger_revision=0,
-        evidence=(),
-        requirements=(),
-        covered_requirement_ids=(),
-        gap_requirement_ids=(),
-        host_thresholds=(),
-        requires_comparison_table=False,
+def material_review(candidate: int, *, regenerate: bool) -> str:
+    return json.dumps(
+        {
+            "patches": [
+                {
+                    "block_ids": [f"D:c{candidate}:r1:b002"],
+                    "checklist_ids": ["C1"],
+                    "ledger_ids": ["K-FACT"],
+                    "source_ids": ["S1:P0-80"],
+                    "reason": "The supported condition is material and remains misleading.",
+                }
+            ],
+            "notes": [],
+            "unsupported": [],
+            "regenerate_reason": (
+                "The essential synthesis remains misleading." if regenerate else None
+            ),
+        },
+        separators=(",", ":"),
     )
 
 
 class RuntimeContractTests(RuntimeTestCase):
-    def test_final_report_renders_exact_sources_and_empty_limitations_policy(self) -> None:
-        research = rt.ResearchRequest(query="Evidence", depth="quick")
-        state = make_state(3, "quick")
-        state.evidence[0] = replace(
-            state.evidence[0],
-            title="Line 1\nLine 2 [S999] <b>*x*</b>",
-            url="https://example.com/a_(b)",
-        )
-        rt.set_collection_decision(state, "voluntary_stop")
-        state.report_sections = [
-            rt.ReportSection(
-                "Summary",
-                "Answer [S2] [S1]",
-                state.evidence_revision,
-                "summary",
-                [],
-                ["S1", "S2"],
-                "structured",
-            )
-        ]
-        report = rt.finalize_report(state, research)
-        self.assertIn("Answer [2] [1]", report.answer_markdown)
-        self.assertIn("## Limitations\n- なし", report.answer_markdown)
-        self.assertIn(
-            (
-                "[1] "
-                f"{rt.neutralize_model_text('Line 1 Line 2 [S999] <b>*x*</b>')} "
-                "— <https://example.com/a_(b)>"
-            ),
-            report.answer_markdown,
-        )
-        sources = report.answer_markdown.split("## Sources\n", 1)[1]
-        self.assertIn("[2] Source 2", sources)
-        self.assertNotIn("[3] Source 3", sources)
-        self.assertEqual(report.outcome, "completed")
-        with (
-            patch.object(rt, "MAX_ANSWER_CHARS", 20),
-            self.assertRaisesRegex(rt.IntegrityError, "answer limit"),
-        ):
-            rt.finalize_report(state, research)
-
-    def test_target_evidence_environment_override_stays_between_minimum_and_cap(self) -> None:
-        with patch.dict(
-            os.environ,
-            {
-                "DEEP_RESEARCH_TARGET_EVIDENCE_DEEP": "25",
-                "DEEP_RESEARCH_EVIDENCE_TARGET_DEEP": "40",
-            },
-        ):
-            self.assertEqual(rt.make_budget("deep").target_evidence, 25)
-        for invalid in (0, 61):
-            with (
-                self.subTest(invalid=invalid),
-                patch.dict(os.environ, {"DEEP_RESEARCH_TARGET_EVIDENCE_DEEP": str(invalid)}),
-                self.assertRaisesRegex(RuntimeError, "TARGET_EVIDENCE_DEEP"),
-            ):
-                rt.make_budget("deep")
-
-    def test_structured_timeout_keeps_provider_240s_inside_existing_envelope(self) -> None:
-        self.assertEqual(self.runtime.settings.kimi_timeout_seconds, 3600)
-        self.assertEqual(rt.wall_budget_seconds("quick"), 3900)
-        self.assertEqual(rt.structured_role_timeout_seconds(self.runtime.settings, 4000), 3300)
-        self.assertEqual(rt.structured_role_timeout_seconds(self.runtime.settings, 1800), 1800)
-        self.assertGreater(rt.structured_role_timeout_seconds(self.runtime.settings, 1800), 240)
-        self.assertEqual(rt.structured_role_timeout_seconds(self.runtime.settings, 300), 300)
-
-    def test_kimi_adapter_and_shared_agent_retry_contracts(self) -> None:
-        standard = rt.ResearchRequest(query="standard coverage", depth="standard")
-        agent = rt.build_research_agent(self.runtime.settings, standard, [])
-        model = cast(rt.SakuraKimiModel, agent.model)
-        finalizer_model = cast(
-            rt.SakuraKimiModel,
-            rt.build_finalization_agent(self.runtime.settings, standard).model,
-        )
-        manager = cast(SlidingWindowConversationManager, agent.conversation_manager)
-        research_params = cast(dict[str, Any], model.config["params"])
-        finalizer_params = cast(dict[str, Any], finalizer_model.config["params"])
-        self.assertEqual(model.client_args["timeout"], 3600)
-        self.assertEqual(model.client_args["max_retries"], 0)
-        self.assertEqual(research_params, {"max_tokens": rt.KIMI_MAX_TOKENS})
-        self.assertEqual(
-            finalizer_params,
-            {"max_tokens": rt.FINALIZER_MAX_TOKENS, "tool_choice": "required"},
-        )
-        for effort in ("low", "medium", "high"):
-            judge_model = cast(
-                rt.SakuraKimiModel,
-                rt.build_agent(
-                    self.runtime.settings,
-                    [],
-                    "judge",
-                    reasoning_effort=cast(Any, effort),
-                ).model,
-            )
-            judge_params = cast(dict[str, Any], judge_model.config["params"])
-            self.assertEqual(judge_params["reasoning_effort"], effort)
-        for invalid in ("", "none"):
-            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
-                rt.build_agent(
-                    self.runtime.settings,
-                    [],
-                    "judge",
-                    reasoning_effort=cast(Any, invalid),
-                )
-        self.assertIsInstance(manager, SlidingWindowConversationManager)
-        self.assertIsInstance(agent.tool_executor, SequentialToolExecutor)
-        self.assertEqual(manager.window_size, 30)
-
-        request = httpx.Request("POST", "http://llm.local/v1/chat/completions")
-        response = httpx.Response(503, request=request)
-        wrapped = rt.EventLoopException(
-            APIStatusError("provider error", response=response, body={})
-        )
-        self.assertEqual(rt.model_retry_delay(wrapped, 0), 10)
-        self.assertTrue(rt.is_expected_provider_failure(wrapped))
-        self.assertEqual(
-            rt.safe_model_recovery_details(wrapped),
-            rt.SafeModelRecoveryDetails(
-                "provider_http_server_error",
-                "http_status",
-                503,
-                "none",
-                "other",
-                "APIStatusError",
-            ),
-        )
-        exhausted = rt.EventLoopException(
-            APIStatusError(
-                "provider error",
-                response=httpx.Response(
-                    503,
-                    request=request,
-                    headers={"X-Sakura-Retry-Count": "5"},
-                ),
-                body={},
-            )
-        )
-        self.assertIsNone(rt.model_retry_delay(exhausted, 0))
-        self.assertTrue(rt.is_expected_provider_failure(exhausted))
-        connection_error = APIConnectionError(request=request)
-        self.assertEqual(rt.model_retry_delay(connection_error, 0), 10)
-        unauthorized = APIStatusError(
-            "unauthorized",
-            response=httpx.Response(401, request=request),
-            body={},
-        )
-        self.assertIsNone(rt.model_retry_delay(unauthorized, 0))
-        self.assertFalse(rt.is_expected_provider_failure(unauthorized))
-        self.assertEqual(
-            rt.safe_model_recovery_details(unauthorized),
-            rt.SafeModelRecoveryDetails(
-                "provider_auth_error",
-                "http_status",
-                401,
-                "none",
-                "other",
-                "APIStatusError",
-            ),
-        )
-        stream_error = APIError("Internal server error.", request=request, body=None)
-        self.assertEqual(rt.MODEL_TRANSIENT_RECOVERIES, 5)
-        self.assertEqual(
-            [rt.model_retry_delay(stream_error, attempt) for attempt in range(5)],
-            [10, 20, 40, 80, 120],
-        )
-        self.assertTrue(rt.is_expected_provider_failure(stream_error))
-        self.assertEqual(
-            rt.safe_model_recovery_details(stream_error),
-            rt.SafeModelRecoveryDetails(
-                "provider_internal_error",
-                "message",
-                None,
-                "none",
-                "internal_server_error",
-                "APIError",
-            ),
-        )
-        self.assertEqual(
-            rt.safe_model_recovery_details(connection_error),
-            rt.SafeModelRecoveryDetails(
-                "provider_connection_error",
-                "exception",
-                None,
-                "none",
-                "other",
-                "APIConnectionError",
-            ),
-        )
-        self.assertEqual(
-            rt.safe_model_recovery_details(TimeoutError("model returned no result")),
-            rt.SafeModelRecoveryDetails(
-                "model_empty_result",
-                "runtime",
-                None,
-                "none",
-                "empty_result",
-                "TimeoutError",
-            ),
-        )
-        coded = APIError(
-            "provider failure",
-            request=request,
-            body={"error": {"code": "overloaded_error", "message": "busy"}},
-        )
-        self.assertEqual(
-            rt.safe_model_recovery_details(coded),
-            rt.SafeModelRecoveryDetails(
-                "provider_internal_error",
-                "provider_code",
-                None,
-                "overloaded_error",
-                "other",
-                "APIError",
-            ),
-        )
-        self.assertEqual(
-            rt.safe_operation_error_details(ValueError("fetch failed 503")),
-            rt.SafeOperationErrorDetails(
-                "http_error", "http_status", "ValueError", "ValueError", 503
-            ),
-        )
-        self.assertEqual(
-            rt.safe_operation_error_details(OSError("secret provider text")),
-            rt.SafeOperationErrorDetails("os_error", "exception", "OSError", "OSError", None),
-        )
-        fatal = rt.safe_fatal_error_event(
-            rt.ModelOutputError("Markdown table rows must use separate lines"), "sections"
-        )
-        self.assertEqual(fatal["reason"], "model_output_error")
-        self.assertEqual(fatal["reason_source"], "validation")
-        self.assertEqual(fatal["cause_exception"], "ModelOutputError")
-        self.assertEqual(fatal["validation_bucket"], "Markdown table rows must use separate lines")
-
-    def test_validated_requirements_plan_maps_every_explicit_fragment(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
-        state = make_state(1)
-        state.last_inspected_revision = state.evidence_revision
-        draft = deep_plan_for(research)
-        fragments, requirements, sections = rt.validated_initial_plan(research, draft)
-        self.assertEqual("".join(item.text for item in fragments), research.query)
-        schema = rt.PlanDraft.model_json_schema()
-        self.assertEqual(set(schema["properties"]), {"requirements", "sections"})
-        self.assertEqual(set(schema["required"]), {"requirements", "sections"})
-        section_schema = schema["$defs"]["PlanSection"]
-        self.assertEqual(set(section_schema["properties"]), {"heading", "requirement_ids"})
-        self.assertEqual(set(section_schema["required"]), {"heading", "requirement_ids"})
-        self.assertEqual(section_schema["properties"]["requirement_ids"]["minItems"], 1)
-        for removed in (
-            "InitialPlanDraft",
-            "InitialPlanSection",
-            "ReportPlanSection",
-            "QuerySeedModel",
-        ):
-            self.assertFalse(hasattr(rt, removed))
-        self.assertEqual(
-            rt.build_plan_context(research)["request_fragments"],
-            [item.model_dump() for item in fragments],
-        )
-        self.assertEqual(
-            {fragment_id for item in requirements for fragment_id in item.fragment_ids},
-            {item.id for item in fragments},
-        )
-        self.assertEqual([item.requirement_ids for item in sections], [["R1"]])
-
-    def test_plan_section_heading_is_validated_at_the_structured_boundary(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        payload = deep_plan_for(research).model_dump()
-        payload["sections"][0]["heading"] = "  限界  "
-        with self.assertRaisesRegex(
-            ValidationError,
-            "heading is reserved for deterministic report assembly",
-        ):
-            rt.PlanDraft.model_validate(payload)
-
-        payload["sections"][0]["heading"] = "  Findings  "
-        self.assertEqual(rt.PlanDraft.model_validate(payload).sections[0].heading, "Findings")
-
-        schema_heading = rt.PlanDraft.model_json_schema()["$defs"]["PlanSection"]["properties"][
-            "heading"
-        ]
-        tool_heading = convert_pydantic_to_tool_spec(rt.PlanDraft)["inputSchema"]["json"][
-            "properties"
-        ]["sections"]["items"]["properties"]["heading"]
-        self.assertIn("must not start", schema_heading["description"])
-        self.assertEqual(tool_heading["description"], schema_heading["description"])
-
-    def test_requirement_coverage_uses_direct_one_host_and_comparison_two_hosts(self) -> None:
-        state = make_state(3)
-        state.request_fragments = [
-            rt.RequestFragmentModel(id="F1", text="facts"),
-            rt.RequestFragmentModel(id="F2", text="compare"),
-        ]
-        state.requirements = [
-            rt.RequirementModel(id="R1", summary="facts", kind="direct", fragment_ids=["F1"]),
-            rt.RequirementModel(id="R2", summary="compare", kind="comparison", fragment_ids=["F2"]),
-        ]
-        state.evidence[0] = replace(
-            state.evidence[0], requirement_ids=["R1"], url="https://a.example/1"
-        )
-        state.evidence[1] = replace(
-            state.evidence[1], requirement_ids=["R2"], url="https://a.example/2"
-        )
-        state.evidence[2] = replace(
-            state.evidence[2], requirement_ids=["R2"], url="https://b.example/3"
-        )
-        self.assertTrue(rt.requirement_is_covered(state, state.requirements[0]))
-        self.assertTrue(rt.requirement_is_covered(state, state.requirements[1]))
-
-    def test_section_content_schema_excludes_runtime_fields_and_requires_block_sources(
-        self,
-    ) -> None:
-        schema = rt.SectionContentDraft.model_json_schema()
-        self.assertEqual(set(schema["properties"]), {"paragraphs", "bullets", "tables"})
-        self.assertEqual(schema["required"], ["paragraphs"])
-        self.assertEqual(schema["properties"]["paragraphs"]["minItems"], 1)
-        cited_schema = schema["$defs"]["CitedPlainText"]
-        self.assertIn("source_ids", cited_schema["required"])
-        self.assertEqual(cited_schema["properties"]["source_ids"]["minItems"], 1)
-        row_schema = schema["$defs"]["ReportTableRow"]
-        self.assertIn("source_ids", row_schema["required"])
-        self.assertEqual(row_schema["properties"]["source_ids"]["minItems"], 1)
-        for field in ("heading", "requirement_ids", "summary", "gap"):
-            self.assertNotIn(field, schema["properties"])
-        for payload in (
-            {},
-            {"paragraphs": [{"text": "Body"}]},
-            {"paragraphs": [{"text": "Body", "source_ids": []}]},
-            {"bullets": [{"text": "Body", "source_ids": []}]},
-            {
-                "tables": [
-                    {
-                        "headers": ["A", "B"],
-                        "rows": [{"cells": ["1", "2"], "source_ids": []}],
-                    }
-                ]
-            },
-        ):
-            with self.subTest(payload=payload), self.assertRaises(ValidationError):
-                rt.SectionContentDraft.model_validate(payload)
-
-    def test_renderer_is_deterministic_and_neutralizes_injected_markdown(self) -> None:
-        draft = section(
-            cited("First\nline ### fake [S999] <b>tag</b>", "S1", "S2"),
-            bullets=[cited("- list | cell", "S3")],
-            tables=[
-                table(
-                    ["H1", "H2|"],
-                    [table_row(["A", "B [S999]\n### x <i>ok</i>"], "S4")],
-                    title="T|itle",
-                )
-            ],
-        )
-        expected = "\n\n".join(
-            [
-                f"{rt.neutralize_model_text('First\nline ### fake [S999] <b>tag</b>')} [S1] [S2]",
-                f"- {rt.neutralize_model_text('- list | cell')} [S3]",
-                "\n".join(
-                    [
-                        rt.neutralize_model_text("T|itle"),
-                        "",
-                        f"| {rt.neutralize_model_text('H1')} | {rt.neutralize_model_text('H2|')} |",
-                        "| --- | --- |",
-                        (
-                            f"| {rt.neutralize_model_text('A')} | "
-                            f"{rt.neutralize_model_text('B [S999]\n### x <i>ok</i>')} [S4] |"
-                        ),
-                    ]
-                ),
-            ]
-        )
-        rendered = rt.render_section_markdown(render_contract(), draft)
-        self.assertEqual(rendered, expected)
-        self.assertEqual(rt.render_section_markdown(render_contract(), draft), expected)
-        self.assertEqual(rt.citation_ids(rendered), {"S1", "S2", "S3", "S4"})
-        self.assertIsNone(rt.report_markdown_structure_error(rendered))
-
-    def test_table_rows_render_one_per_line_and_reject_width_mismatch(self) -> None:
-        rendered = rt.render_section_markdown(
-            render_contract(),
-            section(
-                cited("Intro", "S1"),
-                tables=[
-                    table(
-                        ["A", "B"],
-                        [table_row(["1", "2"], "S2"), table_row(["3", "4"], "S3")],
+    def test_stable_fragments_and_plan_require_every_clause_to_remain_essential(self) -> None:
+        job_request = request(query="Identify evidence; compare alternatives. Explain uncertainty")
+        fragments = rt.explicit_request_fragments(job_request)
+        self.assertEqual([item.id for item in fragments], ["F1", "F2", "F3"])
+        plan = rt.ResearchPlan.model_validate_json(plan_json())
+        invalid = plan.model_copy(
+            update={
+                "checklist": [
+                    plan.checklist[0].model_copy(
+                        update={"fragment_ids": [item.id for item in fragments]}
                     )
-                ],
-            ),
+                ]
+            }
         )
-        self.assertIn("| 1 | 2 [S2] |\n| 3 | 4 [S3] |", rendered)
-        with self.assertRaises(ValidationError):
-            table(["A", "B"], [table_row(["1", "2", "3"], "S1")])
+        _, accepted = rt.validate_research_plan(job_request, invalid)
+        self.assertEqual(accepted.checklist[0].fragment_ids, ["F1", "F2", "F3"])
+        weakened = invalid.model_copy(
+            update={"checklist": [invalid.checklist[0].model_copy(update={"essential": False})]}
+        )
+        with self.assertRaisesRegex(ValueError, "remain essential"):
+            rt.validate_research_plan(job_request, weakened)
 
-    def test_element_length_and_blank_validation(self) -> None:
-        with self.assertRaises(ValidationError):
-            table(["A" * 201, "B"], [table_row(["1", "2"], "S1")])
-        with self.assertRaises(ValidationError):
-            table(["A", "B"], [table_row(["1", "x" * 501], "S1")])
-        with self.assertRaises(ValidationError):
-            cited("   ", "S1")
-
-    def test_renderer_neutralizes_links_emphasis_backslashes_lists_and_rules(self) -> None:
-        rendered = rt.render_section_markdown(
-            render_contract(),
-            section(
-                cited(r"[label](https://x) **bold** _em_ ~~~ `code` \\path", "S1"),
-                bullets=[cited("--- * item", "S2")],
-            ),
+    def test_outline_rejects_missing_checklist_mapping_and_noncanonical_title(self) -> None:
+        job_request = request()
+        fragments, plan = rt.validate_research_plan(
+            job_request, rt.ResearchPlan.model_validate_json(plan_json())
         )
-        self.assertNotIn("[label]", rendered)
-        self.assertNotIn("**bold**", rendered)
-        self.assertNotIn("_em_", rendered)
-        self.assertNotIn("~~~", rendered)
-        self.assertNotIn("\\path", rendered)
-        self.assertNotIn("---", rendered.replace("| --- | --- |", ""))
-        self.assertNotRegex(rendered, r"\[[^\]]+\]\([^)]*\)")
-        self.assertNotRegex(rendered, r"\*\*[^*]+\*\*")
-        self.assertNotRegex(rendered, r"_[^_]+_")
-        self.assertIn("[S1]", rendered)
-        self.assertIn("[S2]", rendered)
-
-    def test_extractive_text_uses_the_same_plain_text_boundary(self) -> None:
-        rendered = rt.safe_extractive_text(r"--- [S999] | **bold** \\path")
-
-        self.assertNotIn("---", rendered)
-        self.assertNotIn("[S999]", rendered)
-        self.assertNotIn("|", rendered)
-        self.assertNotIn("**bold**", rendered)
-        self.assertNotIn("\\path", rendered)
-        self.assertEqual(rt.citation_ids(rendered), set())
-
-    def test_report_heading_rejects_inline_markdown(self) -> None:
-        for heading in (
-            "[x](y)",
-            "**bold**",
-            "A|B",
-            "<b>x</b>",
-            "[S1] title",
-            "A\rB",
-        ):
-            with self.subTest(heading=heading), self.assertRaisesRegex(ValueError, "plain text"):
-                rt.validated_report_heading(heading)
-
-    def test_final_report_schema_is_versioned_and_minimal(self) -> None:
-        schema = rt.FinalReport.model_json_schema()
-        self.assertEqual(set(schema["properties"]), {"version", "answer_markdown", "outcome"})
-        self.assertEqual(set(schema["required"]), {"version", "answer_markdown", "outcome"})
-        with self.assertRaises(ValidationError):
-            rt.FinalReport.model_validate(
-                {"version": 1, "answer_markdown": "x", "outcome": "completed"}
-            )
-
-    def test_safe_section_validation_error_rejects_suffix_smuggling(self) -> None:
-        self.assertEqual(
-            rt.safe_section_validation_error("missing cited evidence for R12"),
-            "missing cited evidence for R12",
+        state = {
+            "request_fragments": [item.model_dump() for item in fragments],
+            "plan": plan.model_dump(),
+            "assessment": json.loads(assessment_json("S1:P0-80")),
+            "passages": [{"id": "S1:P0-80", "checklist_ids": ["C1"]}],
+            "searched_queries": [],
+        }
+        ledger = rt.DecisionLedger.model_validate_json(ledger_json("S1:P0-80"))
+        missing = ledger.model_copy(
+            update={
+                "outline": [
+                    item.model_copy(update={"checklist_ids": ["C2"]}) for item in ledger.outline
+                ]
+            }
         )
-        self.assertEqual(
-            rt.safe_section_validation_error("insufficient independent hosts for R7"),
-            "insufficient independent hosts for R7",
-        )
-        self.assertEqual(
-            rt.safe_section_validation_error("missing cited evidence for R12 secret"),
-            "report section failed semantic validation",
-        )
-        self.assertEqual(
-            rt.safe_section_validation_error("insufficient independent hosts for R7 extra"),
-            "report section failed semantic validation",
-        )
-
-    def test_report_markdown_structure_rejects_flattened_blocks(self) -> None:
-        self.assertEqual(
-            rt.report_markdown_structure_error("Intro ### Detail"),
-            "Markdown headings must start on separate lines",
-        )
-        self.assertEqual(
-            rt.report_markdown_structure_error("### Detail and flattened prose"),
-            "Markdown headings must start on separate lines",
-        )
-        self.assertEqual(
-            rt.report_markdown_structure_error("| A | B | | --- | --- | | 1 | 2 |"),
-            "Markdown table rows must use separate lines",
-        )
-        self.assertIsNone(
-            rt.report_markdown_structure_error(
-                "Intro\n\n### Detail\n\n| A | B |\n| --- | --- |\n| 1 | 2 |"
-            )
-        )
-
-    def test_finalize_report_allows_short_complete_report_and_rejects_missing_sections(
-        self,
-    ) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        state = make_state(1)
-        state.last_inspected_revision = state.evidence_revision
-        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
-        rt.store_initial_plan(state, research, deep_plan_for(research))
-        rt.set_collection_decision(state, "coverage_complete")
-        rt.store_report_section(
-            state,
-            rt.build_section_contract(research, state, "Section 1"),
-            section(cited("Supported claim", "S1")),
-        )
-        response = rt.finalize_report(state, research)
-        self.assertIn("## Sources", response.answer_markdown)
-        broken = replace(state, report_sections=[])
-        with self.assertRaisesRegex(rt.IntegrityError, "incomplete or out of order"):
-            rt.finalize_report(broken, research)
-
-    def test_accepted_short_section_is_finalized_without_repair(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        state = make_state(1)
-        state.last_inspected_revision = state.evidence_revision
-        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
-        rt.store_initial_plan(state, research, deep_plan_for(research))
-        rt.set_collection_decision(state, "coverage_complete")
-        rt.store_report_section(
-            state,
-            rt.build_section_contract(research, state, "Section 1"),
-            section(cited("Short but cited", "S1")),
-        )
-        self.assertEqual(rt.finalize_report(state, research).outcome, "completed")
-
-    def test_compact_payload_builders_exclude_unrelated_growth(self) -> None:
-        research = rt.ResearchRequest(
-            query="Need direct evidence", focus="with focus", depth="deep"
-        )
-        state = make_state(3)
-        state.request_fragments = rt.explicit_request_fragments(research)
-        state.requirements = [
-            rt.RequirementModel(
-                id="R1", summary="Need direct evidence", kind="direct", fragment_ids=["F1"]
-            )
-        ]
-        state.evidence = [
-            replace(item, requirement_ids=["R1"], relevance=0.9) for item in state.evidence
-        ]
-        state.report_plan = [
-            rt.PlanSection(
-                heading="Section 1",
-                requirement_ids=["R1"],
-            )
-        ]
-        state.report_sections = [
-            rt.ReportSection(
-                "Done",
-                "Claim [S1]",
-                state.evidence_revision,
-                "summary",
-                ["R1"],
-                ["S1"],
-                "structured",
-            )
-        ]
-        state.candidate_queue = [
-            rt.Candidate(
-                url="https://other.example/4",
-                title="Other",
-                snippet="noise",
-                engine="engine",
-                search_query="noise",
-                purpose="noise",
-                requirement_id="R1",
-            )
-        ]
-        query_payload = rt.build_query_context(research, state)
-        contract = rt.build_section_contract(research, state, "Section 1")
-        section_payload = rt.build_section_context(research, state, contract)
-        self.assertNotIn("evidence", query_payload)
-        self.assertNotIn("candidate_queue", query_payload)
-        self.assertEqual(len(section_payload["assigned_evidence"]), 3)
-        self.assertEqual(
-            section_payload["section_contract"],
-            {
-                "heading": "Section 1",
-                "ledger_revision": state.evidence_revision,
-                "requirements": [
-                    {
-                        "id": "R1",
-                        "summary": "Need direct evidence",
-                        "kind": "direct",
-                        "required_independent_host_count": 1,
-                        "assigned_source_ids": ["S1", "S2", "S3"],
-                    }
-                ],
-                "covered_requirement_ids": ["R1"],
-                "gap_requirement_ids": [],
-                "requires_comparison_table": False,
-            },
-        )
-        self.assertEqual(section_payload["assigned_evidence"][0]["requirement_ids"], ["R1"])
-        self.assertEqual(
-            section_payload["completed_sections"],
-            [
-                {
-                    "heading": "Done",
-                    "requirement_ids": ["R1"],
-                    "summary": "summary",
-                    "source_ids": ["S1"],
-                }
-            ],
-        )
-
-    def test_section_contract_prompt_and_validator_share_exact_twelve_sources(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        state = make_state(13)
-        state.request_fragments = rt.explicit_request_fragments(research)
-        state.requirements = [
-            rt.RequirementModel(
-                id="R1",
-                summary="Need direct evidence",
-                kind="direct",
-                fragment_ids=["F1"],
-            )
-        ]
-        state.report_plan = [
-            rt.PlanSection(
-                heading="Evidence",
-                requirement_ids=["R1"],
-            )
-        ]
-        state.evidence = [
-            replace(item, relevance=0.9, requirement_ids=["R1"]) for item in state.evidence
-        ]
-        contract = rt.build_section_contract(research, state, "Evidence")
-        prompt = json.loads(rt.build_section_prompt(research, state, contract))
-        expected_ids = [item.id for item in contract.evidence]
-        self.assertEqual(expected_ids, [f"S{index}" for index in range(1, 13)])
-        self.assertEqual([item["id"] for item in prompt["assigned_evidence"]], expected_ids)
-        state.last_inspected_revision = state.evidence_revision
-        before = rt.run_state_snapshot(state)
-        with self.assertRaisesRegex(rt.ModelOutputError, "section contract"):
-            rt.store_report_section(
+        with self.assertRaisesRegex(ValueError, "map every checklist"):
+            rt.validate_report_outline(missing, job_request, state)
+        with self.assertRaisesRegex(ValueError, "title is not normalized"):
+            rt.validate_report_outline(
+                ledger.model_copy(update={"title": f" {ledger.title} "}),
+                job_request,
                 state,
-                contract,
-                section(cited("Unseen", "S13")),
             )
-        self.assertEqual(rt.run_state_snapshot(state), before)
 
-    def test_ledger_update_preserves_plan_and_rederives_section_evidence(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        state = make_state(1)
-        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
-        rt.store_initial_plan(state, research, deep_plan_for(research))
-        plan = [item.model_dump() for item in state.report_plan]
-        self.assertEqual(
-            [item.id for item in rt.build_section_contract(research, state, "Section 1").evidence],
-            ["S1"],
-        )
-
-        rt.apply_evidence_update(
-            state,
-            rt.Evidence(
-                url="https://second.example/2",
-                title="Second",
-                publisher="Second",
-                published_at="2026-01-01",
-                excerpt="Additional direct evidence",
-                hash="b" * 64,
-                relevance=0.9,
-                source_quality=0.7,
-                requirement_ids=["R1"],
-            ),
-        )
-
-        self.assertEqual([item.model_dump() for item in state.report_plan], plan)
-        self.assertEqual(state.stats["report_plan_sections"], 1)
-        self.assertEqual(
-            [item.id for item in rt.build_section_contract(research, state, "Section 1").evidence],
-            ["S1", "S2"],
-        )
-
-    def test_rendered_section_over_ten_thousand_chars_is_not_checkpointed(self) -> None:
-        research = rt.ResearchRequest(query="Evidence", depth="standard")
-        state = make_state(1, "standard")
-        state.last_inspected_revision = state.evidence_revision
-        contract = rt.build_section_contract(research, state)
-        draft = section(*(cited("x" * 1200, "S1") for _ in range(9)))
-        self.assertGreater(len(rt.render_section_markdown(contract, draft)), 10_000)
-        before = rt.run_state_snapshot(state)
-        with self.assertRaisesRegex(ValueError, "section body"):
-            rt.store_report_section(state, contract, draft)
-        self.assertEqual(rt.run_state_snapshot(state), before)
-
-    def test_gap_only_section_is_bounded_after_markdown_neutralization(self) -> None:
-        research = rt.ResearchRequest(query="compare vendors", depth="deep")
-        state = make_state(rt.MAX_PAYLOAD_EVIDENCE_EXCERPTS)
-        state.request_fragments = rt.explicit_request_fragments(research)
-        unsafe = "[]#|<>`*_~\\"
-        summary = (unsafe * 30)[:300]
-        state.requirements = [
-            rt.RequirementModel(
-                id=f"R{index}", summary=summary, kind="comparison", fragment_ids=["F1"]
+    def test_follow_up_query_count_is_zero_or_three_to_six(self) -> None:
+        payload = json.loads(assessment_json("S1:P0-80"))
+        payload["follow_up_queries"] = follow_up_queries(1)[:1]
+        payload["stop_reason"] = None
+        with self.assertRaises(ValidationError):
+            rt.EvidenceAssessment.model_validate(payload)
+        payload["follow_up_queries"] = follow_up_queries(1)
+        value = rt.EvidenceAssessment.model_validate(payload)
+        self.assertEqual(len(value.follow_up_queries), 3)
+        with self.assertRaisesRegex(ValueError, "must be new"):
+            rt.validate_evidence_assessment(
+                value,
+                rt.ResearchPlan.model_validate_json(plan_json()),
+                {"S1:P0-80"},
+                {value.follow_up_queries[0].query.upper()},
             )
-            for index in range(1, 6)
+
+    def test_adaptive_research_runs_at_most_four_rounds(self) -> None:
+        async def run() -> None:
+            outputs = [completion(plan_json())]
+            for round_no in range(1, 5):
+                outputs.append(completion(selection_json(f"W{round_no}-1")))
+                if round_no < 4:
+                    outputs.append(
+                        completion(
+                            assessment_json(
+                                f"S{round_no}:P0-80",
+                                status="unresolved",
+                                limitation="More evidence is required.",
+                                follow_ups=follow_up_queries(round_no),
+                                stop_reason=None,
+                            )
+                        )
+                    )
+                else:
+                    outputs.append(completion(assessment_json("S1:P0-80")))
+            provider = FakeProvider(outputs)
+            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
+            self.assertTrue(await rt.claim_research_job(self.runtime, submitted["job_id"]))
+            search_count = 0
+
+            async def search(*_args: object, **_kwargs: object) -> list[rt.SearchResult]:
+                nonlocal search_count
+                search_count += 1
+                return [
+                    rt.SearchResult(
+                        f"https://same.example/source-{search_count}",
+                        f"Source {search_count}",
+                        "Evidence",
+                        "engine",
+                    )
+                ]
+
+            async def fetch(result: rt.SearchResult) -> rt.FetchedSourceBlob:
+                return rt.FetchedSourceBlob(
+                    result.url,
+                    result.url,
+                    result.title,
+                    "Publisher",
+                    "text/plain",
+                    result.url.encode(),
+                )
+
+            async def extract(source: rt.FetchedSourceBlob) -> rt.ExtractedSource:
+                text = (source.raw_bytes.decode() + " supports the finding. " * 8)[:80]
+                return rt.ExtractedSource(text, [{"page": 1, "start": 0, "end": len(text)}], [])
+
+            with (
+                patch.object(rt, "complete_research", new=provider),
+                patch.object(rt, "search_searxng", new=search),
+                patch.object(rt, "fetch_source_blob", new=fetch),
+                patch.object(rt, "extract_source_blob", new=extract),
+            ):
+                state = await rt.run_job_research(self.runtime, submitted["job_id"], request())
+            self.assertEqual(len(state["research_rounds"]), 4)
+            self.assertEqual(len(state["searched_queries"]), 12)
+            self.assertEqual(len(provider.bodies), 9)
+
+        asyncio.run(run())
+
+    def test_same_host_documents_are_admitted_and_content_is_deduplicated(self) -> None:
+        async def run() -> None:
+            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
+            first = await rt.store_source_blob(
+                self.runtime,
+                submitted["job_id"],
+                rt.FetchedSourceBlob(
+                    "https://same.example/a",
+                    "https://same.example/a",
+                    "A",
+                    "Publisher",
+                    "text/plain",
+                    b"same content",
+                ),
+            )
+            duplicate = await rt.store_source_blob(
+                self.runtime,
+                submitted["job_id"],
+                rt.FetchedSourceBlob(
+                    "https://same.example/b",
+                    "https://same.example/b",
+                    "B",
+                    "Publisher",
+                    "text/plain",
+                    b"same content",
+                ),
+            )
+            distinct = await rt.store_source_blob(
+                self.runtime,
+                submitted["job_id"],
+                rt.FetchedSourceBlob(
+                    "https://same.example/c",
+                    "https://same.example/c",
+                    "C",
+                    "Publisher",
+                    "text/plain",
+                    b"different content",
+                ),
+            )
+            self.assertEqual((first, duplicate, distinct), ("S1", "S1", "S2"))
+
+        asyncio.run(run())
+
+    def test_stored_source_and_extraction_hashes_fail_closed(self) -> None:
+        async def run() -> None:
+            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
+            job_id = submitted["job_id"]
+            source = rt.FetchedSourceBlob(
+                "https://example.com/source",
+                "https://example.com/source",
+                "Source",
+                "Publisher",
+                "text/plain",
+                b"immutable bytes",
+            )
+            source_id = await rt.store_source_blob(self.runtime, job_id, source)
+            await rt.store_source_extraction(
+                self.runtime,
+                job_id,
+                source_id,
+                rt.ExtractedSource(
+                    "immutable extracted text",
+                    [{"page": 1, "start": 0, "end": 24}],
+                    [],
+                ),
+            )
+            source_row = self.runtime.db.execute(
+                "SELECT title, publisher, retrieved_at_ms FROM source_blobs "
+                "WHERE job_id = ? AND source_id = ?",
+                (job_id, source_id),
+            ).fetchone()
+            for column, statement, changed in (
+                (
+                    "title",
+                    "UPDATE source_blobs SET title = ? WHERE job_id = ? AND source_id = ?",
+                    "changed title",
+                ),
+                (
+                    "publisher",
+                    "UPDATE source_blobs SET publisher = ? WHERE job_id = ? AND source_id = ?",
+                    "changed publisher",
+                ),
+                (
+                    "retrieved_at_ms",
+                    "UPDATE source_blobs SET retrieved_at_ms = ? "
+                    "WHERE job_id = ? AND source_id = ?",
+                    1,
+                ),
+            ):
+                self.runtime.db.execute(statement, (changed, job_id, source_id))
+                with self.subTest(column=column), self.assertRaises(rt.IntegrityError):
+                    await rt.stored_source_blob(self.runtime, job_id, source.canonical_url)
+                self.runtime.db.execute(statement, (source_row[column], job_id, source_id))
+            self.runtime.db.execute(
+                "UPDATE source_blobs SET raw_bytes = ? WHERE job_id = ? AND source_id = ?",
+                (b"changed bytes", job_id, source_id),
+            )
+            with self.assertRaisesRegex(rt.IntegrityError, "stored source blob"):
+                await rt.stored_source_blob(self.runtime, job_id, source.canonical_url)
+            extraction = self.runtime.db.execute(
+                "SELECT extractor_version, page_map_json, limitations_json "
+                "FROM source_extractions WHERE job_id = ? AND source_id = ?",
+                (job_id, source_id),
+            ).fetchone()
+            for column, statement, changed in (
+                (
+                    "extractor_version",
+                    "UPDATE source_extractions SET extractor_version = ? "
+                    "WHERE job_id = ? AND source_id = ?",
+                    "mutated-version",
+                ),
+                (
+                    "page_map_json",
+                    "UPDATE source_extractions SET page_map_json = ? "
+                    "WHERE job_id = ? AND source_id = ?",
+                    '[{"page":999,"start":0,"end":24}]',
+                ),
+                (
+                    "limitations_json",
+                    "UPDATE source_extractions SET limitations_json = ? "
+                    "WHERE job_id = ? AND source_id = ?",
+                    '["mutated limitation"]',
+                ),
+            ):
+                self.runtime.db.execute(statement, (changed, job_id, source_id))
+                with self.subTest(column=column), self.assertRaises(rt.IntegrityError):
+                    await rt.stored_extraction(self.runtime, job_id, source_id)
+                self.runtime.db.execute(statement, (extraction[column], job_id, source_id))
+            self.runtime.db.execute(
+                "UPDATE source_extractions SET extracted_text = ? "
+                "WHERE job_id = ? AND source_id = ?",
+                ("changed text", job_id, source_id),
+            )
+            with self.assertRaisesRegex(rt.IntegrityError, "stored extraction"):
+                await rt.stored_extraction(self.runtime, job_id, source_id)
+
+        asyncio.run(run())
+
+    def test_nonexplicit_short_unit_is_rejected_but_explicit_short_is_allowed(self) -> None:
+        outline = rt.DecisionLedger.model_validate_json(ledger_json("S1:P0-80")).outline[0]
+        short = "## Unit 1\n\nShort supported answer [S1:P0-80]"
+        with self.assertRaisesRegex(ValueError, "shorter than 1200"):
+            rt.validate_author_unit(request(), outline, short, {"S1:P0-80"})
+        accepted = rt.validate_author_unit(
+            request(query="Give a brief answer"), outline, short, {"S1:P0-80"}
+        )
+        self.assertEqual(accepted, short)
+
+    def test_repeated_filler_and_content_before_the_unit_heading_are_rejected(self) -> None:
+        outline = rt.DecisionLedger.model_validate_json(ledger_json("S1:P0-80")).outline[0]
+        repeated = "## Unit 1\n\n" + ("Repeated filler sentence. " * 100) + "[S1:P0-80]"
+        with self.assertRaisesRegex(ValueError, "shorter than 1200"):
+            rt.validate_author_unit(request(), outline, repeated, {"S1:P0-80"})
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            rt.validate_author_unit(
+                request(),
+                outline,
+                "Preamble that must not precede the unit.\n\n" + unit_markdown(1, "S1:P0-80"),
+                {"S1:P0-80"},
+            )
+
+    def test_review_and_edit_receive_outline_and_finding_relevant_passages(self) -> None:
+        plan = rt.ResearchPlan.model_validate_json(plan_json())
+        ledger = rt.DecisionLedger.model_validate_json(ledger_json("S1:P0-80", "S2:P0-80"))
+        markdown = unit_markdown(1, "S1:P0-80")
+        blocks = rt.draft_blocks(markdown, 1, 1)
+        passages = [
+            {"id": f"S{index}:P0-80", "text": "evidence", "checklist_ids": ["C1"]}
+            for index in range(1, 25)
         ]
-        requirement_ids = [item.id for item in state.requirements]
-        state.report_plan = [
-            rt.PlanSection(
-                heading="Comparison",
-                requirement_ids=requirement_ids,
+        assessed = rt.selected_assessment_passages(plan, passages)
+        self.assertEqual(len(assessed), 12)
+        with self.assertRaisesRegex(ValueError, "passage references"):
+            rt.validate_evidence_assessment(
+                rt.EvidenceAssessment(
+                    items=[
+                        rt.ChecklistEvidence(
+                            checklist_id="C1",
+                            status="covered",
+                            passage_ids=["S13:P0-80"],
+                            origin="example.com",
+                            authority="authoritative",
+                        )
+                    ],
+                    stop_reason="Covered",
+                ),
+                plan,
+                {item["id"] for item in assessed},
+                set(),
             )
+        reviewed = rt.relevant_review_passages(blocks, ledger, passages, markdown)
+        self.assertEqual({item["id"] for item in reviewed}, {"S1:P0-80", "S2:P0-80"})
+        findings = [
+            {
+                "id": "F001",
+                "block_ids": [blocks[1].id],
+                "source_ids": ["S2:P0-80"],
+            }
         ]
-        state.evidence = [
-            replace(
-                item,
-                relevance=0.9,
-                requirement_ids=requirement_ids,
-                url=f"https://same.example/{index}",
-                excerpt=(unsafe * 120)[:1200],
+        edited = rt.relevant_editor_passages(findings, blocks, passages)
+        self.assertEqual({item["id"] for item in edited}, {"S1:P0-80", "S2:P0-80"})
+        with self.assertRaisesRegex(ValueError, "one admitted block"):
+            rt.apply_editor_result(
+                markdown,
+                blocks,
+                rt.EditResult(
+                    base_revision=1,
+                    replacements=[
+                        rt.EditReplacement(
+                            block_id=blocks[1].id,
+                            finding_ids=["F001"],
+                            markdown="Unsupported replacement [S3:P0-80]",
+                        )
+                    ],
+                ),
+                findings,
+                {item["id"] for item in edited},
             )
-            for index, item in enumerate(state.evidence, 1)
-        ]
-        state.last_inspected_revision = state.evidence_revision
-        rt.set_collection_decision(state, "voluntary_stop")
-        contract = rt.build_section_contract(research, state, "Comparison")
-        self.assertEqual(contract.covered_requirement_ids, ())
-        rt._store_gap_section(state, contract)
-        body = state.report_sections[0].body
-        self.assertLess(len(body), rt.MAX_REPORT_SECTION_CHARS)
-        self.assertEqual(body.count("Runtime partial evidence:"), 1)
-        self.assertEqual(body.count("Runtime coverage gap:"), 5)
-        self.assertIn(rt.safe_extractive_text(summary, 300), body)
-        self.assertIn("[S1]", state.report_sections[0].body)
-        rt.validate_checkpoint_state(state, research)
 
-    def test_query_context_keeps_lossless_max_input_fragments(self) -> None:
-        query = "q" * rt.MAX_QUERY_CHARS
-        focus = "," * rt.MAX_FOCUS_CHARS
-        research = rt.ResearchRequest(query=query, focus=focus, depth="deep")
-        fragments = rt.explicit_request_fragments(research)
-        self.assertEqual("".join(item.text for item in fragments), query + focus)
-        payload = rt.build_plan_context(research)
-        self.assertEqual(
-            "".join(item["text"] for item in payload["request_fragments"]), query + focus
-        )
+    def test_stop_prevents_later_search_fetch_and_extraction_dispatch(self) -> None:
+        async def run() -> None:
+            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
+            job_id = submitted["job_id"]
+            self.assertTrue(await rt.claim_research_job(self.runtime, job_id))
+            state = await rt.load_research_state(self.runtime, job_id)
+            provider = FakeProvider([completion(plan_json())])
+            with patch.object(rt, "complete_research", new=provider):
+                await rt.create_research_plan(self.runtime, job_id, request(), state)
+            await rt.cancel_research_job(self.runtime, "owner-1", job_id)
+            search = patch.object(rt, "search_searxng")
+            with search as search_mock, self.assertRaises(asyncio.CancelledError):
+                await rt.run_job_research(self.runtime, job_id, request())
+            search_mock.assert_not_awaited()
+
+            second = await rt.submit_research_job(
+                self.runtime, "owner-1", request(action_id="cancel-fetch")
+            )
+            second_id = second["job_id"]
+            self.assertTrue(await rt.claim_research_job(self.runtime, second_id))
+            round_value = {
+                "round": 1,
+                "queries": [],
+                "completed_queries": [],
+                "results": [
+                    {
+                        "id": "W1-1",
+                        "url": "https://example.com/one",
+                        "title": "One",
+                        "snippet": "Evidence",
+                        "engine": "engine",
+                        "query": "query",
+                    },
+                    {
+                        "id": "W1-2",
+                        "url": "https://example.com/two",
+                        "title": "Two",
+                        "snippet": "Evidence",
+                        "engine": "engine",
+                        "query": "query",
+                    },
+                ],
+                "selection": None,
+                "fetches": [],
+                "assessment": None,
+            }
+            selection = rt.CandidateSelection.model_validate(
+                {
+                    "documents": [
+                        {
+                            "result_id": result_id,
+                            "purpose": "evidence",
+                            "checklist_ids": ["C1"],
+                        }
+                        for result_id in ("W1-1", "W1-2")
+                    ]
+                }
+            )
+
+            async def fetch(result: rt.SearchResult) -> rt.FetchedSourceBlob:
+                await rt.cancel_research_job(self.runtime, "owner-1", second_id)
+                return rt.FetchedSourceBlob(
+                    result.url,
+                    result.url,
+                    result.title,
+                    "example.com",
+                    "text/plain",
+                    b"source",
+                )
+
+            fetch_mock = AsyncMock(side_effect=fetch)
+            extract = patch.object(rt, "extract_source_blob")
+            with (
+                patch.object(rt, "fetch_source_blob", new=fetch_mock),
+                extract as extract_mock,
+                self.assertRaises(asyncio.CancelledError),
+            ):
+                await rt.collect_selected_candidates(
+                    self.runtime,
+                    second_id,
+                    request(action_id="cancel-fetch"),
+                    rt.initial_research_state(),
+                    round_value,
+                    selection,
+                )
+            self.assertEqual(fetch_mock.call_count, 1)
+            extract_mock.assert_not_awaited()
+
+        asyncio.run(run())
 
     def test_network_boundaries_block_ssrf_bad_content_and_oversize_bodies(self) -> None:
         with self.assertRaises(ValueError):
@@ -832,7 +510,10 @@ class RuntimeContractTests(RuntimeTestCase):
                 )
                 await rt.fetch_bytes(session, "http://example.com", 100)
             with self.assertRaises(ValueError):
-                response = cast(aiohttp.ClientResponse, FakeResponse(chunks=[b"a" * 5, b"b" * 5]))
+                response = cast(
+                    aiohttp.ClientResponse,
+                    FakeResponse(chunks=[b"a" * 5, b"b" * 5]),
+                )
                 await rt.read_bytes_with_cap(response, 5)
             with self.assertRaises(ValueError):
                 session = cast(
@@ -848,880 +529,261 @@ class RuntimeContractTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_plan_and_search_schemas_are_exact_and_scalar(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        plan = deep_plan_for(research).model_dump()
-        for field, value in (
-            ("target_chars", 400),
-            ("deliverables", ["echo"]),
-            ("source_ids", ["S1"]),
-        ):
-            invalid = json.loads(json.dumps(plan))
-            invalid["sections"][0][field] = value
-            with self.subTest(field=field), self.assertRaises(ValidationError):
-                rt.PlanDraft.model_validate(invalid)
-        plan["query_seeds"] = []
-        with self.assertRaises(ValidationError):
-            rt.PlanDraft.model_validate(plan)
-
-        schema = rt.SearchBatchEntry.model_json_schema()
-        self.assertEqual(set(schema["properties"]), {"query", "purpose", "requirement_id"})
-        self.assertEqual(set(schema["required"]), {"query", "purpose", "requirement_id"})
-        for payload in (
-            {"query": "q", "purpose": "p"},
-            {"query": "q", "purpose": "p", "requirement_ids": ["R1"]},
-            {"query": "q", "purpose": "p", "requirement_id": ["R1"]},
-        ):
-            with self.subTest(payload=payload), self.assertRaises(ValidationError):
-                rt.SearchBatchEntry.model_validate(payload)
-
-        state = make_state(1)
-        state.request_fragments = rt.explicit_request_fragments(research)
-        state.requirements = [
-            rt.RequirementModel(
-                id="R1", summary="Need direct evidence", kind="direct", fragment_ids=["F1"]
-            )
-        ]
-        unknown = rt.SearchBatchEntry(query="q", purpose="p", requirement_id="R2")
-        with self.assertRaisesRegex(ValueError, "uncovered requirement"):
-            rt.validated_query_entry(state, unknown)
-        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
-        covered = rt.SearchBatchEntry(query="q", purpose="p", requirement_id="R1")
-        with self.assertRaisesRegex(ValueError, "uncovered requirement"):
-            rt.validated_query_entry(state, covered)
-
-    def test_compare_fragment_kind_is_upgraded_by_runtime(self) -> None:
-        research = rt.ResearchRequest(query="compare vendors", depth="deep")
-        fragments = rt.explicit_request_fragments(research)
-        draft = rt.PlanDraft(
-            requirements=[
-                rt.RequirementModel(
-                    id="R1",
-                    summary="compare vendors",
-                    kind="direct",
-                    fragment_ids=[fragments[0].id],
-                )
-            ],
-            sections=[
-                rt.PlanSection(
-                    heading="Comparison",
-                    requirement_ids=["R1"],
-                )
-            ],
-        )
-        _fragments, requirements, _sections = rt.validated_initial_plan(research, draft)
-        self.assertEqual(requirements[0].kind, "comparison")
-        state = make_state(1)
-        state.request_fragments = fragments
-        state.requirements = requirements
-        state.evidence[0] = replace(
-            state.evidence[0], requirement_ids=["R1"], url="https://a.example/1"
-        )
-        self.assertFalse(rt.requirement_is_covered(state, requirements[0]))
-
-    def test_gap_context_and_prompt_disclose_gap_and_forbid_unsupported_claims(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence; compare vendors", depth="deep")
-        state = make_state(1)
-        fragments = rt.explicit_request_fragments(research)
-        state.request_fragments = fragments
-        state.requirements = [
-            rt.RequirementModel(
-                id="R1",
-                summary="Need direct evidence",
-                kind="direct",
-                fragment_ids=[fragments[0].id],
-            ),
-            rt.RequirementModel(
-                id="R2",
-                summary="compare vendors",
-                kind="comparison",
-                fragment_ids=[fragments[-1].id],
-            ),
-        ]
-        state.evidence[0] = replace(state.evidence[0], requirement_ids=["R1"], relevance=0.9)
-        state.report_plan = [
-            rt.PlanSection(
-                heading="Compare",
-                requirement_ids=["R2"],
-            )
-        ]
-        contract = rt.build_section_contract(research, state, "Compare")
-        context = rt.build_section_context(research, state, contract)
-        self.assertEqual(
-            context["section_contract"]["requirements"],
-            [
-                {
-                    "id": "R2",
-                    "summary": "compare vendors",
-                    "kind": "comparison",
-                    "required_independent_host_count": 2,
-                    "assigned_source_ids": [],
-                }
-            ],
-        )
-        self.assertEqual(context["coverage_gaps"][0]["required_hosts"], 2)
-        prompt = rt.build_section_prompt(research, state, contract)
-        prompt_payload = json.loads(prompt)
-        self.assertIn("unsupported claims", prompt)
-        self.assertIn("assigned_evidence", prompt)
-        self.assertNotIn("body_markdown", prompt)
-        self.assertTrue(any("paragraphs.text" in item for item in prompt_payload["requirements"]))
-        self.assertTrue(
-            any("Use source_ids only" in item for item in prompt_payload["requirements"])
-        )
-        self.assertNotIn(
-            "requirement_ids", rt.SectionContentDraft.model_json_schema()["properties"]
-        )
-        self.assertTrue(
-            any(
-                "required_independent_host_count distinct hosts" in item
-                for item in prompt_payload["requirements"]
-            )
-        )
-        self.assertTrue(
-            any(
-                "assigned_evidence.requirement_ids" in item and "assigned_evidence.url" in item
-                for item in prompt_payload["requirements"]
-            )
-        )
-        self.assertTrue(
-            any(
-                "runtime renders all headings, bullets, tables" in item
-                for item in prompt_payload["requirements"]
-            )
-        )
-
-    def test_standard_and_quick_section_prompts_receive_usable_evidence(self) -> None:
-        for depth in ("standard", "quick"):
-            with self.subTest(depth=depth):
-                research = rt.ResearchRequest(query="Evidence", depth=depth)
-                state = make_state(1, depth)
-                contract = rt.build_section_contract(research, state)
-                prompt_payload = json.loads(rt.build_section_prompt(research, state, contract))
-                self.assertNotIn("body_markdown", json.dumps(prompt_payload, ensure_ascii=False))
-                self.assertEqual(
-                    [item["id"] for item in prompt_payload["assigned_evidence"]], ["S1"]
-                )
-                self.assertEqual(contract.heading, "Summary")
-                state.last_inspected_revision = state.evidence_revision
-                before = rt.run_state_snapshot(state)
-                with self.assertRaisesRegex(rt.ModelOutputError, "section contract"):
-                    rt.store_report_section(
-                        state,
-                        contract,
-                        section(cited("Unseen", "S2")),
-                    )
-                self.assertEqual(rt.run_state_snapshot(state), before)
-                comparison = rt.build_section_contract(
-                    rt.ResearchRequest(query="compare vendors", depth=depth), state
-                )
-                self.assertTrue(comparison.requires_comparison_table)
-                before = rt.run_state_snapshot(state)
-                with self.assertRaisesRegex(rt.ModelOutputError, "requires a table"):
-                    rt.store_report_section(
-                        state,
-                        comparison,
-                        section(cited("Free text", "S1")),
-                    )
-                self.assertEqual(rt.run_state_snapshot(state), before)
-
-    def test_runtime_limitations_are_bounded_neutralized_and_deduplicated(self) -> None:
-        state = make_state(1, "deep")
-        state.requirements = [
-            rt.RequirementModel(
-                id="R1",
-                summary="[S999] **missing**",
-                kind="direct",
-                fragment_ids=["F1"],
-            )
-        ]
-        state.report_sections = [
-            rt.ReportSection(
-                "Fallback",
-                "Body [S1]",
-                state.evidence_revision,
-                "summary",
-                ["R1"],
-                ["S1"],
-                "extractive",
-            ),
-            rt.ReportSection(
-                "Fallback",
-                "Body [S1]",
-                state.evidence_revision,
-                "summary",
-                ["R1"],
-                ["S1"],
-                "extractive",
-            ),
-        ]
-        limitations = rt.runtime_limitations(state)
-        self.assertEqual(len(limitations), 2)
-        self.assertTrue(all(len(item) <= rt.MAX_LIMITATION_CHARS for item in limitations))
-        self.assertNotIn("[S999]", " ".join(limitations))
-        self.assertNotIn("**missing**", " ".join(limitations))
-
-    def test_model_output_error_retries_but_checkpoint_corruption_stays_integrity_error(
-        self,
-    ) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        state = make_state(1)
-        state.last_inspected_revision = state.evidence_revision
-        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
-        rt.store_initial_plan(state, research, deep_plan_for(research))
-        with self.assertRaises(rt.ModelOutputError):
-            rt.store_report_section(
-                state,
-                rt.build_section_contract(research, state, "Section 1"),
-                section(cited("Bad citation", "S9")),
-            )
-        corrupt = rt.run_state_snapshot(state)
-        corrupt["report_sections"] = [
-            {
-                "heading": "Section 1",
-                "body": "Bad citation [S9]",
-                "ledger_revision": state.evidence_revision,
-                "summary": "summary",
-                "requirement_ids": ["R1"],
-                "source_ids": ["S9"],
-                "mode": "structured",
-            }
-        ]
-        loaded = rt.load_run_state(
-            corrupt,
-            depth="deep",
-            budget=rt.make_budget("deep"),
-            wall_limit=rt.wall_budget_seconds("deep"),
-        )
-        with self.assertRaises(rt.IntegrityError):
-            rt.validate_checkpoint_state(loaded, research)
-
-    def test_extraction_provenance(self) -> None:
+    def test_material_edit_is_bounded_and_rechecked_before_publication(self) -> None:
         async def run() -> None:
-            raw = (
-                b"<html><body><article>Performance evidence with enough substantive text."
-                b"</article></body></html>"
+            replacement = unit_markdown(1, "S1:P0-80", label="Edited").split("\n\n", 1)[1]
+            outputs = [
+                completion(plan_json()),
+                completion(selection_json("W1-1")),
+                completion(assessment_json("S1:P0-80")),
+                completion(ledger_json("S1:P0-80")),
+                completion(unit_markdown(1, "S1:P0-80")),
+                completion(unit_markdown(2, "S1:P0-80")),
+                completion(material_review(1, regenerate=False)),
+                completion(
+                    json.dumps(
+                        {
+                            "base_revision": 1,
+                            "replacements": [
+                                {
+                                    "block_id": "D:c1:r1:b002",
+                                    "finding_ids": ["F001"],
+                                    "markdown": replacement,
+                                }
+                            ],
+                            "dismissals": [],
+                        },
+                        separators=(",", ":"),
+                    )
+                ),
+                completion('{"resolved":true,"reason":null}'),
+            ]
+            fixture = research_jobs.ResearchJobTests()
+            fixture.runtime = self.runtime
+            job_id, provider = await fixture.run_path(outputs)
+            _code, result = await rt.research_job_result(self.runtime, "owner-1", job_id)
+            self.assertEqual(
+                (result["status"], result["quality_outcome"]), ("completed", "publish")
             )
-            with patch.object(
-                rt,
-                "fetch_bytes",
-                new=AsyncMock(return_value=(raw, "https://example.com/result", "text/html")),
-            ):
-                evidence = await rt.extract_evidence(
-                    rt.SearchResult(
-                        "https://example.com/result",
-                        "Evidence",
-                        "snippet",
-                        "engine",
-                        "performance evidence",
-                    ),
-                    "broad request",
-                    "measured result",
-                )
-            self.assertEqual(evidence.search_query, "performance evidence")
-            self.assertEqual(evidence.purpose, "measured result")
+            self.assertIn("Edited", result["answer_markdown"])
+            self.assertEqual(len(provider.bodies), 9)
+            stages = self.runtime.db.execute(
+                "SELECT stage FROM review_records WHERE job_id = ? ORDER BY id", (job_id,)
+            ).fetchall()
+            self.assertEqual([row["stage"] for row in stages], ["initial", "recheck"])
 
         asyncio.run(run())
 
-    def test_checkpoint_version_rejects_missing_and_wrong_before_loading_state(self) -> None:
-        snapshot = rt.run_state_snapshot(make_state(1, "quick"))
-        self.assertEqual(snapshot["checkpoint_version"], 2)
-        for version in (None, 1, 3):
-            invalid = dict(snapshot)
-            if version is None:
-                invalid.pop("checkpoint_version")
-            else:
-                invalid["checkpoint_version"] = version
-            invalid.pop("evidence_ledger")
-            with (
-                self.subTest(version=version),
-                self.assertRaisesRegex(rt.IntegrityError, "unsupported checkpoint version"),
+    def test_restart_reuses_committed_author_unit(self) -> None:
+        async def run() -> None:
+            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
+            self.assertTrue(await rt.claim_research_job(self.runtime, submitted["job_id"]))
+            setup_provider = FakeProvider(
+                [
+                    completion(plan_json()),
+                    completion(selection_json("W1-1")),
+                    completion(assessment_json("S1:P0-80")),
+                    completion(ledger_json("S1:P0-80")),
+                ]
+            )
+            fixture = research_jobs.ResearchJobTests()
+            fixture.runtime = self.runtime
+            contexts = fixture.patches(setup_provider)
+            with contexts[0], contexts[1], contexts[2], contexts[3]:
+                state = await rt.run_job_research(self.runtime, submitted["job_id"], request())
+                await rt.set_candidate(self.runtime, submitted["job_id"], 1)
+                _, ledger = await rt.create_report_outline(
+                    self.runtime, submitted["job_id"], 1, request(), state, []
+                )
+
+            unit = unit_markdown(1, "S1:P0-80")
+            blocks = rt.draft_blocks(unit, 1, 1)
+            outline = ledger.outline[0]
+            await rt.insert_editorial_revision(
+                self.runtime,
+                submitted["job_id"],
+                1,
+                1,
+                "raw_unit",
+                unit_no=1,
+                markdown=unit,
+                data={
+                    "unit": 1,
+                    "heading": outline.heading,
+                    "handoff": outline.handoff,
+                    "checklist_ids": outline.checklist_ids,
+                    "passage_ids": outline.passage_ids,
+                    "substantive_chars": rt.substantive_character_count(unit),
+                    "block_ids": [item.id.replace(":r1:", ":u1:") for item in blocks],
+                    "lookup_block": {
+                        "id": blocks[-1].id.replace(":r1:", ":u1:"),
+                        "text": blocks[-1].text[:1200],
+                    },
+                },
+                manifest=rt.block_manifest(blocks),
+                next_phase="writing",
+            )
+            resumed_provider = FakeProvider([completion(unit_markdown(2, "S1:P0-80"))])
+            with patch.object(rt, "complete_research", new=resumed_provider):
+                await rt.create_raw_candidate(
+                    self.runtime,
+                    submitted["job_id"],
+                    1,
+                    request(),
+                    state,
+                    ledger,
+                    [],
+                )
+            self.assertEqual(len(resumed_provider.bodies), 1)
+            self.assertEqual(
+                self.runtime.db.execute(
+                    "SELECT COUNT(*) FROM editorial_revisions "
+                    "WHERE job_id = ? AND kind = 'raw_unit'",
+                    (submitted["job_id"],),
+                ).fetchone()[0],
+                2,
+            )
+
+        asyncio.run(run())
+
+    def test_two_materially_poor_candidates_end_in_needs_review(self) -> None:
+        async def run() -> None:
+            outputs = [
+                completion(plan_json()),
+                completion(selection_json("W1-1")),
+                completion(assessment_json("S1:P0-80")),
+                completion(ledger_json("S1:P0-80")),
+                completion(unit_markdown(1, "S1:P0-80", label="First")),
+                completion(unit_markdown(2, "S1:P0-80", label="First")),
+                completion(material_review(1, regenerate=True)),
+                completion(ledger_json("S1:P0-80")),
+                completion(unit_markdown(1, "S1:P0-80", label="Second")),
+                completion(unit_markdown(2, "S1:P0-80", label="Second")),
+                completion(material_review(2, regenerate=True)),
+            ]
+            fixture = research_jobs.ResearchJobTests()
+            fixture.runtime = self.runtime
+            job_id, provider = await fixture.run_path(outputs)
+            status = await rt.research_job_status(self.runtime, "owner-1", job_id)
+            self.assertEqual(
+                (status["status"], status["delivery_status"]),
+                ("incomplete", "needs_review"),
+            )
+            job = await rt.load_job(self.runtime, job_id)
+            self.assertEqual(
+                (status["error_code"], job["quality_outcome"]),
+                ("material_findings_remain", "retryable_quality_failure"),
+            )
+            self.assertEqual(len(provider.bodies), 11)
+            ledgers = self.runtime.db.execute(
+                "SELECT candidate_no FROM editorial_revisions "
+                "WHERE job_id = ? AND kind = 'ledger' ORDER BY candidate_no",
+                (job_id,),
+            ).fetchall()
+            self.assertEqual([row["candidate_no"] for row in ledgers], [1, 2])
+            second_ledger_prompt = json.loads(
+                json.loads(provider.bodies[7])["messages"][1]["content"]
+            )
+            self.assertTrue(second_ledger_prompt["prior_candidate_failure_feedback"])
+            self.assertEqual(
+                self.runtime.db.execute(
+                    "SELECT COUNT(*) FROM publications WHERE job_id = ?", (job_id,)
+                ).fetchone()[0],
+                0,
+            )
+
+        asyncio.run(run())
+
+    def test_numeric_derivation_requires_citation_and_assumptions(self) -> None:
+        with self.assertRaisesRegex(ValueError, "citation"):
+            rt.validate_numeric_derivations("## Result\n\nThe measured value is 12.")
+        with self.assertRaisesRegex(ValueError, "assumptions"):
+            rt.validate_numeric_derivations(
+                "## Result\n\nThe estimate = 12 based on inputs [S1:P0-80]."
+            )
+        rt.validate_numeric_derivations(
+            "## Result\n\nUnder the stated assumption, the estimate = 12 with a range "
+            "of outcomes [S1:P0-80]."
+        )
+
+    def test_review_schema_requires_material_checklist_and_source_references(self) -> None:
+        ledger = rt.DecisionLedger.model_validate_json(ledger_json("S1:P0-80"))
+        blocks = rt.draft_blocks(unit_markdown(1, "S1:P0-80"), 1, 1)
+        invalid = rt.ReviewResult(
+            patches=[rt.ReviewItem(block_ids=[blocks[1].id], reason="Material consequence")]
+        )
+        with self.assertRaisesRegex(ValueError, "checklist and source"):
+            rt.validate_review_result(
+                invalid, blocks, ledger, [{"id": "S1:P0-80", "text": "evidence"}]
+            )
+        with self.assertRaisesRegex(ValueError, "base revision is stale"):
+            rt.apply_editor_result(
+                unit_markdown(1, "S1:P0-80"),
+                blocks,
+                rt.EditResult(base_revision=2),
+                [],
+                {"S1:P0-80"},
+            )
+
+    def test_only_evidence_caveats_change_the_publication_outcome(self) -> None:
+        async def run() -> None:
+            fixture = research_jobs.ResearchJobTests()
+            fixture.runtime = self.runtime
+            for action_id, public_caveat, expected in (
+                ("style-note", False, "publish"),
+                ("evidence-note", True, "publish_with_caveats"),
             ):
-                rt.load_run_state(
-                    invalid,
-                    depth="quick",
-                    budget=rt.make_budget("quick"),
-                    wall_limit=rt.wall_budget_seconds("quick"),
+                reason = f"{action_id} explanation"
+                note_review = json.dumps(
+                    {
+                        "patches": [],
+                        "notes": [
+                            {
+                                "block_ids": ["D:c1:r1:b002"],
+                                "checklist_ids": ["C1"],
+                                "ledger_ids": ["K-FACT"],
+                                "source_ids": ["S1:P0-80"],
+                                "reason": reason,
+                                "public_caveat": public_caveat,
+                            }
+                        ],
+                        "unsupported": [],
+                        "regenerate_reason": None,
+                    },
+                    separators=(",", ":"),
                 )
-        loaded = rt.load_run_state(
-            snapshot,
-            depth="quick",
-            budget=rt.make_budget("quick"),
-            wall_limit=rt.wall_budget_seconds("quick"),
-        )
-        rt.validate_checkpoint_state(loaded, rt.ResearchRequest(query="Evidence", depth="quick"))
+                outputs = [
+                    *research_jobs.research_outputs(),
+                    completion(ledger_json("S1:P0-80")),
+                    completion(unit_markdown(1, "S1:P0-80")),
+                    completion(unit_markdown(2, "S1:P0-80")),
+                    completion(note_review),
+                ]
+                job_id, _provider = await fixture.run_path(outputs, request(action_id=action_id))
+                _code, result = await rt.research_job_result(self.runtime, "owner-1", job_id)
+                self.assertEqual(result["quality_outcome"], expected)
+                self.assertEqual(reason in result["answer_markdown"], public_caveat)
 
-    def test_checkpoint_shape_nested_state_and_stats_are_strict(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        state = make_state(1)
-        state.evidence[0] = replace(state.evidence[0], relevance=0.9, requirement_ids=["R1"])
-        rt.store_initial_plan(state, research, deep_plan_for(research))
-        rt.set_collection_decision(state, "coverage_complete")
-        rt.store_report_section(
-            state,
-            rt.build_section_contract(research, state, "Section 1"),
-            section(cited("Supported", "S1")),
-        )
-        state.candidate_queue = [
-            rt.Candidate(
-                url="https://candidate.example/1",
-                title="candidate",
-                snippet="snippet",
-                engine="engine",
-                search_query="query",
-                purpose="purpose",
-                requirement_id="R1",
-            )
-        ]
-        state.failed_candidates = [
-            rt.FailedCandidate("https://failed.example/1", "timeout", "fetch")
-        ]
-        state.searched_queries = {"q001"}
-        valid = rt.run_state_snapshot(state)
-        self.assertEqual(
-            set(valid),
-            {
-                "checkpoint_version",
-                "evidence_ledger",
-                "searched_queries",
-                "evidence_revision",
-                "last_inspected_revision",
-                "stats",
-                "request_fragments",
-                "requirements",
-                "report_plan",
-                "report_sections",
-                "candidate_queue",
-                "failed_candidates",
-                "phase",
-                "collection_decision",
-            },
-        )
+        asyncio.run(run())
 
-        tampered_stats = json.loads(json.dumps(valid))
-        tampered_stats["stats"].update(
-            depth="quick",
-            wall_limit_s=1.0,
-            search_target=0,
-            search_budget=0,
-            evidence_budget=0,
-            minimum_evidence=0,
-            target_evidence=0,
-            model_turn_budget=0,
-            searches=0,
-            documents=0,
-            evidence=99,
-            usable_evidence=99,
-            evidence_revision=99,
-            report_plan_sections=99,
-            report_sections=99,
-            report_chars=99,
-            requirement_coverage={"tampered": {}},
-        )
-        loaded = rt.load_run_state(
-            tampered_stats,
-            depth="deep",
-            budget=rt.make_budget("deep"),
-            wall_limit=rt.wall_budget_seconds("deep"),
-        )
-        fresh = rt.default_stats("deep", rt.make_budget("deep"), rt.wall_budget_seconds("deep"))
-        for key in (
-            "depth",
-            "wall_limit_s",
-            "search_target",
-            "search_budget",
-            "evidence_budget",
-            "minimum_evidence",
-            "target_evidence",
-            "model_turn_budget",
-        ):
-            self.assertEqual(loaded.stats[key], fresh[key])
-        self.assertEqual(loaded.stats["evidence"], 1)
-        self.assertEqual(loaded.stats["documents"], 1)
-        self.assertEqual(loaded.stats["searches"], 1)
-        self.assertEqual(loaded.stats["usable_evidence"], 1)
-        self.assertEqual(loaded.stats["evidence_revision"], 1)
-        self.assertEqual(loaded.stats["report_plan_sections"], 1)
-        self.assertEqual(loaded.stats["report_sections"], 1)
+    def test_publication_labels_reserve_localized_headings_and_honor_explicit_language(
+        self,
+    ) -> None:
+        plan = rt.ResearchPlan.model_validate_json(plan_json(language="ja"))
         self.assertEqual(
-            loaded.stats["report_chars"], len(rt.assemble_report_sections(loaded.report_sections))
+            rt.publication_labels(request(query="公開情報を調査してください"), plan),
+            ("限界", "情報源", "なし", "取得日"),
         )
         self.assertEqual(
-            loaded.stats["requirement_coverage"], rt.requirement_coverage_snapshot(loaded)
+            rt.publication_labels(request(query="公開情報を調査してください", language="en"), plan),
+            ("Limitations", "Sources", "None", "retrieved"),
         )
-
-        invalid: dict[str, dict[str, Any]] = {}
-        item = json.loads(json.dumps(valid))
-        item["query_seed_queue"] = []
-        invalid["removed top-level field"] = item
-        item = json.loads(json.dumps(valid))
-        item.pop("request_fragments")
-        invalid["missing top-level field"] = item
-        item = json.loads(json.dumps(valid))
-        item["report_plan"][0]["target_chars"] = 400
-        invalid["old plan field"] = item
-        item = json.loads(json.dumps(valid))
-        item["report_plan"][0].pop("requirement_ids")
-        invalid["missing plan field"] = item
-        item = json.loads(json.dumps(valid))
-        item["evidence_ledger"][0]["relevance"] = "high"
-        invalid["evidence type"] = item
-        item = json.loads(json.dumps(valid))
-        item["evidence_ledger"][0]["url"] = "http://[bad"
-        invalid["malformed mapped evidence URL"] = item
-        item = json.loads(json.dumps(valid))
-        candidate = item["candidate_queue"][0]
-        candidate["requirement_ids"] = [candidate.pop("requirement_id")]
-        invalid["old candidate shape"] = item
-        item = json.loads(json.dumps(valid))
-        item["failed_candidates"][0]["reason"] = "raw failure text"
-        invalid["unsafe failed reason"] = item
-        item = json.loads(json.dumps(valid))
-        item["failed_candidates"][0]["stage"] = "download"
-        invalid["invalid failed stage"] = item
-        item = json.loads(json.dumps(valid))
-        item["report_sections"][0]["ledger_revision"] = "1"
-        invalid["report section type"] = item
-        item = json.loads(json.dumps(valid))
-        item["stats"]["requirements_calls"] = 99
-        invalid["unknown stats field"] = item
-        item = json.loads(json.dumps(valid))
-        item["stats"]["report_plan_target_chars"] = 99
-        invalid["deleted stats field"] = item
-        item = json.loads(json.dumps(valid))
-        item["stats"].pop("query_batch_calls")
-        invalid["missing stats field"] = item
-        item = json.loads(json.dumps(valid))
-        item["stats"]["query_batch_calls"] = "oops"
-        invalid["wrong stats type"] = item
-        item = json.loads(json.dumps(valid))
-        item["stats"]["searches"] = True
-        invalid["bool stats counter"] = item
-        item = json.loads(json.dumps(valid))
-        item["stats"]["searches"] = -1
-        invalid["negative stats counter"] = item
-        item = json.loads(json.dumps(valid))
-        item["stats"]["operation_failure_reasons"] = {"timeout": -1}
-        invalid["negative stats reason count"] = item
-        item = json.loads(json.dumps(valid))
-        item["stats"]["model_transient_events"] = ["timeout"]
-        invalid["invalid stats event"] = item
-        item = json.loads(json.dumps(valid))
-        item["stats"]["operation_failure_events"] = [
-            {} for _ in range(rt.OPERATION_FAILURE_EVENT_LIMIT + 1)
-        ]
-        invalid["oversized stats events"] = item
-        item = json.loads(json.dumps(valid))
-        item["stats"]["fatal_error"] = []
-        invalid["invalid stats dictionary"] = item
-        for label, snapshot in invalid.items():
-            with self.subTest(label=label), self.assertRaises(rt.IntegrityError):
-                rt.load_run_state(
-                    snapshot,
-                    depth="deep",
-                    budget=rt.make_budget("deep"),
-                    wall_limit=rt.wall_budget_seconds("deep"),
-                )
-
-    def test_checkpoint_rejects_noncanonical_searched_queries(self) -> None:
-        research = rt.ResearchRequest(query="Evidence", depth="quick")
-        budget = rt.make_budget("quick")
-        valid = rt.run_state_snapshot(make_state(0, "quick"))
-        invalid = {
-            "duplicate": ["same query", "same query"],
-            "out of order": ["z query", "a query"],
-            "blank": [""],
-            "nonnormalized": [" padded query "],
-        }
-        for label, searched_queries in invalid.items():
-            snapshot = json.loads(json.dumps(valid))
-            snapshot["searched_queries"] = searched_queries
-            with self.subTest(label=label), self.assertRaises(rt.IntegrityError):
-                rt.load_run_state(
-                    snapshot,
-                    depth="quick",
-                    budget=budget,
-                    wall_limit=rt.wall_budget_seconds("quick"),
-                )
-
-        negative_revision = json.loads(json.dumps(valid))
-        negative_revision["last_inspected_revision"] = -1
-        loaded = rt.load_run_state(
-            negative_revision,
-            depth="quick",
-            budget=budget,
-            wall_limit=rt.wall_budget_seconds("quick"),
-        )
-        with self.assertRaises(rt.IntegrityError):
-            rt.validate_checkpoint_state(loaded, research)
-
-        over_budget = json.loads(json.dumps(valid))
-        over_budget["searched_queries"] = [
-            f"q{index:03d}" for index in range(budget.search_limit + 1)
-        ]
-        loaded = rt.load_run_state(
-            over_budget,
-            depth="quick",
-            budget=budget,
-            wall_limit=rt.wall_budget_seconds("quick"),
-        )
-        with self.assertRaises(rt.IntegrityError):
-            rt.validate_checkpoint_state(loaded, research)
-
-    def test_checkpoint_plan_must_match_request_owned_contract(self) -> None:
-        research = rt.ResearchRequest(
-            query="Need direct evidence",
-            focus="compare vendors",
-            depth="deep",
-        )
-        state = make_state(0)
-        rt.store_initial_plan(state, research, deep_plan_for(research))
-        valid = rt.run_state_snapshot(state)
-
-        retry = make_state(0)
-        retry.phase = "planning"
-        retry.request_fragments = rt.explicit_request_fragments(research)
-        loaded_retry = rt.load_run_state(
-            rt.run_state_snapshot(retry),
-            depth="deep",
-            budget=rt.make_budget("deep"),
-            wall_limit=rt.wall_budget_seconds("deep"),
-        )
-        rt.validate_checkpoint_state(loaded_retry, research)
-        self.assertEqual(loaded_retry.request_fragments, retry.request_fragments)
-        self.assertEqual(loaded_retry.requirements, [])
-        self.assertEqual(loaded_retry.report_plan, [])
-
-        invalid: dict[str, dict[str, Any]] = {}
-        item = json.loads(json.dumps(valid))
-        item["request_fragments"][0]["text"] = "Different request"
-        invalid["request mismatch"] = item
-        item = json.loads(json.dumps(valid))
-        item["requirements"][1]["id"] = "R1"
-        item["report_plan"][1]["requirement_ids"] = ["R1"]
-        invalid["duplicate requirement ID"] = item
-        item = json.loads(json.dumps(valid))
-        item["requirements"][1]["fragment_ids"] = ["F1"]
-        invalid["unmapped fragment"] = item
-        item = json.loads(json.dumps(valid))
-        item["report_plan"] = []
-        invalid["requirements without plan"] = item
-        item = json.loads(json.dumps(valid))
-        item["requirements"] = []
-        invalid["plan without requirements"] = item
-        for label, snapshot in invalid.items():
-            with self.subTest(label=label), self.assertRaises(rt.IntegrityError):
-                loaded = rt.load_run_state(
-                    snapshot,
-                    depth="deep",
-                    budget=rt.make_budget("deep"),
-                    wall_limit=rt.wall_budget_seconds("deep"),
-                )
-                rt.validate_checkpoint_state(loaded, research)
-
-        quick_research = rt.ResearchRequest(query="Evidence", depth="quick")
-        nondeep = make_state(0, "quick")
-        nondeep.request_fragments = rt.explicit_request_fragments(quick_research)
-        with self.assertRaises(rt.IntegrityError):
-            loaded = rt.load_run_state(
-                rt.run_state_snapshot(nondeep),
-                depth="quick",
-                budget=rt.make_budget("quick"),
-                wall_limit=rt.wall_budget_seconds("quick"),
-            )
-            rt.validate_checkpoint_state(loaded, quick_research)
-
-    def test_checkpoint_rejects_noncanonical_plan_heading_without_mutation(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        state = make_state(0)
-        rt.store_initial_plan(state, research, deep_plan_for(research))
-        snapshot = rt.run_state_snapshot(state)
-        snapshot["report_plan"][0]["heading"] = "  Section 1  "
-        before = json.loads(json.dumps(snapshot))
-
-        with self.assertRaisesRegex(
-            rt.IntegrityError,
-            "^checkpointed report plan is not normalized$",
-        ):
-            rt.load_run_state(
-                snapshot,
-                depth="deep",
-                budget=rt.make_budget("deep"),
-                wall_limit=rt.wall_budget_seconds("deep"),
-            )
-        self.assertEqual(snapshot, before)
-
-    def test_checkpoint_rejects_candidate_urls_outside_runtime_invariants(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        state = make_state(0)
-        rt.store_initial_plan(state, research, deep_plan_for(research))
-        state.candidate_queue = [
-            rt.Candidate(
-                url="https://candidate.example/1",
-                title="candidate",
-                snippet="snippet",
-                engine="engine",
-                search_query="query",
-                purpose="purpose",
-                requirement_id="R1",
-            )
-        ]
-        state.failed_candidates = [
-            rt.FailedCandidate("https://failed.example/1", "timeout", "fetch")
-        ]
-        valid = rt.run_state_snapshot(state)
-        rt.validate_checkpoint_state(state, research)
-
-        for queue, url in (
-            ("candidate_queue", "http://127.0.0.1/private"),
-            ("candidate_queue", "https://candidate.example"),
-            ("failed_candidates", "http://127.0.0.1/private"),
-            ("failed_candidates", "https://failed.example"),
-        ):
-            snapshot = json.loads(json.dumps(valid))
-            snapshot[queue][0]["url"] = url
-            with self.subTest(queue=queue, url=url), self.assertRaises(rt.IntegrityError):
-                loaded = rt.load_run_state(
-                    snapshot,
-                    depth="deep",
-                    budget=rt.make_budget("deep"),
-                    wall_limit=rt.wall_budget_seconds("deep"),
-                )
-                rt.validate_checkpoint_state(loaded, research)
-
-    def test_summary_and_stats_cannot_change_mode_or_outcome(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
-        state = make_state(1)
-        state.evidence[0] = replace(state.evidence[0], requirement_ids=["R1"])
-        rt.store_initial_plan(state, research, deep_plan_for(research))
-        rt.set_collection_decision(state, "coverage_complete")
-        rt.store_report_section(
-            state,
-            rt.build_section_contract(research, state, "Section 1"),
-            section(cited("Body", "S1")),
-        )
-        state.report_sections[0] = replace(
-            state.report_sections[0], summary="検証済み証拠台帳からの抽出要約"
-        )
-        state.stats["research_salvages"] = 99
-        snapshot = rt.run_state_snapshot(state)
-        loaded = rt.load_run_state(
-            snapshot,
-            depth="deep",
-            budget=rt.make_budget("deep"),
-            wall_limit=rt.wall_budget_seconds("deep"),
-        )
-        self.assertEqual(rt.finalize_report(loaded, research).outcome, "completed")
-        loaded.report_sections[0] = replace(loaded.report_sections[0], mode="extractive")
-        self.assertEqual(rt.finalize_report(loaded, research).outcome, "degraded")
-
-    def test_relevance_refresh_and_prune_unusable_sections(self) -> None:
-        table = "\n".join(f"試行{index}回 性能{300 + index}点" for index in range(12))
-        state = make_state(2, "quick")
-        state.evidence[0] = replace(state.evidence[0], excerpt=table, relevance=0, search_query="")
-        self.assertTrue(
-            rt.refresh_evidence_relevance(
-                state, rt.ResearchRequest(query="性能 指標", depth="quick")
-            )
-        )
-        state.evidence[1] = replace(
-            state.evidence[1],
-            relevance=0,
-            excerpt="This unrelated document has enough text but no requested lexical term.",
-        )
-        state.report_sections = [
-            rt.ReportSection(
-                "Saved", "Claim [S1]", state.evidence_revision, "one", [], ["S1"], "structured"
-            ),
-            rt.ReportSection(
-                "Unsafe", "Claim [S2]", state.evidence_revision, "two", [], ["S2"], "structured"
-            ),
-        ]
-        self.assertTrue(rt.prune_unusable_report_sections(state))
-
-    def test_per_requirement_independent_host_citation_validation(self) -> None:
-        research = rt.ResearchRequest(query="compare vendors", depth="deep")
-        state = make_state(2)
-        state.request_fragments = rt.explicit_request_fragments(research)
-        state.requirements = [
-            rt.RequirementModel(
-                id="R1", summary="compare vendors", kind="comparison", fragment_ids=["F1"]
-            )
-        ]
-        state.report_plan = [
-            rt.PlanSection(
-                heading="Comparison",
-                requirement_ids=["R1"],
-            )
-        ]
-        state.evidence[0] = replace(
-            state.evidence[0], requirement_ids=["R1"], url="https://a.example/1"
-        )
-        state.evidence[1] = replace(
-            state.evidence[1], requirement_ids=["R1"], url="https://b.example/2"
-        )
-        state.last_inspected_revision = state.evidence_revision
-        contract = rt.build_section_contract(research, state, "Comparison")
-        before = rt.run_state_snapshot(state)
-        with self.assertRaisesRegex(rt.ModelOutputError, "requires a table"):
-            rt.store_report_section(
-                state,
-                contract,
-                section(cited("Free-text comparison", "S1", "S2")),
-            )
-        self.assertEqual(rt.run_state_snapshot(state), before)
-        with self.assertRaisesRegex(rt.ModelOutputError, "independent hosts"):
-            rt.store_report_section(
-                state,
-                contract,
-                section(
-                    cited("Comparison intro", "S1"),
-                    tables=[
-                        table(
-                            ["Option", "Result"],
-                            [table_row(["A", "Only one host"], "S1")],
-                        )
-                    ],
-                ),
-            )
-        self.assertEqual(rt.run_state_snapshot(state), before)
-        state.requirements = [state.requirements[0].model_copy(update={"kind": "benchmark"})]
-        benchmark = rt.build_section_contract(research, state, "Comparison")
-        self.assertFalse(benchmark.requires_comparison_table)
-        rt.validate_section_draft(
-            benchmark,
-            section(cited("Benchmark prose", "S1", "S2")),
-        )
-
-    def test_checkpoint_rejects_invalid_section_mode_sources_and_revision(self) -> None:
-        research = rt.ResearchRequest(query="compare vendors", depth="deep")
-        state = make_state(2)
-        state.request_fragments = rt.explicit_request_fragments(research)
-        state.requirements = [
-            rt.RequirementModel(
-                id="R1", summary="compare vendors", kind="comparison", fragment_ids=["F1"]
-            )
-        ]
-        state.report_plan = [
-            rt.PlanSection(
-                heading="Comparison",
-                requirement_ids=["R1"],
-            )
-        ]
-        state.evidence[0] = replace(
-            state.evidence[0], relevance=0.9, requirement_ids=["R1"], url="https://a.example/1"
-        )
-        state.evidence[1] = replace(
-            state.evidence[1], relevance=0.9, requirement_ids=["R1"], url="https://b.example/2"
-        )
-        state.last_inspected_revision = state.evidence_revision
-        rt.set_collection_decision(state, "coverage_complete")
-        state.report_sections = [
-            rt.ReportSection(
-                "Comparison",
-                "Comparison [S1] [S2]",
-                state.evidence_revision,
-                "summary",
-                ["R1"],
-                ["S1", "S2"],
-                "structured",
-            )
-        ]
-        valid = rt.run_state_snapshot(state)
-        mutations = {
-            "mode": {"mode": "invalid"},
-            "source mismatch": {"source_ids": ["S1"]},
-            "unknown source": {"body": "Comparison [S9]", "source_ids": ["S9"]},
-            "stale revision": {"ledger_revision": state.evidence_revision - 1},
-        }
-        for label, update in mutations.items():
-            snapshot = json.loads(json.dumps(valid))
-            snapshot["report_sections"][0].update(update)
-            loaded = rt.load_run_state(
-                snapshot,
-                depth="deep",
-                budget=rt.make_budget("deep"),
-                wall_limit=rt.wall_budget_seconds("deep"),
-            )
-            with self.subTest(label=label), self.assertRaises(rt.IntegrityError):
-                rt.validate_checkpoint_state(loaded, research)
-        unusable = json.loads(json.dumps(valid))
-        unusable["evidence_ledger"][1]["relevance"] = 0
-        with self.assertRaises(rt.IntegrityError):
-            loaded = rt.load_run_state(
-                unusable,
-                depth="deep",
-                budget=rt.make_budget("deep"),
-                wall_limit=rt.wall_budget_seconds("deep"),
-            )
-            rt.validate_checkpoint_state(loaded, research)
-        invalid_phase = rt.load_run_state(
-            {**valid, "phase": "submission"},
-            depth="deep",
-            budget=rt.make_budget("deep"),
-            wall_limit=rt.wall_budget_seconds("deep"),
-        )
-        with self.assertRaisesRegex(rt.IntegrityError, "phase"):
-            rt.validate_checkpoint_state(invalid_phase, research)
-
-    def test_deterministic_extractive_section_sets_mode_and_degraded_outcome(self) -> None:
-        research = rt.ResearchRequest(query="Need direct evidence; need another fact", depth="deep")
-        state = make_state(1)
-        fragments = rt.explicit_request_fragments(research)
-        state.last_inspected_revision = state.evidence_revision
-        state.evidence[0] = replace(
-            state.evidence[0],
-            relevance=0.9,
-            requirement_ids=["R1", "R2"],
-            excerpt="Verified comparison | --- | --- | remains plain text.",
-        )
-        rt.store_initial_plan(
-            state,
-            research,
-            rt.PlanDraft(
-                requirements=[
-                    rt.RequirementModel(
-                        id="R1",
-                        summary="Need direct evidence",
-                        kind="direct",
-                        fragment_ids=[fragments[0].id],
-                    ),
-                    rt.RequirementModel(
-                        id="R2",
-                        summary="need another fact",
-                        kind="direct",
-                        fragment_ids=[fragments[-1].id],
-                    ),
-                ],
-                sections=[
-                    rt.PlanSection(
-                        heading="Direct evidence",
-                        requirement_ids=["R1"],
-                    ),
-                    rt.PlanSection(
-                        heading="Comparison",
-                        requirement_ids=["R2"],
-                    ),
-                ],
-            ),
-        )
-        rt.store_report_section(
-            state,
-            rt.build_section_contract(research, state, "Direct evidence"),
-            section(cited("Supported claim", "S1")),
-        )
-        rt.set_collection_decision(state, "coverage_complete")
-        rt._store_extractive_section(
-            state, rt.build_section_contract(research, state, "Comparison")
-        )
-        response = rt.finalize_report(state, research)
-        self.assertEqual(
-            [item.mode for item in state.report_sections], ["structured", "extractive"]
-        )
-        self.assertEqual(response.outcome, "degraded")
-        self.assertIn("Runtime extractive section", response.answer_markdown)
-        self.assertNotIn("|", state.report_sections[-1].body)
+        for heading in ("情報源", "来源", "Quellen", "Fuentes", "출처"):
+            with self.subTest(heading=heading), self.assertRaisesRegex(ValueError, "reserved"):
+                rt.validated_report_heading(heading)
 
 
 if __name__ == "__main__":
+    import unittest
+
     unittest.main(verbosity=2)

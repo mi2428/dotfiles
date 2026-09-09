@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import unittest
 from dataclasses import replace
 from unittest.mock import AsyncMock
@@ -22,7 +23,9 @@ class OperationsTests(RuntimeTestCase):
             rt.ResearchJobRequest(action_id=action_id, query="q", depth="deep"),
         )
         job_id = str(submitted["job_id"])
-        markdown = "# exact publication\n"
+        limitations = "## Limitations\n- None"
+        bibliography = "## Sources\n- [1] source\n"
+        markdown = f"# exact publication\n\n{limitations}\n\n{bibliography}"
         content_hash = hashlib.sha256(markdown.encode()).hexdigest()
         now = rt.unix_ms()
         cursor = self.runtime.db.execute(
@@ -35,9 +38,18 @@ class OperationsTests(RuntimeTestCase):
         publication_id = "publication-1-" + action_id
         self.runtime.db.execute(
             "INSERT INTO publications (publication_id, job_id, candidate_no, revision_id, "
-            "quality_outcome, markdown, content_hash, created_at_ms) "
-            "VALUES (?, ?, 1, ?, 'publish', ?, ?, ?)",
-            (publication_id, job_id, cursor.lastrowid, markdown, content_hash, now),
+            "quality_outcome, markdown, content_hash, limitations_hash, bibliography_hash, "
+            "created_at_ms) VALUES (?, ?, 1, ?, 'publish', ?, ?, ?, ?, ?)",
+            (
+                publication_id,
+                job_id,
+                cursor.lastrowid,
+                markdown,
+                content_hash,
+                hashlib.sha256(limitations.encode()).hexdigest(),
+                hashlib.sha256(bibliography.encode()).hexdigest(),
+                now,
+            ),
         )
         self.runtime.db.execute(
             "UPDATE research_jobs SET status = 'completed', selected_publication_id = ?, "
@@ -90,6 +102,121 @@ class OperationsTests(RuntimeTestCase):
             self.assertEqual((conflict.status_code, wrong_owner.status_code), (409, 404))
             self.assertEqual(result["delivery_status"], "delivered")
             self.assertEqual(result["delivery"]["note_id"], "note-1")
+
+        asyncio.run(run())
+
+    def test_schema_v1_preserves_terminal_legacy_attach_and_safely_ends_active_jobs(
+        self,
+    ) -> None:
+        async def run() -> None:
+            now = rt.unix_ms()
+            legacy_request = {
+                "query": "legacy query",
+                "depth": "deep",
+                "language": "auto",
+                "focus": None,
+                "recency_days": None,
+                "profile": "single_unit",
+                "units": 1,
+            }
+            request_json = json.dumps(legacy_request, separators=(",", ":"))
+            request_hash = rt.query_hash(legacy_request)
+            legacy_state = json.dumps(
+                {
+                    "steps": 0,
+                    "searched_queries": [],
+                    "allowlisted_results": {},
+                    "passages": [],
+                    "findings": [],
+                    "gaps": [],
+                    "last_result": None,
+                },
+                separators=(",", ":"),
+            )
+
+            def insert_job(job_id: str, action_id: str, status_name: str) -> None:
+                self.runtime.db.execute(
+                    "INSERT INTO research_jobs "
+                    "(job_id, owner_id, action_id, request_hash, request_json, status, phase, "
+                    "profile, units, deadline_at_ms, max_attempts, research_json, "
+                    "created_at_ms, updated_at_ms) VALUES (?, 'owner-1', ?, ?, ?, ?, ?, "
+                    "'single_unit', 1, ?, 18, ?, ?, ?)",
+                    (
+                        job_id,
+                        action_id,
+                        request_hash,
+                        request_json,
+                        status_name,
+                        "researching" if status_name == "queued" else None,
+                        now + 60_000,
+                        legacy_state,
+                        now,
+                        now,
+                    ),
+                )
+
+            insert_job("legacy-active", "legacy-active-action", "queued")
+            insert_job("legacy-completed", "legacy-completed-action", "completed")
+            raw = "## Legacy\n\nLegacy draft [S1:P0-80]"
+            manifest_json = json.dumps(
+                rt.block_manifest(rt.draft_blocks(raw, 1, 1)), separators=(",", ":")
+            )
+            revision_hash = rt.editorial_revision_hash(
+                "legacy-completed", 1, 1, "raw", 0, raw, "{}", manifest_json
+            )
+            revision = self.runtime.db.execute(
+                "INSERT INTO editorial_revisions "
+                "(job_id, candidate_no, revision_no, kind, unit_no, markdown, data_json, "
+                "manifest_json, content_hash, created_at_ms) "
+                "VALUES ('legacy-completed', 1, 1, 'raw', 0, ?, '{}', ?, ?, ?)",
+                (raw, manifest_json, revision_hash, now),
+            )
+            publication = (
+                "# Legacy report\n\n## Legacy\n\nLegacy result [S1:P0-80]\n\n"
+                "## Limitations\n- None\n\n## Sources\n[1] legacy source\n"
+            )
+            publication_hash = hashlib.sha256(publication.encode()).hexdigest()
+            self.runtime.db.execute(
+                "INSERT INTO publications "
+                "(publication_id, job_id, candidate_no, revision_id, quality_outcome, markdown, "
+                "content_hash, created_at_ms) VALUES "
+                "('legacy-publication', 'legacy-completed', 1, ?, 'publish', ?, ?, ?)",
+                (revision.lastrowid, publication, publication_hash, now),
+            )
+            self.runtime.db.execute(
+                "UPDATE research_jobs SET selected_publication_id = 'legacy-publication', "
+                "delivery_status = 'pending' WHERE job_id = 'legacy-completed'"
+            )
+            self.runtime.db.execute("PRAGMA user_version = 0")
+            self.runtime.db.commit()
+
+            rt.migrate_schema_v1(self.runtime.db)
+
+            active = self.runtime.db.execute(
+                "SELECT status, delivery_status, error_code FROM research_jobs "
+                "WHERE job_id = 'legacy-active'"
+            ).fetchone()
+            migrated_publication = self.runtime.db.execute(
+                "SELECT limitations_hash, bibliography_hash FROM publications "
+                "WHERE publication_id = 'legacy-publication'"
+            ).fetchone()
+            self.assertEqual(
+                tuple(active),
+                ("incomplete", "needs_review", "legacy_execution_incompatible"),
+            )
+            self.assertTrue(all(migrated_publication))
+            self.assertEqual(self.runtime.db.execute("PRAGMA user_version").fetchone()[0], 1)
+            attached = await rt.submit_research_job(
+                self.runtime,
+                "owner-1",
+                rt.ResearchJobRequest(action_id="legacy-completed-action", query="legacy query"),
+            )
+            self.assertEqual(
+                (attached["job_id"], attached["status"]),
+                ("legacy-completed", "completed"),
+            )
+            code, result = await rt.research_job_result(self.runtime, "owner-1", "legacy-completed")
+            self.assertEqual((code, result["content_hash"]), (200, publication_hash))
 
         asyncio.run(run())
 

@@ -15,7 +15,16 @@ import deep_research_integration as integration
 
 FUNCTIONS_DIR = Path(__file__).parents[1] / "functions"
 sys.path.insert(0, str(FUNCTIONS_DIR))
-from deep_research_pipe import Pipe, shorten_adapter_deadline
+from deep_research_pipe import ADAPTER_MAX_SECONDS, Pipe, shorten_adapter_deadline
+
+RUNTIME_MARKDOWN = (
+    "# 調査報告\n\n"
+    "## 主な結果\n\n根拠 [S1]\n\n"
+    "## 結論\n\n結論 [S1]\n\n"
+    "## 限界\n\n公開情報の範囲です。\n\n"
+    "## 情報源\n\n"
+    "- [S1] [Primary source](https://example.com/source) — Publisher"
+)
 
 
 class HTTPException(Exception):
@@ -233,7 +242,7 @@ class FakePipe(Pipe):
     def __init__(
         self, session: FakeSession, *, fail_delivery_ack: bool = False
     ) -> None:
-        markdown = "# Exact report\n\nEvidence [S1]"
+        markdown = RUNTIME_MARKDOWN
         content_hash = hashlib.sha256(markdown.encode()).hexdigest()
         self.session = session
         self.calls = []
@@ -393,10 +402,27 @@ class DeepResearchIntegrationTests(unittest.IsolatedAsyncioTestCase):
         first = shorten_adapter_deadline(
             1_000.0, 15_000, now_ms=10_000, monotonic_now=100.0
         )
-        self.assertEqual(first, 105.0)
+        self.assertEqual(first, 405.0)
         self.assertEqual(
             shorten_adapter_deadline(first, 40_000, now_ms=10_000, monotonic_now=101.0),
             first,
+        )
+        long_job = shorten_adapter_deadline(
+            ADAPTER_MAX_SECONDS,
+            5_400_000,
+            now_ms=0,
+            monotonic_now=0.0,
+        )
+        self.assertEqual(long_job, 5_700.0)
+        self.assertGreater(long_job, 4_800.0)
+        self.assertEqual(
+            shorten_adapter_deadline(
+                ADAPTER_MAX_SECONDS,
+                10_800_000,
+                now_ms=0,
+                monotonic_now=0.0,
+            ),
+            11_100.0,
         )
         for invalid in (None, "15000", True, 0):
             with self.assertRaisesRegex(RuntimeError, "invalid deadline"):
@@ -484,7 +510,7 @@ class DeepResearchIntegrationTests(unittest.IsolatedAsyncioTestCase):
         chats = FakeChats()
         with patch.dict(sys.modules, module_tree(chats), clear=False):
             form, metadata, ids = request_fixture(action_id="new-action")
-            payload, _ = await integration.prepare_deep_research_request(
+            payload, prepared = await integration.prepare_deep_research_request(
                 form_data=form,
                 metadata=metadata,
                 user_id="owner-1",
@@ -496,6 +522,18 @@ class DeepResearchIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 payload["messages"],
                 [{"role": "user", "content": user_message()["content"]}],
+            )
+            self.assertEqual(
+                integration.research_job_payload(
+                    prepared[integration.TRUST_KEY]["query"],
+                    prepared[integration.TRUST_KEY]["action_id"],
+                ),
+                {
+                    "query": user_message()["content"],
+                    "action_id": "new-action",
+                    "profile": "deep",
+                    "max_units": 4,
+                },
             )
 
             # A long saved chat contributes no conversation context to the managed Pipe.
@@ -514,7 +552,7 @@ class DeepResearchIntegrationTests(unittest.IsolatedAsyncioTestCase):
             current = user_message("user-long", "old-99")
             chats.messages[current["id"]] = current
             form, metadata, ids = request_fixture(action_id="long-action", user=current)
-            payload, _ = await integration.prepare_deep_research_request(
+            payload, prepared = await integration.prepare_deep_research_request(
                 form_data=form,
                 metadata=metadata,
                 user_id="owner-1",
@@ -523,6 +561,18 @@ class DeepResearchIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 active_task_ids=[],
             )
             self.assertEqual(len(payload["messages"]), 1)
+            self.assertEqual(
+                integration.research_job_payload(
+                    prepared[integration.TRUST_KEY]["query"],
+                    prepared[integration.TRUST_KEY]["action_id"],
+                ),
+                {
+                    "query": current["content"],
+                    "action_id": "long-action",
+                    "profile": "deep",
+                    "max_units": 4,
+                },
+            )
 
             # Regenerate is the same owned user message with a fresh assistant action ID.
             form, metadata, ids = request_fixture(
@@ -540,6 +590,18 @@ class DeepResearchIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 regenerated[integration.TRUST_KEY]["action_id"], "regenerated-action"
             )
             self.assertFalse(regenerated[integration.TRUST_KEY]["reattach"])
+            self.assertEqual(
+                integration.research_job_payload(
+                    regenerated[integration.TRUST_KEY]["query"],
+                    regenerated[integration.TRUST_KEY]["action_id"],
+                ),
+                {
+                    "query": current["content"],
+                    "action_id": "regenerated-action",
+                    "profile": "deep",
+                    "max_units": 4,
+                },
+            )
 
     async def test_completed_replay_and_pre_job_binding_reattach_do_not_create_new_action(
         self,
@@ -571,6 +633,17 @@ class DeepResearchIntegrationTests(unittest.IsolatedAsyncioTestCase):
             context = reattached[integration.TRUST_KEY]
             self.assertTrue(context["reattach"])
             self.assertIsNone(context["job_id"])
+            self.assertEqual(
+                integration.research_job_payload(
+                    context["query"], context["action_id"]
+                ),
+                {
+                    "query": current["content"],
+                    "action_id": "action-1",
+                    "profile": "deep",
+                    "max_units": 4,
+                },
+            )
 
             # A transport replay attaches to the already active server task without a new ID.
             form, metadata, ids = request_fixture()
@@ -710,6 +783,16 @@ class DeepResearchIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     __metadata__=trusted,
                     __event_emitter__=emit,
                 )
+            expected_submission = {
+                "query": current["content"],
+                "action_id": "action-1",
+                "profile": "deep",
+                "max_units": 4,
+            }
+            self.assertEqual(
+                failed_delivery.calls[0][:4],
+                ("POST", "/research/jobs", "owner-1", expected_submission),
+            )
             self.assertEqual(session.add_count, 1)
             self.assertEqual(
                 chats.messages["action-1"]["meta"][integration.BINDING_KEY]["state"],
@@ -735,7 +818,11 @@ class DeepResearchIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 __metadata__=retried,
                 __event_emitter__=emit,
             )
-            self.assertEqual(result, "# Exact report\n\nEvidence [S1]")
+            self.assertEqual(result, RUNTIME_MARKDOWN)
+            self.assertEqual(
+                pipe.calls[0][:4],
+                ("POST", "/research/jobs", "owner-1", expected_submission),
+            )
             self.assertEqual(len(session.notes), 1)
             self.assertEqual(pipe.calls[-1][1], "/research/jobs/job-1/delivery")
             self.assertEqual(
@@ -749,6 +836,18 @@ class DeepResearchIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
             note = next(iter(session.notes.values()))
             self.assertGreater(note.created_at, 1_000_000_000_000_000_000)
+            expected_hash = hashlib.sha256(RUNTIME_MARKDOWN.encode()).hexdigest()
+            self.assertEqual(note.user_id, "owner-1")
+            self.assertEqual(note.data["content"]["md"], RUNTIME_MARKDOWN)
+            self.assertEqual(note.meta["deep_research_content_hash"], expected_hash)
+            self.assertEqual(
+                pipe.calls[-1][3],
+                {
+                    "publication_id": "publication-1",
+                    "content_hash": expected_hash,
+                    "note_id": note.id,
+                },
+            )
             same_id = await integration.persist_deep_research_note(
                 owner_id="owner-1",
                 job_id="job-1",
@@ -912,9 +1011,16 @@ class DeepResearchIntegrationTests(unittest.IsolatedAsyncioTestCase):
         ):
             stopped = await integration.request_deep_research_stop("chat-1", "owner-1")
         self.assertEqual(stopped, ["action-1"])
-        self.assertEqual(runtime.await_count, 1)
-        self.assertEqual(
-            runtime.await_args.args[1], "/research/actions/action-1/cancel"
+        runtime.assert_awaited_once_with(
+            "POST",
+            "/research/actions/action-1/cancel",
+            "owner-1",
+            {
+                "query": current["content"],
+                "action_id": "action-1",
+                "profile": "deep",
+                "max_units": 4,
+            },
         )
         self.assertFalse(
             any(call.args[1] == "/research/jobs" for call in runtime.await_args_list)
