@@ -265,6 +265,79 @@ class RuntimeContractTests(RuntimeTestCase):
 
         asyncio.run(run())
 
+    def test_one_document_can_supply_distinct_checklist_passages(self) -> None:
+        async def run() -> None:
+            url = "https://example.com/rfc"
+            round_value = {
+                "results": [
+                    {
+                        "id": "W1-1",
+                        "url": url,
+                        "title": "Specification",
+                        "snippet": "cache rules",
+                        "engine": "engine",
+                        "query": "cache rules",
+                    }
+                ],
+                "fetches": [],
+            }
+            state = {
+                "plan": {
+                    "checklist": [
+                        {"id": "C1", "question": "authorization shared cache permission"},
+                        {"id": "C2", "question": "vary cache key matching"},
+                    ]
+                },
+                "passages": [],
+                "last_result": None,
+            }
+            paragraphs = (
+                "Authorization shared cache permission public s-maxage " * 20
+                + "\n"
+                + "Vary cache key matching selected request header fields " * 20
+            )
+            source = rt.FetchedSourceBlob(
+                url, url, "Specification", "Publisher", "text/plain", b"source"
+            )
+            extraction = rt.ExtractedSource(
+                paragraphs,
+                [{"page": 1, "start": 0, "end": len(paragraphs)}],
+                [],
+            )
+            selection = rt.CandidateSelection.model_validate(
+                {
+                    "documents": [
+                        {
+                            "result_id": "W1-1",
+                            "purpose": "collect normative cache evidence",
+                            "checklist_ids": ["C1", "C2"],
+                        }
+                    ]
+                }
+            )
+            with (
+                patch.object(
+                    rt,
+                    "stored_source_blob",
+                    new=AsyncMock(return_value=("S1", source)),
+                ),
+                patch.object(
+                    rt,
+                    "stored_extraction",
+                    new=AsyncMock(return_value=(1, extraction)),
+                ),
+                patch.object(rt, "save_research_state", new=AsyncMock()),
+            ):
+                await rt.collect_selected_candidates(
+                    self.runtime, "job", request(), state, round_value, selection
+                )
+            self.assertEqual(len(state["passages"]), 2)
+            self.assertEqual(
+                [item["checklist_ids"] for item in state["passages"]], [["C1"], ["C2"]]
+            )
+
+        asyncio.run(run())
+
     def test_stored_source_and_extraction_hashes_fail_closed(self) -> None:
         async def run() -> None:
             submitted = await rt.submit_research_job(self.runtime, "owner-1", request())

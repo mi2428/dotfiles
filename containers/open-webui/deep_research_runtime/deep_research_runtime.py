@@ -3422,7 +3422,10 @@ async def create_research_plan(
         UNTRUSTED_JOB_DATA_RULE
         + "Scope the authoritative original request. Return exactly one ResearchPlan JSON object. "
         "Do not weaken, omit, or silently reinterpret any request fragment. Prefer primary and "
-        "authoritative source types and include counterevidence-oriented queries where relevant."
+        "authoritative source types and include counterevidence-oriented queries where relevant. "
+        "Treat requested calculations, comparisons, tables, recommendations, and presentation "
+        "constraints as synthesis requirements supported by cited facts; do not require a source "
+        "that already contains the requested output artifact."
     )
 
     def accept_plan(content: str) -> str:
@@ -3597,24 +3600,12 @@ async def collect_selected_candidates(
                 )
             else:
                 extraction_revision, extraction = saved_extraction
-            existing = next(
-                (
-                    item
-                    for item in state_value["passages"]
-                    if item["source_id"] == source_id_value
-                    and item["extraction_revision"] == extraction_revision
-                ),
-                None,
-            )
-            if existing is not None:
-                existing["checklist_ids"] = list(
-                    dict.fromkeys([*existing["checklist_ids"], *selected.checklist_ids])
-                )
-            else:
+            checklist = {item["id"]: item["question"] for item in state_value["plan"]["checklist"]}
+            for checklist_id in selected.checklist_ids:
                 excerpt, _score = select_relevant_excerpt(
                     extraction.extracted_text,
                     str(metadata["query"]),
-                    selected.purpose,
+                    f"{selected.purpose} {checklist[checklist_id]}",
                 )
                 excerpt_start = extraction.extracted_text.find(excerpt)
                 if excerpt_start < 0:
@@ -3624,6 +3615,15 @@ async def collect_selected_candidates(
                 if end <= start:
                     raise ValueError("empty source passage")
                 passage_id = f"{source_id_value}:P{start}-{end}"
+                existing = next(
+                    (item for item in state_value["passages"] if item["id"] == passage_id),
+                    None,
+                )
+                if existing is not None:
+                    existing["checklist_ids"] = list(
+                        dict.fromkeys([*existing["checklist_ids"], checklist_id])
+                    )
+                    continue
                 host = urlparse(source.final_url).hostname or source.final_url
                 state_value["passages"].append(
                     {
@@ -3635,7 +3635,7 @@ async def collect_selected_candidates(
                         "hash": hashlib.sha256(
                             extraction.extracted_text[start:end].encode()
                         ).hexdigest(),
-                        "checklist_ids": selected.checklist_ids,
+                        "checklist_ids": [checklist_id],
                         "origin": host,
                         "authority": (
                             "authoritative"
@@ -3721,7 +3721,10 @@ async def assess_research_round(
         "one admitted passage; qualified or unresolved items require a non-empty limitation. "
         "Follow-up queries must be three to six new unique queries not already searched. Return no "
         "follow-up queries when all essential items are covered or qualified, and include a "
-        "non-empty stop_reason whenever follow_up_queries is empty."
+        "non-empty stop_reason whenever follow_up_queries is empty. For requested calculations, "
+        "comparisons, tables, recommendations, or other synthesis, assess whether the supplied "
+        "facts are sufficient to derive it; do not require a passage containing the finished "
+        "artifact verbatim."
     )
     searched = set(state_value["searched_queries"])
 
