@@ -4301,6 +4301,13 @@ def parse_research_action(content: str) -> StrictModel:
     }
     model = models.get(action) if isinstance(action, str) else None
     if model is None:
+        LOG.warning(
+            "research_action_shape keys=%s action=%s",
+            [key for key in value if re.fullmatch(r"[A-Za-z_]{1,32}", key)],
+            action
+            if isinstance(action, str) and re.fullmatch(r"[A-Za-z_]{1,32}", action)
+            else "missing_or_invalid",
+        )
         raise ValueError("unknown research action")
     return model.model_validate(value)
 
@@ -5679,7 +5686,18 @@ async def _invoke_job_model_once(
                         type(error.__cause__).__name__ if error.__cause__ else type(error).__name__
                     ]
                 )
-                LOG.warning("model_output_invalid assignment=%s kinds=%s", assignment_key, kinds)
+                reason = (
+                    str(error)
+                    if str(error)
+                    in {"unknown research action", "model output is not one JSON object"}
+                    else "schema_validation"
+                )
+                LOG.warning(
+                    "model_output_invalid assignment=%s kinds=%s reason=%s",
+                    assignment_key,
+                    kinds,
+                    reason,
+                )
                 await update_attempt(runtime, job_id, attempt_id, completion, None)
                 raise JobIncomplete("assignment_result_invalid") from None
         await update_attempt(runtime, job_id, attempt_id, completion, receipt)
@@ -5707,7 +5725,14 @@ def research_system_prompt() -> str:
         "private reasoning. Emit no extra keys, multiple action objects, or prose outside "
         "the JSON object. Respect field length limits. Search adaptively, read exact stored "
         "passages, and finish only "
-        "with source-backed findings and visible gaps. Required action schemas: "
+        "with source-backed findings and visible gaps. The top-level action MUST be a string. "
+        'Example shapes (replace example values): {"action":"search","query":"search terms"}; '
+        '{"action":"fetch","url":"https://example.org/","purpose":"verify a claim"}; '
+        '{"action":"read","source_id":"S1","start":0,"end":100}; '
+        '{"action":"finish","findings":[{"text":"finding",'
+        '"passage_ids":["S1:P0-100"]}],"gaps":[]}. '
+        "Do not emit a tool name/arguments wrapper, plan, or JSON schema itself. "
+        "Required action schemas: "
         + json.dumps(schemas, separators=(",", ":"))
     )
 
