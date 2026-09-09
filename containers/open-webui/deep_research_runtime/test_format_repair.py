@@ -150,3 +150,75 @@ class FormatRepairTests(RuntimeTestCase):
                 self.assertEqual(provider.await_count, len(outputs))
 
         asyncio.run(run())
+
+    def test_rate_limit_gets_one_new_bounded_attempt(self) -> None:
+        async def run() -> None:
+            for suffix, outputs, succeeds in (
+                (
+                    "recovers",
+                    [
+                        ResearchCompletion(
+                            "", AttemptOutcome("known_failed", 429, None, None, None, None, 10)
+                        ),
+                        ResearchCompletion(
+                            "receipt", AttemptOutcome("succeeded", 200, "stop", 1, 1, 2, 10)
+                        ),
+                    ],
+                    True,
+                ),
+                (
+                    "stops",
+                    [
+                        ResearchCompletion(
+                            "", AttemptOutcome("known_failed", 429, None, None, None, None, 10)
+                        ),
+                        ResearchCompletion(
+                            "", AttemptOutcome("known_failed", 429, None, None, None, None, 10)
+                        ),
+                    ],
+                    False,
+                ),
+            ):
+                job = await rt.submit_research_job(
+                    self.runtime,
+                    "owner",
+                    rt.ResearchJobRequest(action_id=f"rate-{suffix}", query="q"),
+                )
+                job_id = job["job_id"]
+                await rt.claim_research_job(self.runtime, job_id)
+                provider = AsyncMock(side_effect=outputs)
+                with patch.object(rt, "complete_research", new=provider):
+                    if succeeds:
+                        self.assertEqual(
+                            await rt.invoke_job_model(
+                                self.runtime,
+                                job_id,
+                                "candidate_1_author_unit_1",
+                                "system",
+                                "user",
+                                str,
+                            ),
+                            "receipt",
+                        )
+                    else:
+                        with self.assertRaises(rt.JobIncomplete):
+                            await rt.invoke_job_model(
+                                self.runtime,
+                                job_id,
+                                "candidate_1_author_unit_1",
+                                "system",
+                                "user",
+                                str,
+                            )
+                        with self.assertRaises(rt.JobIncomplete):
+                            await rt.invoke_job_model(
+                                self.runtime,
+                                job_id,
+                                "candidate_1_author_unit_1",
+                                "system",
+                                "user",
+                                str,
+                            )
+                self.assertEqual(provider.await_count, 2)
+
+        asyncio.run(run())

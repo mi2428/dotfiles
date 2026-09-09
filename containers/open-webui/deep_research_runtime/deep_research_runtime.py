@@ -5542,7 +5542,7 @@ async def invoke_job_model(
         ).fetchone()
     if repaired is None:
         try:
-            return await _invoke_job_model_once(
+            return await _invoke_job_model_with_rate_limit_retry(
                 runtime, job_id, assignment_key, system_prompt, user_prompt, accept
             )
         except JobIncomplete as error:
@@ -5555,8 +5555,9 @@ async def invoke_job_model(
             async with runtime.db_lock:
                 prior = runtime.db.execute(
                     "SELECT state,result_receipt,http_status,finish_reason FROM research_attempts "
-                    "WHERE job_id=? AND assignment_key=?",
-                    (job_id, assignment_key),
+                    "WHERE job_id=? AND assignment_key IN (?,?) "
+                    "ORDER BY created_at_ms DESC LIMIT 1",
+                    (job_id, assignment_key, assignment_key + ":rate-limit-retry"),
                 ).fetchone()
             if (
                 prior is None
@@ -5573,7 +5574,7 @@ async def invoke_job_model(
                 raise
     # One fresh, charged correction per assignment; job limits still bound total work.
     # Unknown transport is never retried.
-    return await _invoke_job_model_once(
+    return await _invoke_job_model_with_rate_limit_retry(
         runtime,
         job_id,
         repair_key,
@@ -5582,6 +5583,42 @@ async def invoke_job_model(
         "specified fields and length limits, not an array or commentary. No internal markers.",
         user_prompt,
         accept,
+    )
+
+
+async def _invoke_job_model_with_rate_limit_retry(
+    runtime: Runtime,
+    job_id: str,
+    assignment_key: str,
+    system_prompt: str,
+    user_prompt: str,
+    accept: Callable[[str], str],
+) -> str:
+    retry_key = assignment_key + ":rate-limit-retry"
+    async with runtime.db_lock:
+        retry_exists = runtime.db.execute(
+            "SELECT 1 FROM research_attempts WHERE job_id=? AND assignment_key=?",
+            (job_id, retry_key),
+        ).fetchone()
+    if retry_exists is None:
+        try:
+            return await _invoke_job_model_once(
+                runtime, job_id, assignment_key, system_prompt, user_prompt, accept
+            )
+        except JobIncomplete as error:
+            if error.code != "provider_known_failed":
+                raise
+            async with runtime.db_lock:
+                prior = runtime.db.execute(
+                    "SELECT http_status FROM research_attempts WHERE job_id=? AND assignment_key=?",
+                    (job_id, assignment_key),
+                ).fetchone()
+            if prior is None or prior["http_status"] != 429:
+                raise
+    # The proxy owns cooldown waiting. This is one new charged attempt, never an
+    # in-transport replay, and remains bounded by the original job deadline/cap.
+    return await _invoke_job_model_once(
+        runtime, job_id, retry_key, system_prompt, user_prompt, accept
     )
 
 
