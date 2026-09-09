@@ -4278,12 +4278,24 @@ def canonical_job_request(request: ResearchJobRequest) -> dict[str, Any]:
 
 def parse_json_object(content: str) -> dict[str, Any]:
     text = content.strip()
-    fenced = re.fullmatch(r"```(?:json)?\s*\n(\{.*\})\s*\n```", text, flags=re.DOTALL)
+    fenced = re.fullmatch(r"```(?:json)?\s*(\{.*\})\s*```", text, flags=re.DOTALL)
     if fenced:
         text = fenced.group(1)
     try:
         value = json.loads(text)
     except (json.JSONDecodeError, UnicodeError) as exc:
+        if isinstance(exc, json.JSONDecodeError):
+            LOG.warning(
+                "model_json_invalid reason=%s line=%s column=%s framing=%s",
+                exc.msg,
+                exc.lineno,
+                exc.colno,
+                "fence"
+                if text.startswith("```")
+                else "object"
+                if text.startswith("{")
+                else "other",
+            )
         raise ValueError("model output is not one JSON object") from exc
     if not isinstance(value, dict):
         raise ValueError("model output is not one JSON object")

@@ -7,6 +7,15 @@ from test_support import RuntimeTestCase, rt
 
 
 class FormatRepairTests(RuntimeTestCase):
+    def test_single_object_fence_does_not_require_line_breaks(self) -> None:
+        for text in (
+            '```json{"action":"search","query":"q"}```',
+            '```json\n{"action":"search","query":"q"}\n```',
+        ):
+            self.assertEqual(rt.parse_research_action(text).action, "search")
+        with self.assertRaises(ValueError):
+            rt.parse_research_action('```json{"action":"search","query":"q"}{"extra":1}```')
+
     def test_completed_empty_research_response_gets_one_charged_correction(self) -> None:
         async def run() -> None:
             job = await rt.submit_research_job(
