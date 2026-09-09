@@ -12,7 +12,7 @@ class FormatRepairTests(RuntimeTestCase):
             '```json{"action":"search","query":"q"}```',
             '```json\n{"action":"search","query":"q"}\n```',
         ):
-            self.assertEqual(rt.parse_research_action(text).action, "search")
+            self.assertEqual(rt.parse_research_action(text).model_dump()["action"], "search")
         with self.assertRaises(ValueError):
             rt.parse_research_action('```json{"action":"search","query":"q"}{"extra":1}```')
 
