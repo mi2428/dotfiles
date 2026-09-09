@@ -322,8 +322,8 @@ class ResearchJobTests(RuntimeTestCase):
                 first_prompt["limits"],
                 {
                     "attempts_remaining": 18,
-                    "editorial_attempt_reserve": 10,
-                    "research_actions_remaining": 8,
+                    "editorial_attempt_reserve": 6,
+                    "research_actions_remaining": 12,
                     "read_chars": rt.MAX_READ_CHARS,
                 },
             )
@@ -407,7 +407,7 @@ class ResearchJobTests(RuntimeTestCase):
                 self.runtime, "owner-1", request("reserve-action")
             )
             self.runtime.db.execute(
-                "UPDATE research_jobs SET max_attempts = 8 WHERE job_id = ?",
+                "UPDATE research_jobs SET max_attempts = 6 WHERE job_id = ?",
                 (submitted["job_id"],),
             )
             self.runtime.db.commit()
@@ -624,7 +624,7 @@ class ResearchJobTests(RuntimeTestCase):
             provider = FakeProvider(
                 [
                     completion(json.dumps({"action": "search", "query": f"distinct query {index}"}))
-                    for index in range(18)
+                    for index in range(22)
                 ]
             )
             submitted = await rt.submit_research_job(
@@ -648,11 +648,11 @@ class ResearchJobTests(RuntimeTestCase):
             ).fetchone()
             self.assertEqual(
                 (row["status"], row["error_code"], row["max_attempts"], row["attempts_used"]),
-                ("incomplete", "editorial_attempt_reserve_reached", 40, 18),
+                ("incomplete", "editorial_attempt_reserve_reached", 40, 22),
             )
             self.assertEqual(row["deadline_at_ms"], before["deadline_at_ms"])
             self.assertEqual(before["deadline_at_ms"] - before["created_at_ms"], 10_800_000)
-            self.assertEqual(len(provider.bodies), 18)
+            self.assertEqual(len(provider.bodies), 22)
             first_limits = json.loads(json.loads(provider.bodies[0])["messages"][1]["content"])[
                 "limits"
             ]
@@ -664,7 +664,7 @@ class ResearchJobTests(RuntimeTestCase):
                     first_limits["research_actions_remaining"],
                     ninth_limits["research_actions_remaining"],
                 ),
-                (18, 10),
+                (22, 14),
             )
 
         asyncio.run(run())

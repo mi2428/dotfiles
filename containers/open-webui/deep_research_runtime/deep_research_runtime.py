@@ -5343,8 +5343,8 @@ async def remaining_job_seconds(runtime: Runtime, job_id: str) -> float:
 
 
 def editorial_attempt_reserve(units: int) -> int:
-    # Both candidates retain ledger, per-unit author/review, edit, and recheck capacity.
-    return 4 * units + 6
+    # Preserve a ledger plus per-unit author/review pass for both candidates.
+    return 4 * units + 2
 
 
 async def job_budget_snapshot(runtime: Runtime, job_id: str, units: int) -> dict[str, int]:
