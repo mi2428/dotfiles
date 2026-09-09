@@ -6173,6 +6173,32 @@ async def set_candidate(runtime: Runtime, job_id: str, candidate_no: int) -> Non
         runtime.db.commit()
 
 
+def validate_candidate_ledger(
+    ledger: DecisionLedger,
+    request: ResearchJobRequest,
+    research_state: dict[str, Any],
+    previous_blocks: Sequence[dict[str, Any]],
+) -> None:
+    ids = [entry.id for entry in ledger.entries]
+    if len(ids) != len(set(ids)):
+        raise ValueError("ledger entry IDs are duplicated")
+    admitted = {"Q:original", *[item["id"] for item in research_state["passages"]]}
+    admitted.update(str(item["id"]) for item in previous_blocks)
+    if any(set(entry.reference_ids) - admitted for entry in ledger.entries):
+        raise ValueError("ledger references are foreign or stale")
+    ledger_ids = set(ids)
+    passage_ids = {item["id"] for item in research_state["passages"]}
+    if [item.unit for item in ledger.outline] != list(range(1, request.units + 1)):
+        raise ValueError("ledger outline units are invalid")
+    for item in ledger.outline:
+        if (
+            set(item.ledger_ids) - ledger_ids
+            or set(item.passage_ids) - passage_ids
+            or any(unit >= item.unit for unit in item.context_units)
+        ):
+            raise ValueError("ledger outline references are foreign or stale")
+
+
 async def create_candidate_ledger(
     runtime: Runtime,
     job_id: str,
@@ -6195,6 +6221,9 @@ async def create_candidate_ledger(
             "contract": {
                 "entries": "1 to 12 important cross-section commitments",
                 "reference_namespaces": ["Q:original", "Sx:Pstart-end", "D:cN:rN:bNNN"],
+                "outline_passage_ids": (
+                    "only exact Sx:Pstart-end IDs from findings; never Q:original or draft IDs"
+                ),
                 "priority": "user requirements outrank proposals; evidence outranks assumptions",
                 "output_schema": DecisionLedger.model_json_schema(),
             },
@@ -6207,6 +6236,12 @@ async def create_candidate_ledger(
         + "Return exactly one DecisionLedger JSON object. Keep only important commitments. "
         "Do not invent measurements or change explicit user constraints."
     )
+
+    def accept_ledger(content: str) -> str:
+        value = DecisionLedger.model_validate(parse_json_object(content))
+        validate_candidate_ledger(value, request, research_state, previous_blocks)
+        return json.dumps(value.model_dump(), ensure_ascii=False, separators=(",", ":"))
+
     try:
         ledger = DecisionLedger.model_validate(
             parse_json_object(
@@ -6216,36 +6251,15 @@ async def create_candidate_ledger(
                     f"candidate_{candidate_no}_ledger",
                     system,
                     prompt,
-                    lambda content: json.dumps(
-                        DecisionLedger.model_validate(parse_json_object(content)).model_dump(),
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                    ),
+                    accept_ledger,
                 )
             )
         )
+        validate_candidate_ledger(ledger, request, research_state, previous_blocks)
     except IntegrityError:
         raise
     except (ValueError, ValidationError) as exc:
         raise JobIncomplete("ledger_invalid") from exc
-    ids = [entry.id for entry in ledger.entries]
-    if len(ids) != len(set(ids)):
-        raise JobIncomplete("ledger_invalid")
-    admitted = {"Q:original", *[item["id"] for item in research_state["passages"]]}
-    admitted.update(str(item["id"]) for item in previous_blocks)
-    if any(set(entry.reference_ids) - admitted for entry in ledger.entries):
-        raise JobIncomplete("ledger_reference_invalid")
-    ledger_ids = set(ids)
-    passage_id_values = {item["id"] for item in research_state["passages"]}
-    if [item.unit for item in ledger.outline] != list(range(1, request.units + 1)):
-        raise JobIncomplete("ledger_outline_invalid")
-    for item in ledger.outline:
-        if (
-            set(item.ledger_ids) - ledger_ids
-            or set(item.passage_ids) - passage_id_values
-            or any(unit >= item.unit for unit in item.context_units)
-        ):
-            raise JobIncomplete("ledger_outline_invalid")
     revision_id = await insert_editorial_revision(
         runtime,
         job_id,

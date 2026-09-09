@@ -363,6 +363,32 @@ class ResearchJobTests(RuntimeTestCase):
 
         asyncio.run(run())
 
+    def test_semantically_invalid_ledger_gets_one_bounded_correction(self) -> None:
+        async def run() -> None:
+            invalid = json.loads(ledger_json())
+            invalid["outline"][0]["passage_ids"].append("Q:original")
+            outputs = [
+                completion(json.dumps(invalid)),
+                completion(ledger_json()),
+                completion("## Unit 1\n\nSupported finding [S1:P0-80]"),
+                completion('{"patches":[],"notes":[],"regenerate_reason":null}'),
+            ]
+            job_id, provider = await self.run_path(outputs)
+            status = await rt.research_job_status(self.runtime, "owner-1", job_id)
+            self.assertEqual(status["status"], "completed")
+            self.assertEqual(len(provider.bodies), 4)
+            self.assertIn(
+                "candidate_1_ledger:format-repair",
+                {
+                    row["assignment_key"]
+                    for row in self.runtime.db.execute(
+                        "SELECT assignment_key FROM research_attempts WHERE job_id = ?", (job_id,)
+                    )
+                },
+            )
+
+        asyncio.run(run())
+
     def test_search_obeys_absolute_job_deadline(self) -> None:
         async def slow_search(*_args: Any, **_kwargs: Any) -> list[Any]:
             await asyncio.sleep(1)
