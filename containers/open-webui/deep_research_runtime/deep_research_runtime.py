@@ -5527,11 +5527,15 @@ async def invoke_job_model(
                 runtime, job_id, assignment_key, system_prompt, user_prompt, accept
             )
         except JobIncomplete as error:
-            if error.code not in {"assignment_result_invalid", "assignment_result_unavailable"}:
+            if error.code not in {
+                "assignment_result_invalid",
+                "assignment_result_unavailable",
+                "provider_known_failed",
+            }:
                 raise
             async with runtime.db_lock:
                 prior = runtime.db.execute(
-                    "SELECT state,result_receipt FROM research_attempts "
+                    "SELECT state,result_receipt,http_status,finish_reason FROM research_attempts "
                     "WHERE job_id=? AND assignment_key=?",
                     (job_id, assignment_key),
                 ).fetchone()
@@ -5542,7 +5546,14 @@ async def invoke_job_model(
                 ).fetchone()
             if (
                 prior is None
-                or prior["state"] != "succeeded"
+                or not (
+                    prior["state"] == "succeeded"
+                    or (
+                        prior["state"] == "known_failed"
+                        and prior["http_status"] == 200
+                        and prior["finish_reason"] == "stop"
+                    )
+                )
                 or prior["result_receipt"] is not None
                 or used
             ):
@@ -5732,8 +5743,7 @@ def research_system_prompt() -> str:
         '{"action":"finish","findings":[{"text":"finding",'
         '"passage_ids":["S1:P0-100"]}],"gaps":[]}. '
         "Do not emit a tool name/arguments wrapper, plan, or JSON schema itself. "
-        "Required action schemas: "
-        + json.dumps(schemas, separators=(",", ":"))
+        "Required action schemas: " + json.dumps(schemas, separators=(",", ":"))
     )
 
 

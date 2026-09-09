@@ -7,6 +7,35 @@ from test_support import RuntimeTestCase, rt
 
 
 class FormatRepairTests(RuntimeTestCase):
+    def test_completed_empty_research_response_gets_one_charged_correction(self) -> None:
+        async def run() -> None:
+            job = await rt.submit_research_job(
+                self.runtime, "owner", rt.ResearchJobRequest(action_id="empty", query="q")
+            )
+            job_id = job["job_id"]
+            await rt.claim_research_job(self.runtime, job_id)
+            provider = AsyncMock(
+                side_effect=[
+                    ResearchCompletion(
+                        "", AttemptOutcome("known_failed", 200, "stop", 10, 10, 20, 100)
+                    ),
+                    ResearchCompletion(
+                        "receipt", AttemptOutcome("succeeded", 200, "stop", 10, 10, 20, 100)
+                    ),
+                ]
+            )
+            with patch.object(rt, "complete_research", new=provider):
+                self.assertEqual(
+                    await rt.invoke_job_model(
+                        self.runtime, job_id, "research_step_1", "system", "user", str
+                    ),
+                    "receipt",
+                )
+            self.assertEqual(provider.await_count, 2)
+            self.assertEqual((await rt.load_job(self.runtime, job_id))["attempts_used"], 2)
+
+        asyncio.run(run())
+
     def test_one_charged_repair_and_saved_receipt_without_replaying_unknown(self) -> None:
         async def run() -> None:
             job = await rt.submit_research_job(
