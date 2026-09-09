@@ -499,6 +499,11 @@ class ReviewResult(StrictModel):
     regenerate_reason: str | None = Field(default=None, max_length=1000)
 
 
+class RecheckResult(StrictModel):
+    resolved: bool
+    reason: str | None = Field(default=None, min_length=1, max_length=1000)
+
+
 class EditReplacement(StrictModel):
     block_id: str
     finding_ids: list[str] = Field(min_length=1, max_length=16)
@@ -6389,8 +6394,6 @@ def review_user_prompt(
     blocks: Sequence[DraftBlock],
     ledger: DecisionLedger,
     passages: Sequence[dict[str, Any]],
-    *,
-    dismissals: Sequence[dict[str, Any]] = (),
 ) -> str:
     selected_passages = relevant_review_passages(blocks, ledger, passages)
     return json.dumps(
@@ -6402,7 +6405,6 @@ def review_user_prompt(
             "blocks": [{"id": item.id, "text": item.text} for item in blocks],
             "ledger": ledger.model_dump(),
             "source_passages": selected_passages,
-            "prior_dismissals": list(dismissals),
         },
         ensure_ascii=False,
         separators=(",", ":"),
@@ -6608,26 +6610,20 @@ async def review_candidate(
     request: ResearchJobRequest,
     ledger: DecisionLedger,
     passages: Sequence[dict[str, Any]],
-    *,
-    stage: str = "initial",
-    dismissals: Sequence[dict[str, Any]] = (),
 ) -> ReviewResult:
-    if stage == "recheck":
-        ranges = [list(blocks)]
-    else:
-        ranges = pack_review_ranges(
-            runtime.settings.model,
-            request,
-            candidate_no,
-            revision_no,
-            markdown,
-            blocks,
-            ledger,
-            passages,
-        )
+    ranges = pack_review_ranges(
+        runtime.settings.model,
+        request,
+        candidate_no,
+        revision_no,
+        markdown,
+        blocks,
+        ledger,
+        passages,
+    )
     combined = ReviewResult()
     for range_no, block_range in enumerate(ranges, 1):
-        saved = await review_record(runtime, job_id, candidate_no, revision_id, stage, range_no)
+        saved = await review_record(runtime, job_id, candidate_no, revision_id, "initial", range_no)
         if saved is None:
             prompt = review_user_prompt(
                 request,
@@ -6637,7 +6633,6 @@ async def review_candidate(
                 block_range,
                 ledger,
                 passages,
-                dismissals=dismissals,
             )
             selected_passages = relevant_review_passages(block_range, ledger, passages)
 
@@ -6656,7 +6651,7 @@ async def review_candidate(
                         await invoke_job_model(
                             runtime,
                             job_id,
-                            f"candidate_{candidate_no}_review_{stage}_{range_no}",
+                            f"candidate_{candidate_no}_review_initial_{range_no}",
                             review_system_prompt(),
                             prompt,
                             accept_review,
@@ -6668,7 +6663,7 @@ async def review_candidate(
             except (ValueError, ValidationError) as exc:
                 raise JobIncomplete("review_invalid") from exc
             await save_review_record(
-                runtime, job_id, candidate_no, revision_id, stage, range_no, result
+                runtime, job_id, candidate_no, revision_id, "initial", range_no, result
             )
         else:
             result = ReviewResult.model_validate(json.loads(saved["result_json"]))
@@ -6684,6 +6679,76 @@ def numbered_findings(review: ReviewResult) -> list[dict[str, Any]]:
     return [
         {"id": f"F{index:03d}", **item.model_dump()} for index, item in enumerate(review.patches, 1)
     ]
+
+
+async def recheck_candidate(
+    runtime: Runtime,
+    job_id: str,
+    candidate_no: int,
+    revision_id: int,
+    request: ResearchJobRequest,
+    review: ReviewResult,
+    workspace: Sequence[dict[str, str]],
+    passages: Sequence[dict[str, Any]],
+    dismissals: Sequence[dict[str, Any]],
+) -> ReviewResult:
+    saved = await review_record(runtime, job_id, candidate_no, revision_id, "recheck", 1)
+    if saved is not None:
+        return ReviewResult.model_validate(json.loads(saved["result_json"]))
+    referenced_passages = set().union(*(item.source_ids for item in review.patches))
+    referenced_passages.update(source_id for item in dismissals for source_id in item["source_ids"])
+    referenced_passages.update(passage_ids("\n".join(item["text"] for item in workspace)))
+    prompt = json.dumps(
+        {
+            "request": canonical_job_request(request),
+            "candidate": candidate_no,
+            "material_findings": numbered_findings(review),
+            "edited_blocks": list(workspace),
+            "dismissals": list(dismissals),
+            "source_passages": [item for item in passages if item["id"] in referenced_passages],
+            "output_schema": RecheckResult.model_json_schema(),
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    system = (
+        UNTRUSTED_JOB_DATA_RULE
+        + "Return exactly one RecheckResult JSON object. Set resolved=true only when every "
+        "supplied material finding is fixed or its evidence-backed dismissal is justified. "
+        "Otherwise set resolved=false with one concise reason."
+    )
+
+    def accept_recheck(content: str) -> str:
+        result = RecheckResult.model_validate(parse_json_object(content))
+        reason = result.reason.strip() if result.reason is not None else None
+        if result.resolved == (reason is not None):
+            raise ValueError("recheck result and reason disagree")
+        return json.dumps(
+            result.model_copy(update={"reason": reason}).model_dump(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
+    try:
+        result = RecheckResult.model_validate(
+            parse_json_object(
+                await invoke_job_model(
+                    runtime,
+                    job_id,
+                    f"candidate_{candidate_no}_review_recheck_1",
+                    system,
+                    prompt,
+                    accept_recheck,
+                )
+            )
+        )
+    except IntegrityError:
+        raise
+    except (ValueError, ValidationError) as exc:
+        raise JobIncomplete("review_invalid") from exc
+    recheck = ReviewResult(regenerate_reason=None if result.resolved else result.reason)
+    await save_review_record(runtime, job_id, candidate_no, revision_id, "recheck", 1, recheck)
+    return recheck
 
 
 def review_feedback(
@@ -6854,24 +6919,26 @@ async def edit_candidate(
         data = json.loads(str(saved["data_json"]))
         dismissals = list(data["dismissals"])
         changed_ordinals = {int(item) for item in data["changed_ordinals"]}
-    recheck_blocks = [
-        block for ordinal, block in enumerate(edited_blocks, 1) if ordinal in changed_ordinals
-    ]
-    if not recheck_blocks:
+    if not changed_ordinals or max(changed_ordinals) > len(edited_blocks):
         raise IntegrityError("editorial pass has no recheck workspace")
-    recheck = await review_candidate(
+    workspace = [
+        {
+            "original_id": blocks[ordinal - 1].id,
+            "edited_id": edited_blocks[ordinal - 1].id,
+            "text": edited_blocks[ordinal - 1].text,
+        }
+        for ordinal in sorted(changed_ordinals)
+    ]
+    recheck = await recheck_candidate(
         runtime,
         job_id,
         candidate_no,
         revision_id,
-        2,
-        edited,
-        recheck_blocks,
         request,
-        ledger,
+        review,
+        workspace,
         passages,
-        stage="recheck",
-        dismissals=dismissals,
+        dismissals,
     )
     return revision_id, edited, edited_blocks, dismissals, recheck
 

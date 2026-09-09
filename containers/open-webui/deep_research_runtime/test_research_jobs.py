@@ -408,7 +408,7 @@ class ResearchJobTests(RuntimeTestCase):
                     '"finding_id":"F001","reason":"The source already supports it.",'
                     '"source_ids":["S1:P0-80"]}]}'
                 ),
-                completion('{"patches":[],"notes":[],"regenerate_reason":null}'),
+                completion('{"resolved":true,"reason":null}'),
             ]
             job_id, _provider = await self.run_path(outputs)
             _code, result = await rt.research_job_result(self.runtime, "owner-1", job_id)
@@ -508,7 +508,7 @@ class ResearchJobTests(RuntimeTestCase):
                     '"finding_ids":["F001"],"markdown":"Revised first [S1:P0-80]"}],'
                     '"dismissals":[]}'
                 ),
-                completion('{"patches":[],"notes":[],"regenerate_reason":"Still incomplete"}'),
+                completion('{"resolved":false,"reason":"Still incomplete"}'),
                 completion(ledger_json()),
                 completion("## Unit 1\n\nSecond candidate [S1:P0-80]"),
                 completion(
@@ -521,7 +521,7 @@ class ResearchJobTests(RuntimeTestCase):
                     '"finding_ids":["F001"],"markdown":"Revised second [S1:P0-80]"}],'
                     '"dismissals":[]}'
                 ),
-                completion('{"patches":[],"notes":[],"regenerate_reason":null}'),
+                completion('{"resolved":true,"reason":null}'),
             ]
             provider = FakeProvider(outputs)
             submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
