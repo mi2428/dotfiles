@@ -35,7 +35,7 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
             self.runtime.db.commit()
             with self.assertRaises(rt.IntegrityError):
                 await rt.editorial_revision(self.runtime, job_id, 1, "ledger")
-            self.assertEqual(len(provider.bodies), 7)
+            self.assertEqual(len(provider.bodies), 3)
 
         asyncio.run(run())
 
@@ -68,7 +68,7 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
                     self.assertRaises(asyncio.CancelledError),
                 ):
                     await rt.execute_research_job(self.runtime, job_id)
-                self.assertEqual(len(provider.bodies), 7)
+                self.assertEqual(len(provider.bodies), 3)
                 self.runtime.db.execute(
                     "UPDATE review_records SET result_json = ? WHERE job_id = ?",
                     ('{"patches":[],"notes":[],"regenerate_reason":null}', job_id),
@@ -79,7 +79,7 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
                 await rt.execute_research_job(self.runtime, job_id)
             status = await rt.research_job_status(self.runtime, "owner-1", job_id)
             self.assertEqual(status["status"], "failed")
-            self.assertEqual(len(provider.bodies), 7)
+            self.assertEqual(len(provider.bodies), 3)
             self.assertEqual(
                 self.runtime.db.execute(
                     "SELECT COUNT(*) FROM publications WHERE job_id = ?", (job_id,)
@@ -183,7 +183,7 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
             self.runtime.db.commit()
             with self.assertRaises(rt.IntegrityError):
                 await rt.research_job_result(self.runtime, "owner-1", job_id)
-            self.assertEqual(len(provider.bodies), 7)
+            self.assertEqual(len(provider.bodies), 3)
 
         asyncio.run(run())
 
@@ -217,7 +217,7 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_restart_after_research_receipt_does_not_resend_with_changed_budget(self) -> None:
+    def test_restart_after_search_checkpoint_does_not_spend_model_attempt(self) -> None:
         async def run() -> None:
             submitted = await rt.submit_research_job(self.runtime, "owner-1", fixtures.request())
             job_id = submitted["job_id"]
@@ -249,7 +249,7 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
                     self.assertRaises(asyncio.CancelledError),
                 ):
                     await rt.execute_research_job(self.runtime, job_id)
-                self.assertEqual(len(provider.bodies), 1)
+                self.assertEqual(len(provider.bodies), 0)
                 await rt.recover_research_jobs(self.runtime)
                 status = await rt.research_job_status(self.runtime, "owner-1", job_id)
                 await rt.resume_research_job(self.runtime, "owner-1", job_id, status["revision"])
@@ -259,7 +259,7 @@ class ResearchReceiptBoundaryTests(RuntimeTestCase):
                 "SELECT error_code FROM research_jobs WHERE job_id = ?", (job_id,)
             ).fetchone()["error_code"]
             self.assertEqual(status["status"], "completed", str(error))
-            self.assertEqual(len(provider.bodies), 7)
+            self.assertEqual(len(provider.bodies), 3)
             self.assertFalse(provider.outputs)
 
         asyncio.run(run())

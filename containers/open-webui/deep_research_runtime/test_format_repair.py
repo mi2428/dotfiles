@@ -9,13 +9,13 @@ from test_support import RuntimeTestCase, rt
 class FormatRepairTests(RuntimeTestCase):
     def test_json_fence_and_repeated_objects_use_the_first_complete_object(self) -> None:
         for text in (
-            '```json{"action":"search","query":"q"}```',
-            '```json\n{"action":"search","query":"q"}\n```',
-            '```json{"action":"search","query":"q"}{"extra":1}```',
+            '```json{"value":"q"}```',
+            '```json\n{"value":"q"}\n```',
+            '```json{"value":"q"}{"extra":1}```',
         ):
-            self.assertEqual(rt.parse_research_action(text).model_dump()["action"], "search")
+            self.assertEqual(rt.parse_json_object(text)["value"], "q")
         with self.assertRaises(ValueError):
-            rt.parse_research_action('{"action":"search","query":"q"} trailing prose')
+            rt.parse_json_object('{"value":"q"} trailing prose')
 
     def test_completed_empty_research_response_gets_one_charged_correction(self) -> None:
         async def run() -> None:
@@ -55,7 +55,7 @@ class FormatRepairTests(RuntimeTestCase):
             await rt.claim_research_job(self.runtime, job_id)
             deadline = (await rt.load_job(self.runtime, job_id))["deadline_at_ms"]
             outcome = AttemptOutcome("succeeded", 200, "stop", 10, 10, 20, 100)
-            good = '{"action":"search","query":"q"}'
+            good = '{"value":"q"}'
             provider = AsyncMock(
                 side_effect=[
                     ResearchCompletion("not JSON", outcome),
@@ -66,9 +66,7 @@ class FormatRepairTests(RuntimeTestCase):
             )
 
             def accept(value: str) -> str:
-                return json.dumps(
-                    rt.parse_research_action(value).model_dump(), separators=(",", ":")
-                )
+                return json.dumps(rt.parse_json_object(value), separators=(",", ":"))
 
             with patch.object(rt, "complete_research", new=provider):
                 first = await rt.invoke_job_model(

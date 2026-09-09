@@ -68,15 +68,7 @@ def ledger_json(units: int = 1, *, context: bool = False) -> str:
 
 
 def research_outputs() -> list[ResearchCompletion]:
-    return [
-        completion('{"action":"search","query":"primary evidence"}'),
-        completion('{"action":"fetch","url":"https://example.com/source","purpose":"verify"}'),
-        completion('{"action":"read","source_id":"S1","start":0,"end":80}'),
-        completion(
-            '{"action":"finish","findings":[{"text":"Supported finding",'
-            '"passage_ids":["S1:P0-80"]}],"gaps":[]}'
-        ),
-    ]
+    return []
 
 
 class FakeProvider:
@@ -97,7 +89,7 @@ class FakeProvider:
 
 class ResearchJobTests(RuntimeTestCase):
     def patches(self, provider: FakeProvider) -> tuple[Any, ...]:
-        source_text = "Evidence supports the measured finding and its condition. " * 5
+        source_text = ("Evidence supports the measured finding and its condition. " * 5)[:80]
         return (
             patch.object(rt, "complete_research", new=provider),
             patch.object(
@@ -229,14 +221,28 @@ class ResearchJobTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_model_json_boundary_does_not_weaken_integrity_errors(self) -> None:
+    def test_collection_does_not_weaken_integrity_errors(self) -> None:
         async def run() -> None:
             submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
             with (
                 patch.object(
                     rt,
-                    "invoke_job_model",
-                    new=AsyncMock(side_effect=rt.IntegrityError("receipt corrupt")),
+                    "search_searxng",
+                    new=AsyncMock(
+                        return_value=[
+                            rt.SearchResult(
+                                "https://example.com/source",
+                                "Source",
+                                "Evidence",
+                                "engine",
+                            )
+                        ]
+                    ),
+                ),
+                patch.object(
+                    rt,
+                    "save_research_state",
+                    new=AsyncMock(side_effect=rt.IntegrityError("checkpoint corrupt")),
                 ),
                 self.assertRaises(rt.IntegrityError),
             ):
@@ -316,17 +322,9 @@ class ResearchJobTests(RuntimeTestCase):
             self.assertEqual(
                 (code, status_payload["status"], result["candidate"]), (200, "completed", 1)
             )
-            self.assertEqual(len(provider.bodies), 7)
+            self.assertEqual(len(provider.bodies), 3)
             first_prompt = json.loads(json.loads(provider.bodies[0])["messages"][1]["content"])
-            self.assertEqual(
-                first_prompt["limits"],
-                {
-                    "attempts_remaining": 18,
-                    "editorial_attempt_reserve": 6,
-                    "research_actions_remaining": 12,
-                    "read_chars": rt.MAX_READ_CHARS,
-                },
-            )
+            self.assertEqual(first_prompt["request"]["query"], request().query)
             blob = self.runtime.db.execute(
                 "SELECT raw_bytes FROM source_blobs WHERE job_id = ?", (job_id,)
             ).fetchone()
@@ -338,7 +336,7 @@ class ResearchJobTests(RuntimeTestCase):
                 (job_id,),
             ).fetchone()
             self.assertEqual(blob["raw_bytes"], b"complete raw source")
-            self.assertGreater(len(extraction["extracted_text"]), 80)
+            self.assertEqual(len(extraction["extracted_text"]), 80)
             self.assertNotEqual(raw["markdown"], result["answer_markdown"])
             self.assertIn("## Sources", result["answer_markdown"])
             assignments = self.runtime.db.execute(
@@ -348,12 +346,9 @@ class ResearchJobTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_recoverable_action_error_is_feedback_not_a_terminal_job_error(self) -> None:
+    def test_deterministic_collection_builds_findings_before_model_writing(self) -> None:
         async def run() -> None:
             outputs = [
-                completion('{"action":"search","query":"primary evidence"}'),
-                completion('{"action":"read","source_id":"S1","start":0,"end":80}'),
-                *research_outputs()[1:],
                 completion(ledger_json()),
                 completion("## Unit 1\n\nSupported finding [S1:P0-80]"),
                 completion('{"patches":[],"notes":[],"regenerate_reason":null}'),
@@ -361,19 +356,14 @@ class ResearchJobTests(RuntimeTestCase):
             job_id, provider = await self.run_path(outputs)
             status = await rt.research_job_status(self.runtime, "owner-1", job_id)
             self.assertEqual(status["status"], "completed")
-            prompt_after_error = json.loads(
-                json.loads(provider.bodies[2])["messages"][1]["content"]
-            )
-            self.assertEqual(
-                prompt_after_error["last_result"],
-                {"action": "read", "error": "source_not_found"},
-            )
+            self.assertEqual(len(provider.bodies), 3)
+            state = await rt.load_research_state(self.runtime, job_id)
+            self.assertEqual(state["searched_queries"], [request().query])
+            self.assertEqual(state["findings"][0]["passage_ids"], ["S1:P0-80"])
 
         asyncio.run(run())
 
-    def test_search_obeys_absolute_job_deadline_and_research_preserves_editorial_reserve(
-        self,
-    ) -> None:
+    def test_search_obeys_absolute_job_deadline(self) -> None:
         async def slow_search(*_args: Any, **_kwargs: Any) -> list[Any]:
             await asyncio.sleep(1)
             return []
@@ -386,12 +376,8 @@ class ResearchJobTests(RuntimeTestCase):
                 (rt.unix_ms() + 5_020, job_id),
             )
             self.runtime.db.commit()
-            provider = FakeProvider([completion('{"action":"search","query":"primary evidence"}')])
             started = time.monotonic()
-            with (
-                patch.object(rt, "complete_research", new=provider),
-                patch.object(rt, "search_searxng", new=slow_search),
-            ):
+            with patch.object(rt, "search_searxng", new=slow_search):
                 await rt.execute_research_job(self.runtime, job_id)
             self.assertLess(time.monotonic() - started, 0.5)
             row = self.runtime.db.execute(
@@ -401,26 +387,6 @@ class ResearchJobTests(RuntimeTestCase):
             self.assertEqual(
                 (row["status"], row["error_code"], row["quality_outcome"]),
                 ("incomplete", "deadline_expired", None),
-            )
-
-            submitted = await rt.submit_research_job(
-                self.runtime, "owner-1", request("reserve-action")
-            )
-            self.runtime.db.execute(
-                "UPDATE research_jobs SET max_attempts = 6 WHERE job_id = ?",
-                (submitted["job_id"],),
-            )
-            self.runtime.db.commit()
-            no_call = AsyncMock(side_effect=AssertionError("research consumed editorial reserve"))
-            with patch.object(rt, "complete_research", new=no_call):
-                await rt.execute_research_job(self.runtime, submitted["job_id"])
-            reserved = self.runtime.db.execute(
-                "SELECT status, error_code, attempts_used FROM research_jobs WHERE job_id = ?",
-                (submitted["job_id"],),
-            ).fetchone()
-            self.assertEqual(
-                (reserved["status"], reserved["error_code"], reserved["attempts_used"]),
-                ("incomplete", "editorial_attempt_reserve_reached", 0),
             )
 
         asyncio.run(run())
@@ -487,7 +453,7 @@ class ResearchJobTests(RuntimeTestCase):
             ).fetchall()
             self.assertEqual([row["candidate_no"] for row in candidates], [1, 2])
             second_ledger_prompt = json.loads(
-                json.loads(provider.bodies[7])["messages"][1]["content"]
+                json.loads(provider.bodies[3])["messages"][1]["content"]
             )
             self.assertEqual(
                 second_ledger_prompt["previous_failure_feedback"][0]["reason"],
@@ -504,7 +470,7 @@ class ResearchJobTests(RuntimeTestCase):
 
     def test_single_profile_fits_three_sources_and_two_full_editorial_rounds(self) -> None:
         async def run() -> None:
-            urls = [f"https://example.com/source-{index}" for index in range(1, 4)]
+            urls = [f"https://source-{index}.example/document-{index}" for index in range(1, 4)]
             results = [
                 rt.SearchResult(url, f"Source {index}", "Evidence", "engine", "comparison")
                 for index, url in enumerate(urls, 1)
@@ -522,66 +488,41 @@ class ResearchJobTests(RuntimeTestCase):
 
             async def extract(source: rt.FetchedSourceBlob) -> rt.ExtractedSource:
                 label = source.raw_bytes.decode().rsplit("-", 1)[1]
-                text = f"Source {label} evidence " + "supports comparison " * 20
+                text = (f"Source {label} evidence " + "supports comparison " * 20)[:80]
                 return rt.ExtractedSource(
                     text,
                     [{"page": 1, "start": 0, "end": len(text)}],
                     [],
                 )
 
-            outputs = [completion('{"action":"search","query":"three source comparison"}')]
-            for index, url in enumerate(urls, 1):
-                outputs.extend(
-                    [
-                        completion(
-                            json.dumps({"action": "fetch", "url": url, "purpose": "comparison"})
-                        ),
-                        completion(
-                            json.dumps(
-                                {
-                                    "action": "read",
-                                    "source_id": f"S{index}",
-                                    "start": 0,
-                                    "end": 80,
-                                }
-                            )
-                        ),
-                    ]
-                )
-            outputs.extend(
-                [
-                    completion(
-                        '{"action":"finish","findings":[{"text":"Three-source finding",'
-                        '"passage_ids":["S1:P0-80","S2:P0-80","S3:P0-80"]}],"gaps":[]}'
-                    ),
-                    completion(ledger_json()),
-                    completion("## Unit 1\n\nFirst candidate [S1:P0-80]"),
-                    completion(
-                        '{"patches":[{"block_ids":["D:c1:r1:b002"],'
-                        '"ledger_ids":["K-FACT"],"source_ids":["S1:P0-80"],'
-                        '"reason":"Revise candidate one."}],"notes":[],"regenerate_reason":null}'
-                    ),
-                    completion(
-                        '{"base_revision":1,"replacements":[{"block_id":"D:c1:r1:b002",'
-                        '"finding_ids":["F001"],"markdown":"Revised first [S1:P0-80]"}],'
-                        '"dismissals":[]}'
-                    ),
-                    completion('{"patches":[],"notes":[],"regenerate_reason":"Still incomplete"}'),
-                    completion(ledger_json()),
-                    completion("## Unit 1\n\nSecond candidate [S1:P0-80]"),
-                    completion(
-                        '{"patches":[{"block_ids":["D:c2:r1:b002"],'
-                        '"ledger_ids":["K-FACT"],"source_ids":["S1:P0-80"],'
-                        '"reason":"Revise candidate two."}],"notes":[],"regenerate_reason":null}'
-                    ),
-                    completion(
-                        '{"base_revision":1,"replacements":[{"block_id":"D:c2:r1:b002",'
-                        '"finding_ids":["F001"],"markdown":"Revised second [S1:P0-80]"}],'
-                        '"dismissals":[]}'
-                    ),
-                    completion('{"patches":[],"notes":[],"regenerate_reason":null}'),
-                ]
-            )
+            outputs = [
+                completion(ledger_json()),
+                completion("## Unit 1\n\nFirst candidate [S1:P0-80]"),
+                completion(
+                    '{"patches":[{"block_ids":["D:c1:r1:b002"],'
+                    '"ledger_ids":["K-FACT"],"source_ids":["S1:P0-80"],'
+                    '"reason":"Revise candidate one."}],"notes":[],"regenerate_reason":null}'
+                ),
+                completion(
+                    '{"base_revision":1,"replacements":[{"block_id":"D:c1:r1:b002",'
+                    '"finding_ids":["F001"],"markdown":"Revised first [S1:P0-80]"}],'
+                    '"dismissals":[]}'
+                ),
+                completion('{"patches":[],"notes":[],"regenerate_reason":"Still incomplete"}'),
+                completion(ledger_json()),
+                completion("## Unit 1\n\nSecond candidate [S1:P0-80]"),
+                completion(
+                    '{"patches":[{"block_ids":["D:c2:r1:b002"],'
+                    '"ledger_ids":["K-FACT"],"source_ids":["S1:P0-80"],'
+                    '"reason":"Revise candidate two."}],"notes":[],"regenerate_reason":null}'
+                ),
+                completion(
+                    '{"base_revision":1,"replacements":[{"block_id":"D:c2:r1:b002",'
+                    '"finding_ids":["F001"],"markdown":"Revised second [S1:P0-80]"}],'
+                    '"dismissals":[]}'
+                ),
+                completion('{"patches":[],"notes":[],"regenerate_reason":null}'),
+            ]
             provider = FakeProvider(outputs)
             submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
             with (
@@ -597,13 +538,18 @@ class ResearchJobTests(RuntimeTestCase):
             ).fetchone()
             self.assertEqual(
                 (row["status"], row["max_attempts"], row["attempts_used"]),
-                ("completed", 18, 18),
+                ("completed", 18, 10),
             )
-            self.assertEqual(len(provider.bodies), 18)
-            author_system = json.loads(provider.bodies[9])["messages"][0]["content"]
+            self.assertEqual(len(provider.bodies), 10)
+            author_system = json.loads(provider.bodies[1])["messages"][0]["content"]
             self.assertIn("explicit user language and length", author_system)
             self.assertIn("softly target about 3,000-4,000 characters", author_system)
             self.assertIn("not a hard gate", author_system)
+            for body in provider.bodies:
+                self.assertIn(
+                    rt.UNTRUSTED_JOB_DATA_RULE.strip(),
+                    json.loads(body)["messages"][0]["content"],
+                )
             self.assertEqual(
                 self.runtime.db.execute(
                     "SELECT COUNT(*) AS count FROM source_extractions WHERE job_id = ?",
@@ -619,14 +565,8 @@ class ResearchJobTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_long_profile_uses_derived_research_budget_beyond_eight_actions(self) -> None:
+    def test_empty_search_stops_without_spending_model_attempts(self) -> None:
         async def run() -> None:
-            provider = FakeProvider(
-                [
-                    completion(json.dumps({"action": "search", "query": f"distinct query {index}"}))
-                    for index in range(22)
-                ]
-            )
             submitted = await rt.submit_research_job(
                 self.runtime,
                 "owner-1",
@@ -636,10 +576,7 @@ class ResearchJobTests(RuntimeTestCase):
                 "SELECT created_at_ms, deadline_at_ms FROM research_jobs WHERE job_id = ?",
                 (submitted["job_id"],),
             ).fetchone()
-            with (
-                patch.object(rt, "complete_research", new=provider),
-                patch.object(rt, "search_searxng", new=AsyncMock(return_value=[])),
-            ):
+            with patch.object(rt, "search_searxng", new=AsyncMock(return_value=[])):
                 await rt.execute_research_job(self.runtime, submitted["job_id"])
             row = self.runtime.db.execute(
                 "SELECT status, error_code, max_attempts, attempts_used, deadline_at_ms "
@@ -648,24 +585,10 @@ class ResearchJobTests(RuntimeTestCase):
             ).fetchone()
             self.assertEqual(
                 (row["status"], row["error_code"], row["max_attempts"], row["attempts_used"]),
-                ("incomplete", "editorial_attempt_reserve_reached", 40, 22),
+                ("incomplete", "source_collection_failed", 40, 0),
             )
             self.assertEqual(row["deadline_at_ms"], before["deadline_at_ms"])
             self.assertEqual(before["deadline_at_ms"] - before["created_at_ms"], 10_800_000)
-            self.assertEqual(len(provider.bodies), 22)
-            first_limits = json.loads(json.loads(provider.bodies[0])["messages"][1]["content"])[
-                "limits"
-            ]
-            ninth_limits = json.loads(json.loads(provider.bodies[8])["messages"][1]["content"])[
-                "limits"
-            ]
-            self.assertEqual(
-                (
-                    first_limits["research_actions_remaining"],
-                    ninth_limits["research_actions_remaining"],
-                ),
-                (22, 14),
-            )
 
         asyncio.run(run())
 
@@ -719,7 +642,7 @@ class ResearchJobTests(RuntimeTestCase):
             async def provider(
                 base_url: str, api_key: str, body: bytes, lease: Any
             ) -> ResearchCompletion:
-                if len(fake.bodies) == 6:
+                if len(fake.bodies) == 2:
                     review_started.set()
                     await release_review.wait()
                 return await fake(base_url, api_key, body, lease)
@@ -913,11 +836,8 @@ class ResearchJobTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_prompt_schemas_bounded_unit_context_and_relevant_review_passages(self) -> None:
+    def test_bounded_unit_context_and_relevant_review_passages(self) -> None:
         async def run() -> None:
-            system = rt.research_system_prompt()
-            for field in ("purpose", "source_id", "start", "end", "findings", "passage_ids"):
-                self.assertIn(field, system)
             long_request = request(profile="sequential_long", units=2, action_id="long-action")
             submitted = await rt.submit_research_job(self.runtime, "owner-1", long_request)
             job_id = submitted["job_id"]

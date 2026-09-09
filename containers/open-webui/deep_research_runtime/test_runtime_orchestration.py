@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import deep_research_runtime as rt
 from test_research_jobs import FakeProvider, completion, request
@@ -45,13 +45,52 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_invalid_fresh_action_stops_incomplete_without_extractive_publication(self) -> None:
+    def test_invalid_structured_output_stops_without_extractive_publication(self) -> None:
         async def run() -> None:
             submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
             provider = FakeProvider(
                 [completion("not one JSON action"), completion("still not one JSON action")]
             )
-            with patch.object(rt, "complete_research", new=provider):
+            source_text = "Evidence supports the measured finding and its condition.".ljust(80)
+            with (
+                patch.object(rt, "complete_research", new=provider),
+                patch.object(
+                    rt,
+                    "search_searxng",
+                    new=AsyncMock(
+                        return_value=[
+                            rt.SearchResult(
+                                "https://example.com/source", "Source", "Evidence", "engine"
+                            )
+                        ]
+                    ),
+                ),
+                patch.object(
+                    rt,
+                    "fetch_source_blob",
+                    new=AsyncMock(
+                        return_value=rt.FetchedSourceBlob(
+                            "https://example.com/source",
+                            "https://example.com/source",
+                            "Source",
+                            "engine",
+                            "text/plain",
+                            b"source",
+                        )
+                    ),
+                ),
+                patch.object(
+                    rt,
+                    "extract_source_blob",
+                    new=AsyncMock(
+                        return_value=rt.ExtractedSource(
+                            source_text,
+                            [{"page": 1, "start": 0, "end": len(source_text)}],
+                            [],
+                        )
+                    ),
+                ),
+            ):
                 await rt.execute_research_job(self.runtime, submitted["job_id"])
             row = self.runtime.db.execute(
                 "SELECT status, error_code, best_revision_id, selected_publication_id "
