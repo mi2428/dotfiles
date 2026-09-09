@@ -3,6 +3,7 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import sqlite3
 import tempfile
 import threading
 import time
@@ -43,6 +44,14 @@ class UpstreamHandler(BaseHTTPRequestHandler):
     hold_event = threading.Event()
     request_started_event = threading.Event()
     two_requests_started_event = threading.Event()
+
+    def do_GET(self) -> None:
+        body = b'{"data":[{"id":"test-model"}]}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_POST(self) -> None:
         type(self).attempts += 1
@@ -152,6 +161,34 @@ class UpstreamHandler(BaseHTTPRequestHandler):
 
 
 class SakuraRetryProxyTest(unittest.TestCase):
+    def test_model_discovery_does_not_acquire_or_release_uncertain_inference_slots(
+        self,
+    ) -> None:
+        with sqlite3.connect(self.db_path) as db:
+            db.execute(
+                "UPDATE account_admissions SET state='unknown', lease_id=account_id"
+            )
+        handler = cast(type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass)
+        with (
+            patch.object(
+                handler.token_state,
+                "acquire",
+                side_effect=AssertionError("inference admission"),
+            ),
+            urllib.request.urlopen(
+                f"http://127.0.0.1:{self.proxy.server_address[1]}/v1/models", timeout=2
+            ) as response,
+        ):
+            self.assertEqual(json.load(response), {"data": [{"id": "test-model"}]})
+        with sqlite3.connect(self.db_path) as db:
+            self.assertEqual(
+                db.execute(
+                    "SELECT COUNT(*) FROM account_admissions WHERE state='unknown'"
+                ).fetchone()[0],
+                2,
+            )
+        self.assertEqual(UpstreamHandler.attempts, 0)
+
     def unsafe_settings(self, **changes: object) -> Settings:
         base = cast(
             type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass

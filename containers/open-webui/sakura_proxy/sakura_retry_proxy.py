@@ -1221,19 +1221,28 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         headers["Host"] = self.upstream.netloc
         if self.headers.get(OPENWEBUI_MODE_HEADER, "").casefold() == "true":
             headers["Accept-Encoding"] = "identity"
-        lease, shared_wait = type(self).token_state.acquire(
-            deadline, self._client_disconnected, purpose="normal"
+        # Model discovery performs no inference and must remain available while
+        # an earlier generation is awaiting operator reconciliation.
+        model_catalog = self.command == "GET" and self.path == "/v1/models"
+        lease, shared_wait = (
+            (None, 0.0)
+            if model_catalog
+            else type(self).token_state.acquire(
+                deadline, self._client_disconnected, purpose="normal"
+            )
         )
         if self._client_disconnected():
             if lease is not None:
                 type(self).token_state.release(lease)
             connection.close()
             raise BrokenPipeError("client disconnected")
-        if lease is None and self.settings.account_tokens:
+        if lease is None and self.settings.account_tokens and not model_catalog:
             connection.close()
             raise TimeoutError("token lease unavailable")
         if lease is not None:
             headers["Authorization"] = f"Bearer {lease.token}"
+        elif model_catalog and self.settings.account_tokens:
+            headers["Authorization"] = f"Bearer {self.settings.account_tokens[0]}"
         if body:
             headers["Content-Length"] = str(len(body))
         send_intent = False

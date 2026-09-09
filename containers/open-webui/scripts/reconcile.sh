@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+trap 'printf "Reconciliation failed at line %s (status %s)\n" "$LINENO" "$?" >&2' ERR
 
 # Render repository declarations into one desired state. Dry-run mode performs no API calls;
 # live mode updates only resources carrying this repository's ownership markers and fails
