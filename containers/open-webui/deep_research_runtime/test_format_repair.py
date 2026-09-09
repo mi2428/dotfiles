@@ -7,14 +7,15 @@ from test_support import RuntimeTestCase, rt
 
 
 class FormatRepairTests(RuntimeTestCase):
-    def test_single_object_fence_does_not_require_line_breaks(self) -> None:
+    def test_json_fence_and_repeated_objects_use_the_first_complete_object(self) -> None:
         for text in (
             '```json{"action":"search","query":"q"}```',
             '```json\n{"action":"search","query":"q"}\n```',
+            '```json{"action":"search","query":"q"}{"extra":1}```',
         ):
             self.assertEqual(rt.parse_research_action(text).model_dump()["action"], "search")
         with self.assertRaises(ValueError):
-            rt.parse_research_action('```json{"action":"search","query":"q"}{"extra":1}```')
+            rt.parse_research_action('{"action":"search","query":"q"} trailing prose')
 
     def test_completed_empty_research_response_gets_one_charged_correction(self) -> None:
         async def run() -> None:
@@ -45,7 +46,7 @@ class FormatRepairTests(RuntimeTestCase):
 
         asyncio.run(run())
 
-    def test_one_charged_repair_and_saved_receipt_without_replaying_unknown(self) -> None:
+    def test_one_charged_repair_per_assignment_and_saved_receipt(self) -> None:
         async def run() -> None:
             job = await rt.submit_research_job(
                 self.runtime, "owner", rt.ResearchJobRequest(action_id="format", query="q")
@@ -60,6 +61,7 @@ class FormatRepairTests(RuntimeTestCase):
                     ResearchCompletion("not JSON", outcome),
                     ResearchCompletion(good, outcome),
                     ResearchCompletion("invalid again", outcome),
+                    ResearchCompletion(good, outcome),
                 ]
             )
 
@@ -80,13 +82,71 @@ class FormatRepairTests(RuntimeTestCase):
                     good,
                 )
                 self.assertEqual(provider.await_count, 2)
-                with self.assertRaises(rt.JobIncomplete):
+                self.assertEqual(
                     await rt.invoke_job_model(
-                        self.runtime, job_id, "research_step_2", "JSON schema", "q", accept
-                    )
-            self.assertEqual(provider.await_count, 3)
+                        self.runtime, job_id, "candidate_1_ledger", "JSON schema", "q", accept
+                    ),
+                    good,
+                )
+            self.assertEqual(provider.await_count, 4)
             saved = await rt.load_job(self.runtime, job_id)
-            self.assertEqual(saved["attempts_used"], 3)
+            self.assertEqual(saved["attempts_used"], 4)
             self.assertEqual(saved["deadline_at_ms"], deadline)
+
+        asyncio.run(run())
+
+    def test_failed_correction_and_unknown_transport_are_not_replayed(self) -> None:
+        async def run() -> None:
+            for suffix, outputs, expected in (
+                (
+                    "invalid",
+                    [
+                        ResearchCompletion(
+                            "bad", AttemptOutcome("succeeded", 200, "stop", 1, 1, 2, 10)
+                        ),
+                        ResearchCompletion(
+                            "still bad", AttemptOutcome("succeeded", 200, "stop", 1, 1, 2, 10)
+                        ),
+                    ],
+                    rt.JobIncomplete,
+                ),
+                (
+                    "unknown",
+                    [
+                        ResearchCompletion(
+                            "", AttemptOutcome("unknown", None, None, None, None, None, 10)
+                        )
+                    ],
+                    rt.JobPaused,
+                ),
+            ):
+                job = await rt.submit_research_job(
+                    self.runtime,
+                    "owner",
+                    rt.ResearchJobRequest(action_id=suffix, query="q"),
+                )
+                job_id = job["job_id"]
+                await rt.claim_research_job(self.runtime, job_id)
+                provider = AsyncMock(side_effect=outputs)
+                with patch.object(rt, "complete_research", new=provider):
+                    with self.assertRaises(expected):
+                        await rt.invoke_job_model(
+                            self.runtime,
+                            job_id,
+                            "candidate_1_ledger",
+                            "system",
+                            "user",
+                            lambda value: json.dumps(rt.parse_json_object(value)),
+                        )
+                    with self.assertRaises(expected):
+                        await rt.invoke_job_model(
+                            self.runtime,
+                            job_id,
+                            "candidate_1_ledger",
+                            "system",
+                            "user",
+                            lambda value: json.dumps(rt.parse_json_object(value)),
+                        )
+                self.assertEqual(provider.await_count, len(outputs))
 
         asyncio.run(run())

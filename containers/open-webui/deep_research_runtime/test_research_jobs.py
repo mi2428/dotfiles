@@ -653,6 +653,7 @@ class ResearchJobTests(RuntimeTestCase):
                 completion(ledger_json()),
                 completion("## Unit 1\n\nUsable raw draft [S1:P0-80]"),
                 completion("not review JSON"),
+                completion("still not review JSON"),
             ]
             job_id, _provider = await self.run_path(outputs)
             row = self.runtime.db.execute(
@@ -738,6 +739,7 @@ class ResearchJobTests(RuntimeTestCase):
                 completion('{"patches":[],"notes":[],"regenerate_reason":"Material omission"}'),
                 completion(ledger_json()),
                 completion("本文。 </think> 以下が本文"),
+                completion("本文。 </think> 以下が本文"),
             ]
             job_id, _provider = await self.run_path(outputs)
             row = self.runtime.db.execute(
@@ -762,6 +764,7 @@ class ResearchJobTests(RuntimeTestCase):
             outputs = [
                 *research_outputs(),
                 completion(ledger_json()),
+                completion("<think>\nprivate material\n</think>"),
                 completion("<think>\nprivate material\n</think>"),
             ]
             job_id, _provider = await self.run_path(outputs)

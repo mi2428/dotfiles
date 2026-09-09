@@ -4282,7 +4282,16 @@ def parse_json_object(content: str) -> dict[str, Any]:
     if fenced:
         text = fenced.group(1)
     try:
-        value = json.loads(text)
+        decoder = json.JSONDecoder()
+        value, end = decoder.raw_decode(text)
+        extra_objects = 0
+        trailing = text[end:].strip()
+        while trailing:
+            extra, end = decoder.raw_decode(trailing)
+            if not isinstance(extra, dict):
+                raise json.JSONDecodeError("trailing value is not an object", trailing, 0)
+            extra_objects += 1
+            trailing = trailing[end:].strip()
     except (json.JSONDecodeError, UnicodeError) as exc:
         if isinstance(exc, json.JSONDecodeError):
             LOG.warning(
@@ -4299,6 +4308,8 @@ def parse_json_object(content: str) -> dict[str, Any]:
         raise ValueError("model output is not one JSON object") from exc
     if not isinstance(value, dict):
         raise ValueError("model output is not one JSON object")
+    if extra_objects:
+        LOG.warning("model_json_extra_objects count=%s", extra_objects)
     return value
 
 
@@ -5523,10 +5534,6 @@ async def invoke_job_model(
     user_prompt: str,
     accept: Callable[[str], str],
 ) -> str:
-    if not assignment_key.startswith("research_step_"):
-        return await _invoke_job_model_once(
-            runtime, job_id, assignment_key, system_prompt, user_prompt, accept
-        )
     repair_key = assignment_key + ":format-repair"
     async with runtime.db_lock:
         repaired = runtime.db.execute(
@@ -5551,11 +5558,6 @@ async def invoke_job_model(
                     "WHERE job_id=? AND assignment_key=?",
                     (job_id, assignment_key),
                 ).fetchone()
-                used = runtime.db.execute(
-                    "SELECT 1 FROM research_attempts WHERE job_id=? "
-                    "AND assignment_key LIKE '%:format-repair'",
-                    (job_id,),
-                ).fetchone()
             if (
                 prior is None
                 or not (
@@ -5567,10 +5569,10 @@ async def invoke_job_model(
                     )
                 )
                 or prior["result_receipt"] is not None
-                or used
             ):
                 raise
-    # One fresh, charged correction per job; unknown transport is never retried.
+    # One fresh, charged correction per assignment; job limits still bound total work.
+    # Unknown transport is never retried.
     return await _invoke_job_model_once(
         runtime,
         job_id,
