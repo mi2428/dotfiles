@@ -3717,8 +3717,11 @@ async def assess_research_round(
         UNTRUSTED_JOB_DATA_RULE
         + "Return exactly one EvidenceAssessment JSON object. Assess every checklist item in order "
         "as covered, qualified, or unresolved using only admitted passage IDs. Record evidence "
-        "origin and authority, preserve conflicts, and request three to six focused follow-up "
-        "queries only when another round is likely to change the answer."
+        "origin and authority and preserve conflicts. Covered or qualified items require at least "
+        "one admitted passage; qualified or unresolved items require a non-empty limitation. "
+        "Follow-up queries must be three to six new unique queries not already searched. Return no "
+        "follow-up queries when all essential items are covered or qualified, and include a "
+        "non-empty stop_reason whenever follow_up_queries is empty."
     )
     searched = set(state_value["searched_queries"])
 
@@ -5482,6 +5485,7 @@ async def execute_research_job(runtime: Runtime, job_id: str) -> None:
     except JobIncomplete as exc:
         row = await load_job(runtime, job_id)
         if row["status"] == "running":
+            research_state = await load_research_state(runtime, job_id)
             await set_job_terminal(
                 runtime,
                 job_id,

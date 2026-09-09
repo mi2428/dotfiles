@@ -184,6 +184,41 @@ class RuntimeContractTests(RuntimeTestCase):
             self.assertEqual(len(state["research_rounds"]), 4)
             self.assertEqual(len(state["searched_queries"]), 12)
             self.assertEqual(len(provider.bodies), 9)
+            assessment_system = json.loads(provider.bodies[2])["messages"][0]["content"]
+            for rule in (
+                "qualified or unresolved items require a non-empty limitation",
+                "new unique queries not already searched",
+                "non-empty stop_reason whenever follow_up_queries is empty",
+            ):
+                self.assertIn(rule, assessment_system)
+
+        asyncio.run(run())
+
+    def test_research_failure_preserves_saved_evidence_gaps(self) -> None:
+        async def run() -> None:
+            provider = FakeProvider(
+                [
+                    completion(plan_json()),
+                    completion(selection_json("W1-1")),
+                    completion(
+                        assessment_json(
+                            "S1:P0-80",
+                            status="unresolved",
+                            limitation="A primary source is still missing.",
+                            stop_reason="Further searches are unlikely to resolve the gap.",
+                        )
+                    ),
+                ]
+            )
+            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
+            fixture = research_jobs.ResearchJobTests()
+            fixture.runtime = self.runtime
+            contexts = fixture.patches(provider)
+            with contexts[0], contexts[1], contexts[2], contexts[3]:
+                await rt.execute_research_job(self.runtime, submitted["job_id"])
+            status = await rt.research_job_status(self.runtime, "owner-1", submitted["job_id"])
+            self.assertEqual(status["error_code"], "source_collection_failed")
+            self.assertEqual(status["gaps"], ["C1: A primary source is still missing."])
 
         asyncio.run(run())
 
