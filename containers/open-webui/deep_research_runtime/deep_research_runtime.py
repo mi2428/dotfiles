@@ -6729,7 +6729,8 @@ async def recheck_candidate(
         UNTRUSTED_JOB_DATA_RULE
         + "Return exactly one RecheckResult JSON object. Set resolved=true only when every "
         "supplied material finding is fixed or its evidence-backed dismissal is justified. "
-        "Otherwise set resolved=false with one concise reason."
+        'Use exactly {"resolved":true,"reason":null} when resolved; otherwise use exactly '
+        '{"resolved":false,"reason":"one concise reason"}.'
     )
 
     def accept_recheck(content: str) -> str:

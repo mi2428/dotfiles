@@ -443,6 +443,7 @@ class ResearchJobTests(RuntimeTestCase):
                     '"finding_id":"F001","reason":"The source already supports it.",'
                     '"source_ids":["S1:P0-80"]}]}'
                 ),
+                completion('{"resolved":true,"reason":"Already fixed"}'),
                 completion('{"resolved":true,"reason":null}'),
             ]
             job_id, _provider = await self.run_path(outputs)
@@ -458,7 +459,13 @@ class ResearchJobTests(RuntimeTestCase):
                 {item for item in assignments if "_edit" in item},
                 {"candidate_1_edit", "candidate_1_edit:format-repair"},
             )
-            self.assertEqual(sum("review_recheck" in item for item in assignments), 1)
+            self.assertEqual(
+                {item for item in assignments if "review_recheck" in item},
+                {
+                    "candidate_1_review_recheck_1",
+                    "candidate_1_review_recheck_1:format-repair",
+                },
+            )
             raw, edited = self.runtime.db.execute(
                 "SELECT kind, markdown FROM editorial_revisions WHERE job_id = ? "
                 "AND kind IN ('raw', 'edited') ORDER BY id",
