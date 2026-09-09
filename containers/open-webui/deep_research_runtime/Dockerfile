@@ -22,7 +22,10 @@ COPY --from=uv /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-COPY deep_research_runtime.py sakura_kimi_model.py source_extraction.py ./
+COPY deep_research_runtime.py sakura_kimi_model.py source_extraction.py token_accounting.py ./
+COPY token_data ./token_data
+
+RUN python -c 'from token_accounting import verify_assets, default_asset_dir; verify_assets(default_asset_dir())'
 
 USER 10001:10001
 

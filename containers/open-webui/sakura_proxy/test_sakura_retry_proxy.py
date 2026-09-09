@@ -3,6 +3,7 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import tempfile
 import threading
 import time
 import unittest
@@ -11,6 +12,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import ClassVar, cast
 from unittest.mock import patch
 
@@ -162,6 +164,8 @@ class SakuraRetryProxyTest(unittest.TestCase):
         return settings
 
     def setUp(self) -> None:
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = str(Path(self.tmpdir.name) / "shared.db")
         UpstreamHandler.attempts = 0
         UpstreamHandler.mode = "rate_limit"
         UpstreamHandler.attempts_by_body = {}
@@ -187,6 +191,8 @@ class SakuraRetryProxyTest(unittest.TestCase):
                 jitter=0,
                 upstream_timeout=1,
                 account_tokens=("token-a", "token-b"),
+                account_ids=("public-a", "public-b"),
+                account_db_path=self.db_path,
             ),
             ("127.0.0.1", 0),
         )
@@ -203,6 +209,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
             server.server_close()
         for thread in self.threads:
             thread.join(timeout=1)
+        self.tmpdir.cleanup()
 
     def test_round_robins_tokens_across_429_retries(self) -> None:
         proxy_port = self.proxy.server_address[1]
@@ -249,6 +256,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
                     type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass
                 ).settings,
                 account_tokens=("token-a",),
+                account_ids=("public-a",),
             ),
             ("127.0.0.1", 0),
         )
@@ -320,6 +328,8 @@ class SakuraRetryProxyTest(unittest.TestCase):
                 jitter=0,
                 upstream_timeout=1,
                 account_tokens=("token-a",),
+                account_ids=("public-a",),
+                account_db_path=str(Path(self.tmpdir.name) / "single.db"),
             ),
             ("127.0.0.1", 0),
         )
@@ -334,10 +344,15 @@ class SakuraRetryProxyTest(unittest.TestCase):
         handler.settings = self.unsafe_settings(
             upstream_url=f"http://127.0.0.1:{self.upstream.server_address[1]}",
             account_tokens=("token-a",),
+            account_ids=("public-a",),
             retry_budget=0.02,
             upstream_timeout=0.001,
         )
-        handler.token_state = SharedTokenCooldown(handler.settings.account_tokens)
+        handler.token_state = SharedTokenCooldown(
+            handler.settings.account_tokens,
+            handler.settings.account_ids,
+            str(Path(self.tmpdir.name) / "manual.db"),
+        )
         lease, _ = handler.token_state.acquire(time.monotonic() + 1, lambda: False)
         self.assertIsNotNone(lease)
         self.addCleanup(handler.token_state.release, cast(TokenLease, lease))
@@ -608,7 +623,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         self.assertEqual(UpstreamHandler.attempts, 1)
 
     def test_shared_cooldown_waits_until_a_token_is_available(self) -> None:
-        state = SharedTokenCooldown(("token-a", "token-b"))
+        state = SharedTokenCooldown(("token-a", "token-b"), ("public-a", "public-b"))
         state.schedule(0, 0.05)
         state.schedule(1, 0.05)
 
@@ -659,12 +674,17 @@ class SakuraRetryProxyTest(unittest.TestCase):
     def test_settings_parse_comma_separated_account_tokens(self) -> None:
         with patch.dict(
             os.environ,
-            {"SAKURA_AI_ACCOUNT_TOKENS": " token-a,token-b ,, token-c "},
+            {
+                "SAKURA_AI_ACCOUNT_TOKENS": " token-a,token-b ,, token-c ",
+                "SAKURA_AI_ACCOUNT_IDS": " public-a,public-b,public-c ",
+                "DEEP_RESEARCH_DB_PATH": self.db_path,
+            },
             clear=True,
         ):
             settings = Settings.from_environment()
 
         self.assertEqual(settings.account_tokens, ("token-a", "token-b", "token-c"))
+        self.assertEqual(settings.account_ids, ("public-a", "public-b", "public-c"))
         self.assertEqual(settings.upstream_url, "https://api.ai.sakura.ad.jp")
         self.assertEqual((settings.max_retries, settings.base_backoff), (5, 10))
         self.assertGreaterEqual(

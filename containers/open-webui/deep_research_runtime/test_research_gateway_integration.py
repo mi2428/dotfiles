@@ -4,6 +4,7 @@ import asyncio
 import importlib
 import json
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -96,10 +97,13 @@ class ResearchGatewayIntegrationTests(unittest.IsolatedAsyncioTestCase):
         FakeUpstreamHandler.attempts = 0
         FakeUpstreamHandler.paths = []
         FakeUpstreamHandler.bodies = []
+        self.tmpdir = tempfile.TemporaryDirectory()
         self.upstream = ThreadingHTTPServer(("127.0.0.1", 0), FakeUpstreamHandler)
         settings = proxy_module.Settings(
             upstream_url=f"http://127.0.0.1:{self.upstream.server_address[1]}",
             account_tokens=("account-token",),
+            account_ids=("account-public",),
+            account_db_path=str(Path(self.tmpdir.name) / "shared.db"),
             research_api_key="gateway-key",
         )
         self.proxy = proxy_module.make_server(settings, ("127.0.0.1", 0))
@@ -119,6 +123,7 @@ class ResearchGatewayIntegrationTests(unittest.IsolatedAsyncioTestCase):
         for thread in self.threads:
             await asyncio.to_thread(thread.join, 2)
             self.assertFalse(thread.is_alive())
+        self.tmpdir.cleanup()
 
     def lease(self) -> AttemptLease:
         return AttemptLease(

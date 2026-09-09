@@ -3,10 +3,14 @@ from __future__ import annotations
 import http.client
 import json
 import socket
+import sqlite3
+import tempfile
 import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import ClassVar, cast
 from unittest.mock import patch
 
@@ -16,6 +20,7 @@ from sakura_retry_proxy import (
     RESEARCH_PATH,
     SakuraRetryProxyHandler,
     Settings,
+    SharedTokenCooldown,
     TokenLease,
     make_server,
 )
@@ -109,6 +114,8 @@ def valid_body() -> bytes:
 
 class ResearchProxyTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = str(Path(self.tmpdir.name) / "shared.db")
         ResearchUpstreamHandler.attempts = 0
         ResearchUpstreamHandler.mode = "success"
         ResearchUpstreamHandler.bodies = []
@@ -122,6 +129,8 @@ class ResearchProxyTests(unittest.TestCase):
                 max_backoff=1,
                 jitter=0,
                 account_tokens=("account-a",),
+                account_ids=("account-public-a",),
+                account_db_path=self.db_path,
                 research_api_key="internal-key",
             ),
             ("127.0.0.1", 0),
@@ -142,6 +151,7 @@ class ResearchProxyTests(unittest.TestCase):
             server.server_close()
         for thread in self.threads:
             thread.join(timeout=2)
+        self.tmpdir.cleanup()
 
     def research_headers(self, seconds: float = 2) -> dict[str, str]:
         return {
@@ -198,11 +208,20 @@ class ResearchProxyTests(unittest.TestCase):
             connection.close()
         return bytes(chunks)
 
-    def assert_quarantined(self) -> None:
-        self.assertEqual(self.handler.token_state._in_flight, [False])
-        self.assertGreater(
-            self.handler.token_state._cooldown_until[0], time.monotonic()
-        )
+    def account_state(
+        self, handler: type[SakuraRetryProxyHandler] | None = None
+    ) -> str:
+        state = (handler or self.handler).token_state
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            row = state.state("account-public-a")
+            if row is not None and row["state"] not in {"leased", "send_intent"}:
+                return str(row["state"])
+            time.sleep(0.005)
+        row = state.state("account-public-a")
+        if row is None:
+            raise AssertionError("account state disappeared")
+        return str(row["state"])
 
     def test_invalid_auth_deadline_headers_and_body_never_send(self) -> None:
         cases = [
@@ -272,7 +291,7 @@ class ResearchProxyTests(unittest.TestCase):
         status, _headers, _body = self.request()
         self.assertEqual(status, 429)
         self.assertEqual(ResearchUpstreamHandler.attempts, 1)
-        self.assert_quarantined()
+        self.assertEqual(self.account_state(), "cooldown")
         lease, _waited = self.handler.token_state.acquire(
             time.monotonic() + 0.02, lambda: False
         )
@@ -284,7 +303,7 @@ class ResearchProxyTests(unittest.TestCase):
         self.assertEqual(status, 502)
         self.assertEqual(headers["X-Sakura-Upstream-Send"], "unknown")
         self.assertEqual(ResearchUpstreamHandler.attempts, 1)
-        self.assert_quarantined()
+        self.assertEqual(self.account_state(), "unknown")
 
     def test_connect_failure_is_not_sent_and_releases_account(self) -> None:
         unused = socket.socket()
@@ -295,6 +314,8 @@ class ResearchProxyTests(unittest.TestCase):
             Settings(
                 upstream_url=f"http://127.0.0.1:{unused_port}",
                 account_tokens=("account-a",),
+                account_ids=("account-public-a",),
+                account_db_path=str(Path(self.tmpdir.name) / "connect.db"),
                 research_api_key="internal-key",
             ),
             ("127.0.0.1", 0),
@@ -308,7 +329,7 @@ class ResearchProxyTests(unittest.TestCase):
         status, headers, _body = self.request(proxy=proxy)
         self.assertEqual(status, 502)
         self.assertEqual(headers["X-Sakura-Upstream-Send"], "not-sent")
-        self.assertEqual(handler.token_state._in_flight, [False])
+        self.assertEqual(self.account_state(handler), "available")
         self.assertLessEqual(handler.token_state._cooldown_until[0], time.monotonic())
 
     def test_delayed_connect_cannot_send_or_reconnect_after_deadline(self) -> None:
@@ -333,7 +354,7 @@ class ResearchProxyTests(unittest.TestCase):
         self.assertEqual(response.count(b"HTTP/1.1"), 1)
         self.assertEqual(ResearchUpstreamHandler.attempts, 1)
         time.sleep(0.05)
-        self.assert_quarantined()
+        self.assertEqual(self.account_state(), "unknown")
 
     def test_clean_2xx_eof_without_done_quarantines_account(self) -> None:
         ResearchUpstreamHandler.mode = "incomplete"
@@ -341,7 +362,7 @@ class ResearchProxyTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(headers["X-Sakura-Upstream-Send"], "sent")
         self.assertEqual(ResearchUpstreamHandler.attempts, 1)
-        self.assert_quarantined()
+        self.assertEqual(self.account_state(), "unknown")
 
     def test_shared_busy_lease_expires_queue_without_upstream_send(self) -> None:
         lease, _waited = self.handler.token_state.acquire(
@@ -372,7 +393,115 @@ class ResearchProxyTests(unittest.TestCase):
         connection.close()
         time.sleep(0.1)
         self.assertEqual(ResearchUpstreamHandler.attempts, 1)
-        self.assert_quarantined()
+        self.assertEqual(self.account_state(), "unknown")
+
+    def test_same_research_attempt_is_sent_at_most_once_concurrently_and_after_completion(
+        self,
+    ) -> None:
+        ResearchUpstreamHandler.mode = "drip"
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first = executor.submit(self.request)
+            self.assertTrue(ResearchUpstreamHandler.started.wait(timeout=1))
+            duplicate_status, duplicate_headers, _ = self.request()
+            first.result(timeout=3)
+        self.assertEqual(duplicate_status, 409)
+        self.assertEqual(duplicate_headers["X-Sakura-Upstream-Send"], "not-sent")
+        self.assertEqual(ResearchUpstreamHandler.attempts, 1)
+
+    def test_successful_research_attempt_id_cannot_be_replayed(self) -> None:
+        first_status, _first_headers, _ = self.request()
+        replay_status, replay_headers, _ = self.request()
+        self.assertEqual(first_status, 200)
+        self.assertEqual(replay_status, 409)
+        self.assertEqual(replay_headers["X-Sakura-Upstream-Send"], "not-sent")
+        self.assertEqual(ResearchUpstreamHandler.attempts, 1)
+        replay_status, replay_headers, _ = self.request()
+        self.assertEqual(replay_status, 409)
+        self.assertEqual(replay_headers["X-Sakura-Upstream-Send"], "not-sent")
+        self.assertEqual(ResearchUpstreamHandler.attempts, 1)
+
+    def test_failed_sql_admission_rolls_back_and_does_not_poison_normal_acquire(
+        self,
+    ) -> None:
+        path = str(Path(self.tmpdir.name) / "sql-failure.db")
+        state = SharedTokenCooldown(("secret",), ("stable",), path)
+        self.addCleanup(state.close)
+        state._db.execute(
+            "CREATE TRIGGER reject_test_lease BEFORE UPDATE OF lease_id ON account_admissions "
+            "WHEN NEW.lease_id = 'sql-fail' BEGIN SELECT RAISE(ABORT, 'test failure'); END"
+        )
+        state._db.commit()
+        with self.assertRaises(sqlite3.IntegrityError):
+            state.acquire(
+                time.monotonic() + 0.1,
+                lambda: False,
+                lease_id="sql-fail",
+                purpose="research",
+            )
+        state._db.execute("DROP TRIGGER reject_test_lease")
+        state._db.commit()
+        lease, _ = state.acquire(time.monotonic() + 0.1, lambda: False)
+        self.assertIsNotNone(lease)
+        state.release(cast(TokenLease, lease))
+
+    def test_durable_unknown_survives_restart_and_token_reordering_without_secret_storage(
+        self,
+    ) -> None:
+        path = str(Path(self.tmpdir.name) / "restart.db")
+        first = SharedTokenCooldown(
+            ("secret-token-a", "secret-token-b"),
+            ("stable-a", "stable-b"),
+            path,
+        )
+        lease, _ = first.acquire(
+            time.monotonic() + 1,
+            lambda: False,
+            lease_id="research-attempt-a",
+            purpose="research",
+        )
+        self.assertIsNotNone(lease)
+        first.mark_send_intent(cast(TokenLease, lease))
+        first.mark_unknown(cast(TokenLease, lease))
+        first.close()
+
+        reordered = SharedTokenCooldown(
+            ("secret-token-b", "secret-token-a"),
+            ("stable-b", "stable-a"),
+            path,
+        )
+        self.addCleanup(reordered.close)
+        held = reordered.state("stable-a")
+        if held is None:
+            raise AssertionError("durable account disappeared")
+        self.assertEqual(
+            (held["state"], held["lease_id"]), ("unknown", "research-attempt-a")
+        )
+        available, _ = reordered.acquire(time.monotonic() + 0.1, lambda: False)
+        if available is None:
+            raise AssertionError("available account was not acquired")
+        self.assertEqual(
+            (available.account_id, available.token), ("stable-b", "secret-token-b")
+        )
+        reordered.release(available)
+        self.assertNotIn(b"secret-token-a", Path(path).read_bytes())
+        with self.assertRaisesRegex(ValueError, "omit an unresolved"):
+            SharedTokenCooldown(("secret-token-b",), ("stable-b",), path)
+
+    def test_restart_converts_send_intent_to_unknown_and_never_expires_it(self) -> None:
+        path = str(Path(self.tmpdir.name) / "send-intent.db")
+        first = SharedTokenCooldown(("secret",), ("stable",), path)
+        lease, _ = first.acquire(time.monotonic() + 1, lambda: False)
+        self.assertIsNotNone(lease)
+        first.mark_send_intent(cast(TokenLease, lease))
+        first.close()
+        restarted = SharedTokenCooldown(("secret",), ("stable",), path)
+        self.addCleanup(restarted.close)
+        restarted_row = restarted.state("stable")
+        if restarted_row is None:
+            raise AssertionError("durable account disappeared")
+        self.assertEqual(restarted_row["state"], "unknown")
+        unavailable, _ = restarted.acquire(time.monotonic() + 0.02, lambda: False)
+        self.assertIsNone(unavailable)
 
 
 if __name__ == "__main__":

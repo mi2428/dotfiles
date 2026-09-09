@@ -48,6 +48,13 @@ from sakura_kimi_model import (
     prepare_research_request,
 )
 from source_extraction import extract_document
+from token_accounting import (
+    OUTPUT_RESERVE_TOKENS,
+    count_fresh_prompt_tokens,
+    create_profile_tables,
+    profile_is_verified,
+    verified_input_ceiling,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -129,10 +136,13 @@ JOB_SINGLE_ATTEMPTS = 18
 JOB_SINGLE_SECONDS = 4_500
 JOB_LONG_ATTEMPTS = 40
 JOB_LONG_SECONDS = 10_800
+DEFAULT_RETENTION_DAYS = 30
+DEFAULT_GLOBAL_LOGICAL_BYTES = 512 * 1024 * 1024
 MAX_READ_CHARS = 12_000
 MAX_EXTRACTED_CHARS = 8_000_000
 SAFE_JOB_ERROR_CODES = frozenset(
     {
+        "abandoned_unresolved",
         "assignment_result_invalid",
         "assignment_result_unavailable",
         "attempt_budget_exhausted",
@@ -161,9 +171,11 @@ SAFE_JOB_ERROR_CODES = frozenset(
         "source_not_found",
         "source_range_too_large",
         "source_storage_exhausted",
+        "storage_quota_exhausted",
         "unknown_attempt",
     }
 )
+UNKNOWN_RISK_ACK = "possible duplicate execution or charge; no refund; no replay"
 
 MARKDOWN_NEUTRALIZERS = str.maketrans(
     {
@@ -422,6 +434,27 @@ class ResumeJobRequest(StrictModel):
     revision: int = Field(ge=0)
 
 
+class DeliveryAckRequest(StrictModel):
+    publication_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+    content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    note_id: str = Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class AbandonUnknownRequest(StrictModel):
+    job_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+    attempt_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+    action_id: str = Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9._:-]+$")
+    expected_revision: int = Field(ge=0)
+    risk_ack: Literal["possible duplicate execution or charge; no refund; no replay"]
+
+
+class AbandonOrphanAccountRequest(StrictModel):
+    account_id: str = Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9._:@-]+$")
+    lease_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+    action_id: str = Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9._:-]+$")
+    risk_ack: Literal["possible duplicate execution or charge; no refund; no replay"]
+
+
 class SearchJobAction(StrictModel):
     action: Literal["search"]
     query: str = Field(min_length=1, max_length=MAX_QUERY_CHARS)
@@ -552,6 +585,10 @@ class Settings:
     searxng_url: str
     db_path: str
     kimi_timeout_seconds: int
+    operator_api_key: str
+    operator_id: str
+    retention_days: int
+    global_logical_bytes: int
 
     @classmethod
     def from_environment(cls) -> Settings:
@@ -562,6 +599,8 @@ class Settings:
             "model": "DEEP_RESEARCH_MODEL",
             "searxng_url": "SEARXNG_URL",
             "db_path": "DEEP_RESEARCH_DB_PATH",
+            "operator_api_key": "DEEP_RESEARCH_OPERATOR_API_KEY",
+            "operator_id": "DEEP_RESEARCH_OPERATOR_ID",
         }
         values = {key: os.getenv(name, "").strip() for key, name in names.items()}
         missing = [name for key, name in names.items() if not values[key]]
@@ -573,7 +612,21 @@ class Settings:
             minimum=FINALIZER_TIMEOUT_SECONDS + TIMEOUT_SAFETY_MARGIN_SECONDS,
             maximum=DEFAULT_KIMI_TIMEOUT_SECONDS,
         )
-        return cls(**values, kimi_timeout_seconds=timeout_seconds)
+        retention_days = env_int(
+            "DEEP_RESEARCH_RETENTION_DAYS", DEFAULT_RETENTION_DAYS, maximum=3650
+        )
+        global_logical_bytes = env_int(
+            "DEEP_RESEARCH_GLOBAL_LOGICAL_BYTES",
+            DEFAULT_GLOBAL_LOGICAL_BYTES,
+            minimum=1024 * 1024,
+            maximum=1024 * 1024 * 1024 * 1024,
+        )
+        return cls(
+            **values,
+            kimi_timeout_seconds=timeout_seconds,
+            retention_days=retention_days,
+            global_logical_bytes=global_logical_bytes,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1438,6 +1491,8 @@ def open_db(path: str) -> sqlite3.Connection:
             deadline_at_ms INTEGER NOT NULL,
             max_attempts INTEGER NOT NULL,
             attempts_used INTEGER NOT NULL DEFAULT 0,
+            token_allowance INTEGER NOT NULL DEFAULT 0,
+            tokens_reserved INTEGER NOT NULL DEFAULT 0,
             candidate_no INTEGER NOT NULL DEFAULT 0,
             revision INTEGER NOT NULL DEFAULT 0,
             cancel_requested INTEGER NOT NULL DEFAULT 0,
@@ -1463,6 +1518,14 @@ def open_db(path: str) -> sqlite3.Connection:
             request_hash TEXT NOT NULL,
             result_receipt TEXT,
             result_receipt_hash TEXT,
+            input_tokens_estimated INTEGER,
+            output_tokens_reserved INTEGER,
+            accounting_profile TEXT,
+            resolution_action_id TEXT UNIQUE,
+            resolution_operator_id TEXT,
+            resolution_risk_ack TEXT,
+            resolved_at_ms INTEGER,
+            resolved_job_revision INTEGER,
             http_status INTEGER,
             finish_reason TEXT,
             prompt_tokens INTEGER,
@@ -1540,10 +1603,146 @@ def open_db(path: str) -> sqlite3.Connection:
             content_hash TEXT NOT NULL,
             created_at_ms INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS publication_deliveries (
+            publication_id TEXT PRIMARY KEY REFERENCES publications(publication_id),
+            job_id TEXT NOT NULL UNIQUE REFERENCES research_jobs(job_id),
+            content_hash TEXT NOT NULL,
+            note_id TEXT NOT NULL UNIQUE,
+            delivered_at_ms INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS account_admissions (
+            account_id TEXT PRIMARY KEY,
+            state TEXT NOT NULL CHECK(
+                state IN ('available', 'cooldown', 'leased', 'send_intent', 'unknown')
+            ),
+            lease_id TEXT UNIQUE,
+            purpose TEXT,
+            cooldown_until_ms INTEGER NOT NULL DEFAULT 0,
+            updated_at_ms INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS account_admission_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id TEXT NOT NULL,
+            lease_id TEXT,
+            event TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            action_id TEXT,
+            risk_ack TEXT,
+            recorded_at_ms INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS research_job_tombstones (
+            owner_id TEXT NOT NULL,
+            action_id TEXT NOT NULL,
+            job_id TEXT NOT NULL UNIQUE,
+            request_hash TEXT NOT NULL,
+            expired_at_ms INTEGER NOT NULL,
+            purged_at_ms INTEGER NOT NULL,
+            PRIMARY KEY(owner_id, action_id)
+        );
+        CREATE TABLE IF NOT EXISTS research_action_cancellations (
+            owner_id TEXT NOT NULL,
+            action_id TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            job_id TEXT,
+            cancel_status TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            PRIMARY KEY(owner_id, action_id)
+        );
         """
     )
+    existing_attempt_columns = {
+        str(row["name"]) for row in db.execute("PRAGMA table_info(research_attempts)")
+    }
+    for name, definition in {
+        "resolution_action_id": "TEXT",
+        "resolution_operator_id": "TEXT",
+        "resolution_risk_ack": "TEXT",
+        "resolved_at_ms": "INTEGER",
+        "resolved_job_revision": "INTEGER",
+    }.items():
+        if name not in existing_attempt_columns:
+            db.execute(f"ALTER TABLE research_attempts ADD COLUMN {name} {definition}")
+    for name, definition in {
+        "input_tokens_estimated": "INTEGER",
+        "output_tokens_reserved": "INTEGER",
+        "accounting_profile": "TEXT",
+    }.items():
+        if name not in existing_attempt_columns:
+            db.execute(f"ALTER TABLE research_attempts ADD COLUMN {name} {definition}")
+    existing_job_columns = {
+        str(row["name"]) for row in db.execute("PRAGMA table_info(research_jobs)")
+    }
+    for name in ("token_allowance", "tokens_reserved"):
+        if name not in existing_job_columns:
+            db.execute(f"ALTER TABLE research_jobs ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS research_attempts_resolution_action "
+        "ON research_attempts(resolution_action_id) WHERE resolution_action_id IS NOT NULL"
+    )
+    audit_columns = {
+        str(row["name"]) for row in db.execute("PRAGMA table_info(account_admission_audit)")
+    }
+    if "risk_ack" not in audit_columns:
+        db.execute("ALTER TABLE account_admission_audit ADD COLUMN risk_ack TEXT")
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS account_admission_operator_action "
+        "ON account_admission_audit(action_id) WHERE action_id IS NOT NULL"
+    )
+    db.execute(
+        "UPDATE research_jobs SET delivery_status = 'pending' WHERE delivery_status = 'ready'"
+    )
+    create_profile_tables(db)
     db.commit()
     return db
+
+
+LOGICAL_STORAGE_COLUMNS = {
+    "research_jobs": ("request_json", "research_json", "gaps_json"),
+    "research_attempts": ("assignment", "assignment_key", "result_receipt"),
+    "source_blobs": (
+        "canonical_url",
+        "final_url",
+        "title",
+        "publisher",
+        "media_type",
+        "raw_bytes",
+    ),
+    "source_extractions": (
+        "extractor_version",
+        "extracted_text",
+        "page_map_json",
+        "limitations_json",
+    ),
+    "editorial_revisions": ("markdown", "data_json", "manifest_json"),
+    "review_records": ("result_json",),
+    "publications": ("markdown",),
+}
+
+
+def logical_storage_bytes(db: sqlite3.Connection) -> int:
+    total = 0
+    for table, columns in LOGICAL_STORAGE_COLUMNS.items():
+        expression = " + ".join(
+            f"COALESCE(length(CAST({column} AS BLOB)), 0)" for column in columns
+        )
+        row = db.execute(f"SELECT COALESCE(SUM({expression}), 0) AS bytes FROM {table}").fetchone()
+        total += int(row["bytes"])
+    return total
+
+
+def logical_bytes(*values: str | bytes | None) -> int:
+    return sum(
+        len(value if isinstance(value, bytes) else value.encode())
+        for value in values
+        if value is not None
+    )
+
+
+def ensure_storage_capacity(runtime: Runtime, added_bytes: int) -> None:
+    if added_bytes < 0:
+        raise IntegrityError("logical storage delta is invalid")
+    if logical_storage_bytes(runtime.db) + added_bytes > runtime.settings.global_logical_bytes:
+        raise StorageQuotaExceeded()
 
 
 def source_id(index: int) -> str:
@@ -4046,6 +4245,10 @@ class JobIncomplete(Exception):
         self.quality_outcome = quality_outcome
 
 
+class StorageQuotaExceeded(Exception):
+    """The configured global logical payload limit rejects a new write."""
+
+
 class JobPaused(Exception):
     """An unresolved physical attempt prevents further global dispatch."""
 
@@ -4318,6 +4521,8 @@ async def submit_research_job(
     owner = validate_owner_id(owner_id)
     payload = canonical_job_request(request)
     request_hash = query_hash(payload)
+    request_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    research_json = json.dumps(initial_research_state(), separators=(",", ":"))
     now = unix_ms()
     max_attempts, wall_seconds = (
         (JOB_SINGLE_ATTEMPTS, JOB_SINGLE_SECONDS)
@@ -4326,6 +4531,25 @@ async def submit_research_job(
     )
     created = False
     async with runtime.db_lock:
+        cancellation = runtime.db.execute(
+            "SELECT request_hash FROM research_action_cancellations "
+            "WHERE owner_id = ? AND action_id = ?",
+            (owner, request.action_id),
+        ).fetchone()
+        if cancellation is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="action_cancelled",
+            )
+        tombstone = runtime.db.execute(
+            "SELECT job_id FROM research_job_tombstones WHERE owner_id = ? AND action_id = ?",
+            (owner, request.action_id),
+        ).fetchone()
+        if tombstone is not None:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="research action expired",
+            )
         row = runtime.db.execute(
             "SELECT job_id, request_hash, status, revision FROM research_jobs "
             "WHERE owner_id = ? AND action_id = ?",
@@ -4346,25 +4570,43 @@ async def submit_research_job(
             }
         else:
             job_id = uuid.uuid4().hex
+            accounting = verified_input_ceiling(
+                runtime.db, runtime.settings.model, runtime.settings.llm_base_url
+            )
+            if accounting is None:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="token accounting profile is not verified",
+                )
+            _profile_fingerprint, input_ceiling = accounting
+            token_allowance = max_attempts * (input_ceiling + OUTPUT_RESERVE_TOKENS)
+            try:
+                ensure_storage_capacity(runtime, logical_bytes(request_json, research_json, "[]"))
+            except StorageQuotaExceeded:
+                raise HTTPException(
+                    status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+                    detail="storage quota exceeded",
+                ) from None
             runtime.db.execute(
                 """
                 INSERT INTO research_jobs (
                     job_id, owner_id, action_id, request_hash, request_json, status, phase,
-                    profile, units, deadline_at_ms, max_attempts, research_json,
+                    profile, units, deadline_at_ms, max_attempts, token_allowance, research_json,
                     created_at_ms, updated_at_ms
-                ) VALUES (?, ?, ?, ?, ?, 'queued', 'scoping', ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, 'queued', 'scoping', ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_id,
                     owner,
                     request.action_id,
                     request_hash,
-                    json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                    request_json,
                     request.profile,
                     request.units,
                     now + wall_seconds * 1000,
                     max_attempts,
-                    json.dumps(initial_research_state(), separators=(",", ":")),
+                    token_allowance,
+                    research_json,
                     now,
                     now,
                 ),
@@ -4388,7 +4630,17 @@ async def owned_job(runtime: Runtime, owner_id: str, job_id: str) -> sqlite3.Row
         row = runtime.db.execute(
             "SELECT * FROM research_jobs WHERE job_id = ? AND owner_id = ?", (job_id, owner)
         ).fetchone()
+        expired = (
+            runtime.db.execute(
+                "SELECT 1 FROM research_job_tombstones WHERE job_id = ? AND owner_id = ?",
+                (job_id, owner),
+            ).fetchone()
+            if row is None
+            else None
+        )
     if row is None:
+        if expired is not None:
+            raise HTTPException(status_code=status.HTTP_410_GONE, detail="research job expired")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
     return row
 
@@ -4399,6 +4651,13 @@ async def unknown_dispatch_blocked(runtime: Runtime) -> bool:
             "SELECT 1 FROM research_attempts WHERE state = 'unknown' LIMIT 1"
         ).fetchone()
     return row is not None
+
+
+async def token_accounting_ready(runtime: Runtime) -> bool:
+    async with runtime.db_lock:
+        return profile_is_verified(
+            runtime.db, runtime.settings.model, runtime.settings.llm_base_url
+        )
 
 
 def safe_job_error_code(value: Any) -> str | None:
@@ -4421,6 +4680,7 @@ async def research_job_status(runtime: Runtime, owner_id: str, job_id: str) -> d
     row = await owned_job(runtime, owner_id, job_id)
     blocked = await unknown_dispatch_blocked(runtime)
     gaps = json.loads(str(row["gaps_json"]))
+    delivery = await research_delivery_receipt(runtime, job_id)
     return {
         "job_id": job_id,
         "status": str(row["status"]),
@@ -4431,12 +4691,18 @@ async def research_job_status(runtime: Runtime, owner_id: str, job_id: str) -> d
             "used": int(row["attempts_used"]),
             "limit": int(row["max_attempts"]),
         },
+        "tokens": {
+            "reserved": int(row["tokens_reserved"]),
+            "allowance": int(row["token_allowance"]),
+        },
         "deadline_at_ms": int(row["deadline_at_ms"]),
         "cancel_requested": bool(row["cancel_requested"]),
         "dispatch_blocked": blocked,
         "blocked_reason": "unknown_attempt" if blocked else None,
         "error_code": safe_job_error_code(row["error_code"]),
         "gaps": gaps,
+        "delivery_status": row["delivery_status"],
+        "delivery": delivery,
         **job_urls(job_id),
     }
 
@@ -4446,6 +4712,7 @@ async def research_job_result(
 ) -> tuple[int, dict[str, Any]]:
     row = await owned_job(runtime, owner_id, job_id)
     status_name = str(row["status"])
+    delivery = await research_delivery_receipt(runtime, job_id)
     base = {
         "job_id": job_id,
         "status": status_name,
@@ -4453,6 +4720,7 @@ async def research_job_result(
         "quality_outcome": row["quality_outcome"],
         "error_code": safe_job_error_code(row["error_code"]),
         "gaps": json.loads(str(row["gaps_json"])),
+        "delivery": delivery,
     }
     if status_name == "completed":
         async with runtime.db_lock:
@@ -4487,10 +4755,361 @@ async def research_job_result(
     return status.HTTP_200_OK, base
 
 
+async def research_delivery_receipt(runtime: Runtime, job_id: str) -> dict[str, Any] | None:
+    async with runtime.db_lock:
+        row = runtime.db.execute(
+            "SELECT publication_id, content_hash, note_id, delivered_at_ms "
+            "FROM publication_deliveries WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "publication_id": str(row["publication_id"]),
+        "content_hash": str(row["content_hash"]),
+        "note_id": str(row["note_id"]),
+        "delivered_at_ms": int(row["delivered_at_ms"]),
+    }
+
+
+async def acknowledge_research_delivery(
+    runtime: Runtime, owner_id: str, job_id: str, ack: DeliveryAckRequest
+) -> dict[str, Any]:
+    owner = validate_owner_id(owner_id)
+    now = unix_ms()
+    async with runtime.db_lock:
+        runtime.db.execute("BEGIN IMMEDIATE")
+        try:
+            row = runtime.db.execute(
+                "SELECT j.status, j.delivery_status, j.selected_publication_id, "
+                "p.content_hash, p.markdown, d.note_id, d.delivered_at_ms "
+                "FROM research_jobs j LEFT JOIN publications p "
+                "ON p.publication_id = j.selected_publication_id AND p.job_id = j.job_id "
+                "LEFT JOIN publication_deliveries d ON d.job_id = j.job_id "
+                "WHERE j.job_id = ? AND j.owner_id = ?",
+                (job_id, owner),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+            if row["markdown"] is not None:
+                verified_stored_markdown(row, "publication")
+            matches = (
+                row["selected_publication_id"] == ack.publication_id
+                and row["content_hash"] == ack.content_hash
+            )
+            if row["delivery_status"] == "delivered":
+                if matches and row["note_id"] == ack.note_id:
+                    runtime.db.commit()
+                    return {
+                        "publication_id": ack.publication_id,
+                        "content_hash": ack.content_hash,
+                        "note_id": ack.note_id,
+                        "delivered_at_ms": int(row["delivered_at_ms"]),
+                        "delivery_status": "delivered",
+                    }
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail="delivery acknowledgement conflict"
+                )
+            if row["status"] != "completed" or row["delivery_status"] != "pending" or not matches:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="publication is not pending delivery",
+                )
+            runtime.db.execute(
+                "INSERT INTO publication_deliveries "
+                "(publication_id, job_id, content_hash, note_id, delivered_at_ms) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (ack.publication_id, job_id, ack.content_hash, ack.note_id, now),
+            )
+            changed = runtime.db.execute(
+                "UPDATE research_jobs SET delivery_status = 'delivered', "
+                "revision = revision + 1, updated_at_ms = ? "
+                "WHERE job_id = ? AND owner_id = ? AND delivery_status = 'pending' "
+                "AND selected_publication_id = ?",
+                (now, job_id, owner, ack.publication_id),
+            ).rowcount
+            if changed != 1:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="job changed")
+            runtime.db.commit()
+        except BaseException:
+            runtime.db.rollback()
+            raise
+    return {
+        "publication_id": ack.publication_id,
+        "content_hash": ack.content_hash,
+        "note_id": ack.note_id,
+        "delivered_at_ms": now,
+        "delivery_status": "delivered",
+    }
+
+
+async def abandon_unknown_attempt(
+    runtime: Runtime, request: AbandonUnknownRequest
+) -> dict[str, Any]:
+    now = unix_ms()
+    operator_id = runtime.settings.operator_id
+    async with runtime.db_lock:
+        runtime.db.execute("BEGIN IMMEDIATE")
+        try:
+            row = runtime.db.execute(
+                "SELECT a.state, a.resolution_action_id, a.resolution_operator_id, "
+                "a.resolution_risk_ack, a.resolved_job_revision, a.resolved_at_ms, "
+                "j.revision, j.status FROM research_attempts a "
+                "JOIN research_jobs j ON j.job_id = a.job_id "
+                "WHERE a.attempt_id = ? AND a.job_id = ?",
+                (request.attempt_id, request.job_id),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="attempt not found"
+                )
+            exact_prior = (
+                row["state"] == "abandoned_unresolved"
+                and row["resolution_action_id"] == request.action_id
+                and row["resolution_operator_id"] == operator_id
+                and row["resolution_risk_ack"] == request.risk_ack
+                and row["resolved_job_revision"] == request.expected_revision
+            )
+            if exact_prior:
+                runtime.db.commit()
+                return {
+                    "job_id": request.job_id,
+                    "attempt_id": request.attempt_id,
+                    "state": "abandoned_unresolved",
+                    "job_status": "incomplete",
+                    "action_id": request.action_id,
+                    "resolved_at_ms": int(row["resolved_at_ms"]),
+                }
+            if row["state"] != "unknown":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail="attempt is not unknown"
+                )
+            if int(row["revision"]) != request.expected_revision:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail="stale job revision"
+                )
+            duplicate_action = runtime.db.execute(
+                "SELECT 1 FROM research_attempts WHERE resolution_action_id = ? "
+                "UNION ALL SELECT 1 FROM account_admission_audit WHERE action_id = ? LIMIT 1",
+                (request.action_id, request.action_id),
+            ).fetchone()
+            if duplicate_action is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="operator action already used",
+                )
+            lease = runtime.db.execute(
+                "SELECT account_id, state FROM account_admissions WHERE lease_id = ?",
+                (request.attempt_id,),
+            ).fetchone()
+            if lease is not None and lease["state"] != "unknown":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="account lease is not unknown",
+                )
+            runtime.db.execute(
+                "UPDATE research_attempts SET state = 'abandoned_unresolved', "
+                "resolution_action_id = ?, resolution_operator_id = ?, resolution_risk_ack = ?, "
+                "resolved_at_ms = ?, resolved_job_revision = ?, updated_at_ms = ? "
+                "WHERE attempt_id = ? AND job_id = ? AND state = 'unknown'",
+                (
+                    request.action_id,
+                    operator_id,
+                    request.risk_ack,
+                    now,
+                    request.expected_revision,
+                    now,
+                    request.attempt_id,
+                    request.job_id,
+                ),
+            )
+            runtime.db.execute(
+                "UPDATE research_jobs SET status = 'incomplete', phase = NULL, "
+                "delivery_status = 'needs_review', error_code = 'abandoned_unresolved', "
+                "revision = revision + 1, updated_at_ms = ? "
+                "WHERE job_id = ? AND revision = ?",
+                (now, request.job_id, request.expected_revision),
+            )
+            if lease is not None:
+                runtime.db.execute(
+                    "UPDATE account_admissions SET state = 'available', lease_id = NULL, "
+                    "purpose = NULL, cooldown_until_ms = 0, updated_at_ms = ? "
+                    "WHERE account_id = ? AND lease_id = ? AND state = 'unknown'",
+                    (now, lease["account_id"], request.attempt_id),
+                )
+                runtime.db.execute(
+                    "INSERT INTO account_admission_audit "
+                    "(account_id, lease_id, event, actor, action_id, risk_ack, recorded_at_ms) "
+                    "VALUES (?, ?, 'operator_abandoned_unresolved', ?, ?, ?, ?)",
+                    (
+                        lease["account_id"],
+                        request.attempt_id,
+                        operator_id,
+                        request.action_id,
+                        request.risk_ack,
+                        now,
+                    ),
+                )
+            runtime.db.commit()
+        except BaseException:
+            runtime.db.rollback()
+            raise
+    runtime.job_wakeup.set()
+    return {
+        "job_id": request.job_id,
+        "attempt_id": request.attempt_id,
+        "state": "abandoned_unresolved",
+        "job_status": "incomplete",
+        "action_id": request.action_id,
+        "resolved_at_ms": now,
+    }
+
+
+async def abandon_orphan_account_lease(
+    runtime: Runtime, request: AbandonOrphanAccountRequest
+) -> dict[str, Any]:
+    now = unix_ms()
+    operator_id = runtime.settings.operator_id
+    async with runtime.db_lock:
+        runtime.db.execute("BEGIN IMMEDIATE")
+        try:
+            prior = runtime.db.execute(
+                "SELECT account_id, lease_id, event, actor, risk_ack, recorded_at_ms "
+                "FROM account_admission_audit WHERE action_id = ?",
+                (request.action_id,),
+            ).fetchone()
+            if prior is not None:
+                exact = (
+                    prior["account_id"] == request.account_id
+                    and prior["lease_id"] == request.lease_id
+                    and prior["event"] == "operator_orphan_unknown"
+                    and prior["actor"] == operator_id
+                    and prior["risk_ack"] == request.risk_ack
+                )
+                if not exact:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="operator action already used",
+                    )
+                runtime.db.commit()
+                return {
+                    "account_id": request.account_id,
+                    "lease_id": request.lease_id,
+                    "state": "available",
+                    "action_id": request.action_id,
+                    "resolved_at_ms": int(prior["recorded_at_ms"]),
+                }
+            if runtime.db.execute(
+                "SELECT 1 FROM research_attempts WHERE resolution_action_id = ?",
+                (request.action_id,),
+            ).fetchone():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="operator action already used",
+                )
+            account = runtime.db.execute(
+                "SELECT state, lease_id FROM account_admissions WHERE account_id = ?",
+                (request.account_id,),
+            ).fetchone()
+            if account is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="account not found"
+                )
+            if account["state"] != "unknown" or account["lease_id"] != request.lease_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="exact unknown account lease not found",
+                )
+            if runtime.db.execute(
+                "SELECT 1 FROM research_attempts WHERE attempt_id = ?",
+                (request.lease_id,),
+            ).fetchone():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="research attempt requires attempt resolution",
+                )
+            runtime.db.execute(
+                "UPDATE account_admissions SET state = 'available', lease_id = NULL, "
+                "purpose = NULL, cooldown_until_ms = 0, updated_at_ms = ? "
+                "WHERE account_id = ? AND state = 'unknown' AND lease_id = ?",
+                (now, request.account_id, request.lease_id),
+            )
+            runtime.db.execute(
+                "INSERT INTO account_admission_audit "
+                "(account_id, lease_id, event, actor, action_id, risk_ack, recorded_at_ms) "
+                "VALUES (?, ?, 'operator_orphan_unknown', ?, ?, ?, ?)",
+                (
+                    request.account_id,
+                    request.lease_id,
+                    operator_id,
+                    request.action_id,
+                    request.risk_ack,
+                    now,
+                ),
+            )
+            runtime.db.commit()
+        except BaseException:
+            runtime.db.rollback()
+            raise
+    return {
+        "account_id": request.account_id,
+        "lease_id": request.lease_id,
+        "state": "available",
+        "action_id": request.action_id,
+        "resolved_at_ms": now,
+    }
+
+
+async def purge_expired_jobs(runtime: Runtime, *, now_ms: int | None = None) -> int:
+    now = unix_ms() if now_ms is None else now_ms
+    cutoff = now - runtime.settings.retention_days * 24 * 60 * 60 * 1000
+    async with runtime.db_lock:
+        runtime.db.execute("BEGIN IMMEDIATE")
+        try:
+            rows = runtime.db.execute(
+                "SELECT job_id, owner_id, action_id, request_hash, updated_at_ms "
+                "FROM research_jobs WHERE status IN "
+                "('completed', 'incomplete', 'failed', 'cancelled') "
+                "AND updated_at_ms <= ? AND (delivery_status = 'delivered' OR NOT EXISTS "
+                "(SELECT 1 FROM publications p WHERE p.job_id = research_jobs.job_id)) "
+                "AND NOT EXISTS (SELECT 1 FROM research_attempts a "
+                "WHERE a.job_id = research_jobs.job_id "
+                "AND a.state IN ('dispatched', 'unknown')) ORDER BY updated_at_ms, job_id",
+                (cutoff,),
+            ).fetchall()
+            for row in rows:
+                job_id = str(row["job_id"])
+                runtime.db.execute(
+                    "INSERT INTO research_job_tombstones "
+                    "(owner_id, action_id, job_id, request_hash, expired_at_ms, purged_at_ms) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        row["owner_id"],
+                        row["action_id"],
+                        job_id,
+                        row["request_hash"],
+                        row["updated_at_ms"],
+                        now,
+                    ),
+                )
+                runtime.db.execute("DELETE FROM publication_deliveries WHERE job_id = ?", (job_id,))
+                runtime.db.execute("DELETE FROM review_records WHERE job_id = ?", (job_id,))
+                runtime.db.execute("DELETE FROM publications WHERE job_id = ?", (job_id,))
+                runtime.db.execute("DELETE FROM editorial_revisions WHERE job_id = ?", (job_id,))
+                runtime.db.execute("DELETE FROM source_extractions WHERE job_id = ?", (job_id,))
+                runtime.db.execute("DELETE FROM source_blobs WHERE job_id = ?", (job_id,))
+                runtime.db.execute("DELETE FROM research_attempts WHERE job_id = ?", (job_id,))
+                runtime.db.execute("DELETE FROM research_jobs WHERE job_id = ?", (job_id,))
+            runtime.db.commit()
+        except BaseException:
+            runtime.db.rollback()
+            raise
+    return len(rows)
+
+
 async def cancel_research_job(runtime: Runtime, owner_id: str, job_id: str) -> dict[str, Any]:
     owner = validate_owner_id(owner_id)
     now = unix_ms()
-    cancel_task = False
     async with runtime.db_lock:
         row = runtime.db.execute(
             "SELECT status, phase, revision, cancel_requested FROM research_jobs "
@@ -4517,11 +5136,95 @@ async def cancel_research_job(runtime: Runtime, owner_id: str, job_id: str) -> d
                 ),
             ).rowcount
             runtime.db.commit()
-            cancel_task = changed == 1 and not terminal
-    task = runtime.job_tasks.get(job_id)
-    if cancel_task and task is not None and not task.done():
-        task.cancel()
+            if changed != 1:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="job changed")
     return await research_job_status(runtime, owner_id, job_id)
+
+
+async def cancel_research_action(
+    runtime: Runtime,
+    owner_id: str,
+    action_id: str,
+    request: ResearchJobRequest,
+) -> dict[str, Any]:
+    validate_job_request(request)
+    owner = validate_owner_id(owner_id)
+    if request.action_id != action_id or not re.fullmatch(r"[A-Za-z0-9._:-]{1,200}", action_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="action_id request conflict",
+        )
+    request_hash = query_hash(canonical_job_request(request))
+    now = unix_ms()
+    async with runtime.db_lock:
+        try:
+            runtime.db.execute("BEGIN IMMEDIATE")
+            prior = runtime.db.execute(
+                "SELECT request_hash, job_id, cancel_status FROM research_action_cancellations "
+                "WHERE owner_id = ? AND action_id = ?",
+                (owner, action_id),
+            ).fetchone()
+            if prior is not None:
+                if prior["request_hash"] != request_hash:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="action_id request conflict",
+                    )
+                response = {
+                    "action_id": action_id,
+                    "status": str(prior["cancel_status"]),
+                    "job_id": prior["job_id"],
+                }
+                runtime.db.commit()
+                return response
+            job = runtime.db.execute(
+                "SELECT job_id, request_hash, status, phase, revision FROM research_jobs "
+                "WHERE owner_id = ? AND action_id = ?",
+                (owner, action_id),
+            ).fetchone()
+            if job is not None and job["request_hash"] != request_hash:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="action_id request conflict",
+                )
+            job_id = None if job is None else str(job["job_id"])
+            cancel_status = "cancelled"
+            if job is not None and job["status"] not in {
+                "completed",
+                "incomplete",
+                "failed",
+                "cancelled",
+            }:
+                terminal = job["status"] in {"queued", "paused"}
+                changed = runtime.db.execute(
+                    "UPDATE research_jobs SET cancel_requested = 1, status = ?, phase = ?, "
+                    "revision = revision + 1, updated_at_ms = ? "
+                    "WHERE job_id = ? AND owner_id = ? AND revision = ? AND status = ?",
+                    (
+                        "cancelled" if terminal else "running",
+                        None if terminal else job["phase"],
+                        now,
+                        job_id,
+                        owner,
+                        int(job["revision"]),
+                        str(job["status"]),
+                    ),
+                ).rowcount
+                if changed != 1:
+                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="job changed")
+                cancel_status = "cancelled" if terminal else "cancel_requested"
+            runtime.db.execute(
+                "INSERT INTO research_action_cancellations "
+                "(owner_id, action_id, request_hash, job_id, cancel_status, created_at_ms) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (owner, action_id, request_hash, job_id, cancel_status, now),
+            )
+            runtime.db.commit()
+        except BaseException:
+            if runtime.db.in_transaction:
+                runtime.db.rollback()
+            raise
+    return {"action_id": action_id, "status": cancel_status, "job_id": job_id}
 
 
 async def resume_research_job(
@@ -4673,6 +5376,14 @@ async def save_research_state(
     now = unix_ms()
     payload = json.dumps(state_value, ensure_ascii=False, separators=(",", ":"))
     async with runtime.db_lock:
+        prior = runtime.db.execute(
+            "SELECT research_json FROM research_jobs WHERE job_id = ?", (job_id,)
+        ).fetchone()
+        if prior is None:
+            raise IntegrityError("research job disappeared")
+        ensure_storage_capacity(
+            runtime, max(0, logical_bytes(payload) - logical_bytes(str(prior["research_json"])))
+        )
         runtime.db.execute(
             "UPDATE research_jobs SET research_json = ?, phase = ?, "
             "revision = revision + 1, updated_at_ms = ? "
@@ -4727,6 +5438,28 @@ async def update_attempt(
         raise IntegrityError("provider returned invalid safe metrics")
     now = unix_ms()
     async with runtime.db_lock:
+        try:
+            ensure_storage_capacity(runtime, logical_bytes(result_receipt))
+        except StorageQuotaExceeded:
+            runtime.db.execute(
+                "UPDATE research_attempts SET state = 'known_failed', http_status = ?, "
+                "finish_reason = ?, prompt_tokens = ?, completion_tokens = ?, total_tokens = ?, "
+                "response_bytes = ?, updated_at_ms = ? "
+                "WHERE attempt_id = ? AND job_id = ? AND state = 'dispatched'",
+                (
+                    outcome.http_status,
+                    outcome.finish_reason,
+                    outcome.prompt_tokens,
+                    outcome.completion_tokens,
+                    outcome.total_tokens,
+                    outcome.response_bytes,
+                    now,
+                    attempt_id,
+                    job_id,
+                ),
+            )
+            runtime.db.commit()
+            raise
         runtime.db.execute(
             "UPDATE research_attempts SET state = ?, http_status = ?, finish_reason = ?, "
             "prompt_tokens = ?, completion_tokens = ?, total_tokens = ?, response_bytes = ?, "
@@ -4776,6 +5509,16 @@ async def mark_dispatched_unknown(runtime: Runtime, job_id: str, attempt_id: str
         runtime.db.commit()
 
 
+async def job_cancel_requested(runtime: Runtime, job_id: str) -> bool:
+    async with runtime.db_lock:
+        row = runtime.db.execute(
+            "SELECT cancel_requested FROM research_jobs WHERE job_id = ?", (job_id,)
+        ).fetchone()
+    if row is None:
+        raise IntegrityError("research job disappeared")
+    return bool(row["cancel_requested"])
+
+
 async def invoke_job_model(
     runtime: Runtime,
     job_id: str,
@@ -4790,6 +5533,10 @@ async def invoke_job_model(
         raise JobIncomplete("request_not_admitted") from exc
     if len(body) > JOB_REQUEST_BYTES:
         raise JobIncomplete("request_not_admitted")
+    try:
+        input_tokens = count_fresh_prompt_tokens(system_prompt, user_prompt)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise JobIncomplete("request_not_admitted") from exc
     body_hash = hashlib.sha256(body).hexdigest()
     async with runtime.provider_lock:
         anchor_unix_ms = unix_ms()
@@ -4821,9 +5568,19 @@ async def invoke_job_model(
                 "SELECT 1 FROM research_attempts WHERE state = 'unknown' LIMIT 1"
             ).fetchone():
                 raise JobPaused()
+            accounting = verified_input_ceiling(
+                runtime.db, runtime.settings.model, runtime.settings.llm_base_url
+            )
+            if accounting is None:
+                raise JobIncomplete("request_not_admitted")
+            accounting_profile, input_ceiling = accounting
+            reservation = input_tokens + OUTPUT_RESERVE_TOKENS
+            if input_tokens > input_ceiling:
+                raise JobIncomplete("request_not_admitted")
             row = runtime.db.execute(
                 "SELECT status, cancel_requested, deadline_at_ms, attempts_used, "
-                "max_attempts, candidate_no FROM research_jobs WHERE job_id = ?",
+                "max_attempts, candidate_no, token_allowance, tokens_reserved "
+                "FROM research_jobs WHERE job_id = ?",
                 (job_id,),
             ).fetchone()
             if row is None:
@@ -4838,17 +5595,23 @@ async def invoke_job_model(
                 raise JobIncomplete("deadline_expired")
             if int(row["attempts_used"]) >= int(row["max_attempts"]):
                 raise JobIncomplete("attempt_budget_exhausted")
+            if int(row["tokens_reserved"]) + reservation > int(row["token_allowance"]):
+                raise JobIncomplete("request_not_admitted")
+            ensure_storage_capacity(runtime, logical_bytes(assignment_key, assignment_key))
             runtime.db.execute(
                 "INSERT INTO research_attempts (attempt_id, job_id, assignment, assignment_key, "
-                "candidate_no, "
+                "candidate_no, input_tokens_estimated, output_tokens_reserved, accounting_profile, "
                 "state, expires_at_ms, request_hash, created_at_ms, updated_at_ms) "
-                "VALUES (?, ?, ?, ?, ?, 'dispatched', ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'dispatched', ?, ?, ?, ?)",
                 (
                     attempt_id,
                     job_id,
                     assignment_key,
                     assignment_key,
                     int(row["candidate_no"]),
+                    input_tokens,
+                    OUTPUT_RESERVE_TOKENS,
+                    accounting_profile,
                     request_expiry,
                     body_hash,
                     anchor_unix_ms,
@@ -4857,8 +5620,9 @@ async def invoke_job_model(
             )
             runtime.db.execute(
                 "UPDATE research_jobs SET attempts_used = attempts_used + 1, "
-                "revision = revision + 1, updated_at_ms = ? WHERE job_id = ?",
-                (anchor_unix_ms, job_id),
+                "tokens_reserved = tokens_reserved + ?, revision = revision + 1, "
+                "updated_at_ms = ? WHERE job_id = ?",
+                (reservation, anchor_unix_ms, job_id),
             )
             runtime.db.commit()
         lease = AttemptLease(
@@ -4890,6 +5654,8 @@ async def invoke_job_model(
                 await update_attempt(runtime, job_id, attempt_id, completion, None)
                 raise JobIncomplete("assignment_result_invalid") from None
         await update_attempt(runtime, job_id, attempt_id, completion, receipt)
+        if await job_cancel_requested(runtime, job_id):
+            raise asyncio.CancelledError()
         if completion.outcome.state == "unknown":
             raise JobPaused()
         if completion.outcome.state != "succeeded":
@@ -4976,6 +5742,17 @@ async def store_source_blob(runtime: Runtime, job_id: str, source: FetchedSource
         ).fetchone()
         if int(used["used"]) + len(source.raw_bytes) > JOB_SOURCE_BYTES:
             raise JobIncomplete("source_storage_exhausted")
+        ensure_storage_capacity(
+            runtime,
+            logical_bytes(
+                source.canonical_url,
+                source.final_url,
+                source.title,
+                source.publisher,
+                source.media_type,
+                source.raw_bytes,
+            ),
+        )
         count = runtime.db.execute(
             "SELECT COUNT(*) AS count FROM source_blobs WHERE job_id = ?", (job_id,)
         ).fetchone()
@@ -5029,6 +5806,8 @@ async def store_source_extraction(
     extraction: ExtractedSource,
 ) -> None:
     text_bytes = extraction.extracted_text.encode()
+    page_map_json = json.dumps(extraction.page_map, separators=(",", ":"))
+    limitations_json = json.dumps(extraction.limitations, separators=(",", ":"))
     now = unix_ms()
     async with runtime.db_lock:
         used = runtime.db.execute(
@@ -5040,6 +5819,10 @@ async def store_source_extraction(
         ).fetchone()
         if int(used["used"]) + len(text_bytes) > JOB_SOURCE_BYTES:
             raise JobIncomplete("source_storage_exhausted")
+        ensure_storage_capacity(
+            runtime,
+            logical_bytes("runtime-v2", text_bytes, page_map_json, limitations_json),
+        )
         revision = runtime.db.execute(
             "SELECT COALESCE(MAX(revision), 0) + 1 AS revision FROM source_extractions "
             "WHERE job_id = ? AND source_id = ?",
@@ -5055,8 +5838,8 @@ async def store_source_extraction(
                 int(revision["revision"]),
                 extraction.extracted_text,
                 hashlib.sha256(text_bytes).hexdigest(),
-                json.dumps(extraction.page_map, separators=(",", ":")),
-                json.dumps(extraction.limitations, separators=(",", ":")),
+                page_map_json,
+                limitations_json,
             ),
         )
         runtime.db.execute(
@@ -5331,6 +6114,7 @@ async def insert_editorial_revision(
     )
     now = unix_ms()
     async with runtime.db_lock:
+        ensure_storage_capacity(runtime, logical_bytes(markdown, data_json, manifest_json))
         cursor = runtime.db.execute(
             "INSERT INTO editorial_revisions (job_id, candidate_no, revision_no, kind, "
             "unit_no, markdown, data_json, manifest_json, content_hash, created_at_ms) "
@@ -5775,6 +6559,7 @@ async def save_review_record(
         job_id, candidate_no, revision_id, stage, range_no, result_json
     )
     async with runtime.db_lock:
+        ensure_storage_capacity(runtime, logical_bytes(result_json))
         runtime.db.execute(
             "INSERT INTO review_records (job_id, candidate_no, draft_revision_id, stage, "
             "range_no, result_json, record_hash, created_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -6128,6 +6913,7 @@ async def publish_candidate(
     content_hash = hashlib.sha256(publication.encode()).hexdigest()
     now = unix_ms()
     async with runtime.db_lock:
+        ensure_storage_capacity(runtime, logical_bytes(publication))
         job = runtime.db.execute(
             "SELECT status, cancel_requested FROM research_jobs WHERE job_id = ?", (job_id,)
         ).fetchone()
@@ -6153,7 +6939,7 @@ async def publish_candidate(
         runtime.db.execute(
             "UPDATE research_jobs SET status = 'completed', phase = NULL, "
             "selected_publication_id = ?, best_revision_id = ?, quality_outcome = ?, "
-            "delivery_status = 'ready', error_code = NULL, gaps_json = ?, "
+            "delivery_status = 'pending', error_code = NULL, gaps_json = ?, "
             "revision = revision + 1, updated_at_ms = ? WHERE job_id = ?",
             (
                 publication_id,
@@ -6338,6 +7124,18 @@ async def execute_research_job(runtime: Runtime, job_id: str) -> None:
                 best_revision_id=None if best is None else best.revision_id,
                 gaps=research_state["gaps"],
             )
+    except StorageQuotaExceeded:
+        row = await load_job(runtime, job_id)
+        if row["status"] == "running":
+            await set_job_terminal(
+                runtime,
+                job_id,
+                "incomplete",
+                "storage_quota_exhausted",
+                quality_outcome=(None if best is None else best.quality_outcome),
+                best_revision_id=None if best is None else best.revision_id,
+                gaps=research_state["gaps"],
+            )
     except asyncio.CancelledError:
         row = await load_job(runtime, job_id)
         if row["status"] in {"running", "paused"}:
@@ -6387,6 +7185,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def build_app() -> FastAPI:
     app = FastAPI(title="Deep Research Runtime", version="1.0.0", lifespan=lifespan)
     bearer = HTTPBearer(auto_error=False)
+    operator_bearer = HTTPBearer(auto_error=False)
 
     async def require_api_key(
         credentials: HTTPAuthorizationCredentials | None = Depends(bearer),  # noqa: B008
@@ -6397,9 +7196,25 @@ def build_app() -> FastAPI:
         if not hmac.compare_digest(credentials.credentials.encode(), expected.encode()):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
 
+    async def require_operator_key(
+        credentials: HTTPAuthorizationCredentials | None = Depends(operator_bearer),  # noqa: B008
+    ) -> None:
+        if credentials is None or credentials.scheme.lower() != "bearer":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+        expected = get_runtime(app).settings.operator_api_key
+        if not hmac.compare_digest(credentials.credentials.encode(), expected.encode()):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+
     @app.get("/health", include_in_schema=False)
-    async def health() -> dict[str, str]:
-        return {"status": "ok"}
+    async def health() -> dict[str, Any]:
+        ready = await token_accounting_ready(get_runtime(app))
+        return {
+            "status": "ok" if ready else "not_ready",
+            "token_accounting": {
+                "ready": ready,
+                "reason": None if ready else "verified calibration receipt missing or stale",
+            },
+        }
 
     @app.post("/research/jobs", status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
     async def submit_job_endpoint(
@@ -6435,6 +7250,24 @@ def build_app() -> FastAPI:
     ) -> dict[str, Any]:
         return await cancel_research_job(get_runtime(app), owner, job_id)
 
+    @app.post("/research/actions/{action_id}/cancel", include_in_schema=False)
+    async def action_cancel_endpoint(
+        action_id: str,
+        body: ResearchJobRequest,
+        owner: Annotated[str, Header(alias="X-Research-Owner")],
+        _: None = Depends(require_api_key),
+    ) -> dict[str, Any]:
+        return await cancel_research_action(get_runtime(app), owner, action_id, body)
+
+    @app.post("/research/jobs/{job_id}/delivery", include_in_schema=False)
+    async def job_delivery_endpoint(
+        job_id: str,
+        body: DeliveryAckRequest,
+        owner: Annotated[str, Header(alias="X-Research-Owner")],
+        _: None = Depends(require_api_key),
+    ) -> dict[str, Any]:
+        return await acknowledge_research_delivery(get_runtime(app), owner, job_id, body)
+
     @app.post("/research/jobs/{job_id}/resume", include_in_schema=False)
     async def job_resume_endpoint(
         job_id: str,
@@ -6443,6 +7276,26 @@ def build_app() -> FastAPI:
         _: None = Depends(require_api_key),
     ) -> dict[str, Any]:
         return await resume_research_job(get_runtime(app), owner, job_id, body.revision)
+
+    @app.post("/internal/research/attempts/abandon", include_in_schema=False)
+    async def abandon_attempt_endpoint(
+        body: AbandonUnknownRequest,
+        _: None = Depends(require_operator_key),
+    ) -> dict[str, Any]:
+        return await abandon_unknown_attempt(get_runtime(app), body)
+
+    @app.post("/internal/research/retention/purge", include_in_schema=False)
+    async def purge_retention_endpoint(
+        _: None = Depends(require_operator_key),
+    ) -> dict[str, int]:
+        return {"purged_jobs": await purge_expired_jobs(get_runtime(app))}
+
+    @app.post("/internal/research/accounts/abandon", include_in_schema=False)
+    async def abandon_orphan_account_endpoint(
+        body: AbandonOrphanAccountRequest,
+        _: None = Depends(require_operator_key),
+    ) -> dict[str, Any]:
+        return await abandon_orphan_account_lease(get_runtime(app), body)
 
     return app
 

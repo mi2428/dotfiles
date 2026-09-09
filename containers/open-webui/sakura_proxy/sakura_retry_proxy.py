@@ -13,7 +13,9 @@ import json
 import logging
 import os
 import random
+import re
 import socket
+import sqlite3
 import ssl
 import threading
 import time
@@ -21,6 +23,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import SplitResult, urlsplit
 from uuid import uuid4
 
@@ -33,8 +36,6 @@ RESEARCH_PATH = "/research/v1/chat/completions"
 RESEARCH_MAX_REQUEST_BYTES = 64 * 1024
 RESEARCH_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 RESEARCH_MAX_DEADLINE_MS = 240_000
-# ponytail: process-local hold only; persist/reconcile account uncertainty before release.
-RESEARCH_UNKNOWN_QUARANTINE_SECONDS = 300.0
 RESEARCH_ATTEMPT_HEADER = "X-Sakura-Attempt-Id"
 RESEARCH_DEADLINE_HEADER = "X-Sakura-Deadline-Unix-Ms"
 RESEARCH_SEND_HEADER = "X-Sakura-Upstream-Send"
@@ -161,6 +162,8 @@ class Settings:
     retry_budget: float = 3200.0
     upstream_timeout: float = 420.0
     account_tokens: tuple[str, ...] = ()
+    account_ids: tuple[str, ...] = ()
+    account_db_path: str = ":memory:"
     research_api_key: str = ""
 
     def __post_init__(self) -> None:
@@ -173,6 +176,18 @@ class Settings:
             or self.retry_budget <= 0
         ):
             raise ValueError("Sakura timeout settings must be positive")
+        if self.account_tokens and (
+            len(self.account_ids) != len(self.account_tokens)
+            or len(set(self.account_ids)) != len(self.account_ids)
+            or any(
+                not re.fullmatch(r"[A-Za-z0-9._:@-]{1,200}", value)
+                for value in self.account_ids
+            )
+            or not self.account_db_path
+        ):
+            raise ValueError(
+                "stable account IDs and a shared database are required for every token"
+            )
         retry_waits = sum(
             min(self.max_backoff, self.base_backoff * (2**attempt)) + self.jitter
             for attempt in range(self.max_retries)
@@ -196,6 +211,12 @@ class Settings:
         )
         if not account_tokens:
             raise ValueError("SAKURA_AI_ACCOUNT_TOKENS must contain at least one token")
+        account_ids = tuple(
+            account_id.strip()
+            for account_id in os.getenv("SAKURA_AI_ACCOUNT_IDS", "").split(",")
+            if account_id.strip()
+        )
+        account_db_path = os.getenv("DEEP_RESEARCH_DB_PATH", "").strip()
         return cls(
             upstream_url=os.getenv("SAKURA_UPSTREAM_URL", defaults.upstream_url),
             max_retries=int(os.getenv("SAKURA_RETRY_MAX", defaults.max_retries)),
@@ -213,6 +234,8 @@ class Settings:
                 os.getenv("SAKURA_UPSTREAM_TIMEOUT_SECONDS", defaults.upstream_timeout)
             ),
             account_tokens=account_tokens,
+            account_ids=account_ids,
+            account_db_path=account_db_path,
             research_api_key=os.getenv("SAKURA_RESEARCH_API_KEY", "").strip(),
         )
 
@@ -231,20 +254,164 @@ def retry_delay_seconds(
 class TokenLease:
     slot: int
     token: str
+    account_id: str
+    lease_id: str
+
+
+class DuplicateLeaseError(RuntimeError):
+    """A durable research attempt was already admitted or sent."""
 
 
 class SharedTokenCooldown:
-    """Thread-safe token rotation with shared 429 cooldowns."""
+    """SQLite-backed account leases shared by normal and research requests."""
 
-    def __init__(self, tokens: tuple[str, ...]) -> None:
+    def __init__(
+        self,
+        tokens: tuple[str, ...],
+        account_ids: tuple[str, ...] = (),
+        db_path: str = ":memory:",
+    ) -> None:
+        if len(tokens) != len(account_ids):
+            raise ValueError("stable account IDs must map one-to-one to account tokens")
         self._tokens = tokens
+        self._account_ids = account_ids
         self._next_index = 0
-        self._cooldown_until = [0.0] * len(tokens)
-        self._in_flight = [False] * len(tokens)
         self._condition = threading.Condition()
+        if db_path != ":memory:":
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._db = sqlite3.connect(db_path, check_same_thread=False, timeout=5)
+        self._db.row_factory = sqlite3.Row
+        self._db.execute("PRAGMA journal_mode=WAL")
+        self._db.execute("PRAGMA busy_timeout=5000")
+        self._db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS account_admissions (
+                account_id TEXT PRIMARY KEY,
+                state TEXT NOT NULL CHECK(state IN ('available', 'cooldown', 'leased', 'send_intent', 'unknown')),
+                lease_id TEXT UNIQUE,
+                purpose TEXT,
+                cooldown_until_ms INTEGER NOT NULL DEFAULT 0,
+                updated_at_ms INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS account_admission_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id TEXT NOT NULL,
+                lease_id TEXT,
+                event TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                action_id TEXT,
+                risk_ack TEXT,
+                recorded_at_ms INTEGER NOT NULL
+            );
+            """
+        )
+        audit_columns = {
+            str(row["name"])
+            for row in self._db.execute("PRAGMA table_info(account_admission_audit)")
+        }
+        if "risk_ack" not in audit_columns:
+            self._db.execute(
+                "ALTER TABLE account_admission_audit ADD COLUMN risk_ack TEXT"
+            )
+        self._db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS account_admission_operator_action "
+            "ON account_admission_audit(action_id) WHERE action_id IS NOT NULL"
+        )
+        now = self._unix_ms()
+        self._db.execute("BEGIN IMMEDIATE")
+        try:
+            unresolved = self._db.execute(
+                "SELECT account_id FROM account_admissions "
+                "WHERE state = 'unknown' AND account_id NOT IN "
+                f"({','.join('?' for _ in account_ids) or "''"})",
+                account_ids,
+            ).fetchone()
+            if unresolved is not None:
+                raise ValueError(
+                    "configured account IDs omit an unresolved durable account"
+                )
+            for account_id in account_ids:
+                self._db.execute(
+                    "INSERT OR IGNORE INTO account_admissions "
+                    "(account_id, state, cooldown_until_ms, updated_at_ms) "
+                    "VALUES (?, 'available', 0, ?)",
+                    (account_id, now),
+                )
+            interrupted = self._db.execute(
+                "SELECT account_id, lease_id FROM account_admissions "
+                "WHERE account_id IN "
+                f"({','.join('?' for _ in account_ids) or "''"}) "
+                "AND state IN ('leased', 'send_intent')",
+                account_ids,
+            ).fetchall()
+            self._db.execute(
+                "UPDATE account_admissions SET state = 'unknown', updated_at_ms = ? "
+                "WHERE account_id IN "
+                f"({','.join('?' for _ in account_ids) or "''"}) "
+                "AND state IN ('leased', 'send_intent')",
+                (now, *account_ids),
+            )
+            for row in interrupted:
+                self._audit(
+                    str(row["account_id"]),
+                    None if row["lease_id"] is None else str(row["lease_id"]),
+                    "restart_unknown",
+                    now,
+                )
+            self._db.commit()
+        except BaseException:
+            self._db.rollback()
+            self._db.close()
+            raise
+
+    @staticmethod
+    def _unix_ms() -> int:
+        return time.time_ns() // 1_000_000
+
+    def _audit(
+        self, account_id: str, lease_id: str | None, event: str, now: int
+    ) -> None:
+        self._db.execute(
+            "INSERT INTO account_admission_audit "
+            "(account_id, lease_id, event, actor, recorded_at_ms) VALUES (?, ?, ?, 'proxy', ?)",
+            (account_id, lease_id, event, now),
+        )
+
+    @property
+    def _in_flight(self) -> list[bool]:
+        rows = {
+            str(row["account_id"]): str(row["state"])
+            for row in self._db.execute(
+                "SELECT account_id, state FROM account_admissions"
+            )
+        }
+        return [
+            rows.get(account_id) in {"leased", "send_intent"}
+            for account_id in self._account_ids
+        ]
+
+    @property
+    def _cooldown_until(self) -> list[float]:
+        rows = {
+            str(row["account_id"]): int(row["cooldown_until_ms"])
+            for row in self._db.execute(
+                "SELECT account_id, cooldown_until_ms FROM account_admissions"
+            )
+        }
+        now_ms = self._unix_ms()
+        now_monotonic = time.monotonic()
+        return [
+            now_monotonic + max(0, rows.get(account_id, 0) - now_ms) / 1000
+            for account_id in self._account_ids
+        ]
 
     def acquire(
-        self, deadline: float, is_cancelled: Callable[[], bool]
+        self,
+        deadline: float,
+        is_cancelled: Callable[[], bool],
+        *,
+        lease_id: str | None = None,
+        purpose: str = "normal",
     ) -> tuple[TokenLease | None, float]:
         if not self._tokens:
             return None, 0.0
@@ -254,54 +421,169 @@ class SharedTokenCooldown:
                 if is_cancelled():
                     return None, waited
                 now = time.monotonic()
-                for offset in range(len(self._tokens)):
-                    slot = (self._next_index + offset) % len(self._tokens)
-                    if not self._in_flight[slot] and self._cooldown_until[slot] <= now:
-                        self._in_flight[slot] = True
-                        self._next_index = (slot + 1) % len(self._tokens)
-                        return TokenLease(slot, self._tokens[slot]), waited
+                now_ms = self._unix_ms()
+                try:
+                    self._db.execute("BEGIN IMMEDIATE")
+                    if purpose == "research" and lease_id is not None:
+                        duplicate = self._db.execute(
+                            "SELECT 1 FROM account_admissions WHERE lease_id = ? "
+                            "UNION ALL SELECT 1 FROM account_admission_audit "
+                            "WHERE lease_id = ? AND event = 'send_intent' LIMIT 1",
+                            (lease_id, lease_id),
+                        ).fetchone()
+                        if duplicate is not None:
+                            raise DuplicateLeaseError(
+                                "research attempt was already admitted"
+                            )
+                    acquired: TokenLease | None = None
+                    for offset in range(len(self._tokens)):
+                        slot = (self._next_index + offset) % len(self._tokens)
+                        account_id = self._account_ids[slot]
+                        row = self._db.execute(
+                            "SELECT state, cooldown_until_ms FROM account_admissions "
+                            "WHERE account_id = ?",
+                            (account_id,),
+                        ).fetchone()
+                        available = row is not None and (
+                            row["state"] == "available"
+                            or (
+                                row["state"] == "cooldown"
+                                and int(row["cooldown_until_ms"]) <= now_ms
+                            )
+                        )
+                        current_lease_id = lease_id or uuid4().hex
+                        changed = (
+                            self._db.execute(
+                                "UPDATE account_admissions SET state = 'leased', lease_id = ?, "
+                                "purpose = ?, cooldown_until_ms = 0, updated_at_ms = ? "
+                                "WHERE account_id = ? AND (state = 'available' OR "
+                                "(state = 'cooldown' AND cooldown_until_ms <= ?))",
+                                (current_lease_id, purpose, now_ms, account_id, now_ms),
+                            ).rowcount
+                            if available
+                            else 0
+                        )
+                        if changed == 1:
+                            acquired = TokenLease(
+                                slot,
+                                self._tokens[slot],
+                                account_id,
+                                current_lease_id,
+                            )
+                            break
+                    self._db.commit()
+                except BaseException:
+                    if self._db.in_transaction:
+                        self._db.rollback()
+                    raise
+                if acquired is not None:
+                    self._next_index = (acquired.slot + 1) % len(self._tokens)
+                    return acquired, waited
                 remaining = deadline - now
                 if remaining <= 0:
                     return None, waited
-                available_slots = [
-                    slot for slot, busy in enumerate(self._in_flight) if not busy
-                ]
-                shared_wait = (
-                    min(self._cooldown_until[slot] for slot in available_slots) - now
-                    if available_slots
-                    else remaining
-                )
-                pause = min(max(0.0, shared_wait), remaining, 0.1)
-                if pause <= 0:
-                    continue
+                pause = min(remaining, 0.1)
                 start = time.monotonic()
                 self._condition.wait(timeout=pause)
                 waited += time.monotonic() - start
 
     def release(self, lease: TokenLease) -> None:
         with self._condition:
-            if self._in_flight[lease.slot]:
-                self._in_flight[lease.slot] = False
+            now = self._unix_ms()
+            row = self._db.execute(
+                "SELECT cooldown_until_ms FROM account_admissions "
+                "WHERE account_id = ? AND lease_id = ? AND state IN ('leased', 'send_intent')",
+                (lease.account_id, lease.lease_id),
+            ).fetchone()
+            if row is not None:
+                cooldown_until = int(row["cooldown_until_ms"])
+                self._db.execute(
+                    "UPDATE account_admissions SET state = ?, lease_id = NULL, purpose = NULL, "
+                    "updated_at_ms = ? WHERE account_id = ? AND lease_id = ?",
+                    (
+                        "cooldown" if cooldown_until > now else "available",
+                        now,
+                        lease.account_id,
+                        lease.lease_id,
+                    ),
+                )
+                self._db.commit()
                 self._condition.notify_all()
 
     def schedule(self, slot: int, delay: float) -> float:
         with self._condition:
-            scheduled = self._schedule_unlocked(slot, delay)
+            scheduled = self._schedule_unlocked(self._account_ids[slot], delay)
             self._condition.notify_all()
             return scheduled
 
     def schedule_and_release(self, lease: TokenLease, delay: float) -> float:
         with self._condition:
-            scheduled = self._schedule_unlocked(lease.slot, delay)
-            self._in_flight[lease.slot] = False
+            scheduled = self._schedule_unlocked(lease.account_id, delay)
+            self.release(lease)
             self._condition.notify_all()
             return scheduled
 
-    def _schedule_unlocked(self, slot: int, delay: float) -> float:
-        self._cooldown_until[slot] = max(
-            self._cooldown_until[slot], time.monotonic() + max(0.0, delay)
+    def _schedule_unlocked(self, account_id: str, delay: float) -> float:
+        now = self._unix_ms()
+        until = now + int(max(0.0, delay) * 1000)
+        self._db.execute(
+            "UPDATE account_admissions SET state = CASE WHEN state = 'available' "
+            "THEN 'cooldown' ELSE state END, "
+            "cooldown_until_ms = MAX(cooldown_until_ms, ?), "
+            "updated_at_ms = ? WHERE account_id = ?",
+            (until, now, account_id),
         )
-        return max(0.0, self._cooldown_until[slot] - time.monotonic())
+        self._db.commit()
+        row = self._db.execute(
+            "SELECT cooldown_until_ms FROM account_admissions WHERE account_id = ?",
+            (account_id,),
+        ).fetchone()
+        return max(0.0, (int(row["cooldown_until_ms"]) - self._unix_ms()) / 1000)
+
+    def mark_send_intent(self, lease: TokenLease) -> None:
+        with self._condition:
+            now = self._unix_ms()
+            changed = self._db.execute(
+                "UPDATE account_admissions SET state = 'send_intent', updated_at_ms = ? "
+                "WHERE account_id = ? AND lease_id = ? AND state = 'leased'",
+                (now, lease.account_id, lease.lease_id),
+            ).rowcount
+            if changed != 1:
+                self._db.rollback()
+                raise RuntimeError("durable account lease changed before send")
+            self._audit(lease.account_id, lease.lease_id, "send_intent", now)
+            self._db.commit()
+
+    def mark_unknown(self, lease: TokenLease) -> None:
+        with self._condition:
+            now = self._unix_ms()
+            changed = self._db.execute(
+                "UPDATE account_admissions SET state = 'unknown', updated_at_ms = ? "
+                "WHERE account_id = ? AND lease_id = ? AND state IN ('leased', 'send_intent')",
+                (now, lease.account_id, lease.lease_id),
+            ).rowcount
+            if changed == 1:
+                self._audit(lease.account_id, lease.lease_id, "unknown", now)
+                self._db.commit()
+            self._condition.notify_all()
+
+    def state(self, account_id: str) -> sqlite3.Row | None:
+        with self._condition:
+            return self._db.execute(
+                "SELECT * FROM account_admissions WHERE account_id = ?", (account_id,)
+            ).fetchone()
+
+    def close(self) -> None:
+        with self._condition:
+            self._db.close()
+
+
+class SakuraProxyServer(ThreadingHTTPServer):
+    def server_close(self) -> None:
+        token_state = getattr(self.RequestHandlerClass, "token_state", None)
+        if isinstance(token_state, SharedTokenCooldown):
+            token_state.close()
+        super().server_close()
 
 
 class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
@@ -466,9 +748,16 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             if body is None or not self._valid_research_body(body):
                 self._research_error(400, attempt_id, "not-sent")
                 return
-            lease, _shared_wait = type(self).token_state.acquire(
-                deadline, self._client_disconnected
-            )
+            try:
+                lease, _shared_wait = type(self).token_state.acquire(
+                    deadline,
+                    self._client_disconnected,
+                    lease_id=attempt_id,
+                    purpose="research",
+                )
+            except DuplicateLeaseError:
+                self._research_error(409, attempt_id, "not-sent")
+                return
             if lease is None:
                 self._research_error(504, attempt_id, "not-sent")
                 return
@@ -509,6 +798,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             ):
                 raise TimeoutError("research connect deadline")
             upstream_connection.sock.settimeout(remaining)
+            type(self).token_state.mark_send_intent(lease)
             sent = True
             upstream_connection.request(
                 "POST",
@@ -554,9 +844,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             watchdog.cancel()
             if lease is not None:
                 if unknown:
-                    type(self).token_state.schedule_and_release(
-                        lease, RESEARCH_UNKNOWN_QUARANTINE_SECONDS
-                    )
+                    type(self).token_state.mark_unknown(lease)
                 else:
                     type(self).token_state.release(lease)
             if response is not None:
@@ -934,7 +1222,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         if self.headers.get(OPENWEBUI_MODE_HEADER, "").casefold() == "true":
             headers["Accept-Encoding"] = "identity"
         lease, shared_wait = type(self).token_state.acquire(
-            deadline, self._client_disconnected
+            deadline, self._client_disconnected, purpose="normal"
         )
         if self._client_disconnected():
             if lease is not None:
@@ -948,7 +1236,11 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             headers["Authorization"] = f"Bearer {lease.token}"
         if body:
             headers["Content-Length"] = str(len(body))
+        send_intent = False
         try:
+            if lease is not None:
+                type(self).token_state.mark_send_intent(lease)
+                send_intent = True
             connection.request(
                 self.command,
                 f"{self.upstream.path.rstrip('/')}{self.path}",
@@ -958,7 +1250,10 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             return connection, connection.getresponse(), lease, shared_wait
         except Exception:
             if lease is not None:
-                type(self).token_state.release(lease)
+                if send_intent:
+                    type(self).token_state.mark_unknown(lease)
+                else:
+                    type(self).token_state.release(lease)
             connection.close()
             raise
 
@@ -1089,10 +1384,12 @@ def make_server(
         {
             "settings": settings,
             "upstream": upstream,
-            "token_state": SharedTokenCooldown(settings.account_tokens),
+            "token_state": SharedTokenCooldown(
+                settings.account_tokens, settings.account_ids, settings.account_db_path
+            ),
         },
     )
-    return ThreadingHTTPServer(address, handler)
+    return SakuraProxyServer(address, handler)
 
 
 def main() -> None:
