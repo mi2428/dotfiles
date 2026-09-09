@@ -1530,6 +1530,14 @@ def passage_ids(markdown: str) -> set[str]:
     return set(re.findall(r"S\d+:P\d+-\d+", markdown))
 
 
+def redact_unadmitted_passage_ids(text: str, admitted: set[str]) -> str:
+    return re.sub(
+        r"S\d+:P\d+-\d+",
+        lambda match: match.group(0) if match.group(0) in admitted else "[passage omitted]",
+        text,
+    )
+
+
 def substantive_character_count(markdown: str) -> int:
     visible = markdown_without_code(markdown)
     unique: set[str] = set()
@@ -4282,25 +4290,28 @@ async def create_raw_candidate(
         selected_prior_blocks = [
             item["lookup_block"] for item in unit_states if item["unit"] in outline.context_units
         ]
-        prompt = json.dumps(
-            {
-                "request": canonical_job_request(request),
-                "candidate": candidate_no,
-                "unit_scope": outline.model_dump(),
-                "ledger": ledger.model_dump(),
-                "research_plan": research_state["plan"],
-                "evidence_assessment": research_state["assessment"],
-                "source_passages": [
-                    {**item, "text": bounded_prompt_text(item["text"])}
-                    for item in passages
-                    if item["id"] in set(outline.passage_ids)
-                ],
-                "prior_handoffs": prior_handoffs,
-                "selected_prior_blocks": selected_prior_blocks,
-                "failure_feedback": list(failure_feedback),
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
+        prompt = redact_unadmitted_passage_ids(
+            json.dumps(
+                {
+                    "request": canonical_job_request(request),
+                    "candidate": candidate_no,
+                    "unit_scope": outline.model_dump(),
+                    "ledger": ledger.model_dump(),
+                    "research_plan": research_state["plan"],
+                    "evidence_assessment": research_state["assessment"],
+                    "source_passages": [
+                        {**item, "text": bounded_prompt_text(item["text"])}
+                        for item in passages
+                        if item["id"] in admitted_passages
+                    ],
+                    "prior_handoffs": prior_handoffs,
+                    "selected_prior_blocks": selected_prior_blocks,
+                    "failure_feedback": list(failure_feedback),
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            admitted_passages,
         )
         system = (
             UNTRUSTED_JOB_DATA_RULE

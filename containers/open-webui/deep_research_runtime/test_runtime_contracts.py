@@ -752,8 +752,34 @@ class RuntimeContractTests(RuntimeTestCase):
                 manifest=rt.block_manifest(blocks),
                 next_phase="writing",
             )
-            resumed_provider = FakeProvider([completion(unit_markdown(2, "S1:P0-80"))])
-            with patch.object(rt, "complete_research", new=resumed_provider):
+            ledger = ledger.model_copy(
+                update={
+                    "outline": [
+                        ledger.outline[0],
+                        ledger.outline[1].model_copy(update={"passage_ids": ["S2:P0-80"]}),
+                    ]
+                }
+            )
+            resumed_provider = FakeProvider([completion(unit_markdown(2, "S2:P0-80"))])
+            with (
+                patch.object(rt, "complete_research", new=resumed_provider),
+                patch.object(
+                    rt,
+                    "passage_workspace",
+                    new=AsyncMock(
+                        return_value=[
+                            {
+                                "id": "S2:P0-80",
+                                "text": "admitted evidence",
+                                "checklist_ids": ["C1"],
+                                "origin": "example.com",
+                                "authority": "authoritative",
+                                "title": "Source 2",
+                            }
+                        ]
+                    ),
+                ),
+            ):
                 await rt.create_raw_candidate(
                     self.runtime,
                     submitted["job_id"],
@@ -764,6 +790,9 @@ class RuntimeContractTests(RuntimeTestCase):
                     [],
                 )
             self.assertEqual(len(resumed_provider.bodies), 1)
+            resumed_body = resumed_provider.bodies[0].decode()
+            self.assertNotIn("S1:P0-80", resumed_body)
+            self.assertIn("S2:P0-80", resumed_body)
             self.assertEqual(
                 self.runtime.db.execute(
                     "SELECT COUNT(*) FROM editorial_revisions "
