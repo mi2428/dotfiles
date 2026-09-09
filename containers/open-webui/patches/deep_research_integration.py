@@ -62,7 +62,7 @@ def query_hash(query: str) -> str:
 
 def _signing_key(key: str | None = None) -> bytes:
     if key is None:
-        from open_webui.config import WEBUI_SECRET_KEY
+        from open_webui.env import WEBUI_SECRET_KEY
 
         key = WEBUI_SECRET_KEY
     if not isinstance(key, str) or not key:

@@ -19,6 +19,7 @@ if TEST_ENABLED:
     from open_webui.models.notes import Note, NoteForm, Notes
     from open_webui.utils.deep_research_integration import (
         MARKER,
+        action_signature,
         note_id_for,
         persist_deep_research_note,
         report_title,
@@ -61,6 +62,17 @@ class DeepResearchNoteDBTests(unittest.IsolatedAsyncioTestCase):
                 )
 
             owner_id = "owner-db"
+            self.assertEqual(
+                len(
+                    action_signature(
+                        owner_id=owner_id,
+                        chat_id="chat-db",
+                        action_id="action-db",
+                        request_hash="0" * 64,
+                    )
+                ),
+                64,
+            )
             job_id = "job-db"
             publication_id = "publication-db"
             query = "公開情報を調査してください。"

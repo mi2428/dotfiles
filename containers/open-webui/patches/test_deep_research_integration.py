@@ -90,6 +90,7 @@ def module_tree(
         for name in (
             "open_webui",
             "open_webui.config",
+            "open_webui.env",
             "open_webui.internal",
             "open_webui.internal.db",
             "open_webui.models",
@@ -104,7 +105,7 @@ def module_tree(
             "fastapi",
         )
     }
-    modules["open_webui.config"].WEBUI_SECRET_KEY = "test-signing-key"
+    modules["open_webui.env"].WEBUI_SECRET_KEY = "test-signing-key"
     modules["open_webui.models.chats"].Chats = chats
     modules["open_webui.utils.deep_research_integration"] = integration
     modules["fastapi"].HTTPException = HTTPException
