@@ -3,8 +3,9 @@
 ## 1. Status and scope
 
 This document defines the target design. A first runtime implementation now exists
-in this branch; Section 12.9 distinguishes implemented behavior and offline checks
-from the remaining delivery and production gates. It has not been deployed.
+in this branch; Sections 12.9 and 12.10 distinguish the initial runtime slice and
+the completed pre-E2E integration from live verification and production gates.
+The new integration has not been deployed or subjected to full E2E testing.
 **Decision: use one author with source-grounded review and bounded correction
 for the initial implementation. Do not make independent chapter contributors
 the default.** The magazine-style candidate was implemented as a limited
@@ -498,9 +499,10 @@ a crash between that commit and observable completion is conservatively uncertai
   idempotency parameter is not evidence of a completed or failed execution.
 - A known, fully received but invalid model result consumes budget. A bounded
   corrective assignment may be authorized by policy; it is not a transport retry.
-- Cancellation prevents new dispatches, requests in-flight cancellation, and
-  preserves accepted artifacts. Report uncertainty about in-flight provider work
-  rather than returning a false zero-cost cancellation guarantee.
+- Cancellation prevents new dispatches and preserves accepted artifacts. An
+  already-sent request is observed within its original bounded deadline rather
+  than assuming socket closure stops the provider. Report remaining uncertainty,
+  not a false zero-cost cancellation guarantee.
 
 Failure of delivery or Note persistence does not rerun research or invalidate an
 already committed publication. Retry only the idempotent delivery operation.
@@ -508,12 +510,12 @@ already committed publication. Retry only the idempotent delivery operation.
 When provider reconciliation is unavailable, an authenticated explicit approval
 may name an exact unknown attempt and acknowledge possible duplicate execution
 and charges. Atomically record the approving actor and revision, mark the old
-attempt `abandoned_unresolved`, keep its full conservative charge against the
-budget, and reserve at most one replacement with a new attempt ID linked to it.
-This neither proves the old call stopped nor refunds its budget. Account admission
-must account for uncertain in-flight work; do not silently release its lease and
-claim confirmed provider concurrency. The approval and replacement reservation
-are idempotent and cannot extend the original run deadline or authorized budget.
+attempt `abandoned_unresolved`, retain its reservation, and terminate the affected
+job as incomplete. The implemented policy does not replace that request inside
+the old job. Further research requires a new explicit user action and job. This
+neither proves the old call stopped nor refunds its budget. The operator's
+acknowledgement and the matching account-lease resolution are audited and
+idempotent; they must not be described as confirmed provider completion.
 Unacknowledged unknown attempts continue to block resumption.
 
 ## 7. Open WebUI integration
@@ -525,9 +527,10 @@ must deliver final Markdown without a second rewriting model pass.
 
 Use a **managed native Open WebUI Pipe Function** as the dedicated research model.
 It submits the job, polls short status requests, emits bounded phase-change status
-events, retrieves the publication, persists the private Note, and yields the exact
-final Markdown. This uses the existing backend Pipe/async-generator interface;
-it does not require a new frontend or an LLM to select the runtime tool.
+events, retrieves the publication, persists the private Note, and returns the exact
+final Markdown. It uses the native Pipe and existing backend-task interface, not
+an LLM-driven tool router. A small pinned frontend patch adds same-action
+reattachment to that existing UI; it is not a replacement frontend.
 
 Selecting a Pipe alone is insufficient: in the pinned Open WebUI build, common
 payload processing runs before Pipe dispatch. Context compaction and file-query
@@ -544,11 +547,11 @@ separate path. Add a small **server-resolved, model-scoped guard**:
 - Preserve authentication, model access control, request validation, and required
   security checks. Do not disable ordinary chat's compaction or other features.
 
-This is the target **zero UI-side generation calls** contract; runtime inference
-is metered separately. The guard is not implemented by this specification, and
-must be tested with a long saved chat and a newly created chat. Existing private
-middleware patches are digest/version pinned; new guards must fail closed when
-their expected source shape changes.
+This is the **zero UI-side generation calls** contract; runtime inference is
+metered separately. The model-scoped guard and new/saved-chat fixtures are now
+implemented as described in Section 12.10. Source/image fingerprints and exact
+patch counts fail closed on upstream drift. Full live/browser verification remains
+an E2E requirement, not a claim derived from these fixtures.
 
 Open WebUI already executes chat processing in backend tasks: a browser reload
 is not equivalent to cancellation of the backend task. Conversely, those tasks
@@ -564,13 +567,15 @@ browser holds one multi-hour HTTP request.
 | `GET /research/jobs/{id}` | Authorized structured phase/progress/counters/gaps; no raw reasoning, secrets, or private diagnostics |
 | `GET /research/jobs/{id}/result` | Authorized immutable publication or explicitly incomplete package; unavailable results are not reported as completed |
 | `POST /research/jobs/{id}/cancel` | Idempotently stop new dispatch and request cancellation; preserve durable artifacts |
-| `POST /research/jobs/{id}/resume` | Explicit, revision-checked resumption; reject expired budgets and unacknowledged unknown attempts; optional exact-attempt replacement approval follows Section 6 |
+| `POST /research/jobs/{id}/resume` | Explicit, revision-checked resumption; reject expired budgets and unacknowledged unknown attempts; abandonment follows Section 6 and does not replay the old attempt |
+| `POST /research/actions/{action_id}/cancel` | Cancel the matching owner/action/request without creating a job; retain a cancellation tombstone if submission has not arrived |
+| `POST /research/jobs/{id}/delivery` | Idempotently acknowledge the exact selected publication/hash/private Note identity after persistence |
 
 The first runtime implementation exposes these private job endpoints and removes
 the old synchronous `/research` endpoint. They are deliberately excluded from
 OpenAPI tool discovery: the former generic LLM-driven adapter must not manufacture
 the owner header while inheriting a service credential. The managed Pipe migration
-is still required. Use an authenticated adapter identity plus a trusted owner
+is implemented but has not been applied to the running deployment. Use an authenticated adapter identity plus a trusted owner
 binding; an unpredictable job ID is not authorization. Never trust an owner ID
 supplied in model-generated text.
 
@@ -606,10 +611,12 @@ never resumes execution. An unavailable result returns `202`; a completed
 publication and an incomplete package carry distinct explicit outcomes. Poll
 with bounded intervals and a finite adapter deadline, respecting `Retry-After`.
 
-On Pipe task cancellation, request runtime cancellation using a short, shielded,
-best-effort call and then propagate cancellation. This is not proof that an
-upstream inference stopped. Browser refresh does not necessarily cancel the Pipe;
-do not equate loss of a progress subscription with a confirmed cancellation.
+Only an authenticated explicit Stop requests runtime cancellation. Pipe observer
+cancellation or shutdown propagates cancellation without inventing a Stop action.
+The server Stop route uses cancel-by-action, including before a job ID has been
+returned; it must never submit new research merely to find something to cancel.
+This is not proof that an upstream inference stopped. Browser refresh does not
+necessarily cancel the Pipe; observation loss is not provider cancellation.
 After an Open WebUI restart, explicit reattachment must find the original job;
 automatic reattachment and Stop-button propagation require integration tests.
 After a runtime restart, resumption is explicit and checks unknown attempts and
@@ -628,10 +635,9 @@ after a dropped connection. Note publication, if enabled, uses an idempotent
 owner/job/publication mapping. Failure to create the Note is reported as a
 delivery problem, not disguised as successful persistence.
 
-The existing direct-tool Note hook does not apply automatically to Pipe output.
-The Pipe must call the persistence helper explicitly before announcing successful
-delivery. Extend Note identity from an assistant-message mapping to an authorized
-job/publication identity, with a uniqueness guarantee under concurrent observers.
+The old direct-tool Note hook is removed. The Pipe calls its persistence helper
+explicitly before announcing successful delivery. Note identity is an authorized
+owner/job/publication mapping with a uniqueness guarantee under concurrent observers.
 Keep Notes private and preserve the exact publication text.
 
 Runtime publication and an Open WebUI Note live in different databases. They
@@ -1475,7 +1481,7 @@ inventing content. Do not add a contributor pool, a claim graph, more mandatory
 judge layers, or unlimited quality retries. Validate that bounded vertical slice
 with saved-response regressions and a small public pilot before unattended rollout.
 
-### 12.9 First runtime implementation and validation boundary
+### 12.9 First runtime implementation checkpoint
 
 #### Implemented runtime slice
 
@@ -1595,11 +1601,135 @@ address-space exhaustion, a shortened CPU-limit test, and real-process cleanup.
 Darwin correctly rejects unsupported address-space enforcement; its parser/fake
 tests are not evidence of containment on that platform.
 
-This is a tested implementation slice, **not production rollout approval**.
-Remaining work includes the managed Pipe and server-scoped UI guards, trusted
+This was the initial implementation checkpoint, **not production rollout approval**.
+Section 12.10 records the subsequent integration work. At this checkpoint,
+remaining work included the managed Pipe and server-scoped UI guards, trusted
 owner/action propagation, Regenerate/reattachment/Stop behavior, private Note
 delivery, retention/operational policy, verified token accounting, and live
 research quality checks. Unknown-attempt reconciliation and account uncertainty
 across proxy restarts also remain release gates. The old generic tool registration
 must not be deployed unchanged against this private API. No new live-provider
 quality experiment, service deployment, or credential provisioning is claimed.
+
+### 12.10 Integrated implementation before full E2E
+
+The next implementation connects the private job API to the pinned Open WebUI
+v0.11.3 application. Software/component verification is performed without live
+Sakura generation, live reconciliation, or changes to the running services.
+The operational commands are documented in [OPERATIONS.md](OPERATIONS.md).
+The managed Pipe submits `single_unit`; `sequential_long` remains an explicit
+private job-API option, not an automatic inference from request wording.
+
+#### Managed UI and delivery
+
+- The managed custom model keeps `sacloud.kimi-k2.7-deep-research` and uses the
+  native `deep_research_pipe` Function. The model and Function ownership markers,
+  actual Pipe route, authenticated user, and saved chat/message relationship are
+  checked on the server. A missing Pipe cannot fall back to an ordinary model.
+- The existing assistant response ID is the action ID. Pinned-source inspection
+  establishes that explicit Regenerate allocates a fresh ID. Same-action retries
+  and reconnection retain the existing ID; they never use a transient task ID.
+- Server-verified intent is HMAC-bound to owner/chat/action/query and stored before
+  runtime submission. Job binding is separately authenticated. A lost response
+  between submit and binding can reattach by the same action; a fabricated client
+  marker or unsigned pending message cannot authorize that path.
+- Model-scoped backend patches bypass common enrichment, compaction, auxiliary
+  generation, and outlet rewriting while preserving access checks and ordinary
+  chat behavior. Frontend reconnection restores observation only when the original
+  managed response has no surviving backend task. It does not create a new action.
+- Polling has a finite adapter deadline, bounded status events and Retry-After
+  handling. Paused, cancelled, expired, and incomplete-without-draft states are
+  not mistaken for successful publications or polled indefinitely.
+- Completed Markdown is hash-verified and persisted to a deterministic private
+  Note keyed by owner/job/publication. Concurrent observers cannot create duplicate
+  Notes. Existing changed/shared/colliding Notes are not silently overwritten.
+  Runtime delivery is acknowledged only after Note persistence; acknowledgement
+  failure retries delivery, not research. Incomplete drafts remain explicitly
+  `needs_review` and are not automatically published as Notes.
+- Stop uses an atomic action-cancellation boundary. If submit has not committed,
+  only a cancellation tombstone is stored; a late submit is rejected. If it has
+  committed, no further dispatch is admitted and the current bounded request is
+  observed. Stop never creates a job to obtain its ID.
+
+#### Durable operation and admission
+
+Runtime and proxy use one private SQLite volume. Stable, explicitly configured
+non-secret account IDs identify admission records; credential values and their
+fingerprints are not persisted. Send intent precedes upstream work. Restart
+preserves uncertain leases, and repeated research attempt IDs cannot cause a
+second send. Normal known retry/cooldown behavior is retained.
+
+A separate operator credential authorizes exact, revision-checked abandonment of
+unknown research attempts or orphan account leases. The audit records the actor,
+action, and acknowledgement of possible overlapping execution or charges.
+Reservations are retained. An abandoned research job ends incomplete; new work
+requires a new user action. Neither elapsed time nor an operator acknowledgement
+is represented as proof of upstream success, failure, or cancellation.
+
+Retention defaults to 30 days with a 512 MiB global logical payload limit and the
+existing per-job limit. Terminal jobs without publications, or with acknowledged
+delivery, may be purged after the retention period. Active/unknown work and
+undelivered publications are protected. Small owner/action/request-hash tombstones
+prevent purging from turning a duplicate submit into a new generation. Note
+content is not deleted by runtime retention; expiry is reported explicitly.
+
+#### Token counting and the live preflight boundary
+
+The offline counter uses only `tiktoken` plus the pinned public Kimi K2.7 Code
+token data and the fixed fresh system/user template. No model weights or remote
+tokenizer Python code are executed. The accompanying Modified MIT license and
+asset provenance are retained with the data.
+
+The calibration command is implemented but **has not been run against Sakura**.
+It uses the existing one-send transport, records intent and reservations before
+sending, and compares local counts with reported prompt usage for English,
+Japanese, mixed, and near-64-KiB requests. Receipts bind model, gateway, assets,
+counter implementation/version, case hashes, and observed/local counts. Admission
+is limited to the verified input ceiling, not a claim that the advertised 256K
+window has been validated. Missing or inconsistent calibration makes readiness
+`not_ready` and rejects new dispatch. Fake receipts belong only to tests.
+
+Input and output token reservations are persisted before each admitted attempt;
+missing usage and UNKNOWN do not refund those reservations. Live calibration is
+a separately authorized, bounded first step before full E2E, not an unimplemented
+counter that must be written later.
+
+#### Provisioning, builds, and remaining execution
+
+Reconciliation preflights all managed-ID/owner collisions before mutation, installs
+and verifies the Pipe/model, then removes only the old managed tool/filter/skill
+resources. Repeated reconciliation is idempotent. Dry-run needs no credentials
+and performs no API calls. Ordinary global tool timeouts and iteration settings
+remain unchanged. Required secret references, account IDs, shared-volume access,
+and safe example configuration are wired without provisioning real secret values.
+
+The frontend is rebuilt from the pinned upstream commit and lockfile. Build-time
+checks compare original backend files with the pinned base image before applying
+guarded patches. Runtime and proxy contexts include only required files. The
+release frontend build uses a 4 GiB Node heap and omits debug source maps; these
+are build-only choices and do not alter running-service memory or UI features.
+
+Final pre-E2E checks were independently rerun:
+
+| Check | Result |
+| --- | --- |
+| Explicit current runtime/operations/accounting suite | 121 tests, two Linux-only extraction cases skipped on the host |
+| Extraction in the final Linux runtime image | All 11 passed, including the host-skipped resource cases |
+| Proxy tests, including the built image | 36 passed |
+| WebUI patch/helper/Pipe fixtures | 16 tests, one image-only ORM case skipped on the host |
+| Actual pinned Note ORM with ephemeral SQLite | One component test passed: concurrent uniqueness, privacy, exact body, nanosecond timestamps/list ordering, and no overwrite of changed Notes |
+| Provisioning fixtures | Three passed, including collision rejection before mutation and idempotent rerun |
+| Runtime, proxy, and patched WebUI image builds | All passed; final backend/helper hashes matched the validated source |
+| Compose interpolation | Passed with synthetic environment values and the project env file disabled; no service operation |
+
+Current Python/shell lint, runtime type checks, and whitespace checks passed.
+Historical untracked diagnostic files were not included in these accepted suites
+or commits. Component containers used no production volumes, credentials, or
+external network, and were removed after their checks.
+
+Full browser/provider E2E, live calibration, live migration, and deployment remain
+unexecuted. Passing source checks, fixtures, and image builds is not a claim of
+live provider compatibility or the target research-quality success rate. The next
+authorized execution must follow the runbook, preserve the finite budgets, and
+verify new chat, existing chat, Regenerate, reconnection/restart, Stop, private
+Note delivery, and ordinary-chat non-regression on the real integration.
