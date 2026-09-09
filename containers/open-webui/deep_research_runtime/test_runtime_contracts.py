@@ -388,6 +388,11 @@ class RuntimeContractTests(RuntimeTestCase):
         ]
         edited = rt.relevant_editor_passages(findings, blocks, passages)
         self.assertEqual({item["id"] for item in edited}, {"S1:P0-80", "S2:P0-80"})
+        bounded = rt.bounded_prompt_text("証" * 4_000)
+        self.assertLessEqual(len(bounded.encode()), rt.MAX_PROMPT_PASSAGE_BYTES)
+        self.assertTrue(("証" * 4_000).startswith(bounded))
+        self.assertEqual(rt.safe_job_error_code("provider_known_failed"), "provider_known_failed")
+        self.assertEqual(rt.safe_job_error_code("provider_not_sent"), "provider_not_sent")
         with self.assertRaisesRegex(ValueError, "one admitted block"):
             rt.apply_editor_result(
                 markdown,

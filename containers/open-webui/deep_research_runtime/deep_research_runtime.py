@@ -68,6 +68,7 @@ MAX_SEARCH_QUERIES_PER_ROUND = 6
 MAX_RESEARCH_ROUNDS = 4
 MAX_FETCHED_DOCUMENTS = 24
 MAX_PASSAGE_CHARS = 4_000
+MAX_PROMPT_PASSAGE_BYTES = 2_400
 MIN_UNIT_SUBSTANTIVE_CHARS = 1_200
 MAX_PUBLICATION_BYTES = 256 * 1024
 PUBLICATION_TERMS = {
@@ -109,6 +110,8 @@ SAFE_JOB_ERROR_CODES = frozenset(
         "outline_invalid",
         "plan_invalid",
         "publication_too_large",
+        "provider_known_failed",
+        "provider_not_sent",
         "quality_gate_failed",
         "request_not_admitted",
         "research_action_invalid",
@@ -3141,6 +3144,10 @@ async def passage_workspace(
     return workspace
 
 
+def bounded_prompt_text(text: str) -> str:
+    return text.encode()[:MAX_PROMPT_PASSAGE_BYTES].decode("utf-8", errors="ignore")
+
+
 async def stored_source_blob(
     runtime: Runtime, job_id: str, url: str
 ) -> tuple[str, FetchedSourceBlob] | None:
@@ -3698,7 +3705,7 @@ async def assess_research_round(
                 for item in passages
             ],
             "selected_verbatim_passages": [
-                {"id": item["id"], "text": item["text"][:2400]} for item in visible
+                {"id": item["id"], "text": bounded_prompt_text(item["text"])} for item in visible
             ],
             "remaining_rounds": MAX_RESEARCH_ROUNDS - int(round_value["round"]),
             "output_schema": EvidenceAssessment.model_json_schema(),
@@ -4123,7 +4130,7 @@ async def create_report_outline(
                 for item in passages
             ],
             "selected_verbatim_passages": [
-                {"id": item["id"], "text": item["text"][:2400]}
+                {"id": item["id"], "text": bounded_prompt_text(item["text"])}
                 for item in selected_assessment_passages(plan, passages)
             ],
             "prior_candidate_failure_feedback": list(failure_feedback),
@@ -4244,13 +4251,14 @@ async def create_raw_candidate(
             {
                 "request": canonical_job_request(request),
                 "candidate": candidate_no,
-                "accepted_outline": ledger.model_dump(),
                 "unit_scope": outline.model_dump(),
                 "ledger": ledger.model_dump(),
                 "research_plan": research_state["plan"],
                 "evidence_assessment": research_state["assessment"],
                 "source_passages": [
-                    item for item in passages if item["id"] in set(outline.passage_ids)
+                    {**item, "text": bounded_prompt_text(item["text"])}
+                    for item in passages
+                    if item["id"] in set(outline.passage_ids)
                 ],
                 "prior_handoffs": prior_handoffs,
                 "selected_prior_blocks": selected_prior_blocks,
@@ -4362,7 +4370,9 @@ def review_user_prompt(
                 }
                 for item in ledger.outline
             ],
-            "source_passages": selected_passages,
+            "source_passages": [
+                {**item, "text": bounded_prompt_text(item["text"])} for item in selected_passages
+            ],
         },
         ensure_ascii=False,
         separators=(",", ":"),
@@ -4702,7 +4712,11 @@ async def recheck_candidate(
             "material_findings": numbered_findings(review),
             "edited_blocks": list(workspace),
             "dismissals": list(dismissals),
-            "source_passages": [item for item in passages if item["id"] in referenced_passages],
+            "source_passages": [
+                {**item, "text": bounded_prompt_text(item["text"])}
+                for item in passages
+                if item["id"] in referenced_passages
+            ],
             "output_schema": RecheckResult.model_json_schema(),
         },
         ensure_ascii=False,
@@ -4864,7 +4878,9 @@ async def edit_candidate(
                 "findings": findings,
                 "target_blocks": [{"id": block.id, "text": block.text} for block in targets],
                 "ledger": ledger.model_dump(),
-                "source_passages": editor_passages,
+                "source_passages": [
+                    {**item, "text": bounded_prompt_text(item["text"])} for item in editor_passages
+                ],
                 "headings": heading_map(markdown),
             },
             ensure_ascii=False,
