@@ -708,6 +708,10 @@ class RuntimeContractTests(RuntimeTestCase):
                 _, ledger = await rt.create_report_outline(
                     self.runtime, submitted["job_id"], 1, request(), state, []
                 )
+            outline_request = json.loads(setup_provider.bodies[3])
+            outline_contract = json.loads(outline_request["messages"][1]["content"])["contract"]
+            self.assertIn("semantic_validation", outline_contract)
+            self.assertIn("semantic constraint", outline_request["messages"][0]["content"].lower())
 
             unit = unit_markdown(1, "S1:P0-80")
             blocks = rt.draft_blocks(unit, 1, 1)

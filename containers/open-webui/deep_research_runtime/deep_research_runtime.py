@@ -2949,9 +2949,10 @@ async def invoke_job_model(
         runtime,
         job_id,
         repair_key,
-        system_prompt + "\nFORMAT CORRECTION: The completed response did not validate. "
-        "Return only the requested format. For JSON, emit one object with exactly the "
-        "specified fields and length limits, not an array or commentary. No internal markers.",
+        system_prompt + "\nVALIDATION CORRECTION: The completed response did not validate. "
+        "Satisfy every schema and semantic constraint in the request. Return only the requested "
+        "format. For JSON, emit one object with exactly the specified fields and length limits, "
+        "not an array or commentary. No internal markers.",
         user_prompt,
         accept,
     )
@@ -4150,6 +4151,17 @@ async def create_report_outline(
                 "localized_title": "plain requested-language title without Markdown",
                 "checklist_coverage": "map every checklist item and assessed passage",
                 "priority": "user requirements outrank proposals; evidence outranks assumptions",
+                "semantic_validation": [
+                    "entry IDs are unique; every entry reference_id is one exact admitted "
+                    "request-fragment or passage ID",
+                    "unit numbers are exactly 1 through N in order; title and headings are "
+                    "trimmed unique plain text and not reserved appendix headings",
+                    "the union of outline checklist_ids equals all and only research checklist IDs",
+                    "the union of outline passage_ids includes every passage selected by the "
+                    "evidence assessment; all passage IDs must be admitted",
+                    "ledger_ids name declared entries; context_units contain only earlier units",
+                    "every unit without limitations_analysis has at least one passage_id",
+                ],
                 "output_schema": DecisionLedger.model_json_schema(),
             },
         },
@@ -4159,7 +4171,8 @@ async def create_report_outline(
     system = (
         UNTRUSTED_JOB_DATA_RULE
         + "After evidence assessment, return exactly one DecisionLedger JSON object containing "
-        "the localized report title and a two-to-four-unit outline. Keep only important "
+        "the localized report title and a two-to-four-unit outline. Obey every schema and semantic "
+        "constraint in the request. Keep only important "
         "cross-unit commitments. The first unit states the answer or key findings; the final unit "
         "synthesizes the conclusion, confidence, and decision-relevant uncertainty. Do not invent "
         "measurements or change explicit user constraints."
