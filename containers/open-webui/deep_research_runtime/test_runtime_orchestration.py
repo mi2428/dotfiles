@@ -48,7 +48,9 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
     def test_invalid_fresh_action_stops_incomplete_without_extractive_publication(self) -> None:
         async def run() -> None:
             submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
-            provider = FakeProvider([completion("not one JSON action")])
+            provider = FakeProvider(
+                [completion("not one JSON action"), completion("still not one JSON action")]
+            )
             with patch.object(rt, "complete_research", new=provider):
                 await rt.execute_research_job(self.runtime, submitted["job_id"])
             row = self.runtime.db.execute(
@@ -65,6 +67,7 @@ class RuntimeOrchestrationTests(RuntimeTestCase):
                 ),
                 ("incomplete", "assignment_result_invalid", None, None),
             )
+            self.assertEqual(len(provider.bodies), 2)
             self.assertEqual(
                 self.runtime.db.execute(
                     "SELECT COUNT(*) AS count FROM publications WHERE job_id = ?",
