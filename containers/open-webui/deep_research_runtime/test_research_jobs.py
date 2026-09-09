@@ -133,6 +133,14 @@ class ResearchJobTests(RuntimeTestCase):
             ),
         )
 
+    def test_excerpt_selection_keeps_filtered_paragraphs_verbatim(self) -> None:
+        relevant = "Vigore evidence describes the workshop and its operating conditions clearly."
+        unrelated = "Another sufficiently long paragraph provides unrelated background material."
+        excerpt, _score = rt.select_relevant_excerpt(
+            f"{relevant}\n\nx\n\n{unrelated}", "Vigore", None
+        )
+        self.assertEqual(excerpt, relevant)
+
     async def run_path(
         self, outputs: list[ResearchCompletion], job_request: rt.ResearchJobRequest | None = None
     ) -> tuple[str, FakeProvider]:

@@ -1324,7 +1324,7 @@ def select_relevant_excerpt(text: str, query: str, focus: str | None) -> tuple[s
     terms = {term.casefold() for term in re.findall(r"[\w.-]{2,}", f"{query} {focus or ''}")}
     scores = [sum(term in paragraph.casefold() for term in terms) for paragraph in paragraphs]
     index = max(range(len(paragraphs)), key=lambda i: scores[i])
-    excerpt = "\n".join(paragraphs[index:])[:1200].rstrip()
+    excerpt = paragraphs[index][:1200].rstrip()
     if not excerpt or not is_verbatim_excerpt(excerpt, text):
         raise ValueError("could not select source excerpt")
     return excerpt, min(1.0, 0.5 + scores[index] * 0.1) if scores[index] else 0.0
