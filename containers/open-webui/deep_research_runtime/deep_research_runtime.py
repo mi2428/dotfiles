@@ -3413,6 +3413,14 @@ async def create_research_plan(
                 "checklist_ids": "C1..Cn in order",
                 "fragment_coverage": "every fragment maps to an essential checklist item",
                 "initial_queries": "three to six distinct public-web queries",
+                "semantic_validation": [
+                    "checklist IDs are unique and sequential; every request fragment is mapped "
+                    "and remains essential; fragment IDs are not duplicated within an item",
+                    "preferred source types, query text, and query purpose are non-blank",
+                    "every query uses only exact checklist IDs and query text is unique "
+                    "case-insensitively",
+                    "requested_language equals the explicit request language when it is not auto",
+                ],
                 "output_schema": ResearchPlan.model_json_schema(),
             },
         },
@@ -3422,7 +3430,8 @@ async def create_research_plan(
     system = (
         UNTRUSTED_JOB_DATA_RULE
         + "Scope the authoritative original request. Return exactly one ResearchPlan JSON object. "
-        "Do not weaken, omit, or silently reinterpret any request fragment. Prefer primary and "
+        "Obey every schema and semantic constraint in the request. Do not weaken, omit, or "
+        "silently reinterpret any request fragment. Prefer primary and "
         "authoritative source types and include counterevidence-oriented queries where relevant. "
         "Treat requested calculations, comparisons, tables, recommendations, and presentation "
         "constraints as synthesis requirements supported by cited facts; do not require a source "
@@ -3510,6 +3519,12 @@ async def select_round_candidates(
                     for item in state_value["passages"]
                 ],
                 "document_slots": min(6, remaining),
+                "semantic_validation": [
+                    "select at most document_slots documents using unique exact IDs from "
+                    "result_metadata",
+                    "each document has a non-blank purpose and one or more exact checklist IDs; "
+                    "do not invent checklist IDs",
+                ],
                 "output_schema": CandidateSelection.model_json_schema(),
             },
             ensure_ascii=False,
@@ -3518,6 +3533,7 @@ async def select_round_candidates(
         system = (
             UNTRUSTED_JOB_DATA_RULE
             + "Return exactly one CandidateSelection JSON object. Select only supplied result IDs. "
+            "Obey every schema and semantic constraint in the request, including document_slots. "
             "Prefer documents likely to provide primary, adverse, or definition-resolving "
             "evidence. "
             "Same-host documents are allowed when they are separately useful."
@@ -4294,7 +4310,9 @@ async def create_raw_candidate(
             "incomplete unless the original request explicitly asks for a shorter report. "
             "Use exact [Sx:Pstart-end] citations from supplied passages. Do not output JSON, "
             "private reasoning, Sources, or Limitations sections. Begin with exactly one level-2 "
-            f"heading named: ## {outline.heading}. Do not emit a level-1 heading."
+            f"heading named: ## {outline.heading}. Do not emit a level-1 heading. Every numeric "
+            "claim must share its Markdown block with an admitted citation; derived numbers must "
+            "state assumptions, a range, or sensitivity."
         )
 
         def accept_unit(
@@ -4409,9 +4427,12 @@ def review_system_prompt() -> str:
         "are notes. Reviewer proposals not established by admitted evidence are unsupported. "
         "Check citation alignment, numeric subject/unit/period/comparator/derivation, conflicts, "
         "cross-unit consistency, duplication, missing analysis, and usefulness. Use only "
-        "admitted IDs. Set public_caveat=true only for a non-material evidence limitation or "
+        "admitted block, checklist, ledger, and source IDs. Every patch requires checklist and "
+        "source IDs. Set public_caveat=true only on a note with checklist and source IDs for a "
+        "non-material evidence limitation or "
         "uncertainty that users must see; style, optional detail, and citation presentation are "
-        "not public caveats. "
+        "not public caveats. Never set public_caveat on patches or unsupported items. Include "
+        "regenerate_reason only when at least one referenced patch requires regeneration. "
         "Required output schema: "
         + json.dumps(ReviewResult.model_json_schema(), separators=(",", ":"))
     )
@@ -4908,8 +4929,10 @@ async def edit_candidate(
         system = (
             UNTRUSTED_JOB_DATA_RULE
             + "Return exactly one EditResult JSON object. For every material finding, either "
-            "replace an admitted block or dismiss it with exact source IDs. Preserve all other "
-            "text and the immutable ledger. Each replacement is one Markdown block. "
+            "replace an admitted target block or dismiss it with exact admitted source IDs, but "
+            "never both. Use the supplied base_revision. Replace each block at most once and list "
+            "only findings that reference that block. Preserve all other text and the immutable "
+            "ledger. Each replacement is one visible Markdown block with only admitted citations. "
             "Required output schema: "
             + json.dumps(EditResult.model_json_schema(), separators=(",", ":"))
         )

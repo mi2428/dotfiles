@@ -680,6 +680,18 @@ class RuntimeContractTests(RuntimeTestCase):
             )
             self.assertIn("Edited", result["answer_markdown"])
             self.assertEqual(len(provider.bodies), 9)
+            systems = [json.loads(body)["messages"][0]["content"] for body in provider.bodies]
+            for assignment, phrase in (
+                (0, "schema and semantic constraint"),
+                (1, "document_slots"),
+                (3, "schema and semantic constraint"),
+                (4, "Every numeric claim"),
+                (6, "Every patch requires checklist and source IDs"),
+                (7, "never both"),
+                (8, "resolved=true only when every"),
+            ):
+                with self.subTest(assignment=assignment):
+                    self.assertIn(phrase, systems[assignment])
             stages = self.runtime.db.execute(
                 "SELECT stage FROM review_records WHERE job_id = ? ORDER BY id", (job_id,)
             ).fetchall()
