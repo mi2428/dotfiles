@@ -1,3 +1,7 @@
+import json
+import re
+import shutil
+import subprocess
 import unittest
 
 from apply_deep_research_integration import (
@@ -61,10 +65,56 @@ class DeepResearchPatchTests(unittest.TestCase):
         self.assertIn("let messages: any[] = managedDeepResearch\n\t\t\t? []", chat)
         self.assertIn("params: managedDeepResearch", chat)
         self.assertIn("variables: managedDeepResearch", chat)
+        self.assertIn("features: managedDeepResearch ? {} : getFeatures()", chat)
         self.assertIn("tool_servers: managedDeepResearch", chat)
         self.assertIn("continueResponse || reattachResponse", chat)
         self.assertIn("if (!managedDeepResearch && $settings?.userLocation)", chat)
         self.assertIn("if (!stopped) return", chat)
+
+    @unittest.skipUnless(
+        shutil.which("node"), "Node is required to execute frontend expressions"
+    )
+    def test_actual_feature_expression_excludes_defaults_on_first_submit_and_regenerate(
+        self,
+    ) -> None:
+        chat = patch_source(
+            "\n".join(old for old, _ in CHAT_REPLACEMENTS), CHAT_REPLACEMENTS, "chat"
+        )
+        expression = re.search(r"features: ([^\n]+),", chat)
+        self.assertIsNotNone(expression)
+        assert expression is not None
+        script = """
+const results = [];
+for (const [managedDeepResearch, reattachResponse] of [[true,false],[true,true],[false,false]]) {
+  let calls = 0;
+  const getFeatures = () => { calls++; return {web_search:true,code_interpreter:true,memory:true}; };
+  const features = EXPRESSION;
+  results.push({features,calls});
+}
+console.log(JSON.stringify(results));
+""".replace("EXPRESSION", expression.group(1))
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        )
+        self.assertEqual(
+            json.loads(result.stdout),
+            [
+                {"features": {}, "calls": 0},
+                {"features": {}, "calls": 0},
+                {
+                    "features": {
+                        "web_search": True,
+                        "code_interpreter": True,
+                        "memory": True,
+                    },
+                    "calls": 1,
+                },
+            ],
+        )
 
 
 if __name__ == "__main__":

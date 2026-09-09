@@ -419,7 +419,7 @@ CHAT_REPLACEMENTS = [
 \t\t\t\t\t\t\t// Direct terminal servers — always included when enabled (not routed through selectedToolIds)
 \t\t\t\t\t\t\t...($terminalServers ?? []).filter((t) => !t.id)
 \t\t\t\t\t\t],
-\t\t\t\tfeatures: reattachResponse ? {} : getFeatures(),
+\t\t\t\tfeatures: managedDeepResearch ? {} : getFeatures(),
 \t\t\t\tvariables: managedDeepResearch
 \t\t\t\t\t? {}
 \t\t\t\t\t: {
