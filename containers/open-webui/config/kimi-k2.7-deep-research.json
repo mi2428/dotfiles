@@ -2,24 +2,24 @@
   "marker": "dotfiles:kimi-k2.7-deep-research",
   "model": {
     "id": "sacloud.kimi-k2.7-deep-research",
-    "base_model_id": "sacloud.preview/Kimi-K2.6",
+    "base_model_id": "deep_research_pipe",
     "name": "Sakura Deep Research",
     "meta": {
       "profile_image_url": null,
       "description": "複数の情報源を横断して深く調査し、根拠と出典を整理した詳細な回答を作成します。",
       "capabilities": {
-        "file_context": true,
-        "vision": true,
-        "file_upload": true,
+        "file_context": false,
+        "vision": false,
+        "file_upload": false,
         "web_search": false,
         "image_generation": false,
         "code_interpreter": false,
         "terminal": false,
-        "citations": true,
+        "citations": false,
         "status_updates": true,
-        "usage": true,
+        "usage": false,
         "memory": false,
-        "builtin_tools": true
+        "builtin_tools": false
       },
       "knowledge": null,
       "tags": [
@@ -28,9 +28,7 @@
         }
       ],
       "defaultFeatureIds": [],
-      "filterIds": [
-        "deep_research_status"
-      ],
+      "filterIds": [],
       "builtinTools": {
         "time": false,
         "user_input": false,
@@ -50,32 +48,12 @@
         "subagents": false
       },
       "skillIds": [],
-      "toolIds": [
-        "server:deep-research"
-      ],
+      "toolIds": [],
       "hidden": false,
       "provisioned_by": "dotfiles:kimi-k2.7-deep-research"
     },
-    "params": {
-      "function_calling": "native",
-      "max_tokens": 32768,
-      "compact_token_threshold": 180000,
-      "reasoning_effort": "low"
-    },
+    "params": {},
     "access_grants": [],
     "is_active": true
-  },
-  "skill": {
-    "id": "deep-research",
-    "name": "Deep Research",
-    "description": "外部deep_research toolを1回だけ呼び、返された引用付き回答を保持するための手順です。",
-    "meta": {
-      "tags": [
-        "Deep Research",
-        "dotfiles:kimi-k2.7-deep-research"
-      ]
-    },
-    "is_active": true,
-    "access_grants": []
   }
 }

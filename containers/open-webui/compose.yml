@@ -72,6 +72,7 @@ services:
       RAG_TOP_K: "5"
       DEEP_RESEARCH_RUNTIME_API_KEY: >-
         ${DEEP_RESEARCH_RUNTIME_API_KEY:?set DEEP_RESEARCH_RUNTIME_API_KEY}
+      DEEP_RESEARCH_RUNTIME_URL: http://deep-research-runtime:8000
       SEARXNG_LANGUAGE: "all"
       SEARXNG_QUERY_URL: "http://searxng:8080/search"
       SUBAGENTS_BACKGROUND_ENABLED: "false"
@@ -118,7 +119,6 @@ services:
       - ./config:/app/backend/declarative/config:ro
       - ./functions:/app/backend/declarative/functions:ro
       - ./scripts:/app/backend/declarative-scripts:ro
-      - ./skills:/app/backend/declarative/skills:ro
     command: [bash, /app/backend/declarative-scripts/start.sh]
     healthcheck:
       test:
@@ -150,29 +150,20 @@ services:
       - ALL
     environment:
       DEEP_RESEARCH_DB_PATH: /data/deep-research.sqlite3
-      DEEP_RESEARCH_LLM_API_KEY: sakura-proxy
+      DEEP_RESEARCH_GLOBAL_LOGICAL_BYTES: "536870912"
+      DEEP_RESEARCH_LLM_API_KEY: >-
+        ${SAKURA_RESEARCH_API_KEY:?set SAKURA_RESEARCH_API_KEY}
       DEEP_RESEARCH_LLM_BASE_URL: http://sakura-proxy:8080/v1
+      DEEP_RESEARCH_MODEL: preview/Kimi-K2.7-Code
+      DEEP_RESEARCH_OPERATOR_API_KEY: >-
+        ${DEEP_RESEARCH_OPERATOR_API_KEY:?set DEEP_RESEARCH_OPERATOR_API_KEY}
+      DEEP_RESEARCH_OPERATOR_ID: >-
+        ${DEEP_RESEARCH_OPERATOR_ID:?set DEEP_RESEARCH_OPERATOR_ID}
+      DEEP_RESEARCH_RETENTION_DAYS: "30"
       DEEP_RESEARCH_RUNTIME_API_KEY: >-
         ${DEEP_RESEARCH_RUNTIME_API_KEY:?set DEEP_RESEARCH_RUNTIME_API_KEY}
-      DEEP_RESEARCH_MODEL: preview/Kimi-K2.7-Code
-      DEEP_RESEARCH_KIMI_TIMEOUT_SECONDS: "3600"
-      DEEP_RESEARCH_WALL_QUICK_SECONDS: "3900"
-      DEEP_RESEARCH_WALL_STANDARD_SECONDS: "5400"
-      DEEP_RESEARCH_WALL_DEEP_SECONDS: "10350"
-      DEEP_RESEARCH_SEARCH_BUDGET_QUICK: "8"
-      DEEP_RESEARCH_SEARCH_BUDGET_STANDARD: "24"
-      DEEP_RESEARCH_SEARCH_BUDGET_DEEP: "96"
-      DEEP_RESEARCH_SEARCH_LIMIT_DEEP: "96"
-      DEEP_RESEARCH_EVIDENCE_BUDGET_QUICK: "10"
-      DEEP_RESEARCH_EVIDENCE_BUDGET_STANDARD: "28"
-      DEEP_RESEARCH_EVIDENCE_BUDGET_DEEP: "60"
-      DEEP_RESEARCH_TARGET_EVIDENCE_DEEP: "30"
-      DEEP_RESEARCH_MIN_EVIDENCE_QUICK: "2"
-      DEEP_RESEARCH_MIN_EVIDENCE_STANDARD: "4"
-      DEEP_RESEARCH_MIN_EVIDENCE_DEEP: "1"
-      DEEP_RESEARCH_MODEL_TURNS_QUICK: "20"
-      DEEP_RESEARCH_MODEL_TURNS_STANDARD: "40"
-      DEEP_RESEARCH_MODEL_TURNS_DEEP: "270"
+      SAKURA_RESEARCH_API_KEY: >-
+        ${SAKURA_RESEARCH_API_KEY:?set SAKURA_RESEARCH_API_KEY}
       SEARXNG_URL: http://searxng:8080
     healthcheck:
       test:
@@ -202,7 +193,11 @@ services:
   sakura-proxy:
     build: ./sakura_proxy
     environment:
+      DEEP_RESEARCH_DB_PATH: /data/deep-research.sqlite3
+      SAKURA_AI_ACCOUNT_IDS: "${SAKURA_AI_ACCOUNT_IDS:?set SAKURA_AI_ACCOUNT_IDS}"
       SAKURA_AI_ACCOUNT_TOKENS: "${SAKURA_AI_ACCOUNT_TOKENS:?set SAKURA_AI_ACCOUNT_TOKENS}"
+      SAKURA_RESEARCH_API_KEY: >-
+        ${SAKURA_RESEARCH_API_KEY:?set SAKURA_RESEARCH_API_KEY}
       SAKURA_RETRY_BASE_SECONDS: "10"
       SAKURA_RETRY_JITTER_SECONDS: "1"
       SAKURA_RETRY_MAX: "5"
@@ -210,6 +205,8 @@ services:
       SAKURA_RETRY_BUDGET_SECONDS: "3200"
       SAKURA_UPSTREAM_TIMEOUT_SECONDS: "420"
       SAKURA_UPSTREAM_URL: "https://api.ai.sakura.ad.jp"
+    volumes:
+      - deep-research-runtime-data:/data
     healthcheck:
       test:
         - CMD

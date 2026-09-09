@@ -20,9 +20,13 @@ unset \
   CPTR_WORKSPACE_DIR \
   OPEN_TERMINAL_API_KEY \
   OPEN_WEBUI_PORT \
+  DEEP_RESEARCH_OPERATOR_API_KEY \
+  DEEP_RESEARCH_OPERATOR_ID \
   DEEP_RESEARCH_RUNTIME_API_KEY \
   SAKURA_AI_ACCOUNT_TOKEN \
+  SAKURA_AI_ACCOUNT_IDS \
   SAKURA_AI_ACCOUNT_TOKENS \
+  SAKURA_RESEARCH_API_KEY \
   SEARXNG_SECRET \
   CORS_ALLOW_ORIGIN \
   WEBUI_URL \
@@ -59,8 +63,25 @@ set +a
 : "${CPTR_WORKSPACE_DIR:?set CPTR_WORKSPACE_DIR}"
 : "${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}"
 : "${DEEP_RESEARCH_RUNTIME_API_KEY:?failed to initialize DEEP_RESEARCH_RUNTIME_API_KEY}"
+: "${DEEP_RESEARCH_OPERATOR_API_KEY:?set DEEP_RESEARCH_OPERATOR_API_KEY}"
+: "${DEEP_RESEARCH_OPERATOR_ID:?set DEEP_RESEARCH_OPERATOR_ID}"
+: "${SAKURA_AI_ACCOUNT_IDS:?set SAKURA_AI_ACCOUNT_IDS}"
+: "${SAKURA_RESEARCH_API_KEY:?set SAKURA_RESEARCH_API_KEY}"
 : "${SEARXNG_SECRET:?set SEARXNG_SECRET}"
 [[ -d "$CPTR_WORKSPACE_DIR" ]] || { printf 'CPTR_WORKSPACE_DIR is not a directory\n' >&2; exit 1; }
+python3 -c '
+import os, re
+ids = [value.strip() for value in os.environ["SAKURA_AI_ACCOUNT_IDS"].split(",") if value.strip()]
+tokens = [value.strip() for value in os.environ["SAKURA_AI_ACCOUNT_TOKENS"].split(",") if value.strip()]
+valid = re.compile(r"[A-Za-z0-9._:@-]{1,200}").fullmatch
+if len(ids) != len(tokens) or len(ids) != len(set(ids)) or not all(map(valid, ids)):
+    raise SystemExit("SAKURA_AI_ACCOUNT_IDS must be unique stable IDs aligned 1:1 with account tokens")
+keys = {os.environ[name] for name in (
+    "DEEP_RESEARCH_RUNTIME_API_KEY", "DEEP_RESEARCH_OPERATOR_API_KEY", "SAKURA_RESEARCH_API_KEY"
+)}
+if len(keys) != 3:
+    raise SystemExit("runtime, operator, and research gateway credentials must be distinct")
+'
 
 resolve_tailscale_bin() {
   local candidate

@@ -119,17 +119,16 @@ def model_import: {
 ($manifest[0] | {
   marker: .marker,
   user_settings: {ui: {system: $chat_personality, title: {auto: true}}},
-  model: (.model | .params.system = $system | .meta.profile_image_url = $sakura_icons.default),
-  status_filter: {
-    id: "deep_research_status",
-    name: "Deep Research Status",
-    content: $status_filter_content,
+  model: (.model | .meta.profile_image_url = $sakura_icons.default),
+  pipe: {
+    id: "deep_research_pipe",
+    name: "Deep Research",
+    content: $pipe_content,
     meta: {
-      description: "Deep Research開始直後の進捗を表示します。",
+      description: "Runs one bounded managed Deep Research job.",
       provisioned_by: .marker
     }
   },
-  skill: (.skill | .content = $content),
   folder: {
     name: "GeoGuessor",
     parent_id: null,
@@ -172,7 +171,9 @@ def model_import: {
 | require($desired.marker != ""; "managed marker is required")
 | require(($desired.user_settings.ui.system | length) > 0; "chat personality is required")
 | require($desired.model.meta.provisioned_by == $desired.marker; "model marker mismatch")
-| require(($desired.skill.meta.tags | index($desired.marker)) != null; "skill marker mismatch")
+| require($desired.pipe.meta.provisioned_by == $desired.marker; "Pipe marker mismatch")
+| require($desired.pipe.id == "deep_research_pipe"; "unexpected Pipe ID")
+| require(($desired.pipe.content | length) > 0; "Pipe content is required")
 | require($desired.folder.meta.provisioned_by == "dotfiles:geoguessor-folder"; "folder marker mismatch")
 | require($desired.folder.data.files == []; "GeoGuessor folder must not attach knowledge")
 | require($desired.translation_folder.parent_id == null; "translation folder must be a root folder")
@@ -184,15 +185,15 @@ def model_import: {
 | require($desired.books_movies_subculture_folder.parent_id == null; "books, movies, and subculture must be a root folder")
 | require(($desired.books_movies_subculture_folder.data.system_prompt | length) > 0; "books, movies, and subculture prompt is required")
 | require($desired.books_movies_subculture_folder.data.files == []; "books, movies, and subculture folder must not attach knowledge")
-| require($desired.model.base_model_id == "sacloud.preview/Kimi-K2.6"; "unexpected base model")
-| require($desired.model.params.function_calling == "native"; "native function calling is required")
-| require($desired.model.params.max_tokens == 32768; "max_tokens must be 32768")
+| require($desired.model.base_model_id == $desired.pipe.id; "Deep Research model must use the managed Pipe")
+| require($desired.model.params == {}; "Deep Research model params must stay empty")
 | require(all($sakura_icons[]; startswith("data:image/png;base64,")); "unexpected model icons")
-| require($desired.model.params.reasoning_effort == "low"; "Deep Research dispatcher must use low reasoning")
-| require($desired.model.meta.capabilities.web_search == false; "built-in web search must stay disabled")
-| require($desired.model.meta.capabilities.code_interpreter == false; "code interpreter must stay disabled")
-| require($desired.model.meta.capabilities.citations == true; "citations capability is required")
-| require($desired.model.meta.capabilities.usage == true; "usage capability is required")
+| require(
+    all($desired.model.meta.capabilities | to_entries[];
+      if .key == "status_updates" then .value == true else .value == false end
+    );
+    "only Pipe status updates may be advertised"
+  )
 | require($desired.model.meta.builtinTools.notes == false; "Notes must stay disabled")
 | require($desired.model.meta.builtinTools.time == false; "Time must stay disabled")
 | require($desired.model.meta.builtinTools.user_input == false; "User input must stay disabled")
@@ -200,11 +201,10 @@ def model_import: {
 | require($desired.model.meta.builtinTools.code_interpreter == false; "Code Interpreter must stay disabled")
 | require($desired.model.meta.builtinTools.knowledge == false; "Knowledge must remain disabled")
 | require($desired.model.meta.defaultFeatureIds == []; "default features must stay disabled")
-| require($desired.model.meta.filterIds == ["deep_research_status"]; "unexpected Deep Research filters")
-| require($desired.model.meta.skillIds == []; "the outer model must not load an extra research skill")
-| require($desired.model.meta.toolIds == ["server:deep-research"]; "the external research tool must be the only default tool")
+| require($desired.model.meta.filterIds == []; "Deep Research filters must stay disabled")
+| require($desired.model.meta.skillIds == []; "Deep Research skills must stay disabled")
+| require($desired.model.meta.toolIds == []; "Deep Research tools must stay disabled")
 | require(($desired.model.access_grants | length) == 0; "model must be owner-only")
-| require(($desired.skill.access_grants | length) == 0; "skill must be owner-only")
 | require(
     ($desired.model_import.models | map(.id) | length)
     == ($desired.model_import.models | map(.id) | unique | length);
