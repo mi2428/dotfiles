@@ -43,13 +43,7 @@ wait "$decrypt_pid"
 
 export SAKURA_AI_ACCOUNT_TOKENS="${SAKURA_AI_ACCOUNT_TOKENS:-${SAKURA_AI_ACCOUNT_TOKEN:-}}"
 
-if [[ ! -s "$deep_research_env_file" ]]; then
-  mkdir -p "$(dirname "$deep_research_env_file")"
-  umask 077
-  deep_research_key="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
-  printf 'DEEP_RESEARCH_RUNTIME_API_KEY=%s\n' "$deep_research_key" >"$deep_research_env_file"
-  unset deep_research_key
-fi
+python3 "$repo_root/scripts/init-deep-research-env.py" "$deep_research_env_file"
 set -a
 # shellcheck disable=SC1090
 source "$deep_research_env_file"
@@ -113,14 +107,21 @@ local_url="http://127.0.0.1:${OPEN_WEBUI_PORT:-38080}"
 export WEBUI_URL="$local_url"
 export CORS_ALLOW_ORIGIN="$WEBUI_URL;http://localhost:${OPEN_WEBUI_PORT:-38080}"
 
+tailscale_bin=
+if [[ "$action" == up || "$action" == compose ]]; then
+  if tailscale_bin="$(resolve_tailscale_bin)" \
+    && tailscale_url="$(tailscale_webui_url "$tailscale_bin")"; then
+    export WEBUI_URL="$tailscale_url"
+    export CORS_ALLOW_ORIGIN="$CORS_ALLOW_ORIGIN;$WEBUI_URL"
+  fi
+fi
+
 case "$action" in
+  compose)
+    # Reuse the protected environment for targeted updates; never print expanded config.
+    "${compose[@]}" "${@:3}"
+    ;;
   up)
-    tailscale_bin=
-    if tailscale_bin="$(resolve_tailscale_bin)" \
-      && tailscale_url="$(tailscale_webui_url "$tailscale_bin")"; then
-      export WEBUI_URL="$tailscale_url"
-      export CORS_ALLOW_ORIGIN="$CORS_ALLOW_ORIGIN;$WEBUI_URL"
-    fi
     "${compose[@]}" up -d cptr
     "$repo_root/scripts/bootstrap-cptr.sh" "$repo_root"
     unset CPTR_GATEWAY_API_KEY

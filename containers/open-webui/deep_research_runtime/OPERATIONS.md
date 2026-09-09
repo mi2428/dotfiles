@@ -3,6 +3,16 @@ This runbook is for the single `sakura-proxy` / single `deep-research-runtime`
 deployment. Both services must mount the same private volume at
 `/data/deep-research.sqlite3`. Do not scale either service horizontally.
 ## Required environment
+From the repository root, `bash scripts/open-webui.sh "$PWD" compose <arguments>`
+runs Compose with the encrypted environment and persistent local service settings.
+Use this wrapper for the Compose commands below unless that environment is already
+loaded. It initializes missing internal keys in the owner-only local state file
+`$XDG_STATE_HOME/open-webui/deep-research-runtime.env` (defaulting to
+`~/.local/state`), retaining existing keys. Initial account labels follow the
+configured token order and persist; later count/order changes require deliberate
+account-ID configuration, not automatic reassignment. The default operator label
+is `local-operator`. No credential values are stored in Compose or Git.
+
 Provide values through the operator environment or a protected env file; never
 put credentials in command arguments, shell history, logs, or `docker compose config` output.
 - `SAKURA_AI_ACCOUNT_TOKENS`: secrets, held only in proxy memory.
