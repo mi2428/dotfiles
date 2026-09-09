@@ -22,7 +22,7 @@ COPY --from=uv /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-COPY deep_research_runtime.py sakura_kimi_model.py ./
+COPY deep_research_runtime.py sakura_kimi_model.py source_extraction.py ./
 
 USER 10001:10001
 

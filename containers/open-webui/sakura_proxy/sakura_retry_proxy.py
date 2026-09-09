@@ -7,11 +7,13 @@ events require its private header.
 
 from __future__ import annotations
 
+import hmac
 import http.client
 import json
 import logging
 import os
 import random
+import socket
 import ssl
 import threading
 import time
@@ -27,6 +29,15 @@ SSL_CONTEXT = ssl.create_default_context()
 LISTEN_ADDRESS = ("0.0.0.0", 8080)
 TIMEOUT_SAFETY_MARGIN_SECONDS = 300.0
 MAX_REQUEST_BYTES = 64 * 1024 * 1024
+RESEARCH_PATH = "/research/v1/chat/completions"
+RESEARCH_MAX_REQUEST_BYTES = 64 * 1024
+RESEARCH_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+RESEARCH_MAX_DEADLINE_MS = 240_000
+# ponytail: process-local hold only; persist/reconcile account uncertainty before release.
+RESEARCH_UNKNOWN_QUARANTINE_SECONDS = 300.0
+RESEARCH_ATTEMPT_HEADER = "X-Sakura-Attempt-Id"
+RESEARCH_DEADLINE_HEADER = "X-Sakura-Deadline-Unix-Ms"
+RESEARCH_SEND_HEADER = "X-Sakura-Upstream-Send"
 HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -150,6 +161,7 @@ class Settings:
     retry_budget: float = 3200.0
     upstream_timeout: float = 420.0
     account_tokens: tuple[str, ...] = ()
+    research_api_key: str = ""
 
     def __post_init__(self) -> None:
         if (
@@ -201,6 +213,7 @@ class Settings:
                 os.getenv("SAKURA_UPSTREAM_TIMEOUT_SECONDS", defaults.upstream_timeout)
             ),
             account_tokens=account_tokens,
+            research_api_key=os.getenv("SAKURA_RESEARCH_API_KEY", "").strip(),
         )
 
 
@@ -301,14 +314,300 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         """Handle health checks and upstream GET requests."""
+        if self.path == RESEARCH_PATH:
+            self._research_error(405, self._research_attempt_id(), "not-sent")
+            return
         self._proxy()
 
-    do_POST = do_GET
+    def do_POST(self) -> None:
+        if self.path == RESEARCH_PATH:
+            self._research_proxy()
+            return
+        self._proxy()
 
     def log_message(self, format: str, *args: object) -> None:
         """Log requests without flooding logs with health checks."""
         if self.path != "/health":
             LOG.info("%s - %s", self.client_address[0], format % args)
+
+    def _research_attempt_id(self) -> str | None:
+        values = self.headers.get_all(RESEARCH_ATTEMPT_HEADER, [])
+        if len(values) != 1:
+            return None
+        value = values[0]
+        if not 1 <= len(value) <= 128 or not all(
+            character.isascii() and (character.isalnum() or character in "-_.")
+            for character in value
+        ):
+            return None
+        return value
+
+    def _research_headers(self, attempt_id: str | None, state: str) -> dict[str, str]:
+        headers = {RESEARCH_SEND_HEADER: state}
+        if attempt_id is not None:
+            headers[RESEARCH_ATTEMPT_HEADER] = attempt_id
+        return headers
+
+    def _research_error(self, status: int, attempt_id: str | None, state: str) -> None:
+        self.close_connection = True
+        try:
+            self._send_json(
+                status,
+                {"error": {"code": "research_transport", "message": "request failed"}},
+                self._research_headers(attempt_id, state),
+            )
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            self.close_connection = True
+
+    @staticmethod
+    def _valid_research_body(body: bytes) -> bool:
+        try:
+            payload = json.loads(body)
+        except (ValueError, UnicodeDecodeError, RecursionError):
+            return False
+        if type(payload) is not dict or set(payload) != {
+            "max_tokens",
+            "messages",
+            "model",
+            "stream",
+            "stream_options",
+        }:
+            return False
+        max_tokens = payload["max_tokens"]
+        messages = payload["messages"]
+        return (
+            type(max_tokens) is int
+            and 1 <= max_tokens <= 16_384
+            and type(payload["model"]) is str
+            and bool(payload["model"])
+            and payload["stream"] is True
+            and payload["stream_options"] == {"include_usage": True}
+            and type(messages) is list
+            and len(messages) == 2
+            and all(
+                type(message) is dict
+                and set(message) == {"content", "role"}
+                and type(message["content"]) is str
+                and message["role"] == role
+                for message, role in zip(messages, ("system", "user"), strict=True)
+            )
+        )
+
+    def _read_research_body(self) -> bytes | None:
+        if self.headers.get("Transfer-Encoding"):
+            return None
+        lengths = self.headers.get_all("Content-Length", [])
+        if len(lengths) != 1:
+            return None
+        try:
+            length = int(lengths[0])
+        except ValueError:
+            return None
+        if not 0 < length <= RESEARCH_MAX_REQUEST_BYTES:
+            return None
+        body = self.rfile.read(length)
+        return body if len(body) == length else None
+
+    @staticmethod
+    def _close_connection(connection: http.client.HTTPConnection | None) -> None:
+        if connection is None:
+            return
+        try:
+            if connection.sock is not None:
+                connection.sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        connection.close()
+
+    def _research_proxy(self) -> None:
+        attempt_id = self._research_attempt_id()
+        expected = self.settings.research_api_key
+        authorizations = self.headers.get_all("Authorization", [])
+        if (
+            not expected
+            or len(authorizations) != 1
+            or not hmac.compare_digest(
+                authorizations[0].encode(), f"Bearer {expected}".encode()
+            )
+        ):
+            self._research_error(401, attempt_id, "not-sent")
+            return
+        deadlines = self.headers.get_all(RESEARCH_DEADLINE_HEADER, [])
+        if attempt_id is None or len(deadlines) != 1 or not deadlines[0].isascii():
+            self._research_error(400, attempt_id, "not-sent")
+            return
+        try:
+            remaining_ms = int(deadlines[0]) - time.time_ns() // 1_000_000
+        except ValueError:
+            remaining_ms = 0
+        if not 0 < remaining_ms <= RESEARCH_MAX_DEADLINE_MS:
+            self._research_error(400, attempt_id, "not-sent")
+            return
+        deadline = time.monotonic() + remaining_ms / 1000
+        upstream_connection: http.client.HTTPConnection | None = None
+
+        def expire() -> None:
+            self._close_connection(upstream_connection)
+            try:
+                self.connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+        watchdog = threading.Timer(remaining_ms / 1000, expire)
+        watchdog.daemon = True
+        watchdog.start()
+        lease: TokenLease | None = None
+        response: http.client.HTTPResponse | None = None
+        sent = False
+        unknown = False
+        downstream_started = False
+        try:
+            body = self._read_research_body()
+            if body is None or not self._valid_research_body(body):
+                self._research_error(400, attempt_id, "not-sent")
+                return
+            lease, _shared_wait = type(self).token_state.acquire(
+                deadline, self._client_disconnected
+            )
+            if lease is None:
+                self._research_error(504, attempt_id, "not-sent")
+                return
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self._research_error(504, attempt_id, "not-sent")
+                return
+            host = self.upstream.hostname
+            if host is None:
+                self._research_error(502, attempt_id, "not-sent")
+                return
+            if self.upstream.scheme == "https":
+                upstream_connection = http.client.HTTPSConnection(
+                    host,
+                    self.upstream.port,
+                    timeout=remaining,
+                    context=SSL_CONTEXT,
+                )
+            else:
+                upstream_connection = http.client.HTTPConnection(
+                    host, self.upstream.port, timeout=remaining
+                )
+            headers = {
+                "Accept": "text/event-stream",
+                "Accept-Encoding": "identity",
+                "Authorization": f"Bearer {lease.token}",
+                "Content-Length": str(len(body)),
+                "Content-Type": "application/json",
+                "Host": self.upstream.netloc,
+            }
+            upstream_connection.connect()
+            upstream_connection.auto_open = 0
+            remaining = deadline - time.monotonic()
+            if (
+                remaining <= 0
+                or self._client_disconnected()
+                or upstream_connection.sock is None
+            ):
+                raise TimeoutError("research connect deadline")
+            upstream_connection.sock.settimeout(remaining)
+            sent = True
+            upstream_connection.request(
+                "POST",
+                f"{self.upstream.path.rstrip('/')}/v1/chat/completions",
+                body,
+                headers,
+            )
+            response = upstream_connection.getresponse()
+            if response.status == 429:
+                delay = retry_delay_seconds(
+                    self.settings,
+                    0,
+                    retry_after_seconds(response.getheader("Retry-After")),
+                )
+                type(self).token_state.schedule(lease.slot, delay)
+            declared_length = response.getheader("Content-Length")
+            if declared_length is not None:
+                try:
+                    if int(declared_length) > RESEARCH_MAX_RESPONSE_BYTES:
+                        unknown = True
+                        self._research_error(502, attempt_id, "unknown")
+                        return
+                except ValueError:
+                    unknown = True
+                    self._research_error(502, attempt_id, "unknown")
+                    return
+            downstream_started = True
+            saw_done = self._stream_research(
+                upstream_connection, response, attempt_id, deadline
+            )
+            unknown = 200 <= response.status < 300 and not saw_done
+        except (TimeoutError, OSError, http.client.HTTPException):
+            unknown = sent
+            if downstream_started:
+                self.close_connection = True
+            else:
+                self._research_error(
+                    504 if time.monotonic() >= deadline else 502,
+                    attempt_id,
+                    "unknown" if sent else "not-sent",
+                )
+        finally:
+            watchdog.cancel()
+            if lease is not None:
+                if unknown:
+                    type(self).token_state.schedule_and_release(
+                        lease, RESEARCH_UNKNOWN_QUARANTINE_SECONDS
+                    )
+                else:
+                    type(self).token_state.release(lease)
+            if response is not None:
+                response.close()
+            self._close_connection(upstream_connection)
+            self.close_connection = True
+
+    def _stream_research(
+        self,
+        connection: http.client.HTTPConnection,
+        response: http.client.HTTPResponse,
+        attempt_id: str,
+        deadline: float,
+    ) -> bool:
+        self.send_response(response.status, response.reason)
+        for name, value in response.getheaders():
+            if name.casefold() not in HOP_BY_HOP_HEADERS | {
+                RESEARCH_ATTEMPT_HEADER.casefold(),
+                RESEARCH_SEND_HEADER.casefold(),
+            }:
+                self.send_header(name, value)
+        self.send_header(RESEARCH_ATTEMPT_HEADER, attempt_id)
+        self.send_header(RESEARCH_SEND_HEADER, "sent")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        received = 0
+        line_buffer = b""
+        saw_done = False
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("research deadline")
+            if connection.sock is not None:
+                connection.sock.settimeout(remaining)
+            chunk = response.read1(
+                min(64 * 1024, RESEARCH_MAX_RESPONSE_BYTES + 1 - received)
+            )
+            if not chunk:
+                return saw_done
+            received += len(chunk)
+            if received > RESEARCH_MAX_RESPONSE_BYTES:
+                raise OSError("research response limit")
+            lines = (line_buffer + chunk).split(b"\n")
+            line_buffer = lines.pop()
+            saw_done = saw_done or any(
+                line.strip() in {b"data: [DONE]", b"data:[DONE]"} for line in lines
+            )
+            if len(line_buffer) > len(b"data: [DONE]"):
+                line_buffer = b"!"
+            self.wfile.write(chunk)
+            self.wfile.flush()
 
     def _proxy(self) -> None:
         if self.path == "/health":

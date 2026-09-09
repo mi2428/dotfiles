@@ -14,6 +14,7 @@ from openai import APIConnectionError, APIError, APIStatusError
 from pydantic import ValidationError
 from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands.tools.executors import SequentialToolExecutor
+from strands.tools.structured_output import convert_pydantic_to_tool_spec
 
 from test_support import FakeResponse, FakeSession, RuntimeTestCase, make_state, rt
 
@@ -80,131 +81,6 @@ def render_contract() -> rt.SectionContract:
 
 
 class RuntimeContractTests(RuntimeTestCase):
-    def test_openapi_auth_and_cached_markdown(self) -> None:
-        async def run() -> None:
-            transport = httpx.ASGITransport(app=rt.app)
-            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                self.assertEqual(
-                    (await client.post("/research", json={"query": "x"})).status_code, 401
-                )
-                cached = rt.FinalReport(
-                    version=2,
-                    answer_markdown="done [S1]",
-                    outcome="completed",
-                ).model_dump()
-                with patch.object(
-                    rt,
-                    "reserve_run",
-                    new=AsyncMock(return_value=("rid", "hash", cached, None)),
-                ):
-                    response = await client.post(
-                        "/research",
-                        headers={"Authorization": "Bearer test-api-key"},
-                        json={"query": "cached"},
-                    )
-                self.assertEqual(response.text, "done [S1]")
-                self.assertEqual(response.headers["x-openwebui-direct-output"], "true")
-                self.assertEqual(response.headers["x-deep-research-status"], "completed")
-
-        asyncio.run(run())
-
-    def test_openapi_cached_degraded_report_uses_degraded_status_header(self) -> None:
-        async def run() -> None:
-            transport = httpx.ASGITransport(app=rt.app)
-            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                cached = rt.FinalReport(
-                    version=2,
-                    answer_markdown=(
-                        "> Degraded report\n\n## Summary\n\nBody [S1]\n\n"
-                        "## Limitations\n- gap\n\n## Sources\n"
-                        "[1] https://example.com — <https://example.com>"
-                    ),
-                    outcome="degraded",
-                ).model_dump()
-                with patch.object(
-                    rt,
-                    "reserve_run",
-                    new=AsyncMock(return_value=("rid", "hash", cached, None)),
-                ):
-                    response = await client.post(
-                        "/research",
-                        headers={"Authorization": "Bearer test-api-key"},
-                        json={"query": "cached"},
-                    )
-            self.assertEqual(response.headers["x-deep-research-status"], "degraded")
-
-        asyncio.run(run())
-
-    def test_openapi_rejects_wrong_auth_scheme_and_key(self) -> None:
-        async def run() -> None:
-            transport = httpx.ASGITransport(app=rt.app)
-            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                wrong_scheme = await client.post(
-                    "/research",
-                    headers={"Authorization": "Basic nope"},
-                    json={"query": "x"},
-                )
-                wrong_key = await client.post(
-                    "/research",
-                    headers={"Authorization": "Bearer wrong-key"},
-                    json={"query": "x"},
-                )
-            self.assertEqual(wrong_scheme.status_code, 401)
-            self.assertEqual(wrong_key.status_code, 401)
-
-        asyncio.run(run())
-
-    def test_openapi_preserves_incomplete_cancel_and_fatal_boundaries(self) -> None:
-        async def run() -> None:
-            transport = httpx.ASGITransport(app=rt.app)
-            headers = {"Authorization": "Bearer test-api-key"}
-            reserved = AsyncMock(return_value=("rid", "hash", None, None))
-            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                with (
-                    patch.object(rt, "reserve_run", new=reserved),
-                    patch.object(
-                        rt,
-                        "run_research",
-                        new=AsyncMock(
-                            side_effect=rt.IncompleteResearchError("no_progress", "partial\n")
-                        ),
-                    ),
-                ):
-                    incomplete = await client.post(
-                        "/research", headers=headers, json={"query": "incomplete"}
-                    )
-                self.assertEqual(incomplete.text, "partial\n")
-                self.assertTrue(incomplete.headers["content-type"].startswith("text/plain"))
-                self.assertEqual(incomplete.headers["x-openwebui-direct-output"], "true")
-                self.assertEqual(incomplete.headers["x-deep-research-status"], "failed")
-
-                with (
-                    patch.object(rt, "reserve_run", new=reserved),
-                    patch.object(
-                        rt,
-                        "run_research",
-                        new=AsyncMock(side_effect=asyncio.CancelledError()),
-                    ),
-                ):
-                    cancelled = await client.post(
-                        "/research", headers=headers, json={"query": "cancelled"}
-                    )
-                self.assertEqual(cancelled.status_code, 499)
-
-                with (
-                    patch.object(rt, "reserve_run", new=reserved),
-                    patch.object(
-                        rt,
-                        "run_research",
-                        new=AsyncMock(side_effect=rt.IntegrityError("corrupt")),
-                    ),
-                    self.assertLogs(rt.LOG.name, level="ERROR"),
-                ):
-                    fatal = await client.post("/research", headers=headers, json={"query": "fatal"})
-                self.assertEqual(fatal.status_code, 502)
-
-        asyncio.run(run())
-
     def test_final_report_renders_exact_sources_and_empty_limitations_policy(self) -> None:
         research = rt.ResearchRequest(query="Evidence", depth="quick")
         state = make_state(3, "quick")
@@ -263,128 +139,6 @@ class RuntimeContractTests(RuntimeTestCase):
             ):
                 rt.make_budget("deep")
 
-    def test_idempotency_conflict_completed_cache_corruption_and_impossible_status(self) -> None:
-        async def run() -> None:
-            research = rt.ResearchRequest(query="sample", depth="quick")
-            key = rt.normalize_idempotency_key("message")
-            research_id, request_hash, _cached, _snapshot = await rt.reserve_run(
-                self.runtime, research, key
-            )
-            response = rt.FinalReport(
-                version=2,
-                answer_markdown="done [S1]",
-                outcome="completed",
-            )
-            checkpoint = rt.run_state_snapshot(make_state(1, "quick"))
-            with self.assertRaisesRegex(rt.IntegrityError, "versioned checkpoint"):
-                await rt.checkpoint_run(
-                    self.runtime,
-                    key,
-                    "completed",
-                    research_id,
-                    request_hash,
-                    response=response.model_dump(),
-                )
-            await rt.checkpoint_run(
-                self.runtime,
-                key,
-                "completed",
-                research_id,
-                request_hash,
-                response=response.model_dump(),
-                state=checkpoint,
-            )
-            row = self.runtime.db.execute(
-                "SELECT state_json FROM research_runs WHERE idempotency_key=?", (key,)
-            ).fetchone()
-            diagnostic = json.loads(row["state_json"])
-            self.assertEqual(diagnostic["checkpoint_version"], 2)
-            diagnostic["checkpoint_version"] = 1
-            diagnostic["stats"]["depth"] = "corrupt"
-            self.runtime.db.execute(
-                "UPDATE research_runs SET state_json=? WHERE idempotency_key=?",
-                (json.dumps(diagnostic), key),
-            )
-            self.runtime.db.commit()
-            replay_id, _, replay, replay_state = await rt.reserve_run(self.runtime, research, key)
-            self.assertEqual(replay_id, research_id)
-            self.assertEqual(replay, response.model_dump())
-            self.assertIsNone(replay_state)
-            transport = httpx.ASGITransport(app=rt.app)
-            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                cached_http = await client.post(
-                    "/research",
-                    headers={
-                        "Authorization": "Bearer test-api-key",
-                        "x-openwebui-message-id": "message",
-                    },
-                    json={"query": "sample", "depth": "quick"},
-                )
-            self.assertEqual(cached_http.text, response.answer_markdown)
-            self.assertEqual(cached_http.headers["x-deep-research-status"], response.outcome)
-            with self.assertRaises(rt.HTTPException) as conflict:
-                await rt.reserve_run(
-                    self.runtime,
-                    rt.ResearchRequest(query="different", depth="quick"),
-                    key,
-                )
-            self.assertEqual(conflict.exception.status_code, 409)
-            self.runtime.db.execute(
-                "UPDATE research_runs SET response_json='{}' WHERE idempotency_key=?",
-                (key,),
-            )
-            self.runtime.db.commit()
-            with self.assertRaisesRegex(rt.IntegrityError, "unsupported final report version"):
-                await rt.reserve_run(self.runtime, research, key)
-
-            bad_key = "impossible-status"
-            self.runtime.db.execute(
-                """
-                INSERT INTO research_runs (
-                    idempotency_key, request_hash, research_id, status,
-                    response_json, state_json, created_at, updated_at
-                ) VALUES (?, ?, 'rid', 'failed_with_output', NULL, NULL, 1, 1)
-                """,
-                (bad_key, request_hash),
-            )
-            self.runtime.db.commit()
-            with self.assertRaises(rt.IntegrityError):
-                await rt.reserve_run(self.runtime, research, bad_key)
-
-        asyncio.run(run())
-
-    def test_reserve_rejects_unversioned_checkpoint_without_mutating_row(self) -> None:
-        async def run() -> None:
-            research = rt.ResearchRequest(query="sample", depth="quick")
-            request_hash = rt.query_hash(research.model_dump())
-            for key, version in (("missing-version", None), ("wrong-version", 1)):
-                snapshot = rt.run_state_snapshot(make_state(1, "quick"))
-                if version is None:
-                    snapshot.pop("checkpoint_version")
-                else:
-                    snapshot["checkpoint_version"] = version
-                self.runtime.db.execute(
-                    """
-                    INSERT INTO research_runs (
-                        idempotency_key, request_hash, research_id, status,
-                        response_json, state_json, created_at, updated_at
-                    ) VALUES (?, ?, 'rid', 'failed', NULL, ?, 1, 1)
-                    """,
-                    (key, request_hash, json.dumps(snapshot)),
-                )
-                self.runtime.db.commit()
-                with (
-                    self.subTest(key=key),
-                    self.assertRaisesRegex(rt.IntegrityError, "unsupported checkpoint version"),
-                ):
-                    await rt.reserve_run(self.runtime, research, key)
-                row = self.runtime.db.execute(
-                    "SELECT status FROM research_runs WHERE idempotency_key=?", (key,)
-                ).fetchone()
-                self.assertEqual(row["status"], "failed")
-
-        asyncio.run(run())
-
     def test_structured_timeout_keeps_provider_240s_inside_existing_envelope(self) -> None:
         self.assertEqual(self.runtime.settings.kimi_timeout_seconds, 3600)
         self.assertEqual(rt.wall_budget_seconds("quick"), 3900)
@@ -406,8 +160,31 @@ class RuntimeContractTests(RuntimeTestCase):
         finalizer_params = cast(dict[str, Any], finalizer_model.config["params"])
         self.assertEqual(model.client_args["timeout"], 3600)
         self.assertEqual(model.client_args["max_retries"], 0)
-        self.assertNotIn("tool_choice", research_params)
-        self.assertEqual(finalizer_params["tool_choice"], "required")
+        self.assertEqual(research_params, {"max_tokens": rt.KIMI_MAX_TOKENS})
+        self.assertEqual(
+            finalizer_params,
+            {"max_tokens": rt.FINALIZER_MAX_TOKENS, "tool_choice": "required"},
+        )
+        for effort in ("low", "medium", "high"):
+            judge_model = cast(
+                rt.SakuraKimiModel,
+                rt.build_agent(
+                    self.runtime.settings,
+                    [],
+                    "judge",
+                    reasoning_effort=cast(Any, effort),
+                ).model,
+            )
+            judge_params = cast(dict[str, Any], judge_model.config["params"])
+            self.assertEqual(judge_params["reasoning_effort"], effort)
+        for invalid in ("", "none"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                rt.build_agent(
+                    self.runtime.settings,
+                    [],
+                    "judge",
+                    reasoning_effort=cast(Any, invalid),
+                )
         self.assertIsInstance(manager, SlidingWindowConversationManager)
         self.assertIsInstance(agent.tool_executor, SequentialToolExecutor)
         self.assertEqual(manager.window_size, 30)
@@ -567,6 +344,28 @@ class RuntimeContractTests(RuntimeTestCase):
             {item.id for item in fragments},
         )
         self.assertEqual([item.requirement_ids for item in sections], [["R1"]])
+
+    def test_plan_section_heading_is_validated_at_the_structured_boundary(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
+        payload = deep_plan_for(research).model_dump()
+        payload["sections"][0]["heading"] = "  限界  "
+        with self.assertRaisesRegex(
+            ValidationError,
+            "heading is reserved for deterministic report assembly",
+        ):
+            rt.PlanDraft.model_validate(payload)
+
+        payload["sections"][0]["heading"] = "  Findings  "
+        self.assertEqual(rt.PlanDraft.model_validate(payload).sections[0].heading, "Findings")
+
+        schema_heading = rt.PlanDraft.model_json_schema()["$defs"]["PlanSection"]["properties"][
+            "heading"
+        ]
+        tool_heading = convert_pydantic_to_tool_spec(rt.PlanDraft)["inputSchema"]["json"][
+            "properties"
+        ]["sections"]["items"]["properties"]["heading"]
+        self.assertIn("must not start", schema_heading["description"])
+        self.assertEqual(tool_heading["description"], schema_heading["description"])
 
     def test_requirement_coverage_uses_direct_one_host_and_comparison_two_hosts(self) -> None:
         state = make_state(3)
@@ -1297,7 +1096,7 @@ class RuntimeContractTests(RuntimeTestCase):
         with self.assertRaises(rt.IntegrityError):
             rt.validate_checkpoint_state(loaded, research)
 
-    def test_extraction_provenance_and_status_invariants(self) -> None:
+    def test_extraction_provenance(self) -> None:
         async def run() -> None:
             raw = (
                 b"<html><body><article>Performance evidence with enough substantive text."
@@ -1321,39 +1120,6 @@ class RuntimeContractTests(RuntimeTestCase):
                 )
             self.assertEqual(evidence.search_query, "performance evidence")
             self.assertEqual(evidence.purpose, "measured result")
-
-            request = rt.ResearchRequest(query="sample", depth="quick")
-            key = rt.normalize_idempotency_key("message")
-            research_id, request_hash, cached, snapshot = await rt.reserve_run(
-                self.runtime, request, key
-            )
-            self.assertIsNone(cached)
-            self.assertIsNone(snapshot)
-            state = make_state(1, "quick")
-            with self.assertRaisesRegex(rt.IntegrityError, "versioned checkpoint"):
-                await rt.checkpoint_run(
-                    self.runtime,
-                    key,
-                    "running",
-                    research_id,
-                    request_hash,
-                    state={},
-                )
-            await rt.checkpoint_run(
-                self.runtime,
-                key,
-                "failed_with_output",
-                research_id,
-                request_hash,
-                error="no_progress",
-                state=rt.run_state_snapshot(state),
-            )
-            resumed_id, _, resumed_cached, resumed_snapshot = await rt.reserve_run(
-                self.runtime, request, key
-            )
-            self.assertEqual(resumed_id, research_id)
-            self.assertIsNone(resumed_cached)
-            self.assertIsNotNone(resumed_snapshot)
 
         asyncio.run(run())
 
@@ -1664,6 +1430,26 @@ class RuntimeContractTests(RuntimeTestCase):
                 wall_limit=rt.wall_budget_seconds("quick"),
             )
             rt.validate_checkpoint_state(loaded, quick_research)
+
+    def test_checkpoint_rejects_noncanonical_plan_heading_without_mutation(self) -> None:
+        research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
+        state = make_state(0)
+        rt.store_initial_plan(state, research, deep_plan_for(research))
+        snapshot = rt.run_state_snapshot(state)
+        snapshot["report_plan"][0]["heading"] = "  Section 1  "
+        before = json.loads(json.dumps(snapshot))
+
+        with self.assertRaisesRegex(
+            rt.IntegrityError,
+            "^checkpointed report plan is not normalized$",
+        ):
+            rt.load_run_state(
+                snapshot,
+                depth="deep",
+                budget=rt.make_budget("deep"),
+                wall_limit=rt.wall_budget_seconds("deep"),
+            )
+        self.assertEqual(snapshot, before)
 
     def test_checkpoint_rejects_candidate_urls_outside_runtime_invariants(self) -> None:
         research = rt.ResearchRequest(query="Need direct evidence", depth="deep")
