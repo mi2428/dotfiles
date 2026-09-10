@@ -161,6 +161,7 @@ SAFE_MODEL_VALIDATION_HINTS = frozenset(
         "follow-up research queries must be new and unique",
         "adequate essential evidence must stop follow-up research",
         "stopped research requires an explicit reason",
+        "follow-up research requires three to six queries",
         "research query checklist references are invalid",
         "query is empty",
         "query too long",
@@ -1955,6 +1956,28 @@ def safe_job_error_code(value: Any) -> str | None:
     return code if code in SAFE_JOB_ERROR_CODES else "internal_error"
 
 
+def safe_model_validation_hint(error: ValueError | ValidationError) -> str | None:
+    message = str(error)
+    if message in SAFE_MODEL_VALIDATION_HINTS:
+        return message
+    if not isinstance(error, ValidationError):
+        return None
+    details = error.errors(include_url=False, include_input=False)
+    for detail in details:
+        cause = (detail.get("ctx") or {}).get("error")
+        message = str(cause) if isinstance(cause, ValueError) else ""
+        if message in SAFE_MODEL_VALIDATION_HINTS:
+            return message
+    for detail in details:
+        if str(detail.get("type")) not in {"too_long", "string_too_long"}:
+            continue
+        location = ".".join(str(part) for part in detail.get("loc", ()))[:120]
+        maximum = (detail.get("ctx") or {}).get("max_length")
+        if location and type(maximum) is int:
+            return f"{location} exceeds its schema maximum length of {maximum}"
+    return None
+
+
 def verified_stored_markdown(row: sqlite3.Row, label: str) -> str:
     markdown = str(row["markdown"])
     if not hmac.compare_digest(
@@ -3320,7 +3343,7 @@ async def _invoke_job_model_once(
                 await update_attempt(runtime, job_id, attempt_id, completion, None)
                 raise
             except (ValueError, ValidationError) as error:
-                validation_hint = str(error) if str(error) in SAFE_MODEL_VALIDATION_HINTS else None
+                validation_hint = safe_model_validation_hint(error)
                 kinds = (
                     sorted(
                         {

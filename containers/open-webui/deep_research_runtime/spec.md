@@ -370,6 +370,8 @@ have separate counters and do not consume provider-attempt IDs.
 For an author-unit numeric-block violation, the single correction receives the
 unpersisted failed draft as untrusted input and edits that draft instead of blindly
 regenerating it; the same validators and attempt limits still apply.
+Pydantic corrections receive only bounded schema locations/limits or explicitly
+approved validator messages. Rejected values are not copied into logs or hints.
 
 Before research dispatch, reserve at least `4 * units + 6` provider attempts for
 two complete ledger/write/review/edit/recheck candidate paths. Additional packed

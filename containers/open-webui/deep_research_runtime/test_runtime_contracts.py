@@ -292,6 +292,7 @@ class RuntimeContractTests(RuntimeTestCase):
             "follow-up research queries must be new and unique",
             "adequate essential evidence must stop follow-up research",
             "stopped research requires an explicit reason",
+            "follow-up research requires three to six queries",
             "research query checklist references are invalid",
             "query is empty",
             "query too long",
@@ -299,6 +300,43 @@ class RuntimeContractTests(RuntimeTestCase):
             "purpose too long",
         }
         self.assertLessEqual(expected, rt.SAFE_MODEL_VALIDATION_HINTS)
+
+    def test_pydantic_failures_produce_bounded_safe_repair_hints(self) -> None:
+        with self.assertRaises(ValidationError) as too_long:
+            rt.ChecklistEvidence(
+                checklist_id="C1",
+                status="qualified",
+                origin="official",
+                authority="primary",
+                limitation="x" * 501,
+            )
+        self.assertEqual(
+            rt.safe_model_validation_hint(too_long.exception),
+            "limitation exceeds its schema maximum length of 500",
+        )
+
+        query = rt.ResearchQuery(
+            query="follow up",
+            purpose="fill a gap",
+            checklist_ids=["C1"],
+        )
+        with self.assertRaises(ValidationError) as semantic:
+            rt.EvidenceAssessment(
+                items=[
+                    rt.ChecklistEvidence(
+                        checklist_id="C1",
+                        status="covered",
+                        passage_ids=["S1:P0-80"],
+                        origin="official",
+                        authority="primary",
+                    )
+                ],
+                follow_up_queries=[query],
+            )
+        self.assertEqual(
+            rt.safe_model_validation_hint(semantic.exception),
+            "follow-up research requires three to six queries",
+        )
 
     def test_adaptive_research_runs_at_most_four_rounds(self) -> None:
         async def run() -> None:
