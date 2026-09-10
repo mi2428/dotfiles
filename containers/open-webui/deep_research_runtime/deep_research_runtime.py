@@ -3735,7 +3735,8 @@ async def select_round_candidates(
             + "Return exactly one CandidateSelection JSON object. Select only supplied result IDs. "
             "Obey every schema and semantic constraint in the request, including document_slots. "
             "Prefer documents likely to provide primary, adverse, or definition-resolving "
-            "evidence. Prefer planner-direct results when they are canonical primary sources. "
+            "evidence. Treat planner-direct results as unverified fallbacks, not as preferred "
+            "sources; prefer informative search-result metadata for the same target. "
             "Same-host documents are allowed when they are separately useful."
         )
 
@@ -4054,8 +4055,8 @@ async def run_job_research(
             results = [
                 SearchResult(
                     url,
-                    f"Direct primary source: {urlparse(url).hostname or url}",
-                    query.purpose,
+                    f"Unverified direct candidate: {urlparse(url).hostname or url}",
+                    "Planner-supplied URL; fetch and passage admission have not verified it.",
                     "planner-direct",
                     query.query,
                 )

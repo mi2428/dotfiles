@@ -91,7 +91,8 @@ The first bounded model assignment converts the original request into a
 Direct URL candidates are untrusted hints, not evidence. They pass through the same
 public-URL validation, bounded fetch, immutable storage, extraction and passage
 admission path as search results. The planner leaves the list empty rather than
-guessing a URL.
+guessing a URL. Candidate selection does not prefer these unverified URLs over
+informative search-result metadata for the same target.
 
 The original request remains authoritative. The runtime assigns stable IDs to its
 explicit clauses and list items before planning. A plan cannot remove, weaken or

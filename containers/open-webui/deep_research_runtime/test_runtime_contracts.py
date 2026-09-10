@@ -240,8 +240,14 @@ class RuntimeContractTests(RuntimeTestCase):
             assert call is not None
             results = call.args[4]["results"]
             self.assertEqual(
-                [(item["url"], item["engine"]) for item in results],
-                [("https://www.rfc-editor.org/rfc/rfc9111.html", "planner-direct")],
+                [(item["url"], item["title"], item["engine"]) for item in results],
+                [
+                    (
+                        "https://www.rfc-editor.org/rfc/rfc9111.html",
+                        "Unverified direct candidate: www.rfc-editor.org",
+                        "planner-direct",
+                    )
+                ],
             )
 
         asyncio.run(run())
