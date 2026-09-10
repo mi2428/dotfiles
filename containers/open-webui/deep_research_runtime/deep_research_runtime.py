@@ -3771,7 +3771,7 @@ async def assess_research_round(
             "passage_index": [
                 {
                     "id": item["id"],
-                    "checklist_ids": item["checklist_ids"],
+                    "retrieval_hint_ids": item["checklist_ids"],
                     "origin": item["origin"],
                     "authority": item["authority"],
                     "title": item["title"],
@@ -3793,6 +3793,8 @@ async def assess_research_round(
         "as covered, qualified, or unresolved using only admitted passage IDs. Record evidence "
         "origin and authority and preserve conflicts. Covered or qualified items require at least "
         "one admitted passage; qualified or unresolved items require a non-empty limitation. "
+        "Passage retrieval_hint_ids are non-exclusive hints, not admission boundaries; any "
+        "selected verbatim passage may support any checklist item when its text entails it. "
         "Follow-up queries must be three to six new unique queries not already searched. Return no "
         "follow-up queries when all essential items are covered or qualified, and include a "
         "non-empty stop_reason whenever follow_up_queries is empty. For requested calculations, "

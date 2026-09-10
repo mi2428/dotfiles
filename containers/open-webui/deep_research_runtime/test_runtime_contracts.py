@@ -215,10 +215,14 @@ class RuntimeContractTests(RuntimeTestCase):
             assessment_system = json.loads(provider.bodies[2])["messages"][0]["content"]
             for rule in (
                 "qualified or unresolved items require a non-empty limitation",
+                "retrieval_hint_ids are non-exclusive hints, not admission boundaries",
                 "new unique queries not already searched",
                 "non-empty stop_reason whenever follow_up_queries is empty",
             ):
                 self.assertIn(rule, assessment_system)
+            assessment_prompt = json.loads(json.loads(provider.bodies[2])["messages"][1]["content"])
+            self.assertIn("retrieval_hint_ids", assessment_prompt["passage_index"][0])
+            self.assertNotIn("checklist_ids", assessment_prompt["passage_index"][0])
 
         asyncio.run(run())
 

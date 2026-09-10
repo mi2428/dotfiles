@@ -113,6 +113,8 @@ An evidence assessment labels each checklist item `covered`, `qualified`, or
 `unresolved` and references only admitted passage IDs. It also records evidence
 origin and authority: multiple hosts repeating one report are one origin, while
 different useful pages on the same official site remain valid separate documents.
+Passage-to-checklist relevance tags are retrieval hints, not admission boundaries;
+any prompt-visible passage may support any checklist item when its text entails it.
 
 The runtime deduplicates exact URLs and content identities. It MUST NOT discard a
 document merely because another accepted document shares its host. It MUST NOT use
