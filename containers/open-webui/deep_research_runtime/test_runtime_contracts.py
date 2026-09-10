@@ -162,6 +162,23 @@ class RuntimeContractTests(RuntimeTestCase):
         )
         self.assertEqual(excerpt, focused)
 
+    def test_assessment_semantic_failures_are_safe_repair_hints(self) -> None:
+        expected = {
+            "evidence assessment must cover every checklist item in order",
+            "evidence assessment passage references are invalid",
+            "covered evidence assessment requires admitted passages",
+            "qualified or unresolved evidence requires a limitation",
+            "follow-up research queries must be new and unique",
+            "adequate essential evidence must stop follow-up research",
+            "stopped research requires an explicit reason",
+            "research query checklist references are invalid",
+            "query is empty",
+            "query too long",
+            "purpose is empty",
+            "purpose too long",
+        }
+        self.assertLessEqual(expected, rt.SAFE_MODEL_VALIDATION_HINTS)
+
     def test_adaptive_research_runs_at_most_four_rounds(self) -> None:
         async def run() -> None:
             outputs = [completion(plan_json())]
@@ -761,6 +778,7 @@ class RuntimeContractTests(RuntimeTestCase):
                 (1, "document_slots"),
                 (3, "schema and semantic constraint"),
                 (4, "citation in a neighboring block does not count"),
+                (4, "Treat blank lines as block boundaries"),
                 (6, "Every patch requires checklist and source IDs"),
                 (7, "never both"),
                 (8, "resolved=true only when every"),

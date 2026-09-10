@@ -152,6 +152,18 @@ SAFE_MODEL_VALIDATION_HINTS = frozenset(
         "author unit is shorter than 1200 substantive characters",
         "every Markdown block containing a digit needs an admitted citation in that block",
         "numeric derivation lacks assumptions or sensitivity",
+        "evidence assessment must cover every checklist item in order",
+        "evidence assessment passage references are invalid",
+        "covered evidence assessment requires admitted passages",
+        "qualified or unresolved evidence requires a limitation",
+        "follow-up research queries must be new and unique",
+        "adequate essential evidence must stop follow-up research",
+        "stopped research requires an explicit reason",
+        "research query checklist references are invalid",
+        "query is empty",
+        "query too long",
+        "purpose is empty",
+        "purpose too long",
     }
 )
 UNKNOWN_RISK_ACK = "possible duplicate execution or charge; no refund; no replay"
@@ -3087,9 +3099,10 @@ async def invoke_job_model(
         "numeric derivation lacks assumptions or sensitivity",
     }:
         correction += (
-            " Recheck both numeric constraints: every Markdown block containing a digit needs an "
-            "admitted citation in that block, and every numeric derivation needs explicit "
-            "assumptions or sensitivity."
+            " Recheck each blank-line-separated non-heading block. If it contains a digit, keep it "
+            "only when supported and append an exact admitted citation in that block; otherwise "
+            "remove or rephrase it. Also ensure every numeric derivation has explicit assumptions "
+            "or sensitivity."
         )
     return await invoke_with_transport_retries(
         runtime,
@@ -4466,7 +4479,8 @@ async def create_raw_candidate(
             "Markdown paragraph, list, or table containing any digit—including a year, RFC or "
             "section number, version, percentage, or example setting—must contain an exact "
             "admitted citation in that same block; a citation in a neighboring block does not "
-            "count. Derived numbers must state assumptions, a range, or sensitivity."
+            "count. Treat blank lines as block boundaries and scan every block before returning. "
+            "Derived numbers must state assumptions, a range, or sensitivity."
         )
 
         def accept_unit(

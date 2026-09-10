@@ -133,8 +133,8 @@ class FormatRepairTests(RuntimeTestCase):
                 )
             repair_request = json.loads(provider.await_args_list[1].args[2])
             repair_prompt = repair_request["messages"][0]["content"]
-            self.assertIn("every Markdown block containing a digit", repair_prompt)
-            self.assertIn("every numeric derivation needs explicit assumptions", repair_prompt)
+            self.assertIn("each blank-line-separated non-heading block", repair_prompt)
+            self.assertIn("every numeric derivation has explicit assumptions", repair_prompt)
 
         asyncio.run(run())
 
