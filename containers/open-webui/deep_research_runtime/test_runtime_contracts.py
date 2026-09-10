@@ -671,8 +671,8 @@ class RuntimeContractTests(RuntimeTestCase):
 
     def test_default_unit_length_is_bounded_but_explicit_length_is_honored(self) -> None:
         outline = rt.DecisionLedger.model_validate_json(ledger_json("S1:P0-80")).outline[0]
-        long_unit = "## Unit 1\n\n" + ("x" * 4_001) + " [S1:P0-80]"
-        with self.assertRaisesRegex(ValueError, "longer than 4000"):
+        long_unit = "## Unit 1\n\n" + ("x" * 3_001) + " [S1:P0-80]"
+        with self.assertRaisesRegex(ValueError, "longer than 3000"):
             rt.validate_author_unit(request(), outline, long_unit, {"S1:P0-80"})
         self.assertEqual(
             rt.validate_author_unit(

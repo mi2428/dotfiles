@@ -189,7 +189,7 @@ Each accepted unit:
 - avoids repeating earlier sections; and
 - commits atomically before the next unit begins.
 
-Unless the user requests another length, target roughly 2,000-4,000 substantive
+Unless the user requests another length, target roughly 2,000-3,000 substantive
 characters per unit. A unit below 1,200 substantive characters is incomplete unless
 the original request explicitly asks for a shorter report. Length is an
 anti-truncation signal, not a quality score; repetition and filler do not count.
@@ -361,7 +361,7 @@ content quality. A high score cannot override a failed review or corrupt artifac
 | Individual fetched document | 1,500,000 bytes |
 | Stored source/extraction payload per job | 128 MiB |
 | Draft units | 2-4 |
-| Draft unit length when unspecified | 1,200-4,000 substantive characters |
+| Draft unit length when unspecified | 1,200-3,000 substantive characters |
 | Publication | 256 KiB |
 | Candidate generations | 2 |
 | Edit passes per candidate | 1 |

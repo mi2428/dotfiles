@@ -78,7 +78,7 @@ MAX_PASSAGE_CHARS = 4_000
 MAX_PROMPT_PASSAGE_BYTES = 2_400
 MAX_REVIEW_BLOCKS_PER_RANGE = 4
 MIN_UNIT_SUBSTANTIVE_CHARS = 1_200
-MAX_UNIT_SUBSTANTIVE_CHARS = 4_000
+MAX_UNIT_SUBSTANTIVE_CHARS = 3_000
 MAX_PUBLICATION_BYTES = 256 * 1024
 PUBLICATION_TERMS = {
     "en": ("Limitations", "Sources", "None", "retrieved"),
@@ -153,7 +153,7 @@ SAFE_MODEL_VALIDATION_HINTS = frozenset(
         "author citations are invalid",
         "author unit has no admitted citation",
         "author unit is shorter than 1200 substantive characters",
-        "author unit is longer than 4000 substantive characters",
+        "author unit is longer than 3000 substantive characters",
         "every Markdown block containing a digit needs an admitted citation in that block",
         "numeric derivation lacks assumptions or sensitivity",
         "evidence assessment must cover every checklist item in order",
@@ -1735,7 +1735,7 @@ def validate_author_unit(
         not explicitly_sets_report_length(request)
         and substantive_chars > MAX_UNIT_SUBSTANTIVE_CHARS
     ):
-        raise ValueError("author unit is longer than 4000 substantive characters")
+        raise ValueError("author unit is longer than 3000 substantive characters")
     validate_numeric_derivations(
         unit_text,
         task_requires_estimate_controls=request_requires_estimate_controls(request.query),
@@ -4646,8 +4646,8 @@ async def create_raw_candidate(
             UNTRUSTED_JOB_DATA_RULE
             + "You are the sole author. Return only the requested coherent plain Markdown unit. "
             "Honor explicit user language and length requirements. When length is unspecified, "
-            "write 2,000-4,000 substantive characters per unit; fewer than 1,200 is incomplete "
-            "unless the request asks for a shorter report, and more than 4,000 is invalid unless "
+            "write 2,000-3,000 substantive characters per unit; fewer than 1,200 is incomplete "
+            "unless the request asks for a shorter report, and more than 3,000 is invalid unless "
             "the request explicitly sets a different length. Remove repetition before returning. "
             "Use exact [Sx:Pstart-end] citations from supplied passages. Do not output JSON, "
             "private reasoning, Sources, or Limitations sections. Begin with exactly one level-2 "
