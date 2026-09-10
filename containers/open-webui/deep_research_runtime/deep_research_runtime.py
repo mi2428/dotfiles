@@ -76,8 +76,9 @@ MAX_FETCHED_DOCUMENTS = 24
 MAX_CHECKLIST_ITEMS = 12
 MAX_PASSAGE_CHARS = 4_000
 MAX_PROMPT_PASSAGE_BYTES = 2_400
-MAX_REVIEW_BLOCKS_PER_RANGE = 16
+MAX_REVIEW_BLOCKS_PER_RANGE = 8
 MIN_UNIT_SUBSTANTIVE_CHARS = 1_200
+MAX_UNIT_SUBSTANTIVE_CHARS = 4_000
 MAX_PUBLICATION_BYTES = 256 * 1024
 PUBLICATION_TERMS = {
     "en": ("Limitations", "Sources", "None", "retrieved"),
@@ -150,6 +151,7 @@ SAFE_MODEL_VALIDATION_HINTS = frozenset(
         "author citations are invalid",
         "author unit has no admitted citation",
         "author unit is shorter than 1200 substantive characters",
+        "author unit is longer than 4000 substantive characters",
         "every Markdown block containing a digit needs an admitted citation in that block",
         "numeric derivation lacks assumptions or sensitivity",
         "evidence assessment must cover every checklist item in order",
@@ -905,6 +907,11 @@ def explicitly_requests_short_report(request: ResearchJobRequest) -> bool:
             text,
         )
     )
+
+
+def explicitly_sets_report_length(request: ResearchJobRequest) -> bool:
+    text = f"{request.query} {request.focus or ''}".casefold()
+    return bool(re.search(r"\d[\d,]*\s*(?:文字|字|語|characters?|words?)", text))
 
 
 def normalize_idempotency_key(value: str | None) -> str:
@@ -1680,11 +1687,17 @@ def validate_author_unit(
         raise ValueError("author citations are invalid")
     if not citations and not outline.limitations_analysis:
         raise ValueError("author unit has no admitted citation")
+    substantive_chars = substantive_character_count(unit_text)
     if (
         not explicitly_requests_short_report(request)
-        and substantive_character_count(unit_text) < MIN_UNIT_SUBSTANTIVE_CHARS
+        and substantive_chars < MIN_UNIT_SUBSTANTIVE_CHARS
     ):
         raise ValueError("author unit is shorter than 1200 substantive characters")
+    if (
+        not explicitly_sets_report_length(request)
+        and substantive_chars > MAX_UNIT_SUBSTANTIVE_CHARS
+    ):
+        raise ValueError("author unit is longer than 4000 substantive characters")
     validate_numeric_derivations(
         unit_text,
         task_requires_estimate_controls=request_requires_estimate_controls(request.query),
@@ -4560,8 +4573,9 @@ async def create_raw_candidate(
             UNTRUSTED_JOB_DATA_RULE
             + "You are the sole author. Return only the requested coherent plain Markdown unit. "
             "Honor explicit user language and length requirements. When length is unspecified, "
-            "target about 2,000-4,000 substantive characters per unit; fewer than 1,200 is "
-            "incomplete unless the original request explicitly asks for a shorter report. "
+            "write 2,000-4,000 substantive characters per unit; fewer than 1,200 is incomplete "
+            "unless the request asks for a shorter report, and more than 4,000 is invalid unless "
+            "the request explicitly sets a different length. Remove repetition before returning. "
             "Use exact [Sx:Pstart-end] citations from supplied passages. Do not output JSON, "
             "private reasoning, Sources, or Limitations sections. Begin with exactly one level-2 "
             f"heading named: ## {outline.heading}. Do not emit a level-1 heading. Every separate "

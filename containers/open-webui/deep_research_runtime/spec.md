@@ -357,6 +357,7 @@ content quality. A high score cannot override a failed review or corrupt artifac
 | Individual fetched document | 1,500,000 bytes |
 | Stored source/extraction payload per job | 128 MiB |
 | Draft units | 2-4 |
+| Draft unit length when unspecified | 1,200-4,000 substantive characters |
 | Publication | 256 KiB |
 | Candidate generations | 2 |
 | Edit passes per candidate | 1 |
@@ -371,7 +372,7 @@ regenerating it; the same validators and attempt limits still apply.
 Before research dispatch, reserve at least `4 * units + 6` provider attempts for
 two complete ledger/write/review/edit/recheck candidate paths. Additional packed
 review ranges consume the shared cap and are admitted from actual serialized bytes.
-Each review range contains at most 16 draft blocks; long reports split at unit
+Each review range contains at most 8 draft blocks; long reports split at unit
 boundaries before further byte-based packing.
 If the remaining budget cannot complete required editorial work, stop before the
 next research call.

@@ -616,6 +616,21 @@ class RuntimeContractTests(RuntimeTestCase):
         )
         self.assertEqual(accepted, short)
 
+    def test_default_unit_length_is_bounded_but_explicit_length_is_honored(self) -> None:
+        outline = rt.DecisionLedger.model_validate_json(ledger_json("S1:P0-80")).outline[0]
+        long_unit = "## Unit 1\n\n" + ("x" * 4_001) + " [S1:P0-80]"
+        with self.assertRaisesRegex(ValueError, "longer than 4000"):
+            rt.validate_author_unit(request(), outline, long_unit, {"S1:P0-80"})
+        self.assertEqual(
+            rt.validate_author_unit(
+                request(query="Write 5000 characters"),
+                outline,
+                long_unit,
+                {"S1:P0-80"},
+            ),
+            long_unit,
+        )
+
     def test_numeric_derivation_ignores_directive_assignment_as_arithmetic(self) -> None:
         rt.validate_numeric_derivations("Use s-maxage=60 as specified. [S1:P0-80]")
         with self.assertRaisesRegex(ValueError, "containing a digit"):
@@ -749,8 +764,10 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertEqual(
             [[block.id for block in group] for group in ranges],
             [
-                [block.id for block in blocks[:10]],
-                [block.id for block in blocks[10:]],
+                [block.id for block in blocks[:8]],
+                [block.id for block in blocks[8:10]],
+                [block.id for block in blocks[10:18]],
+                [block.id for block in blocks[18:]],
             ],
         )
 
