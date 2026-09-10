@@ -336,6 +336,7 @@ content quality. A high score cannot override a failed review or corrupt artifac
 | Provider response | 4 MiB |
 | Research rounds | 4 |
 | Search queries per round | 6 |
+| Checklist items and assessment passages | 12 each |
 | Fetched documents per job | 24 |
 | Individual fetched document | 1,500,000 bytes |
 | Stored source/extraction payload per job | 128 MiB |

@@ -67,6 +67,7 @@ MIN_SEARCH_QUERIES_PER_ROUND = 3
 MAX_SEARCH_QUERIES_PER_ROUND = 6
 MAX_RESEARCH_ROUNDS = 4
 MAX_FETCHED_DOCUMENTS = 24
+MAX_CHECKLIST_ITEMS = 12
 MAX_PASSAGE_CHARS = 4_000
 MAX_PROMPT_PASSAGE_BYTES = 2_400
 MAX_REVIEW_BLOCKS_PER_RANGE = 16
@@ -239,7 +240,7 @@ class ResearchPlan(StrictModel):
     requested_language: str = Field(min_length=1, max_length=80)
     time_horizon: str = Field(min_length=1, max_length=300)
     exclusions: list[str] = Field(default_factory=list, max_length=8)
-    checklist: list[ChecklistItem] = Field(min_length=1, max_length=24)
+    checklist: list[ChecklistItem] = Field(min_length=1, max_length=MAX_CHECKLIST_ITEMS)
     initial_queries: list[ResearchQuery] = Field(
         min_length=MIN_SEARCH_QUERIES_PER_ROUND,
         max_length=MAX_SEARCH_QUERIES_PER_ROUND,
@@ -3001,6 +3002,15 @@ async def invoke_job_model(
     )
     if validation_hint is not None:
         correction += f" Correct this specific violation: {validation_hint}."
+    if validation_hint in {
+        "every Markdown block containing a digit needs an admitted citation in that block",
+        "numeric derivation lacks assumptions or sensitivity",
+    }:
+        correction += (
+            " Recheck both numeric constraints: every Markdown block containing a digit needs an "
+            "admitted citation in that block, and every numeric derivation needs explicit "
+            "assumptions or sensitivity."
+        )
     return await _invoke_job_model_once(
         runtime,
         job_id,
@@ -3532,9 +3542,9 @@ def selected_assessment_passages(
     for passage in passages:
         if passage not in selected:
             selected.append(passage)
-        if len(selected) >= 12:
+        if len(selected) >= MAX_CHECKLIST_ITEMS:
             break
-    return selected[:12]
+    return selected[:MAX_CHECKLIST_ITEMS]
 
 
 async def select_round_candidates(

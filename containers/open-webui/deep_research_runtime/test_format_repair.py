@@ -101,6 +101,43 @@ class FormatRepairTests(RuntimeTestCase):
 
         asyncio.run(run())
 
+    def test_numeric_repair_repeats_both_coupled_constraints(self) -> None:
+        async def run() -> None:
+            job = await rt.submit_research_job(
+                self.runtime, "owner", rt.ResearchJobRequest(action_id="numeric", query="q")
+            )
+            job_id = job["job_id"]
+            await rt.claim_research_job(self.runtime, job_id)
+            outcome = AttemptOutcome("succeeded", 200, "stop", 10, 10, 20, 100)
+            provider = AsyncMock(
+                side_effect=[
+                    ResearchCompletion("bad", outcome),
+                    ResearchCompletion("good", outcome),
+                ]
+            )
+
+            def accept(value: str) -> str:
+                if value == "bad":
+                    raise ValueError(
+                        "every Markdown block containing a digit needs an admitted citation "
+                        "in that block"
+                    )
+                return value
+
+            with patch.object(rt, "complete_research", new=provider):
+                self.assertEqual(
+                    await rt.invoke_job_model(
+                        self.runtime, job_id, "candidate_1_author_unit_1", "system", "user", accept
+                    ),
+                    "good",
+                )
+            repair_request = json.loads(provider.await_args_list[1].args[2])
+            repair_prompt = repair_request["messages"][0]["content"]
+            self.assertIn("every Markdown block containing a digit", repair_prompt)
+            self.assertIn("every numeric derivation needs explicit assumptions", repair_prompt)
+
+        asyncio.run(run())
+
     def test_failed_correction_and_unknown_transport_are_not_replayed(self) -> None:
         async def run() -> None:
             for suffix, outputs, expected in (

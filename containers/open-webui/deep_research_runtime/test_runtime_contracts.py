@@ -81,6 +81,16 @@ class RuntimeContractTests(RuntimeTestCase):
         with self.assertRaisesRegex(ValueError, "remain essential"):
             rt.validate_research_plan(job_request, weakened)
 
+    def test_plan_checklist_fits_the_assessment_passage_budget(self) -> None:
+        payload = json.loads(plan_json())
+        item = payload["checklist"][0]
+        payload["checklist"] = [{**item, "id": f"C{index}"} for index in range(1, 13)]
+        self.assertLessEqual(len(payload["checklist"]), rt.MAX_CHECKLIST_ITEMS)
+        rt.ResearchPlan.model_validate(payload)
+        payload["checklist"].append({**item, "id": "C13"})
+        with self.assertRaises(ValidationError):
+            rt.ResearchPlan.model_validate(payload)
+
     def test_outline_rejects_missing_checklist_mapping_and_noncanonical_title(self) -> None:
         job_request = request()
         fragments, plan = rt.validate_research_plan(
