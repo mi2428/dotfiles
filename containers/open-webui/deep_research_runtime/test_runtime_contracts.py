@@ -839,12 +839,15 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertEqual(
             [[block.id for block in group] for group in ranges],
             [
-                [block.id for block in blocks[:8]],
+                [block.id for block in blocks[:4]],
+                [block.id for block in blocks[4:8]],
                 [block.id for block in blocks[8:10]],
-                [block.id for block in blocks[10:18]],
+                [block.id for block in blocks[10:14]],
+                [block.id for block in blocks[14:18]],
                 [block.id for block in blocks[18:]],
             ],
         )
+        self.assertTrue(all(len(group) <= rt.MAX_REVIEW_BLOCKS_PER_RANGE for group in ranges))
 
     def test_stop_prevents_later_search_fetch_and_extraction_dispatch(self) -> None:
         async def run() -> None:
