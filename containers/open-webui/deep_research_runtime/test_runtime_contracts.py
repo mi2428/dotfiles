@@ -529,6 +529,32 @@ class RuntimeContractTests(RuntimeTestCase):
                 {item["id"] for item in edited},
             )
 
+    def test_review_ranges_do_not_cross_unit_boundaries(self) -> None:
+        def report_unit(unit: int) -> str:
+            return f"## Unit {unit}\n\n" + "\n\n".join(
+                f"Supported paragraph {index}. [S1:P0-80]" for index in range(1, 10)
+            )
+
+        markdown = "\n\n".join((report_unit(1), report_unit(2)))
+        blocks = rt.draft_blocks(markdown, 1, 1)
+        ranges = rt.pack_review_ranges(
+            "public-model",
+            request(),
+            1,
+            1,
+            markdown,
+            blocks,
+            rt.DecisionLedger.model_validate_json(ledger_json("S1:P0-80")),
+            [{"id": "S1:P0-80", "text": "evidence", "checklist_ids": ["C1"]}],
+        )
+        self.assertEqual(
+            [[block.id for block in group] for group in ranges],
+            [
+                [block.id for block in blocks[:10]],
+                [block.id for block in blocks[10:]],
+            ],
+        )
+
     def test_stop_prevents_later_search_fetch_and_extraction_dispatch(self) -> None:
         async def run() -> None:
             submitted = await rt.submit_research_job(self.runtime, "owner-1", request())

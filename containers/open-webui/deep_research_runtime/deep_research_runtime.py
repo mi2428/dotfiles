@@ -69,6 +69,7 @@ MAX_RESEARCH_ROUNDS = 4
 MAX_FETCHED_DOCUMENTS = 24
 MAX_PASSAGE_CHARS = 4_000
 MAX_PROMPT_PASSAGE_BYTES = 2_400
+MAX_REVIEW_BLOCKS_PER_RANGE = 16
 MIN_UNIT_SUBSTANTIVE_CHARS = 1_200
 MAX_PUBLICATION_BYTES = 256 * 1024
 PUBLICATION_TERMS = {
@@ -4532,7 +4533,11 @@ def pack_review_ranges(
 ) -> list[list[DraftBlock]]:
     ranges: list[list[DraftBlock]] = []
     current: list[DraftBlock] = []
+    split_at_unit_boundaries = len(blocks) > MAX_REVIEW_BLOCKS_PER_RANGE
     for block in blocks:
+        if current and split_at_unit_boundaries and re.match(r"^##\s+", block.text):
+            ranges.append(current)
+            current = []
         candidate = [*current, block]
         prompt = review_user_prompt(
             request,
@@ -4546,7 +4551,9 @@ def pack_review_ranges(
         )
         try:
             prepared = prepare_research_request(model, review_system_prompt(), prompt)
-            fits = len(prepared) <= JOB_REQUEST_BYTES
+            fits = (
+                len(candidate) <= MAX_REVIEW_BLOCKS_PER_RANGE and len(prepared) <= JOB_REQUEST_BYTES
+            )
         except ValueError:
             fits = False
         if fits:

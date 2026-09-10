@@ -349,6 +349,8 @@ have separate counters and do not consume provider-attempt IDs.
 Before research dispatch, reserve at least `4 * units + 6` provider attempts for
 two complete ledger/write/review/edit/recheck candidate paths. Additional packed
 review ranges consume the shared cap and are admitted from actual serialized bytes.
+Each review range contains at most 16 draft blocks; long reports split at unit
+boundaries before further byte-based packing.
 If the remaining budget cannot complete required editorial work, stop before the
 next research call.
 
