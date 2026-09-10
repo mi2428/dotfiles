@@ -621,7 +621,36 @@ class RuntimeContractTests(RuntimeTestCase):
         with self.assertRaisesRegex(ValueError, "containing a digit"):
             rt.validate_numeric_derivations("The 2024 result is final.")
         with self.assertRaisesRegex(ValueError, "assumptions or sensitivity"):
-            rt.validate_numeric_derivations("The result is 10 * 20 = 200. [S1:P0-80]")
+            rt.validate_numeric_derivations(
+                "The result is 10 * 20 = 200. [S1:P0-80]",
+                task_requires_estimate_controls=True,
+            )
+        rt.validate_numeric_derivations(
+            "The reported anomalies differ by 1.60 - 1.48 = 0.12 C. [S1:P0-80]"
+        )
+        rt.validate_numeric_derivations("NASA estimates 1.28 C. [S1:P0-80]")
+
+    def test_author_unit_applies_estimate_controls_from_the_request(self) -> None:
+        outline = rt.DecisionLedger.model_validate_json(ledger_json("S1:P0-80")).outline[0]
+        comparison = (
+            "## Unit 1\n\nThe reported anomalies differ by 1.60 - 1.48 = 0.12 C. [S1:P0-80]"
+        )
+        self.assertEqual(
+            rt.validate_author_unit(
+                request(query="Give a brief comparison of reported temperature anomalies"),
+                outline,
+                comparison,
+                {"S1:P0-80"},
+            ),
+            comparison,
+        )
+        with self.assertRaisesRegex(ValueError, "assumptions or sensitivity"):
+            rt.validate_author_unit(
+                request(query="Give a brief runway projection"),
+                outline,
+                comparison,
+                {"S1:P0-80"},
+            )
 
     def test_repeated_filler_and_content_before_the_unit_heading_are_rejected(self) -> None:
         outline = rt.DecisionLedger.model_validate_json(ledger_json("S1:P0-80")).outline[0]
@@ -1064,12 +1093,14 @@ class RuntimeContractTests(RuntimeTestCase):
             rt.validate_numeric_derivations("## Result\n\nThe measured value is 12.")
         with self.assertRaisesRegex(ValueError, "assumptions"):
             rt.validate_numeric_derivations(
-                "## Result\n\nThe estimate = 12 based on inputs [S1:P0-80]."
+                "## Result\n\nThis report estimates 12 based on inputs [S1:P0-80]."
             )
         rt.validate_numeric_derivations(
-            "## Result\n\nUnder the stated assumption, the estimate = 12 with a range "
+            "## Result\n\nUnder the stated assumption, this report estimates 12 with a range "
             "of outcomes [S1:P0-80]."
         )
+        self.assertFalse(rt.request_requires_estimate_controls("Compare reported anomalies"))
+        self.assertTrue(rt.request_requires_estimate_controls("Estimate a runway scenario"))
 
     def test_review_schema_requires_material_checklist_and_source_references(self) -> None:
         ledger = rt.DecisionLedger.model_validate_json(ledger_json("S1:P0-80"))

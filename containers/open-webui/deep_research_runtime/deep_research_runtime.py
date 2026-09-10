@@ -1620,7 +1620,19 @@ def substantive_character_count(markdown: str) -> int:
     return total
 
 
-def validate_numeric_derivations(markdown: str) -> None:
+def request_requires_estimate_controls(query: str) -> bool:
+    return bool(
+        re.search(
+            r"(?:推計|試算|予測|シナリオ|ランウェイ|計算式|estimate|forecast|projection|scenario|runway)",
+            query,
+            re.I,
+        )
+    )
+
+
+def validate_numeric_derivations(
+    markdown: str, *, task_requires_estimate_controls: bool = False
+) -> None:
     for start, end in markdown_block_spans(markdown_without_code(markdown)):
         block = markdown[start:end]
         if re.match(r"^#{1,6}\s+", block):
@@ -1631,11 +1643,20 @@ def validate_numeric_derivations(markdown: str) -> None:
             raise ValueError(
                 "every Markdown block containing a digit needs an admitted citation in that block"
             )
-        derived = re.search(
-            r"(?:算出|推計|試算|estimate|derive|formula|[\u00D7\u00F7])", block, re.I
+        arithmetic = re.search(r"\d+(?:[.,]\d+)?\s*(?:[+*/]|-\s+)\s*\d+(?:[.,]\d+)?\s*=", block)
+        projection = re.search(
+            r"(?:シナリオ|ランウェイ|弱気|強気|scenario|runway)",
+            block,
+            re.I,
         )
-        derived = derived or re.search(
-            r"\d+(?:[.,]\d+)?\s*(?:[+*/]|-\s+)\s*\d+(?:[.,]\d+)?\s*=", block
+        authored_estimate = re.search(
+            r"(?:(?:本稿|本報告|ここでは|当分析)|\b(?:we|our|this report)\b).{0,40}"
+            r"(?:算出|推計|試算|予測|estimate|derive|formula|forecast|projection)",
+            block,
+            re.I,
+        )
+        derived = (
+            projection or authored_estimate or (task_requires_estimate_controls and arithmetic)
         )
         assumptions = re.search(r"(?:仮定|前提|感度|範囲|assum|sensitivity|range)", block, re.I)
         if derived and not assumptions:
@@ -1664,7 +1685,10 @@ def validate_author_unit(
         and substantive_character_count(unit_text) < MIN_UNIT_SUBSTANTIVE_CHARS
     ):
         raise ValueError("author unit is shorter than 1200 substantive characters")
-    validate_numeric_derivations(unit_text)
+    validate_numeric_derivations(
+        unit_text,
+        task_requires_estimate_controls=request_requires_estimate_controls(request.query),
+    )
     return unit_text
 
 

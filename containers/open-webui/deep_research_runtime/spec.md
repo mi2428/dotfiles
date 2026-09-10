@@ -301,7 +301,11 @@ Before semantic approval, the runtime verifies:
 - each unit passes the substantive-content and anti-truncation checks;
 - every essential checklist item maps to report blocks;
 - every cited passage exists and belongs to the job;
-- every material numeric derivation records sources and assumptions;
+- every material authored estimate or projection records sources and assumptions;
+- deterministic source comparisons are not treated as projections solely because
+  they show signed anomalies or arithmetic; estimate controls remain mandatory
+  when the request or the prose identifies an authored estimate, scenario, forecast,
+  or projection;
 - all blocks were covered by the accepted review revision;
 - all material edits and dismissals were rechecked;
 - no unresolved material finding remains;
