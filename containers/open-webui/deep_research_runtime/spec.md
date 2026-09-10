@@ -358,11 +358,14 @@ If the remaining budget cannot complete required editorial work, stop before the
 next research call.
 
 One absolute deadline covers gateway queueing, connection, request, headers and
-streaming. SDK and proxy retries are disabled on the research route. A complete
-response with invalid content is a known failed attempt; an uncertain transmission
-or incomplete stream is `unknown` and is never blindly replayed. A complete,
-parseable provider SSE error event is a known failure even without a `[DONE]`
-marker; a truncated error event remains `unknown`.
+streaming. SDK and proxy retries are disabled within one physical attempt. Runtime
+may create up to three new, charged physical attempts with new attempt IDs after a
+definitive `not_sent` or `known_failed` HTTP 408, 409, 425, 429 or 5xx result. Delay
+is exponential at 1, 2 and 4 seconds plus up to 250 ms jitter; every retry remains
+subject to the job deadline and attempt budget. Permanent client errors are not
+retried. An uncertain transmission or incomplete stream is `unknown` and is never
+replayed. A complete, parseable provider SSE error event is a known failure even
+without a `[DONE]` marker; a truncated error event remains `unknown`.
 
 Model assignments use fresh ordinary completion calls with validated JSON only for
 small control records. They do not depend on forced tool selection, a configurable

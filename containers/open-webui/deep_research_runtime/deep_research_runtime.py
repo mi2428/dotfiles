@@ -9,6 +9,7 @@ import ipaddress
 import json
 import logging
 import os
+import random
 import re
 import socket
 import sqlite3
@@ -60,6 +61,11 @@ JOB_ATTEMPT_SECONDS = 360
 JOB_SAVE_RESERVE_SECONDS = 5
 JOB_LONG_ATTEMPTS = 40
 JOB_LONG_SECONDS = 10_800
+PROVIDER_TRANSPORT_RETRIES = 3
+PROVIDER_RETRY_BASE_SECONDS = 1.0
+PROVIDER_RETRY_MAX_SECONDS = 4.0
+PROVIDER_RETRY_JITTER_SECONDS = 0.25
+PROVIDER_RETRYABLE_CLIENT_STATUSES = frozenset({408, 409, 425, 429})
 DEFAULT_RETENTION_DAYS = 30
 DEFAULT_GLOBAL_LOGICAL_BYTES = 512 * 1024 * 1024
 MAX_EXTRACTED_CHARS = 8_000_000
@@ -2945,6 +2951,83 @@ async def job_cancel_requested(runtime: Runtime, job_id: str) -> bool:
     return bool(row["cancel_requested"])
 
 
+def provider_retry_delay(retry_index: int) -> float:
+    exponential = min(
+        PROVIDER_RETRY_MAX_SECONDS,
+        PROVIDER_RETRY_BASE_SECONDS * (2**retry_index),
+    )
+    return exponential + random.uniform(0.0, PROVIDER_RETRY_JITTER_SECONDS)
+
+
+def provider_attempt_is_retryable(row: sqlite3.Row) -> bool:
+    status = row["http_status"]
+    return (
+        row["state"] in {"not_sent", "known_failed"}
+        and isinstance(status, int)
+        and (status in PROVIDER_RETRYABLE_CLIENT_STATUSES or 500 <= status < 600)
+    )
+
+
+def transport_attempt_keys(assignment_key: str) -> list[str]:
+    return [assignment_key] + [
+        f"{assignment_key}:transport-retry-{retry_no}"
+        for retry_no in range(1, PROVIDER_TRANSPORT_RETRIES + 1)
+    ]
+
+
+async def invoke_with_transport_retries(
+    runtime: Runtime,
+    job_id: str,
+    assignment_key: str,
+    system_prompt: str,
+    user_prompt: str,
+    accept: Callable[[str], str],
+) -> str:
+    keys = transport_attempt_keys(assignment_key)
+    for retry_index, attempt_key in enumerate(keys):
+        try:
+            return await _invoke_job_model_once(
+                runtime, job_id, attempt_key, system_prompt, user_prompt, accept
+            )
+        except JobIncomplete as error:
+            async with runtime.db_lock:
+                row = runtime.db.execute(
+                    "SELECT state,http_status FROM research_attempts "
+                    "WHERE job_id=? AND assignment_key=?",
+                    (job_id, attempt_key),
+                ).fetchone()
+                next_exists = (
+                    retry_index < PROVIDER_TRANSPORT_RETRIES
+                    and runtime.db.execute(
+                        "SELECT 1 FROM research_attempts WHERE job_id=? AND assignment_key=?",
+                        (job_id, keys[retry_index + 1]),
+                    ).fetchone()
+                )
+            if row is None:
+                raise
+            saved_error = error
+            if error.code == "assignment_result_unavailable" and row["state"] in {
+                "not_sent",
+                "known_failed",
+            }:
+                saved_error = JobIncomplete(f"provider_{row['state']}")
+            if retry_index >= PROVIDER_TRANSPORT_RETRIES or not provider_attempt_is_retryable(row):
+                if saved_error is error:
+                    raise
+                raise saved_error from error
+            if next_exists is None:
+                delay = provider_retry_delay(retry_index)
+                LOG.warning(
+                    "provider_transport_retry assignment=%s retry=%s status=%s delay=%.3f",
+                    assignment_key,
+                    retry_index + 1,
+                    row["http_status"],
+                    delay,
+                )
+                await asyncio.sleep(delay)
+    raise IntegrityError("provider retry loop exhausted without an outcome")
+
+
 async def invoke_job_model(
     runtime: Runtime,
     job_id: str,
@@ -2955,43 +3038,40 @@ async def invoke_job_model(
 ) -> str:
     repair_key = assignment_key + ":format-repair"
     validation_hint = None
-    async with runtime.db_lock:
-        repaired = runtime.db.execute(
-            "SELECT 1 FROM research_attempts WHERE job_id=? AND assignment_key=?",
-            (job_id, repair_key),
-        ).fetchone()
-    if repaired is None:
-        try:
-            return await _invoke_job_model_once(
-                runtime, job_id, assignment_key, system_prompt, user_prompt, accept
-            )
-        except JobIncomplete as error:
-            validation_hint = error.validation_hint
-            if error.code not in {
-                "assignment_result_invalid",
-                "assignment_result_unavailable",
-                "provider_known_failed",
-            }:
-                raise
-            async with runtime.db_lock:
-                prior = runtime.db.execute(
-                    "SELECT state,result_receipt,http_status,finish_reason FROM research_attempts "
-                    "WHERE job_id=? AND assignment_key=?",
-                    (job_id, assignment_key),
-                ).fetchone()
-            if (
-                prior is None
-                or not (
-                    prior["state"] == "succeeded"
-                    or (
-                        prior["state"] == "known_failed"
-                        and prior["http_status"] == 200
-                        and prior["finish_reason"] == "stop"
-                    )
+    try:
+        return await invoke_with_transport_retries(
+            runtime, job_id, assignment_key, system_prompt, user_prompt, accept
+        )
+    except JobIncomplete as error:
+        validation_hint = error.validation_hint
+        if error.code not in {
+            "assignment_result_invalid",
+            "assignment_result_unavailable",
+            "provider_known_failed",
+        }:
+            raise
+        keys = transport_attempt_keys(assignment_key)
+        placeholders = ",".join("?" for _ in keys)
+        async with runtime.db_lock:
+            prior = runtime.db.execute(
+                "SELECT state,result_receipt,http_status,finish_reason FROM research_attempts "
+                f"WHERE job_id=? AND assignment_key IN ({placeholders}) "
+                "ORDER BY created_at_ms DESC LIMIT 1",
+                (job_id, *keys),
+            ).fetchone()
+        if (
+            prior is None
+            or not (
+                prior["state"] == "succeeded"
+                or (
+                    prior["state"] == "known_failed"
+                    and prior["http_status"] == 200
+                    and prior["finish_reason"] == "stop"
                 )
-                or prior["result_receipt"] is not None
-            ):
-                raise
+            )
+            or prior["result_receipt"] is not None
+        ):
+            raise
     # One fresh, charged correction per assignment; job limits still bound total work.
     # Unknown transport is never retried.
     correction = (
@@ -3011,7 +3091,7 @@ async def invoke_job_model(
             "admitted citation in that block, and every numeric derivation needs explicit "
             "assumptions or sensitivity."
         )
-    return await _invoke_job_model_once(
+    return await invoke_with_transport_retries(
         runtime,
         job_id,
         repair_key,

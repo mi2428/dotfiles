@@ -39,6 +39,9 @@ Input requests remain capped at 64 KiB, generation at 16,384 tokens, responses a
 enforced. The `tokens` status object reports provider-supplied usage only: totals
 are partial when `usage_complete=false`, and unavailable values remain null rather
 than becoming zero. Local tokenizer matching is not a readiness condition.
+Definitive transient HTTP 408, 409, 425, 429 and 5xx failures receive at most three
+new charged attempts after 1, 2 and 4 seconds plus jitter. `unknown` and incomplete
+streams are never replayed; permanent client errors fail immediately.
 ## Internal API helper
 The helper reads credentials from the already-running container environment and
 request JSON from stdin. Credential values therefore do not enter process args.
