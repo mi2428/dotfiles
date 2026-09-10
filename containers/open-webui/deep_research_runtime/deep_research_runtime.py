@@ -799,6 +799,29 @@ def is_verbatim_excerpt(excerpt: str, text: str) -> bool:
     return re.sub(r"\s+", " ", excerpt).strip() in re.sub(r"\s+", " ", text).strip()
 
 
+def _relevant_excerpt_window(paragraph: str, terms: set[str]) -> str:
+    if len(paragraph) <= 1_200 or not terms:
+        return paragraph[:1_200].rstrip()
+    folded = paragraph.casefold()
+    starts = {0}
+    ranked_terms = sorted(terms, key=lambda value: (-len(value), value))[:64]
+    for term in ranked_terms:
+        position = folded.find(term)
+        while position >= 0 and len(starts) < 128:
+            starts.add(max(0, min(position - 300, len(paragraph) - 1_200)))
+            position = folded.find(term, position + len(term))
+        if len(starts) >= 128:
+            break
+    start = max(
+        starts,
+        key=lambda value: (
+            sum(folded[value : value + 1_200].count(term) for term in ranked_terms),
+            value,
+        ),
+    )
+    return paragraph[start : start + 1_200].rstrip()
+
+
 def select_relevant_excerpt(text: str, query: str, focus: str | None) -> tuple[str, float]:
     all_paragraphs = [part.strip() for part in re.split(r"\n+", text) if part.strip()]
     if not all_paragraphs:
@@ -830,7 +853,8 @@ def select_relevant_excerpt(text: str, query: str, focus: str | None) -> tuple[s
     ]
     scores = focus_scores if any(focus_scores) else query_scores
     index = max(range(len(paragraphs)), key=lambda i: (scores[i], query_scores[i]))
-    excerpt = paragraphs[index][:1200].rstrip()
+    ranking_terms = focus_terms if focus_scores[index] else query_terms
+    excerpt = _relevant_excerpt_window(paragraphs[index], ranking_terms)
     if not excerpt or not is_verbatim_excerpt(excerpt, text):
         raise ValueError("could not select source excerpt")
     return excerpt, min(1.0, 0.5 + scores[index] * 0.1) if scores[index] else 0.0

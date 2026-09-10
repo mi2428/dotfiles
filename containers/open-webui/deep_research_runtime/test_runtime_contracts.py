@@ -268,6 +268,21 @@ class RuntimeContractTests(RuntimeTestCase):
         )
         self.assertEqual(excerpt, focused)
 
+    def test_excerpt_selection_finds_section_body_after_a_table_of_contents(self) -> None:
+        contents = "Contents: Section 4.1 Vary matching algorithm. " + ("index filler " * 140)
+        body = (
+            "Section 4.1 Vary matching algorithm. A cache MUST NOT use the stored response "
+            "unless every nominated request field matches. Vary matching compares the new "
+            "request fields with those of the request that selected the stored response. " * 4
+        )
+        excerpt, _score = rt.select_relevant_excerpt(
+            contents + body,
+            "RFC 9111 Section 4.1 Vary matching algorithm request fields stored response",
+            None,
+        )
+        self.assertIn("MUST NOT use the stored response", excerpt)
+        self.assertNotIn("Contents:", excerpt)
+
     def test_assessment_semantic_failures_are_safe_repair_hints(self) -> None:
         expected = {
             "evidence assessment must cover every checklist item in order",

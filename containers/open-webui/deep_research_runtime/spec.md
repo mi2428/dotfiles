@@ -127,6 +127,8 @@ Passage-to-checklist relevance tags are retrieval hints, not admission boundarie
 any prompt-visible passage may support any checklist item when its text entails it.
 When a selected result is collected, the runtime extracts passages for both the
 selector's hints and every checklist item targeted by the query that produced it.
+Within a long extracted paragraph, the bounded passage window favors the densest
+query-term occurrence rather than blindly taking the first table-of-contents hit.
 
 The runtime deduplicates exact URLs and content identities. It MUST NOT discard a
 document merely because another accepted document shares its host. It MUST NOT use
