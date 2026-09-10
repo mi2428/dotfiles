@@ -142,7 +142,7 @@ SAFE_MODEL_VALIDATION_HINTS = frozenset(
         "author citations are invalid",
         "author unit has no admitted citation",
         "author unit is shorter than 1200 substantive characters",
-        "numeric claim lacks an admitted citation",
+        "every Markdown block containing a digit needs an admitted citation in that block",
         "numeric derivation lacks assumptions or sensitivity",
     }
 )
@@ -1589,7 +1589,9 @@ def validate_numeric_derivations(markdown: str) -> None:
         if not re.search(r"(?<![A-Za-z])\d+(?:[.,]\d+)?", block):
             continue
         if not passage_ids(block):
-            raise ValueError("numeric claim lacks an admitted citation")
+            raise ValueError(
+                "every Markdown block containing a digit needs an admitted citation in that block"
+            )
         derived = re.search(
             r"(?:算出|推計|試算|estimate|derive|formula|[\u00D7\u00F7])", block, re.I
         )
@@ -4359,9 +4361,11 @@ async def create_raw_candidate(
             "incomplete unless the original request explicitly asks for a shorter report. "
             "Use exact [Sx:Pstart-end] citations from supplied passages. Do not output JSON, "
             "private reasoning, Sources, or Limitations sections. Begin with exactly one level-2 "
-            f"heading named: ## {outline.heading}. Do not emit a level-1 heading. Every numeric "
-            "claim must share its Markdown block with an admitted citation; derived numbers must "
-            "state assumptions, a range, or sensitivity."
+            f"heading named: ## {outline.heading}. Do not emit a level-1 heading. Every separate "
+            "Markdown paragraph, list, or table containing any digit—including a year, RFC or "
+            "section number, version, percentage, or example setting—must contain an exact "
+            "admitted citation in that same block; a citation in a neighboring block does not "
+            "count. Derived numbers must state assumptions, a range, or sensitivity."
         )
 
         def accept_unit(

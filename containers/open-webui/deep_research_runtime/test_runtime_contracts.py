@@ -445,6 +445,8 @@ class RuntimeContractTests(RuntimeTestCase):
 
     def test_numeric_derivation_ignores_directive_assignment_as_arithmetic(self) -> None:
         rt.validate_numeric_derivations("Use s-maxage=60 as specified. [S1:P0-80]")
+        with self.assertRaisesRegex(ValueError, "containing a digit"):
+            rt.validate_numeric_derivations("The 2024 result is final.")
         with self.assertRaisesRegex(ValueError, "assumptions or sensitivity"):
             rt.validate_numeric_derivations("The result is 10 * 20 = 200. [S1:P0-80]")
 
@@ -690,7 +692,7 @@ class RuntimeContractTests(RuntimeTestCase):
                 (0, "schema and semantic constraint"),
                 (1, "document_slots"),
                 (3, "schema and semantic constraint"),
-                (4, "Every numeric claim"),
+                (4, "citation in a neighboring block does not count"),
                 (6, "Every patch requires checklist and source IDs"),
                 (7, "never both"),
                 (8, "resolved=true only when every"),
