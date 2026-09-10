@@ -301,6 +301,18 @@ class RuntimeContractTests(RuntimeTestCase):
         }
         self.assertLessEqual(expected, rt.SAFE_MODEL_VALIDATION_HINTS)
 
+    def test_review_semantic_failures_are_safe_repair_hints(self) -> None:
+        expected = {
+            "review references are foreign or stale",
+            "material findings require checklist and source references",
+            "public caveats require checklist and source references",
+            "only benign review notes can be public caveats",
+            "candidate regeneration requires a referenced material finding",
+        }
+        self.assertLessEqual(expected, rt.SAFE_MODEL_VALIDATION_HINTS)
+        for message in expected:
+            self.assertEqual(rt.safe_model_validation_hint(ValueError(message)), message)
+
     def test_pydantic_failures_produce_bounded_safe_repair_hints(self) -> None:
         with self.assertRaises(ValidationError) as too_long:
             rt.ChecklistEvidence(

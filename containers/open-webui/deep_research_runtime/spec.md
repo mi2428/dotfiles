@@ -374,6 +374,7 @@ unpersisted failed draft as untrusted input and edits that draft instead of blin
 regenerating it; the same validators and attempt limits still apply.
 Pydantic corrections receive only bounded schema locations/limits or explicitly
 approved validator messages. Rejected values are not copied into logs or hints.
+Static review cross-field failures use those approved messages for their sole correction.
 
 Before research dispatch, reserve at least `4 * units + 6` provider attempts for
 two complete ledger/write/review/edit/recheck candidate paths. Additional packed

@@ -169,6 +169,11 @@ SAFE_MODEL_VALIDATION_HINTS = frozenset(
         "query too long",
         "purpose is empty",
         "purpose too long",
+        "review references are foreign or stale",
+        "material findings require checklist and source references",
+        "public caveats require checklist and source references",
+        "only benign review notes can be public caveats",
+        "candidate regeneration requires a referenced material finding",
     }
 )
 UNKNOWN_RISK_ACK = "possible duplicate execution or charge; no refund; no replay"
