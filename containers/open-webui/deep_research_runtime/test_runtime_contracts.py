@@ -860,6 +860,9 @@ class RuntimeContractTests(RuntimeTestCase):
             ],
         )
         self.assertTrue(all(len(group) <= rt.MAX_REVIEW_BLOCKS_PER_RANGE for group in ranges))
+        prompt = rt.review_system_prompt()
+        self.assertIn("block_ids only from the current blocks array", prompt)
+        self.assertIn("source_ids only from exact IDs in source_passages", prompt)
 
     def test_stop_prevents_later_search_fetch_and_extraction_dispatch(self) -> None:
         async def run() -> None:
