@@ -56,6 +56,9 @@ def material_review(candidate: int, *, regenerate: bool) -> str:
 
 
 class RuntimeContractTests(RuntimeTestCase):
+    def test_physical_attempt_deadline_allows_provider_timeout(self) -> None:
+        self.assertEqual(rt.JOB_ATTEMPT_SECONDS, 360)
+
     def test_stable_fragments_and_plan_require_every_clause_to_remain_essential(self) -> None:
         job_request = request(query="Identify evidence; compare alternatives. Explain uncertainty")
         fragments = rt.explicit_request_fragments(job_request)

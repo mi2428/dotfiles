@@ -35,7 +35,7 @@ bash scripts/open-webui.sh "$PWD" compose exec -T deep-research-runtime python -
   'import json,urllib.request; v=json.load(urllib.request.urlopen("http://127.0.0.1:8000/health")); print(json.dumps(v)); raise SystemExit(0 if v["status"] == "ok" else 1)'
 ```
 Input requests remain capped at 64 KiB, generation at 16,384 tokens, responses at
-4 MiB, and each request at 240 seconds. Job attempt/deadline/storage limits remain
+4 MiB, and each request at 360 seconds. Job attempt/deadline/storage limits remain
 enforced. The `tokens` status object reports provider-supplied usage only: totals
 are partial when `usage_complete=false`, and unavailable values remain null rather
 than becoming zero. Local tokenizer matching is not a readiness condition.

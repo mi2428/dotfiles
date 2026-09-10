@@ -15,6 +15,7 @@ from typing import ClassVar, cast
 from unittest.mock import patch
 
 from sakura_retry_proxy import (
+    RESEARCH_MAX_DEADLINE_MS,
     RESEARCH_MAX_REQUEST_BYTES,
     RESEARCH_MAX_RESPONSE_BYTES,
     RESEARCH_PATH,
@@ -224,6 +225,7 @@ class ResearchProxyTests(unittest.TestCase):
         return str(row["state"])
 
     def test_invalid_auth_deadline_headers_and_body_never_send(self) -> None:
+        self.assertEqual(RESEARCH_MAX_DEADLINE_MS, 360_000)
         cases = [
             {"headers": {}},
             {"headers": {**self.research_headers(), "Authorization": "Bearer wrong"}},
@@ -240,6 +242,7 @@ class ResearchProxyTests(unittest.TestCase):
                     "X-Sakura-Attempt-Id": "bad value",
                 }
             },
+            {"headers": self.research_headers(RESEARCH_MAX_DEADLINE_MS / 1000 + 1)},
             {"body": b"{}"},
             {"body": b"x" * (RESEARCH_MAX_REQUEST_BYTES + 1)},
         ]

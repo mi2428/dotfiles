@@ -326,7 +326,7 @@ content quality. A high score cannot override a failed review or corrupt artifac
 | Limit | Deep profile |
 | --- | ---: |
 | Active provider requests | 1 |
-| Physical request deadline | 240 seconds |
+| Physical request deadline | 360 seconds |
 | Model attempts per job | 40 |
 | Job wall time | 10,800 seconds |
 | Generation allowance per attempt | 16,384 tokens |

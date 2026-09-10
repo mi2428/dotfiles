@@ -25,6 +25,9 @@ def event(payload: object) -> bytes:
 
 
 class ResearchTransportTests(unittest.IsolatedAsyncioTestCase):
+    def test_physical_attempt_deadline_allows_provider_timeout(self) -> None:
+        self.assertEqual(adapter.RESEARCH_MAX_SECONDS, 360.0)
+
     async def asyncSetUp(self) -> None:
         self.mode = "success"
         self.calls: list[tuple[str, bytes, dict[str, str]]] = []
