@@ -355,7 +355,9 @@ next research call.
 One absolute deadline covers gateway queueing, connection, request, headers and
 streaming. SDK and proxy retries are disabled on the research route. A complete
 response with invalid content is a known failed attempt; an uncertain transmission
-or incomplete stream is `unknown` and is never blindly replayed.
+or incomplete stream is `unknown` and is never blindly replayed. A complete,
+parseable provider SSE error event is a known failure even without a `[DONE]`
+marker; a truncated error event remains `unknown`.
 
 Model assignments use fresh ordinary completion calls with validated JSON only for
 small control records. They do not depend on forced tool selection, a configurable

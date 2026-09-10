@@ -45,6 +45,12 @@ class FakeUpstreamHandler(BaseHTTPRequestHandler):
         if self.mode == "incomplete":
             self._send(200, b'data: {"choices":[')
             return
+        if self.mode == "explicit_error":
+            self._send(
+                200,
+                sse_event({"error": {"code": "timeout", "message": "request timed out"}}),
+            )
+            return
         body = b"".join(
             (
                 sse_event(
@@ -125,15 +131,17 @@ class ResearchGatewayIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(thread.is_alive())
         self.tmpdir.cleanup()
 
-    def lease(self) -> AttemptLease:
+    def lease(self, attempt_id: str = "integration-attempt") -> AttemptLease:
         return AttemptLease(
-            "integration-attempt",
+            attempt_id,
             asyncio.get_running_loop().time() + 2,
             int((time.time() + 2) * 1000),
         )
 
-    async def complete(self, api_key: str = "gateway-key") -> ResearchCompletion:
-        return await complete_research(self.base_url, api_key, self.body, self.lease())
+    async def complete(
+        self, api_key: str = "gateway-key", attempt_id: str = "integration-attempt"
+    ) -> ResearchCompletion:
+        return await complete_research(self.base_url, api_key, self.body, self.lease(attempt_id))
 
     async def test_success_preserves_exact_body_visible_content_and_final_usage(self) -> None:
         result = await self.complete()
@@ -175,6 +183,20 @@ class ResearchGatewayIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.outcome.state, "unknown")
         self.assertEqual(FakeUpstreamHandler.attempts, 1)
         self.assertEqual(FakeUpstreamHandler.bodies, [self.body])
+
+    async def test_explicit_sse_error_is_known_failed_and_releases_account(self) -> None:
+        FakeUpstreamHandler.mode = "explicit_error"
+        result = await self.complete()
+        self.assertEqual(result.outcome.state, "known_failed")
+        self.assertEqual(result.outcome.http_status, 200)
+        self.assertEqual(FakeUpstreamHandler.attempts, 1)
+
+        FakeUpstreamHandler.mode = "success"
+        self.assertEqual(
+            (await self.complete(attempt_id="integration-attempt-2")).outcome.state,
+            "succeeded",
+        )
+        self.assertEqual(FakeUpstreamHandler.attempts, 2)
 
 
 if __name__ == "__main__":

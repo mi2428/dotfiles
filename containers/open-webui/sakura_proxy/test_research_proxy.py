@@ -71,6 +71,15 @@ class ResearchUpstreamHandler(BaseHTTPRequestHandler):
         if self.mode == "incomplete":
             self._send(200, b'data: {"choices":[]}\n\n')
             return
+        if self.mode == "explicit_error":
+            self._send(
+                200,
+                b'data: {"error":{"code":"timeout","message":"request timed out"}}\n\n',
+            )
+            return
+        if self.mode == "truncated_error":
+            self._send(200, b'data: {"error":')
+            return
         self._send(200, b'data: {"choices":[]}\n\ndata: [DONE]\n\n')
 
     def _send(
@@ -366,6 +375,23 @@ class ResearchProxyTests(unittest.TestCase):
         self.assertEqual(headers["X-Sakura-Upstream-Send"], "sent")
         self.assertEqual(ResearchUpstreamHandler.attempts, 1)
         self.assertEqual(self.account_state(), "unknown")
+
+    def test_truncated_error_event_still_quarantines_account(self) -> None:
+        ResearchUpstreamHandler.mode = "truncated_error"
+        status, headers, _body = self.request()
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["X-Sakura-Upstream-Send"], "sent")
+        self.assertEqual(ResearchUpstreamHandler.attempts, 1)
+        self.assertEqual(self.account_state(), "unknown")
+
+    def test_explicit_error_event_releases_account_as_known_failure(self) -> None:
+        ResearchUpstreamHandler.mode = "explicit_error"
+        status, headers, body = self.request()
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["X-Sakura-Upstream-Send"], "sent")
+        self.assertIn(b'"error"', body)
+        self.assertEqual(ResearchUpstreamHandler.attempts, 1)
+        self.assertEqual(self.account_state(), "available")
 
     def test_shared_busy_lease_expires_queue_without_upstream_send(self) -> None:
         lease, _waited = self.handler.token_state.acquire(

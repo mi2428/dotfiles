@@ -150,6 +150,24 @@ def retryable_response_reason(status: int, prefix: bytes) -> str | None:
     return None
 
 
+def research_stream_is_terminal(raw: bytes) -> bool:
+    for event in raw.replace(b"\r\n", b"\n").split(b"\n\n"):
+        data = b"\n".join(
+            line.removeprefix(b"data:").lstrip()
+            for line in event.splitlines()
+            if line.startswith(b"data:")
+        )
+        if data == b"[DONE]":
+            return True
+        try:
+            payload = json.loads(data)
+        except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
+            continue
+        if type(payload) is dict and "error" in payload:
+            return True
+    return False
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     """Runtime settings for the internal Sakura gateway."""
@@ -826,10 +844,10 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                     self._research_error(502, attempt_id, "unknown")
                     return
             downstream_started = True
-            saw_done = self._stream_research(
+            terminal = self._stream_research(
                 upstream_connection, response, attempt_id, deadline
             )
-            unknown = 200 <= response.status < 300 and not saw_done
+            unknown = 200 <= response.status < 300 and not terminal
         except (TimeoutError, OSError, http.client.HTTPException):
             unknown = sent
             if downstream_started:
@@ -871,8 +889,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
         received = 0
-        line_buffer = b""
-        saw_done = False
+        raw = bytearray()
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -883,17 +900,11 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 min(64 * 1024, RESEARCH_MAX_RESPONSE_BYTES + 1 - received)
             )
             if not chunk:
-                return saw_done
+                return research_stream_is_terminal(bytes(raw))
             received += len(chunk)
             if received > RESEARCH_MAX_RESPONSE_BYTES:
                 raise OSError("research response limit")
-            lines = (line_buffer + chunk).split(b"\n")
-            line_buffer = lines.pop()
-            saw_done = saw_done or any(
-                line.strip() in {b"data: [DONE]", b"data:[DONE]"} for line in lines
-            )
-            if len(line_buffer) > len(b"data: [DONE]"):
-                line_buffer = b"!"
+            raw.extend(chunk)
             self.wfile.write(chunk)
             self.wfile.flush()
 

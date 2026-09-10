@@ -141,6 +141,8 @@ class ResearchTransportTests(unittest.IsolatedAsyncioTestCase):
             "after_finish": self.stream_body(after_finish=True),
             "invalid_json": b"data: {\n\ndata: [DONE]\n\n",
             "truncated_json": b'data: {"choices":[',
+            "truncated_error": b'data: {"error":',
+            "explicit_error": event({"error": {"code": "timeout", "message": "request timed out"}}),
         }
         return web.Response(headers=self.response_headers(), body=bodies[self.mode])
 
@@ -196,6 +198,7 @@ class ResearchTransportTests(unittest.IsolatedAsyncioTestCase):
             ("unknown_finish", "unknown"),
             ("after_finish", None),
             ("invalid_json", None),
+            ("explicit_error", None),
         ):
             with self.subTest(mode=mode):
                 self.mode = mode
@@ -207,7 +210,7 @@ class ResearchTransportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result.outcome.finish_reason, finish)
 
     async def test_incomplete_stream_timeout_and_oversize_are_unknown(self) -> None:
-        for mode in ("incomplete", "truncated_json"):
+        for mode in ("incomplete", "truncated_json", "truncated_error"):
             with self.subTest(mode=mode):
                 self.mode = mode
                 result = await complete_research(

@@ -133,8 +133,10 @@ def _parse_research_stream(
             payload = json.loads(data)
         except (ValueError, UnicodeDecodeError, RecursionError):
             return invalid_state, "", None, usage
-        if type(payload) is not dict or "error" in payload:
+        if type(payload) is not dict:
             return invalid_state, "", None, usage
+        if "error" in payload:
+            return "invalid", "", None, usage
         choices = payload.get("choices", [])
         if type(choices) is not list or len(choices) > 1:
             return invalid_state, "", None, usage
