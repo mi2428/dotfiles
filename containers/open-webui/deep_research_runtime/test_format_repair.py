@@ -119,8 +119,7 @@ class FormatRepairTests(RuntimeTestCase):
             def accept(value: str) -> str:
                 if value == "bad":
                     raise ValueError(
-                        "every Markdown block containing a digit needs an admitted citation "
-                        "in that block"
+                        "digit-bearing non-heading blocks without admitted citations: 1, 3"
                     )
                 return value
 

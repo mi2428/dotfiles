@@ -308,6 +308,8 @@ Before semantic approval, the runtime verifies:
   they show signed anomalies or arithmetic; estimate controls remain mandatory
   when the request or the prose identifies an authored estimate, scenario, forecast,
   or projection;
+- numeric-block validation reports all bounded offending block ordinals together so
+  the single correction does not discover sibling violations one at a time;
 - all blocks were covered by the accepted review revision;
 - all material edits and dismissals were rechecked;
 - no unresolved material finding remains;
