@@ -127,7 +127,7 @@ class FormatRepairTests(RuntimeTestCase):
             with patch.object(rt, "complete_research", new=provider):
                 self.assertEqual(
                     await rt.invoke_job_model(
-                        self.runtime, job_id, "candidate_1_author_unit_1", "system", "user", accept
+                        self.runtime, job_id, "candidate_1_author_unit_1", "system", "{}", accept
                     ),
                     "good",
                 )
@@ -135,6 +135,9 @@ class FormatRepairTests(RuntimeTestCase):
             repair_prompt = repair_request["messages"][0]["content"]
             self.assertIn("each blank-line-separated non-heading block", repair_prompt)
             self.assertIn("every numeric derivation has explicit assumptions", repair_prompt)
+            self.assertIn("instead of drafting from scratch", repair_prompt)
+            repair_input = json.loads(repair_request["messages"][1]["content"])
+            self.assertEqual(repair_input["invalid_response_to_repair"], "bad")
 
         asyncio.run(run())
 

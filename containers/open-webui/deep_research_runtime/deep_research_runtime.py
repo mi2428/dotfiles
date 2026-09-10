@@ -1348,11 +1348,13 @@ class JobIncomplete(Exception):
         *,
         quality_outcome: str | None = None,
         validation_hint: str | None = None,
+        invalid_output: str | None = None,
     ) -> None:
         super().__init__(code)
         self.code = code
         self.quality_outcome = quality_outcome
         self.validation_hint = validation_hint
+        self.invalid_output = invalid_output
 
 
 class StorageQuotaExceeded(Exception):
@@ -3064,12 +3066,14 @@ async def invoke_job_model(
 ) -> str:
     repair_key = assignment_key + ":format-repair"
     validation_hint = None
+    invalid_output = None
     try:
         return await invoke_with_transport_retries(
             runtime, job_id, assignment_key, system_prompt, user_prompt, accept
         )
     except JobIncomplete as error:
         validation_hint = error.validation_hint
+        invalid_output = error.invalid_output
         if error.code not in {
             "assignment_result_invalid",
             "assignment_result_unavailable",
@@ -3116,8 +3120,21 @@ async def invoke_job_model(
             " Recheck each blank-line-separated non-heading block. If it contains a digit, keep it "
             "only when supported and append an exact admitted citation in that block; otherwise "
             "remove or rephrase it. Also ensure every numeric derivation has explicit assumptions "
-            "or sensitivity."
+            "or sensitivity. Edit invalid_response_to_repair instead of drafting from scratch, "
+            "preserve its valid supported blocks, and return the whole corrected unit."
         )
+        if invalid_output is not None:
+            try:
+                repair_prompt = json.loads(user_prompt)
+            except json.JSONDecodeError:
+                repair_prompt = None
+            if isinstance(repair_prompt, dict):
+                repair_prompt["invalid_response_to_repair"] = invalid_output
+                user_prompt = json.dumps(
+                    repair_prompt,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
     return await invoke_with_transport_retries(
         runtime,
         job_id,
@@ -3269,7 +3286,9 @@ async def _invoke_job_model_once(
                 )
                 await update_attempt(runtime, job_id, attempt_id, completion, None)
                 raise JobIncomplete(
-                    "assignment_result_invalid", validation_hint=validation_hint
+                    "assignment_result_invalid",
+                    validation_hint=validation_hint,
+                    invalid_output=completion.content,
                 ) from None
         await update_attempt(runtime, job_id, attempt_id, completion, receipt)
         if await job_cancel_requested(runtime, job_id):

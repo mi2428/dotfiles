@@ -359,6 +359,9 @@ content quality. A high score cannot override a failed review or corrupt artifac
 All limits are hard ceilings, not targets. The scheduler records every physical
 attempt, including format correction and continuation. Search and fetch operations
 have separate counters and do not consume provider-attempt IDs.
+For an author-unit numeric-block violation, the single correction receives the
+unpersisted failed draft as untrusted input and edits that draft instead of blindly
+regenerating it; the same validators and attempt limits still apply.
 
 Before research dispatch, reserve at least `4 * units + 6` provider attempts for
 two complete ledger/write/review/edit/recheck candidate paths. Additional packed
