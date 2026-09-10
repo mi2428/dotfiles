@@ -798,9 +798,16 @@ def select_relevant_excerpt(text: str, query: str, focus: str | None) -> tuple[s
         terms = {term.casefold() for term in re.findall(r"[\w.-]{2,}", f"{query} {focus or ''}")}
         score = sum(term in excerpt.casefold() for term in terms)
         return excerpt, min(1.0, 0.5 + score * 0.1) if score else 0.0
-    terms = {term.casefold() for term in re.findall(r"[\w.-]{2,}", f"{query} {focus or ''}")}
-    scores = [sum(term in paragraph.casefold() for term in terms) for paragraph in paragraphs]
-    index = max(range(len(paragraphs)), key=lambda i: scores[i])
+    query_terms = {term.casefold() for term in re.findall(r"[\w.-]{2,}", query)}
+    focus_terms = {term.casefold() for term in re.findall(r"[\w.-]{2,}", focus or "")}
+    query_scores = [
+        sum(term in paragraph.casefold() for term in query_terms) for paragraph in paragraphs
+    ]
+    focus_scores = [
+        sum(term in paragraph.casefold() for term in focus_terms) for paragraph in paragraphs
+    ]
+    scores = focus_scores if any(focus_scores) else query_scores
+    index = max(range(len(paragraphs)), key=lambda i: (scores[i], query_scores[i]))
     excerpt = paragraphs[index][:1200].rstrip()
     if not excerpt or not is_verbatim_excerpt(excerpt, text):
         raise ValueError("could not select source excerpt")
@@ -2553,9 +2560,10 @@ def normalized_research_query(query: ResearchQuery, checklist_ids: set[str]) -> 
     ids = list(dict.fromkeys(query.checklist_ids))
     if not ids or set(ids) - checklist_ids:
         raise ValueError("research query checklist references are invalid")
+    search_query = bounded_query(re.sub(r'["“”]', "", query.query))
     return query.model_copy(
         update={
-            "query": bounded_query(query.query),
+            "query": search_query,
             "purpose": bounded_purpose(query.purpose),
             "checklist_ids": ids,
         }
@@ -3671,7 +3679,7 @@ async def collect_selected_candidates(
                 excerpt, _score = select_relevant_excerpt(
                     extraction.extracted_text,
                     str(metadata["query"]),
-                    f"{selected.purpose} {checklist[checklist_id]}",
+                    checklist[checklist_id],
                 )
                 excerpt_start = extraction.extracted_text.find(excerpt)
                 if excerpt_start < 0:

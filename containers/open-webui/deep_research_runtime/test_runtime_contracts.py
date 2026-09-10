@@ -127,6 +127,31 @@ class RuntimeContractTests(RuntimeTestCase):
                 {value.follow_up_queries[0].query.upper()},
             )
 
+    def test_research_queries_drop_brittle_phrase_quotes(self) -> None:
+        query = rt.ResearchQuery(
+            query='"RFC 9111" “Authorization” shared cache',
+            purpose="find the governing specification",
+            checklist_ids=["C1"],
+        )
+        normalized = rt.normalized_research_query(query, {"C1"})
+        self.assertEqual(normalized.query, "RFC 9111 Authorization shared cache")
+
+    def test_excerpt_selection_prioritizes_checklist_focus(self) -> None:
+        broad = (
+            "RFC 9111 shared cache Authorization 200 response reuse requirements "
+            "and general protocol guidance are summarized in this introduction."
+        )
+        focused = (
+            "RFC 9111 distinguishes the private and no-store response directives "
+            "when deciding whether a shared cache may store a response."
+        )
+        excerpt, _score = rt.select_relevant_excerpt(
+            f"{broad}\n{focused}",
+            "RFC 9111 shared cache Authorization 200 response reuse requirements",
+            "private no-store directive store distinction",
+        )
+        self.assertEqual(excerpt, focused)
+
     def test_adaptive_research_runs_at_most_four_rounds(self) -> None:
         async def run() -> None:
             outputs = [completion(plan_json())]
