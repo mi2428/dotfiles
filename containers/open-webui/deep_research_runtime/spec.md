@@ -85,7 +85,13 @@ The first bounded model assignment converts the original request into a
 - a checklist of atomic questions with stable IDs;
 - whether each checklist item is essential;
 - preferred source types for each item; and
-- three to six initial search queries.
+- three to six initial search queries, each with zero to two canonical direct
+  primary-source URLs when the planner confidently knows them.
+
+Direct URL candidates are untrusted hints, not evidence. They pass through the same
+public-URL validation, bounded fetch, immutable storage, extraction and passage
+admission path as search results. The planner leaves the list empty rather than
+guessing a URL.
 
 The original request remains authoritative. The runtime assigns stable IDs to its
 explicit clauses and list items before planning. A plan cannot remove, weaken or
@@ -99,7 +105,10 @@ the final outline.
 
 Research proceeds in bounded rounds:
 
-1. The runtime executes the accepted search queries.
+1. The runtime executes the accepted search queries and admits any validated direct
+   source candidates into the same result set. If the search service reports only
+   unavailable engines and there are no direct candidates, the job fails explicitly
+   instead of treating the outage as an evidence gap.
 2. The planner receives result metadata under stable IDs and selects candidate
    documents and purposes.
 3. The runtime validates each public URL, fetches it through the SSRF-safe path,
@@ -115,6 +124,8 @@ origin and authority: multiple hosts repeating one report are one origin, while
 different useful pages on the same official site remain valid separate documents.
 Passage-to-checklist relevance tags are retrieval hints, not admission boundaries;
 any prompt-visible passage may support any checklist item when its text entails it.
+When a selected result is collected, the runtime extracts passages for both the
+selector's hints and every checklist item targeted by the query that produced it.
 
 The runtime deduplicates exact URLs and content identities. It MUST NOT discard a
 document merely because another accepted document shares its host. It MUST NOT use

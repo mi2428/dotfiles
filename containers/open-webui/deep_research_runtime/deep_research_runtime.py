@@ -252,6 +252,7 @@ class ResearchQuery(StrictModel):
     query: str = Field(min_length=1, max_length=MAX_QUERY_CHARS)
     purpose: str = Field(min_length=1, max_length=MAX_FOCUS_CHARS)
     checklist_ids: list[ChecklistId] = Field(min_length=1, max_length=8)
+    candidate_urls: list[str] = Field(default_factory=list, max_length=2)
 
 
 class ResearchPlan(StrictModel):
@@ -840,6 +841,13 @@ def source_quality(url: str) -> float:
     if (
         host.endswith((".gov", ".edu", ".go.jp", ".ac.jp"))
         or host == "arxiv.org"
+        or host == "rfc-editor.org"
+        or host.endswith(".rfc-editor.org")
+        or host == "ietf.org"
+        or host.endswith(".ietf.org")
+        or host == "copernicus.eu"
+        or host.endswith(".copernicus.eu")
+        or host.endswith(".europa.eu")
         or (
             host in {"github.com", "gitlab.com"}
             and any(part in path for part in ("/releases", "/tags", "changelog"))
@@ -1284,6 +1292,8 @@ async def search_searxng(
     results = data.get("results", [])
     if not isinstance(results, list):
         raise ValueError("invalid search results")
+    if not results and data.get("unresponsive_engines"):
+        raise ValueError("search engines unavailable")
     seen: set[str] = set()
     seen_hashes: set[str] = set()
     deduped: list[SearchResult] = []
@@ -2580,11 +2590,15 @@ def normalized_research_query(query: ResearchQuery, checklist_ids: set[str]) -> 
     if not ids or set(ids) - checklist_ids:
         raise ValueError("research query checklist references are invalid")
     search_query = bounded_query(re.sub(r'["“”]', "", query.query))
+    if any(len(item) > MAX_QUERY_CHARS for item in query.candidate_urls):
+        raise ValueError("candidate source URL too long")
+    candidate_urls = list(dict.fromkeys(validate_public_url(item) for item in query.candidate_urls))
     return query.model_copy(
         update={
             "query": search_query,
             "purpose": bounded_purpose(query.purpose),
             "checklist_ids": ids,
+            "candidate_urls": candidate_urls,
         }
     )
 
@@ -3573,6 +3587,10 @@ async def create_research_plan(
                 "checklist_ids": "C1..Cn in order",
                 "fragment_coverage": "every fragment maps to an essential checklist item",
                 "initial_queries": "three to six distinct public-web queries",
+                "candidate_urls": (
+                    "for each query, zero to two exact canonical public URLs for likely primary "
+                    "sources; use an empty list rather than guessing"
+                ),
                 "semantic_validation": [
                     "checklist IDs are unique and sequential; every request fragment is mapped "
                     "and remains essential; fragment IDs are not duplicated within an item",
@@ -3593,6 +3611,9 @@ async def create_research_plan(
         "Obey every schema and semantic constraint in the request. Do not weaken, omit, or "
         "silently reinterpret any request fragment. Prefer primary and "
         "authoritative source types and include counterevidence-oriented queries where relevant. "
+        "For every research query, return candidate_urls. Include canonical direct URLs for "
+        "primary sources when confidently known, including official specifications and reports; "
+        "otherwise return an empty list and never invent a URL. "
         "Treat requested calculations, comparisons, tables, recommendations, and presentation "
         "constraints as synthesis requirements supported by cited facts; do not require a source "
         "that already contains the requested output artifact."
@@ -3695,7 +3716,7 @@ async def select_round_candidates(
             + "Return exactly one CandidateSelection JSON object. Select only supplied result IDs. "
             "Obey every schema and semantic constraint in the request, including document_slots. "
             "Prefer documents likely to provide primary, adverse, or definition-resolving "
-            "evidence. "
+            "evidence. Prefer planner-direct results when they are canonical primary sources. "
             "Same-host documents are allowed when they are separately useful."
         )
 
@@ -3778,7 +3799,14 @@ async def collect_selected_candidates(
             else:
                 extraction_revision, extraction = saved_extraction
             checklist = {item["id"]: item["question"] for item in state_value["plan"]["checklist"]}
-            for checklist_id in selected.checklist_ids:
+            query_targets = [
+                checklist_id
+                for item in round_value["queries"]
+                if item["query"] == metadata["query"]
+                or metadata["url"] in item.get("candidate_urls", [])
+                for checklist_id in item["checklist_ids"]
+            ]
+            for checklist_id in dict.fromkeys([*selected.checklist_ids, *query_targets]):
                 excerpt, _score = select_relevant_excerpt(
                     extraction.extracted_text,
                     str(metadata["query"]),
@@ -3999,22 +4027,39 @@ async def run_job_research(
             for research_round in state_value["research_rounds"]
             for item in research_round["results"]
         }
+        search_unavailable = False
+        has_direct_candidates = any(query.candidate_urls for query in queries)
         for query in queries:
             if query.query in round_value["completed_queries"]:
                 continue
-            try:
-                async with asyncio.timeout(await remaining_job_seconds(runtime, job_id)):
-                    results = await search_searxng(
-                        runtime.settings,
-                        query.query,
-                        request.language,
-                        request.recency_days,
-                        SEARCH_RESULT_LIMIT,
-                    )
-            except TimeoutError:
-                raise JobIncomplete("deadline_expired") from None
-            except (aiohttp.ClientError, OSError, ValueError):
-                results = []
+            results = [
+                SearchResult(
+                    url,
+                    f"Direct primary source: {urlparse(url).hostname or url}",
+                    query.purpose,
+                    "planner-direct",
+                    query.query,
+                )
+                for url in query.candidate_urls
+            ]
+            if not search_unavailable:
+                try:
+                    async with asyncio.timeout(await remaining_job_seconds(runtime, job_id)):
+                        results.extend(
+                            await search_searxng(
+                                runtime.settings,
+                                query.query,
+                                request.language,
+                                request.recency_days,
+                                SEARCH_RESULT_LIMIT,
+                            )
+                        )
+                except TimeoutError:
+                    raise JobIncomplete("deadline_expired") from None
+                except (aiohttp.ClientError, OSError, ValueError):
+                    search_unavailable = True
+                    if not has_direct_candidates:
+                        raise JobIncomplete("source_search_failed") from None
             if query.query not in state_value["searched_queries"]:
                 state_value["searched_queries"].append(query.query)
             for result in results:

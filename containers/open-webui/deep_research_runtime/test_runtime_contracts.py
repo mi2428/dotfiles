@@ -142,9 +142,109 @@ class RuntimeContractTests(RuntimeTestCase):
             query='"RFC 9111" “Authorization” shared cache',
             purpose="find the governing specification",
             checklist_ids=["C1"],
+            candidate_urls=[
+                "https://www.rfc-editor.org/rfc/rfc9111.html",
+                "https://www.rfc-editor.org/rfc/rfc9111.html",
+            ],
         )
         normalized = rt.normalized_research_query(query, {"C1"})
         self.assertEqual(normalized.query, "RFC 9111 Authorization shared cache")
+        self.assertEqual(
+            normalized.candidate_urls,
+            ["https://www.rfc-editor.org/rfc/rfc9111.html"],
+        )
+
+    def test_primary_standards_and_eu_services_are_authoritative(self) -> None:
+        for url in (
+            "https://www.rfc-editor.org/rfc/rfc9111.html",
+            "https://datatracker.ietf.org/doc/rfc9111/",
+            "https://climate.copernicus.eu/global-climate-highlights-2024",
+        ):
+            self.assertGreaterEqual(rt.source_quality(url), 0.8)
+
+    def test_search_failure_stops_before_empty_evidence_assessment(self) -> None:
+        async def run() -> None:
+            provider = FakeProvider([completion(plan_json())])
+            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
+            self.assertTrue(await rt.claim_research_job(self.runtime, submitted["job_id"]))
+            with (
+                patch.object(rt, "complete_research", new=provider),
+                patch.object(
+                    rt,
+                    "search_searxng",
+                    new=AsyncMock(side_effect=aiohttp.ClientError("search unavailable")),
+                ),
+                self.assertRaises(rt.JobIncomplete) as raised,
+            ):
+                await rt.run_job_research(self.runtime, submitted["job_id"], request())
+            self.assertEqual(raised.exception.code, "source_search_failed")
+            self.assertEqual(len(provider.bodies), 1)
+
+        asyncio.run(run())
+
+    def test_searxng_reports_unresponsive_engines_instead_of_empty_results(self) -> None:
+        class Session(FakeSession):
+            async def __aenter__(self) -> Session:
+                return self
+
+            async def __aexit__(self, *_args: object) -> bool:
+                return False
+
+        async def run() -> None:
+            response = FakeResponse(
+                chunks=[
+                    json.dumps(
+                        {
+                            "results": [],
+                            "unresponsive_engines": [["duckduckgo", "CAPTCHA"]],
+                        }
+                    ).encode()
+                ]
+            )
+            session = cast(aiohttp.ClientSession, Session(response))
+            with (
+                patch.object(rt.aiohttp, "ClientSession", return_value=session),
+                self.assertRaisesRegex(ValueError, "search engines unavailable"),
+            ):
+                await rt.search_searxng(
+                    self.runtime.settings,
+                    "RFC 9111",
+                    "ja",
+                    None,
+                    rt.SEARCH_RESULT_LIMIT,
+                )
+
+        asyncio.run(run())
+
+    def test_direct_primary_candidate_survives_search_outage(self) -> None:
+        async def run() -> None:
+            payload = json.loads(plan_json())
+            payload["initial_queries"][0]["candidate_urls"] = [
+                "https://www.rfc-editor.org/rfc/rfc9111.html"
+            ]
+            provider = FakeProvider([completion(json.dumps(payload))])
+            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
+            self.assertTrue(await rt.claim_research_job(self.runtime, submitted["job_id"]))
+            search = AsyncMock(side_effect=aiohttp.ClientError("search unavailable"))
+            select = AsyncMock(side_effect=RuntimeError("stop after search"))
+            with (
+                patch.object(rt, "complete_research", new=provider),
+                patch.object(rt, "search_searxng", new=search),
+                patch.object(rt, "select_round_candidates", new=select),
+                self.assertRaisesRegex(RuntimeError, "stop after search"),
+            ):
+                await rt.run_job_research(self.runtime, submitted["job_id"], request())
+            self.assertEqual(search.await_count, 1)
+            call = select.await_args
+            self.assertIsNotNone(call)
+            assert call is not None
+            results = call.args[4]["results"]
+            self.assertEqual(
+                [(item["url"], item["engine"]) for item in results],
+                [("https://www.rfc-editor.org/rfc/rfc9111.html", "planner-direct")],
+            )
+
+        asyncio.run(run())
 
     def test_excerpt_selection_prioritizes_checklist_focus(self) -> None:
         broad = (
@@ -328,6 +428,14 @@ class RuntimeContractTests(RuntimeTestCase):
         async def run() -> None:
             url = "https://example.com/rfc"
             round_value = {
+                "queries": [
+                    {
+                        "query": "cache rules",
+                        "purpose": "collect normative cache evidence",
+                        "checklist_ids": ["C1", "C2"],
+                        "candidate_urls": [url],
+                    }
+                ],
                 "results": [
                     {
                         "id": "W1-1",
@@ -369,7 +477,7 @@ class RuntimeContractTests(RuntimeTestCase):
                         {
                             "result_id": "W1-1",
                             "purpose": "collect normative cache evidence",
-                            "checklist_ids": ["C1", "C2"],
+                            "checklist_ids": ["C1"],
                         }
                     ]
                 }
