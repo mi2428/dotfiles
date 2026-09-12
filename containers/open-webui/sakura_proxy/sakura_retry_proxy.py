@@ -184,6 +184,8 @@ class Settings:
         )
         if not account_tokens:
             raise ValueError("SAKURA_AI_ACCOUNT_TOKENS must contain at least one token")
+        if len(account_tokens) != len(set(account_tokens)):
+            raise ValueError("SAKURA_AI_ACCOUNT_TOKENS must contain unique tokens")
         return cls(
             upstream_url=os.getenv("SAKURA_UPSTREAM_URL", defaults.upstream_url),
             max_retries=int(os.getenv("SAKURA_RETRY_MAX", defaults.max_retries)),
@@ -227,6 +229,8 @@ class SharedTokenCooldown:
         self._tokens = tokens
         self._next_index = 0
         self._cooldown_until = [0.0] * len(tokens)
+        self._rate_limit_streak = [0] * len(tokens)
+        self._last_rate_limit_at = [0.0] * len(tokens)
         self._in_flight = [False] * len(tokens)
         self._condition = threading.Condition()
 
@@ -265,8 +269,10 @@ class SharedTokenCooldown:
                 self._condition.wait(timeout=pause)
                 waited += time.monotonic() - start
 
-    def release(self, lease: TokenLease) -> None:
+    def release(self, lease: TokenLease, *, reset_rate_limit: bool = False) -> None:
         with self._condition:
+            if reset_rate_limit:
+                self._rate_limit_streak[lease.slot] = 0
             if self._in_flight[lease.slot]:
                 self._in_flight[lease.slot] = False
                 self._condition.notify_all()
@@ -277,12 +283,27 @@ class SharedTokenCooldown:
             self._condition.notify_all()
             return scheduled
 
-    def schedule_and_release(self, lease: TokenLease, delay: float) -> float:
+    def rate_limit_and_release(
+        self, lease: TokenLease, settings: Settings, retry_after: float | None
+    ) -> tuple[float, float]:
         with self._condition:
-            scheduled = self._schedule_unlocked(lease.slot, delay)
+            now = time.monotonic()
+            attempt = self._rate_limit_streak[lease.slot]
+            delay = retry_delay_seconds(settings, attempt, retry_after)
+            self._rate_limit_streak[lease.slot] += 1
+            self._last_rate_limit_at[lease.slot] = now
+            self._cooldown_until[lease.slot] = max(
+                self._cooldown_until[lease.slot],
+                self._last_rate_limit_at[lease.slot] + delay,
+            )
             self._in_flight[lease.slot] = False
+            ready_waits = (
+                [0.0]
+                if any(self._in_flight)
+                else [max(0.0, cooldown - now) for cooldown in self._cooldown_until]
+            )
             self._condition.notify_all()
-            return scheduled
+            return delay, min(ready_waits)
 
     def _schedule_unlocked(self, slot: int, delay: float) -> float:
         self._cooldown_until[slot] = max(
@@ -478,17 +499,26 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
 
             token_slot = None if lease is None else lease.slot
             reason = retryable_response_reason(response.status, prefix)
+            retry_wait = 0.0
             if reason is not None:
                 retry_after = (
                     retry_after_seconds(response.getheader("Retry-After"))
                     if reason == "rate_limit"
                     else None
                 )
-                delay = retry_delay_seconds(self.settings, retry_count, retry_after)
+                if reason == "rate_limit" and lease is not None:
+                    delay, retry_wait = type(self).token_state.rate_limit_and_release(
+                        lease, self.settings, retry_after
+                    )
+                    lease = None
+                else:
+                    delay = retry_delay_seconds(self.settings, retry_count, retry_after)
             else:
                 delay = 0.0
             if reason is not None and self._can_retry(
-                retry_count, delay, retry_deadline
+                retry_count,
+                retry_wait if reason == "rate_limit" else delay,
+                retry_deadline,
             ):
                 if reason == "timeout":
                     fallback = timeout_retry_body(request_body)
@@ -499,10 +529,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 response.close()
                 connection.close()
                 if lease is not None:
-                    if reason == "rate_limit":
-                        type(self).token_state.schedule_and_release(lease, delay)
-                    else:
-                        type(self).token_state.release(lease)
+                    type(self).token_state.release(lease, reset_rate_limit=True)
                     lease = None
                 retry_count += 1
                 last_retry_reason = reason
@@ -515,7 +542,9 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                     shared_wait=shared_wait,
                     status="retry",
                 )
-                if not self._wait_for_retry(delay, retry_deadline):
+                if reason != "rate_limit" and not self._wait_for_retry(
+                    delay, retry_deadline
+                ):
                     self.close_connection = True
                     return
                 continue
@@ -524,7 +553,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 response.close()
                 connection.close()
                 if lease is not None:
-                    type(self).token_state.release(lease)
+                    type(self).token_state.release(lease, reset_rate_limit=True)
                 status = 504 if reason == "timeout" else 502
                 self._log_event(
                     correlation_id=correlation_id,
@@ -754,7 +783,7 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             pass
         finally:
             if lease is not None:
-                type(self).token_state.release(lease)
+                type(self).token_state.release(lease, reset_rate_limit=True)
             response.close()
             connection.close()
             self.close_connection = True

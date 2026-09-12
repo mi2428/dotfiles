@@ -222,8 +222,10 @@ class SakuraRetryProxyTest(unittest.TestCase):
             ["Bearer token-a", "Bearer token-b", "Bearer token-a", "Bearer token-b"],
         )
 
-    def test_rate_limit_retry_waits_before_reusing_limited_token(self) -> None:
+    def test_rate_limit_retry_uses_next_token_without_global_wait(self) -> None:
         UpstreamHandler.mode = "token_a_once_rate_limited"
+        handler = cast(type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass)
+        handler.settings = self.unsafe_settings(base_backoff=0.2, max_backoff=0.2)
         proxy_port = self.proxy.server_address[1]
         request = urllib.request.Request(
             f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
@@ -233,13 +235,13 @@ class SakuraRetryProxyTest(unittest.TestCase):
         started = time.monotonic()
         with urllib.request.urlopen(request) as response:
             self.assertEqual(response.read(), b'{"ok":true}')
-        self.assertGreaterEqual(time.monotonic() - started, 0.008)
+        self.assertLess(time.monotonic() - started, 0.15)
         with urllib.request.urlopen(request) as response:
             self.assertEqual(response.read(), b'{"ok":true}')
 
         self.assertEqual(
             UpstreamHandler.authorization_headers,
-            ["Bearer token-a", "Bearer token-b", "Bearer token-a"],
+            ["Bearer token-a", "Bearer token-b", "Bearer token-b"],
         )
 
     def test_same_token_never_allows_two_in_flight_upstream_requests(self) -> None:
@@ -594,7 +596,9 @@ class SakuraRetryProxyTest(unittest.TestCase):
             max_backoff=1000,
             retry_budget=300.002,
             upstream_timeout=0.001,
+            account_tokens=("token-a",),
         )
+        handler.token_state = SharedTokenCooldown(handler.settings.account_tokens)
         request = urllib.request.Request(
             f"http://127.0.0.1:{self.proxy.server_address[1]}/v1/chat/completions",
             data=b"{}",
@@ -619,6 +623,28 @@ class SakuraRetryProxyTest(unittest.TestCase):
         self.assertIsNotNone(lease)
         self.assertGreaterEqual(waited, 0.03)
         self.assertGreaterEqual(elapsed, 0.03)
+
+    def test_rate_limit_backoff_is_per_token_and_resets_after_success(self) -> None:
+        state = SharedTokenCooldown(("token-a",))
+        settings = self.unsafe_settings(base_backoff=0.01, max_backoff=0.04, jitter=0)
+
+        lease, _ = state.acquire(time.monotonic() + 1, lambda: False)
+        self.assertIsNotNone(lease)
+        first, _ = state.rate_limit_and_release(cast(TokenLease, lease), settings, None)
+        time.sleep(first + 0.01)
+        lease, _ = state.acquire(time.monotonic() + 1, lambda: False)
+        self.assertIsNotNone(lease)
+        second, _ = state.rate_limit_and_release(
+            cast(TokenLease, lease), settings, None
+        )
+        time.sleep(second + 0.01)
+        lease, _ = state.acquire(time.monotonic() + 1, lambda: False)
+        self.assertIsNotNone(lease)
+        state.release(cast(TokenLease, lease), reset_rate_limit=True)
+        lease, _ = state.acquire(time.monotonic() + 1, lambda: False)
+        reset, _ = state.rate_limit_and_release(cast(TokenLease, lease), settings, None)
+
+        self.assertEqual((first, second, reset), (0.01, 0.02, 0.01))
 
     def test_aggregate_logs_use_token_slots_without_leaking_secrets(self) -> None:
         UpstreamHandler.mode = "token_a_once_rate_limited"
@@ -683,6 +709,15 @@ class SakuraRetryProxyTest(unittest.TestCase):
         with (
             patch.dict(os.environ, {}, clear=True),
             self.assertRaisesRegex(ValueError, "must contain at least one token"),
+        ):
+            Settings.from_environment()
+        with (
+            patch.dict(
+                os.environ,
+                {"SAKURA_AI_ACCOUNT_TOKENS": "token-a,token-a"},
+                clear=True,
+            ),
+            self.assertRaisesRegex(ValueError, "must contain unique tokens"),
         ):
             Settings.from_environment()
 
