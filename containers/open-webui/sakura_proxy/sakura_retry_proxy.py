@@ -665,13 +665,17 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             payload = json.loads(body)
         except (ValueError, UnicodeDecodeError, RecursionError):
             return False
-        if type(payload) is not dict or set(payload) != {
+        required_keys = {
             "max_tokens",
             "messages",
             "model",
             "stream",
             "stream_options",
-        }:
+        }
+        if type(payload) is not dict or set(payload) not in (
+            required_keys,
+            required_keys | {"reasoning_effort"},
+        ):
             return False
         max_tokens = payload["max_tokens"]
         messages = payload["messages"]
@@ -682,6 +686,10 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
             and bool(payload["model"])
             and payload["stream"] is True
             and payload["stream_options"] == {"include_usage": True}
+            and (
+                "reasoning_effort" not in payload
+                or payload["reasoning_effort"] == "low"
+            )
             and type(messages) is list
             and len(messages) == 2
             and all(

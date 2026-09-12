@@ -105,7 +105,7 @@ class ResearchUpstreamHandler(BaseHTTPRequestHandler):
         pass
 
 
-def valid_body() -> bytes:
+def valid_body(reasoning_effort: str | None = None) -> bytes:
     return json.dumps(
         {
             "max_tokens": 16_384,
@@ -114,6 +114,7 @@ def valid_body() -> bytes:
                 {"content": "user", "role": "user"},
             ],
             "model": "public-model",
+            **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),
             "stream": True,
             "stream_options": {"include_usage": True},
         },
@@ -253,6 +254,7 @@ class ResearchProxyTests(unittest.TestCase):
             },
             {"headers": self.research_headers(RESEARCH_MAX_DEADLINE_MS / 1000 + 1)},
             {"body": b"{}"},
+            {"body": valid_body("high")},
             {"body": b"x" * (RESEARCH_MAX_REQUEST_BYTES + 1)},
         ]
         for case in cases:
@@ -297,6 +299,12 @@ class ResearchProxyTests(unittest.TestCase):
         )
         self.assertIsNotNone(lease)
         self.handler.token_state.release(cast(TokenLease, lease))
+
+    def test_low_reasoning_effort_is_forwarded(self) -> None:
+        body = valid_body("low")
+        status, _headers, _response = self.request(body=body)
+        self.assertEqual(status, 200)
+        self.assertEqual(ResearchUpstreamHandler.bodies, [body])
 
     def test_rate_limit_has_no_retry_and_shares_cooldown(self) -> None:
         ResearchUpstreamHandler.mode = "rate_limit"
