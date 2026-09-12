@@ -89,7 +89,6 @@ def model_import: {
       hidden_model("sacloud.preview/Kimi-K2.6"; "Sakura Kimi K2.6"),
       hidden_model("sacloud.preview/gemma-4-31B-it"; "Sakura Gemma 4 31B IT"),
       hidden_model("sacloud.preview/Qwen3.6-35B-A3B"; "Sakura Qwen3.6 35B A3B"),
-      model("sacloud.preview/Kimi-K2.7-Code"; "Sakura Kimi K2.7 Code"),
       hidden_model("sacloud.whisper-large-v3-turbo"; "Sakura Whisper Large V3 Turbo"),
       hidden_model("sacloud.preview/Qwen3-VL-30B-A3B-Instruct"; "Sakura Qwen3 VL 30B A3B Instruct"),
       hidden_model("sacloud.multilingual-e5-large"; "Sakura Multilingual E5 Large"),
@@ -116,19 +115,8 @@ def model_import: {
   end
 );
 
-($manifest[0] | {
-  marker: .marker,
+({
   user_settings: {ui: {system: $chat_personality, title: {auto: true}}},
-  model: (.model | .meta.profile_image_url = $sakura_icons.default),
-  pipe: {
-    id: "deep_research_pipe",
-    name: "Deep Research",
-    content: $pipe_content,
-    meta: {
-      description: "Runs one bounded managed Deep Research job.",
-      provisioned_by: .marker
-    }
-  },
   folder: {
     name: "GeoGuessor",
     parent_id: null,
@@ -155,8 +143,6 @@ def model_import: {
   },
   model_import: model_import,
   required_visible_model_ids: [
-    "sacloud.preview/Kimi-K2.7-Code",
-    .model.id,
     "sacloud.gemma-4-31b-it-low",
     "sacloud.gemma-4-31b-it-high",
     "sacloud.gemma-4-31b-it-max",
@@ -168,12 +154,7 @@ def model_import: {
   ]
 })
 | . as $desired
-| require($desired.marker != ""; "managed marker is required")
 | require(($desired.user_settings.ui.system | length) > 0; "chat personality is required")
-| require($desired.model.meta.provisioned_by == $desired.marker; "model marker mismatch")
-| require($desired.pipe.meta.provisioned_by == $desired.marker; "Pipe marker mismatch")
-| require($desired.pipe.id == "deep_research_pipe"; "unexpected Pipe ID")
-| require(($desired.pipe.content | length) > 0; "Pipe content is required")
 | require($desired.folder.meta.provisioned_by == "dotfiles:geoguessor-folder"; "folder marker mismatch")
 | require($desired.folder.data.files == []; "GeoGuessor folder must not attach knowledge")
 | require($desired.translation_folder.parent_id == null; "translation folder must be a root folder")
@@ -185,26 +166,7 @@ def model_import: {
 | require($desired.books_movies_subculture_folder.parent_id == null; "books, movies, and subculture must be a root folder")
 | require(($desired.books_movies_subculture_folder.data.system_prompt | length) > 0; "books, movies, and subculture prompt is required")
 | require($desired.books_movies_subculture_folder.data.files == []; "books, movies, and subculture folder must not attach knowledge")
-| require($desired.model.base_model_id == $desired.pipe.id; "Deep Research model must use the managed Pipe")
-| require($desired.model.params == {}; "Deep Research model params must stay empty")
 | require(all($sakura_icons[]; startswith("data:image/png;base64,")); "unexpected model icons")
-| require(
-    all($desired.model.meta.capabilities | to_entries[];
-      if .key == "status_updates" then .value == true else .value == false end
-    );
-    "only Pipe status updates may be advertised"
-  )
-| require($desired.model.meta.builtinTools.notes == false; "Notes must stay disabled")
-| require($desired.model.meta.builtinTools.time == false; "Time must stay disabled")
-| require($desired.model.meta.builtinTools.user_input == false; "User input must stay disabled")
-| require($desired.model.meta.builtinTools.subagents == false; "sub-agents must stay disabled")
-| require($desired.model.meta.builtinTools.code_interpreter == false; "Code Interpreter must stay disabled")
-| require($desired.model.meta.builtinTools.knowledge == false; "Knowledge must remain disabled")
-| require($desired.model.meta.defaultFeatureIds == []; "default features must stay disabled")
-| require($desired.model.meta.filterIds == []; "Deep Research filters must stay disabled")
-| require($desired.model.meta.skillIds == []; "Deep Research skills must stay disabled")
-| require($desired.model.meta.toolIds == []; "Deep Research tools must stay disabled")
-| require(($desired.model.access_grants | length) == 0; "model must be owner-only")
 | require(
     ($desired.model_import.models | map(.id) | length)
     == ($desired.model_import.models | map(.id) | unique | length);
@@ -224,4 +186,3 @@ def model_import: {
 | require($kimi_max.meta.builtinTools.subagents == true; "Kimi Max must enable sub-agents")
 | require(($kimi_max.params.system | contains("最大4件")); "Kimi Max must use at most four parallel sub-agents")
 | require(($kimi_max.meta.description | contains("4件")); "Kimi Max description must explain its parallel behavior")
-| require(($kimi_max.params.system | contains("deep_research") | not); "Kimi Max must not delegate research")

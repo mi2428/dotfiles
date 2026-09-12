@@ -14,7 +14,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RECONCILE = ROOT / "scripts" / "reconcile.sh"
 OWNER = "admin-id"
-MARKER = "dotfiles:kimi-k2.7-deep-research"
 
 FAKE_CURL = r"""#!/usr/bin/env python3
 import json
@@ -39,7 +38,6 @@ if payload == "@-":
 url = next(value for value in reversed(args) if value.startswith(("http://", "https://")))
 parts = urlsplit(url)
 path = unquote(parts.path)
-query = parts.query
 
 def save():
     with open(state_path, "w", encoding="utf-8") as handle:
@@ -50,7 +48,6 @@ def mutate():
         handle.write(f"{method} {path}\n")
 
 def model_registry():
-    functions = {item["id"]: item for item in state["functions"]}
     rows = []
     for model in state["models"]:
         row = {
@@ -61,9 +58,6 @@ def model_registry():
                 "meta": model.get("meta", {}),
             },
         }
-        pipe = functions.get(model.get("base_model_id"))
-        if pipe and pipe.get("type") == "pipe" and pipe.get("is_active"):
-            row["pipe"] = {"type": "pipe"}
         rows.append(row)
     return {"data": rows}
 
@@ -71,68 +65,10 @@ status = 200
 body = None
 if path == "/api/v1/auths/signin":
     body = state["profile"] | {"id": state["owner"], "token": "fake-token"}
-elif path == "/api/v1/configs/tool_servers":
-    if method == "GET":
-        body = state["tool_servers"]
-    else:
-        mutate()
-        state["tool_servers"] = json.loads(payload)
-        save()
-        body = state["tool_servers"]
-elif path == "/api/v1/functions/export":
-    body = state["functions"]
-elif path == "/api/v1/functions/create":
-    mutate()
-    item = json.loads(payload)
-    item |= {"user_id": state["owner"], "type": "pipe", "is_active": False, "is_global": False}
-    item["meta"] = item.get("meta", {}) | {"manifest": {}}
-    state["functions"].append(item)
-    save()
-    body = item
-elif path.startswith("/api/v1/functions/id/"):
-    suffix = path.removeprefix("/api/v1/functions/id/")
-    function_id = suffix.split("/")[0]
-    matches = [item for item in state["functions"] if item["id"] == function_id]
-    if not matches:
-        status, body = 401, {"detail": "not found"}
-    elif method == "GET":
-        body = matches[0]
-    elif suffix.endswith("/update"):
-        mutate()
-        updated = json.loads(payload)
-        matches[0].update(updated)
-        matches[0]["meta"] = updated.get("meta", {}) | {"manifest": {}}
-        save()
-        body = matches[0]
-    elif suffix.endswith("/toggle/global"):
-        mutate()
-        matches[0]["is_global"] = not matches[0]["is_global"]
-        save()
-        body = matches[0]
-    elif suffix.endswith("/toggle"):
-        mutate()
-        matches[0]["is_active"] = not matches[0]["is_active"]
-        save()
-        body = matches[0]
-    elif suffix.endswith("/delete"):
-        mutate()
-        state["functions"].remove(matches[0])
-        save()
-        body = True
 elif path == "/api/v1/models/export":
     body = state["models"]
 elif path == "/api/v1/models/base":
     body = state["models"]
-elif path == "/api/v1/models/model" and method == "GET":
-    model_id = query.removeprefix("id=")
-    matches = [item for item in state["models"] if item["id"] == model_id]
-    status, body = (200, matches[0]) if matches else (404, {"detail": "not found"})
-elif path in {"/api/v1/models/create", "/api/v1/models/model/update"}:
-    mutate()
-    item = json.loads(payload) | {"user_id": state["owner"]}
-    state["models"] = [row for row in state["models"] if row["id"] != item["id"]] + [item]
-    save()
-    body = item
 elif path == "/api/v1/models/import":
     mutate()
     for item in json.loads(payload)["models"]:
@@ -150,14 +86,6 @@ elif path == "/api/v1/configs/models":
         state["model_config"] = json.loads(payload)
         save()
         body = state["model_config"]
-elif path == "/api/v1/skills/export":
-    body = state["skills"]
-elif path.startswith("/api/v1/skills/id/") and path.endswith("/delete"):
-    mutate()
-    skill_id = path.removeprefix("/api/v1/skills/id/").removesuffix("/delete")
-    state["skills"] = [item for item in state["skills"] if item["id"] != skill_id]
-    save()
-    body = True
 elif path in {"/api/v1/users/user/settings", "/api/v1/users/user/settings"}:
     body = state["settings"]
 elif path == "/api/v1/users/user/settings/update":
@@ -224,13 +152,8 @@ class ReconcileTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             desired = json.loads(result.stdout)
-            self.assertEqual(desired["pipe"]["id"], "deep_research_pipe")
-            self.assertEqual(desired["model"]["base_model_id"], "deep_research_pipe")
-            self.assertEqual(desired["model"]["params"], {})
-            self.assertEqual(desired["model"]["meta"]["toolIds"], [])
-            self.assertEqual(desired["model"]["meta"]["filterIds"], [])
-            self.assertNotIn("skill", desired)
-            self.assertNotIn("status_filter", desired)
+            self.assertNotIn("pipe", desired)
+            self.assertNotIn("model", desired)
 
     def state(self) -> dict:
         desired = self.desired
@@ -239,47 +162,16 @@ class ReconcileTests(unittest.TestCase):
             regular_model["meta"].update(
                 {"capabilities": None, "description": None, "knowledge": None}
             )
-        model = copy.deepcopy(desired["model"])
-        model["base_model_id"] = "sacloud.preview/Kimi-K2.6"
-        model["meta"]["filterIds"] = ["deep_research_status"]
-        model["meta"]["toolIds"] = ["server:deep-research"]
-        model["params"] = {"function_calling": "native"}
-        models = [item | {"user_id": OWNER} for item in regular_models] + [model | {"user_id": OWNER}]
-        icon = "data:image/webp;base64," + base64.b64encode((ROOT / "assets/profile.webp").read_bytes()).decode()
+        models = [item | {"user_id": OWNER} for item in regular_models]
+        icon = "data:image/webp;base64," + base64.b64encode(
+            (ROOT / "assets/profile.webp").read_bytes()
+        ).decode()
         folders = []
         for index, key in enumerate(("folder", "translation_folder", "movie_akinator_folder", "books_movies_subculture_folder")):
             folders.append(copy.deepcopy(desired[key]) | {"id": f"folder-{index}", "user_id": OWNER})
         return {
             "owner": OWNER,
-            "functions": [
-                {
-                    "id": "deep_research_status",
-                    "name": "Deep Research Status",
-                    "content": "legacy",
-                    "meta": {"provisioned_by": MARKER},
-                    "type": "filter",
-                    "user_id": OWNER,
-                    "is_active": True,
-                    "is_global": False,
-                }
-            ],
             "models": models,
-            "skills": [
-                {
-                    "id": "deep-research",
-                    "user_id": OWNER,
-                    "meta": {"tags": [MARKER]},
-                }
-            ],
-            "tool_servers": {
-                "TOOL_SERVER_CONNECTIONS": [
-                    {"info": {"id": "other"}},
-                    {
-                        "info": {"id": "deep-research", "provisioned_by": "dotfiles:deep-research-runtime"},
-                        "config": {"access_grants": [{"principal_type": "user", "principal_id": OWNER, "permission": "read"}]},
-                    },
-                ]
-            },
             "settings": {
                 "ui": {**desired["user_settings"]["ui"], "widescreenMode": True}
             },
@@ -323,64 +215,19 @@ class ReconcileTests(unittest.TestCase):
         result.state_path = state_path  # type: ignore[attr-defined]
         return result
 
-    def test_migration_order_and_second_run_has_no_mutations(self) -> None:
+    def test_repairs_stale_models_and_second_run_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temp = Path(directory)
             first = self.run_reconcile(self.state(), temp)
             self.assertEqual(first.returncode, 0, first.stderr)
-            expected = [
-                "POST /api/v1/functions/create",
-                "POST /api/v1/models/model/update",
-                "POST /api/v1/configs/tool_servers",
-                "DELETE /api/v1/functions/id/deep_research_status/delete",
-                "DELETE /api/v1/skills/id/deep-research/delete",
-            ]
-            positions = [first.mutations.index(value) for value in expected]  # type: ignore[attr-defined]
-            self.assertEqual(positions, sorted(positions))
-            migrated = json.loads(first.state_path.read_text(encoding="utf-8"))  # type: ignore[attr-defined]
-            self.assertEqual(
-                migrated["tool_servers"]["TOOL_SERVER_CONNECTIONS"],
-                [{"info": {"id": "other"}}],
+            self.assertEqual(  # type: ignore[attr-defined]
+                first.mutations, ["POST /api/v1/models/import"]
             )
-            self.assertNotIn("deep_research_status", {item["id"] for item in migrated["functions"]})
-            self.assertEqual(migrated["skills"], [])
-            self.assertEqual(len(migrated["folders"]), 4)
-            second = self.run_reconcile(migrated, temp)
+            second = self.run_reconcile(
+                json.loads(first.state_path.read_text(encoding="utf-8")), temp
+            )
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertEqual(second.mutations, [])  # type: ignore[attr-defined]
-
-    def test_every_known_collision_fails_before_mutation(self) -> None:
-        cases = {}
-        pipe = self.state()
-        pipe["functions"].append({
-            "id": "deep_research_pipe", "name": "collision", "content": "x", "meta": {},
-            "type": "pipe", "user_id": "other", "is_active": True, "is_global": False,
-        })
-        cases["pipe"] = pipe
-        model = self.state()
-        next(item for item in model["models"] if item["id"] == "sacloud.kimi-k2.7-deep-research")["user_id"] = "other"
-        cases["model"] = model
-        tool = self.state()
-        tool["tool_servers"]["TOOL_SERVER_CONNECTIONS"][1]["info"]["provisioned_by"] = "other"
-        cases["tool"] = tool
-        legacy_filter = self.state()
-        legacy_filter["functions"][0]["user_id"] = "other"
-        cases["filter"] = legacy_filter
-        skill = self.state()
-        skill["skills"][0]["user_id"] = "other"
-        cases["skill"] = skill
-        duplicate = self.state()
-        managed_pipe = copy.deepcopy(self.desired["pipe"]) | {
-            "type": "pipe", "user_id": OWNER, "is_active": True, "is_global": False,
-        }
-        duplicate["functions"].extend([managed_pipe, copy.deepcopy(managed_pipe)])
-        cases["duplicate"] = duplicate
-
-        for name, state in cases.items():
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
-                result = self.run_reconcile(state, Path(directory))
-                self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(result.mutations, [])  # type: ignore[attr-defined]
 
 
 if __name__ == "__main__":

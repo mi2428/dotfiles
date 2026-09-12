@@ -8,13 +8,11 @@ trap 'printf "Reconciliation failed at line %s (status %s)\n" "$LINENO" "$?" >&2
 config_dir="${1:?configuration directory is required}"
 mode="${2:-reconcile}"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-manifest_file="$config_dir/config/kimi-k2.7-deep-research.json"
 geoguessor_system_file="$config_dir/config/geoguessor-system.md"
 github_oss_translation_system_file="$config_dir/config/github-oss-translation-system.md"
 movie_akinator_system_file="$config_dir/config/movie-akinator-system.md"
 books_movies_subculture_system_file="$config_dir/config/books-movies-subculture-system.md"
 chat_personality_file="$config_dir/config/chat-personality.md"
-pipe_file="$config_dir/functions/deep_research_pipe.py"
 renderer_file="$script_dir/render-declarations.jq"
 profile_file="$config_dir/assets/profile.webp"
 sakura_icon_file="$config_dir/assets/sakura-ai-engine.png"
@@ -24,10 +22,10 @@ sakura_icon_high_file="$config_dir/assets/sakura-ai-engine-high.png"
 sakura_icon_max_file="$config_dir/assets/sakura-ai-engine-max.png"
 
 for file in \
-  "$manifest_file" "$geoguessor_system_file" "$github_oss_translation_system_file" \
+  "$geoguessor_system_file" "$github_oss_translation_system_file" \
   "$movie_akinator_system_file" \
   "$books_movies_subculture_system_file" \
-  "$chat_personality_file" "$pipe_file" "$renderer_file" \
+  "$chat_personality_file" "$renderer_file" \
   "$sakura_icon_file" "$sakura_icon_low_file" "$sakura_icon_medium_file" \
   "$sakura_icon_high_file" "$sakura_icon_max_file"; do
   [[ -r "$file" ]] || { printf 'Missing %s\n' "$file" >&2; exit 1; }
@@ -42,14 +40,12 @@ sakura_icons="$(jq -n \
   '{default: $default, low: $low, medium: $medium, high: $high, max: $max}')"
 
 desired="$(jq -n \
-  --slurpfile manifest "$manifest_file" \
   --argjson sakura_icons "$sakura_icons" \
   --rawfile geoguessor_system "$geoguessor_system_file" \
   --rawfile github_oss_translation_system "$github_oss_translation_system_file" \
   --rawfile movie_akinator_system "$movie_akinator_system_file" \
   --rawfile books_movies_subculture_system "$books_movies_subculture_system_file" \
   --rawfile chat_personality "$chat_personality_file" \
-  --rawfile pipe_content "$pipe_file" \
   -f "$renderer_file")"
 model_import="$(jq -c '.model_import' <<<"$desired")"
 
@@ -115,202 +111,6 @@ auth_response="$({
 })"
 token="$(jq -er '.token' <<<"$auth_response")"
 owner_id="$(jq -er '.id' <<<"$auth_response")"
-
-grant_projection='[.[] | {principal_type, principal_id, permission}] | sort_by([.principal_type, .principal_id, .permission])'
-
-model_projection() {
-  jq -cS "
-    {
-      id,
-      base_model_id,
-      name,
-      meta: (.meta | del(.chat_variables_schema)),
-      params,
-      access_grants: ((.access_grants // []) | $grant_projection),
-      is_active
-    }
-  " <<<"$1"
-}
-
-function_projection() {
-  jq -cS '{id, name, content, meta: (.meta | del(.manifest))}' <<<"$1"
-}
-
-managed_marker="$(jq -r '.marker' <<<"$desired")"
-desired_pipe="$(jq -c '.pipe' <<<"$desired")"
-desired_model="$(jq -c '.model' <<<"$desired")"
-pipe_id="$(jq -r '.id' <<<"$desired_pipe")"
-model_id="$(jq -r '.id' <<<"$desired_model")"
-legacy_tool_server_id=deep-research
-legacy_tool_server_marker=dotfiles:deep-research-runtime
-legacy_filter_id=deep_research_status
-legacy_skill_id=deep-research
-
-# Read every migration target before the first mutation. Known-ID collisions fail closed.
-api_request GET /api/v1/configs/tool_servers
-expect_success 'tool server collision preflight'
-tool_server_config="$api_body"
-legacy_tool_matches="$(jq -c --arg id "$legacy_tool_server_id" \
-  '[.TOOL_SERVER_CONNECTIONS[] | select(.info.id == $id)]' <<<"$tool_server_config")"
-case "$(jq 'length' <<<"$legacy_tool_matches")" in
-  0) ;;
-  1)
-    jq -e --arg marker "$legacy_tool_server_marker" --arg owner "$owner_id" '
-      .[0].info.provisioned_by == $marker
-      and any(.[0].config.access_grants[]?;
-        .principal_type == "user" and .principal_id == $owner and .permission == "read")
-    ' <<<"$legacy_tool_matches" >/dev/null \
-      || { printf 'Refusing unmanaged or foreign tool server ID: %s\n' "$legacy_tool_server_id" >&2; exit 1; }
-    ;;
-  *) printf 'Multiple tool servers use ID: %s\n' "$legacy_tool_server_id" >&2; exit 1 ;;
-esac
-
-api_request GET /api/v1/functions/export
-expect_success 'function collision preflight'
-function_export="$api_body"
-pipe_matches="$(jq -c --arg id "$pipe_id" '[.[] | select(.id == $id)]' <<<"$function_export")"
-legacy_filter_matches="$(jq -c --arg id "$legacy_filter_id" '[.[] | select(.id == $id)]' <<<"$function_export")"
-case "$(jq 'length' <<<"$pipe_matches")" in
-  0) current_pipe= ;;
-  1)
-    current_pipe="$(jq -c '.[0]' <<<"$pipe_matches")"
-    jq -e --arg owner "$owner_id" --arg marker "$managed_marker" '
-      .user_id == $owner and .type == "pipe" and .meta.provisioned_by == $marker
-    ' <<<"$current_pipe" >/dev/null \
-      || { printf 'Refusing unmanaged, foreign, or non-Pipe function ID: %s\n' "$pipe_id" >&2; exit 1; }
-    ;;
-  *) printf 'Multiple functions use ID: %s\n' "$pipe_id" >&2; exit 1 ;;
-esac
-case "$(jq 'length' <<<"$legacy_filter_matches")" in
-  0) ;;
-  1)
-    jq -e --arg owner "$owner_id" --arg marker "$managed_marker" '
-      .[0].user_id == $owner and .[0].type == "filter"
-      and .[0].meta.provisioned_by == $marker
-    ' <<<"$legacy_filter_matches" >/dev/null \
-      || { printf 'Refusing unmanaged or foreign legacy function ID: %s\n' "$legacy_filter_id" >&2; exit 1; }
-    ;;
-  *) printf 'Multiple functions use ID: %s\n' "$legacy_filter_id" >&2; exit 1 ;;
-esac
-
-api_request GET /api/v1/models/export
-expect_success 'model collision preflight'
-model_export="$api_body"
-model_matches="$(jq -c --arg id "$model_id" '[.[] | select(.id == $id)]' <<<"$model_export")"
-case "$(jq 'length' <<<"$model_matches")" in
-  0) current_model= ;;
-  1)
-    current_model="$(jq -c '.[0]' <<<"$model_matches")"
-    jq -e --arg owner "$owner_id" --arg marker "$managed_marker" '
-      .user_id == $owner and .meta.provisioned_by == $marker
-    ' <<<"$current_model" >/dev/null \
-      || { printf 'Refusing unmanaged or foreign model ID: %s\n' "$model_id" >&2; exit 1; }
-    ;;
-  *) printf 'Multiple models use ID: %s\n' "$model_id" >&2; exit 1 ;;
-esac
-
-api_request GET /api/v1/skills/export
-expect_success 'skill collision preflight'
-skill_export="$api_body"
-legacy_skill_matches="$(jq -c --arg id "$legacy_skill_id" '[.[] | select(.id == $id)]' <<<"$skill_export")"
-case "$(jq 'length' <<<"$legacy_skill_matches")" in
-  0) ;;
-  1)
-    jq -e --arg owner "$owner_id" --arg marker "$managed_marker" '
-      .[0].user_id == $owner and ((.[0].meta.tags // []) | index($marker)) != null
-    ' <<<"$legacy_skill_matches" >/dev/null \
-      || { printf 'Refusing unmanaged or foreign legacy skill ID: %s\n' "$legacy_skill_id" >&2; exit 1; }
-    ;;
-  *) printf 'Multiple skills use ID: %s\n' "$legacy_skill_id" >&2; exit 1 ;;
-esac
-
-desired_pipe_projection="$(function_projection "$desired_pipe")"
-if [[ -z "$current_pipe" ]]; then
-  api_request POST /api/v1/functions/create "$desired_pipe"
-  expect_success "Pipe create $pipe_id"
-elif [[ "$(function_projection "$current_pipe")" != "$desired_pipe_projection" ]]; then
-  api_request POST "/api/v1/functions/id/$(urlencode "$pipe_id")/update" "$desired_pipe"
-  expect_success "Pipe update $pipe_id"
-fi
-api_request GET "/api/v1/functions/id/$(urlencode "$pipe_id")"
-expect_success "Pipe GET after upsert $pipe_id"
-if [[ "$(jq -r '.is_active' <<<"$api_body")" != true ]]; then
-  api_request POST "/api/v1/functions/id/$(urlencode "$pipe_id")/toggle"
-  expect_success "Pipe enable $pipe_id"
-fi
-api_request GET "/api/v1/functions/id/$(urlencode "$pipe_id")"
-expect_success "Pipe GET before global verification $pipe_id"
-if [[ "$(jq -r '.is_global' <<<"$api_body")" != false ]]; then
-  api_request POST "/api/v1/functions/id/$(urlencode "$pipe_id")/toggle/global"
-  expect_success "Pipe global disable $pipe_id"
-fi
-api_request GET "/api/v1/functions/id/$(urlencode "$pipe_id")"
-expect_success "Pipe verification $pipe_id"
-jq -e --arg owner "$owner_id" --arg marker "$managed_marker" '
-  .user_id == $owner and .type == "pipe" and .meta.provisioned_by == $marker
-  and .is_active == true and .is_global == false
-' <<<"$api_body" >/dev/null \
-  || { printf 'Pipe ownership or activation mismatch: %s\n' "$pipe_id" >&2; exit 1; }
-[[ "$(function_projection "$api_body")" == "$desired_pipe_projection" ]] \
-  || { printf 'Pipe projection mismatch: %s\n' "$pipe_id" >&2; exit 1; }
-
-desired_model_projection="$(model_projection "$desired_model")"
-if [[ -z "$current_model" ]]; then
-  api_request POST /api/v1/models/create "$desired_model"
-  expect_success "model create $model_id"
-elif [[ "$(model_projection "$current_model")" != "$desired_model_projection" ]]; then
-  api_request POST /api/v1/models/model/update "$desired_model"
-  expect_success "model update $model_id"
-fi
-api_request GET "/api/v1/models/model?id=$(urlencode "$model_id")"
-expect_success "model verification $model_id"
-jq -e --arg owner "$owner_id" --arg marker "$managed_marker" '
-  .user_id == $owner and .meta.provisioned_by == $marker
-' <<<"$api_body" >/dev/null \
-  || { printf 'Model ownership mismatch: %s\n' "$model_id" >&2; exit 1; }
-[[ "$(model_projection "$api_body")" == "$desired_model_projection" ]] \
-  || { printf 'Model projection mismatch: %s\n' "$model_id" >&2; exit 1; }
-api_request GET '/api/models?refresh=true'
-expect_success 'managed Pipe model registry verification'
-jq -e --arg id "$model_id" --arg pipe "$pipe_id" --arg marker "$managed_marker" '
-  [.data[] | select(.id == $id)] as $matches
-  | ($matches | length) == 1
-    and $matches[0].pipe.type == "pipe"
-    and $matches[0].info.base_model_id == $pipe
-    and $matches[0].info.meta.provisioned_by == $marker
-' <<<"$api_body" >/dev/null \
-  || { printf 'Managed Pipe model registry mismatch: %s\n' "$model_id" >&2; exit 1; }
-
-if [[ "$(jq 'length' <<<"$legacy_tool_matches")" == 1 ]]; then
-  tool_server_connections="$(jq -c --arg id "$legacy_tool_server_id" \
-    '.TOOL_SERVER_CONNECTIONS | map(select(.info.id != $id))' <<<"$tool_server_config")"
-  api_request POST /api/v1/configs/tool_servers \
-    "$(jq -nc --argjson connections "$tool_server_connections" '{TOOL_SERVER_CONNECTIONS: $connections}')"
-  expect_success 'legacy tool server deletion'
-fi
-if [[ "$(jq 'length' <<<"$legacy_filter_matches")" == 1 ]]; then
-  api_request DELETE "/api/v1/functions/id/$(urlencode "$legacy_filter_id")/delete"
-  expect_success 'legacy status filter deletion'
-  jq -e '. == true' <<<"$api_body" >/dev/null
-fi
-if [[ "$(jq 'length' <<<"$legacy_skill_matches")" == 1 ]]; then
-  api_request DELETE "/api/v1/skills/id/$(urlencode "$legacy_skill_id")/delete"
-  expect_success 'legacy skill deletion'
-  jq -e '. == true' <<<"$api_body" >/dev/null
-fi
-api_request GET /api/v1/configs/tool_servers
-expect_success 'legacy tool server deletion verification'
-jq -e --arg id "$legacy_tool_server_id" \
-  '[.TOOL_SERVER_CONNECTIONS[] | select(.info.id == $id)] == []' <<<"$api_body" >/dev/null
-api_request GET /api/v1/functions/export
-expect_success 'function migration verification'
-jq -e --arg pipe "$pipe_id" --arg legacy "$legacy_filter_id" '
-  ([.[] | select(.id == $pipe)] | length) == 1
-  and ([.[] | select(.id == $legacy)] | length) == 0
-' <<<"$api_body" >/dev/null
-api_request GET /api/v1/skills/export
-expect_success 'legacy skill deletion verification'
-jq -e --arg id "$legacy_skill_id" '[.[] | select(.id == $id)] == []' <<<"$api_body" >/dev/null
 
 # Enforce user-specific prompt and title behavior; static UI defaults stay in Compose.
 api_request GET '/api/v1/users/user/settings?raw=true'
@@ -389,8 +189,7 @@ for endpoint in base export; do
   sakura_icon_patch="$(
     jq -c --argjson icons "$sakura_icons" '
       def sakura_icon:
-        if .id == "sacloud.kimi-k2.7-deep-research" then $icons.default
-        else $icons[(.params.reasoning_effort // "default")] // $icons.default end;
+        $icons[(.params.reasoning_effort // "default")] // $icons.default;
       {models: [
       .[]
       | select(.id | startswith("sacloud."))
@@ -420,21 +219,6 @@ desired_folder="$(jq -c '.folder' <<<"$desired")"
 desired_translation_folder="$(jq -c '.translation_folder' <<<"$desired")"
 desired_movie_akinator_folder="$(jq -c '.movie_akinator_folder' <<<"$desired")"
 desired_books_movies_subculture_folder="$(jq -c '.books_movies_subculture_folder' <<<"$desired")"
-
-assert_model_owner_and_marker() {
-  jq -e --arg owner "$owner_id" --arg marker "$managed_marker" \
-    '.user_id == $owner and .meta.provisioned_by == $marker' \
-    <<<"$1" >/dev/null \
-    || { printf 'Refusing unmanaged or foreign model ID: %s\n' "$model_id" >&2; exit 1; }
-}
-
-verify_model() {
-  api_request GET "/api/v1/models/model?id=$(urlencode "$model_id")"
-  expect_success "model GET $model_id"
-  assert_model_owner_and_marker "$api_body"
-  [[ "$(model_projection "$api_body")" == "$desired_model_projection" ]] \
-    || { printf 'Model projection mismatch: %s\n' "$model_id" >&2; exit 1; }
-}
 
 assert_folder_owner_and_marker() {
   local response="$1"
@@ -600,7 +384,6 @@ if ! jq -e --argjson order "$model_order_list" '.MODEL_ORDER_LIST == $order' <<<
   jq -e --argjson order "$model_order_list" '.MODEL_ORDER_LIST == $order' <<<"$api_body" >/dev/null
 fi
 
-verify_model
 verify_folder "$geoguessor_folder_id" "$desired_folder"
 verify_folder "$translation_folder_id" "$desired_translation_folder"
 verify_folder "$movie_akinator_folder_id" "$desired_movie_akinator_folder"
@@ -610,8 +393,7 @@ for endpoint in base export; do
   expect_success "model $endpoint GET for Sakura icon verification"
   jq -e --argjson icons "$sakura_icons" \
     'def sakura_icon:
-      if .id == "sacloud.kimi-k2.7-deep-research" then $icons.default
-      else $icons[(.params.reasoning_effort // "default")] // $icons.default end;
+      $icons[(.params.reasoning_effort // "default")] // $icons.default;
     all(.[] | select(.id | startswith("sacloud.")); .meta.profile_image_url == sakura_icon)' \
     <<<"$api_body" >/dev/null \
     || { printf 'Sakura model icon mismatch in %s\n' "$endpoint" >&2; exit 1; }
@@ -656,4 +438,4 @@ fi
 profile_matches "$profile_response" \
   || { printf '%s\n' 'Profile projection mismatch' >&2; exit 1; }
 
-printf '%s\n' 'Open WebUI models, settings, managed Deep Research Pipe, and profile are ready'
+printf '%s\n' 'Open WebUI models, settings, folders, and profile are ready'

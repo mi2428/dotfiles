@@ -2,5 +2,3 @@
 !Dockerfile
 !assets/
 !assets/**
-!patches/
-!patches/**

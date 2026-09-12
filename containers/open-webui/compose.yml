@@ -30,7 +30,7 @@ services:
         {"capabilities": {"web_search": true, "code_interpreter": true},
         "defaultFeatureIds": ["web_search", "code_interpreter"]}
       DEFAULT_MODELS: "sacloud.kimi-k2.6-high"
-      DEFAULT_PINNED_MODELS: "sacloud.kimi-k2.6-low,sacloud.kimi-k2.6-high,sacloud.kimi-k2.6-max,sacloud.kimi-k2.7-deep-research"
+      DEFAULT_PINNED_MODELS: "sacloud.kimi-k2.6-low,sacloud.kimi-k2.6-high,sacloud.kimi-k2.6-max"
       ENABLE_AUTOCOMPLETE_GENERATION: "false"
       ENABLE_COMMUNITY_SHARING: "false"
       ENABLE_CONTEXT_COMPACTION: "true"
@@ -70,9 +70,6 @@ services:
       OPENAI_API_KEYS: "sakura-proxy;${CPTR_GATEWAY_API_KEY:-bootstrap}"
       RAG_TEXT_SPLITTER: "token"
       RAG_TOP_K: "5"
-      DEEP_RESEARCH_RUNTIME_API_KEY: >-
-        ${DEEP_RESEARCH_RUNTIME_API_KEY:?set DEEP_RESEARCH_RUNTIME_API_KEY}
-      DEEP_RESEARCH_RUNTIME_URL: http://deep-research-runtime:8000
       SEARXNG_LANGUAGE: "all"
       SEARXNG_QUERY_URL: "http://searxng:8080/search"
       SUBAGENTS_BACKGROUND_ENABLED: "false"
@@ -117,7 +114,6 @@ services:
       - ./assets/sakura-ai-engine-high.png:/app/backend/declarative/assets/sakura-ai-engine-high.png:ro
       - ./assets/sakura-ai-engine-max.png:/app/backend/declarative/assets/sakura-ai-engine-max.png:ro
       - ./config:/app/backend/declarative/config:ro
-      - ./functions:/app/backend/declarative/functions:ro
       - ./scripts:/app/backend/declarative-scripts:ro
     command: [bash, /app/backend/declarative-scripts/start.sh]
     healthcheck:
@@ -136,68 +132,16 @@ services:
         condition: service_started
       open-terminal:
         condition: service_healthy
-      deep-research-runtime:
-        condition: service_healthy
       sakura-proxy:
         condition: service_healthy
       searxng:
         condition: service_healthy
-    restart: unless-stopped
-
-  deep-research-runtime:
-    build: ./deep_research_runtime
-    cap_drop:
-      - ALL
-    environment:
-      DEEP_RESEARCH_DB_PATH: /data/deep-research.sqlite3
-      DEEP_RESEARCH_GLOBAL_LOGICAL_BYTES: "536870912"
-      DEEP_RESEARCH_LLM_API_KEY: >-
-        ${SAKURA_RESEARCH_API_KEY:?set SAKURA_RESEARCH_API_KEY}
-      DEEP_RESEARCH_LLM_BASE_URL: http://sakura-proxy:8080/v1
-      DEEP_RESEARCH_MODEL: preview/Kimi-K2.7-Code
-      DEEP_RESEARCH_OPERATOR_API_KEY: >-
-        ${DEEP_RESEARCH_OPERATOR_API_KEY:?set DEEP_RESEARCH_OPERATOR_API_KEY}
-      DEEP_RESEARCH_OPERATOR_ID: >-
-        ${DEEP_RESEARCH_OPERATOR_ID:-local-operator}
-      DEEP_RESEARCH_RETENTION_DAYS: "30"
-      DEEP_RESEARCH_RUNTIME_API_KEY: >-
-        ${DEEP_RESEARCH_RUNTIME_API_KEY:?set DEEP_RESEARCH_RUNTIME_API_KEY}
-      SAKURA_RESEARCH_API_KEY: >-
-        ${SAKURA_RESEARCH_API_KEY:?set SAKURA_RESEARCH_API_KEY}
-      SEARXNG_URL: http://searxng:8080
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - >-
-          import urllib.request;
-          urllib.request.urlopen('http://127.0.0.1:8000/health')
-      interval: 5s
-      timeout: 5s
-      retries: 12
-    depends_on:
-      sakura-proxy:
-        condition: service_healthy
-      searxng:
-        condition: service_healthy
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-    tmpfs:
-      - /tmp
-    volumes:
-      - deep-research-runtime-data:/data
     restart: unless-stopped
 
   sakura-proxy:
     build: ./sakura_proxy
     environment:
-      DEEP_RESEARCH_DB_PATH: /data/deep-research.sqlite3
-      SAKURA_AI_ACCOUNT_IDS: "${SAKURA_AI_ACCOUNT_IDS:?set SAKURA_AI_ACCOUNT_IDS}"
       SAKURA_AI_ACCOUNT_TOKENS: "${SAKURA_AI_ACCOUNT_TOKENS:?set SAKURA_AI_ACCOUNT_TOKENS}"
-      SAKURA_RESEARCH_API_KEY: >-
-        ${SAKURA_RESEARCH_API_KEY:?set SAKURA_RESEARCH_API_KEY}
       SAKURA_RETRY_BASE_SECONDS: "10"
       SAKURA_RETRY_JITTER_SECONDS: "1"
       SAKURA_RETRY_MAX: "5"
@@ -205,8 +149,6 @@ services:
       SAKURA_RETRY_BUDGET_SECONDS: "3200"
       SAKURA_UPSTREAM_TIMEOUT_SECONDS: "420"
       SAKURA_UPSTREAM_URL: "https://api.ai.sakura.ad.jp"
-    volumes:
-      - deep-research-runtime-data:/data
     healthcheck:
       test:
         - CMD
@@ -304,5 +246,4 @@ volumes:
   open-webui-data:
   cptr-data:
   open-terminal-data:
-  deep-research-runtime-data:
   searxng-data:

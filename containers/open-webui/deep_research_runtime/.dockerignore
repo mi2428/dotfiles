@@ -1,7 +1,0 @@
-*
-!Dockerfile
-!deep_research_runtime.py
-!pyproject.toml
-!sakura_kimi_model.py
-!source_extraction.py
-!uv.lock

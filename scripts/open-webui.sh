@@ -7,7 +7,6 @@ action="${2:?action is required}"
 encrypted_env="$repo_root/secrets/open-webui.env.age"
 age_identity="${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/key.txt"
 gateway_env_file="${XDG_STATE_HOME:-$HOME/.local/state}/open-webui/cptr-gateway.env"
-deep_research_env_file="${XDG_STATE_HOME:-$HOME/.local/state}/open-webui/deep-research-runtime.env"
 age_root="$(nix build --no-link --print-out-paths nixpkgs#age)"
 age_bin="$age_root/bin/age"
 
@@ -20,13 +19,8 @@ unset \
   CPTR_WORKSPACE_DIR \
   OPEN_TERMINAL_API_KEY \
   OPEN_WEBUI_PORT \
-  DEEP_RESEARCH_OPERATOR_API_KEY \
-  DEEP_RESEARCH_OPERATOR_ID \
-  DEEP_RESEARCH_RUNTIME_API_KEY \
   SAKURA_AI_ACCOUNT_TOKEN \
-  SAKURA_AI_ACCOUNT_IDS \
   SAKURA_AI_ACCOUNT_TOKENS \
-  SAKURA_RESEARCH_API_KEY \
   SEARXNG_SECRET \
   CORS_ALLOW_ORIGIN \
   WEBUI_URL \
@@ -43,12 +37,6 @@ wait "$decrypt_pid"
 
 export SAKURA_AI_ACCOUNT_TOKENS="${SAKURA_AI_ACCOUNT_TOKENS:-${SAKURA_AI_ACCOUNT_TOKEN:-}}"
 
-python3 "$repo_root/scripts/init-deep-research-env.py" "$deep_research_env_file"
-set -a
-# shellcheck disable=SC1090
-source "$deep_research_env_file"
-set +a
-
 : "${SAKURA_AI_ACCOUNT_TOKENS:?set SAKURA_AI_ACCOUNT_TOKENS}"
 : "${WEBUI_SECRET_KEY:?set WEBUI_SECRET_KEY}"
 : "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
@@ -56,26 +44,8 @@ set +a
 : "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
 : "${CPTR_WORKSPACE_DIR:?set CPTR_WORKSPACE_DIR}"
 : "${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}"
-: "${DEEP_RESEARCH_RUNTIME_API_KEY:?failed to initialize DEEP_RESEARCH_RUNTIME_API_KEY}"
-: "${DEEP_RESEARCH_OPERATOR_API_KEY:?set DEEP_RESEARCH_OPERATOR_API_KEY}"
-: "${DEEP_RESEARCH_OPERATOR_ID:?set DEEP_RESEARCH_OPERATOR_ID}"
-: "${SAKURA_AI_ACCOUNT_IDS:?set SAKURA_AI_ACCOUNT_IDS}"
-: "${SAKURA_RESEARCH_API_KEY:?set SAKURA_RESEARCH_API_KEY}"
 : "${SEARXNG_SECRET:?set SEARXNG_SECRET}"
 [[ -d "$CPTR_WORKSPACE_DIR" ]] || { printf 'CPTR_WORKSPACE_DIR is not a directory\n' >&2; exit 1; }
-python3 -c '
-import os, re
-ids = [value.strip() for value in os.environ["SAKURA_AI_ACCOUNT_IDS"].split(",") if value.strip()]
-tokens = [value.strip() for value in os.environ["SAKURA_AI_ACCOUNT_TOKENS"].split(",") if value.strip()]
-valid = re.compile(r"[A-Za-z0-9._:@-]{1,200}").fullmatch
-if len(ids) != len(tokens) or len(ids) != len(set(ids)) or not all(map(valid, ids)):
-    raise SystemExit("SAKURA_AI_ACCOUNT_IDS must be unique stable IDs aligned 1:1 with account tokens")
-keys = {os.environ[name] for name in (
-    "DEEP_RESEARCH_RUNTIME_API_KEY", "DEEP_RESEARCH_OPERATOR_API_KEY", "SAKURA_RESEARCH_API_KEY"
-)}
-if len(keys) != 3:
-    raise SystemExit("runtime, operator, and research gateway credentials must be distinct")
-'
 
 resolve_tailscale_bin() {
   local candidate
