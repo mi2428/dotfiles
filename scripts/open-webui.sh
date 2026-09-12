@@ -19,7 +19,6 @@ unset \
   CPTR_WORKSPACE_DIR \
   OPEN_TERMINAL_API_KEY \
   OPEN_WEBUI_PORT \
-  SAKURA_AI_ACCOUNT_TOKEN \
   SAKURA_AI_ACCOUNT_TOKENS \
   SEARXNG_SECRET \
   CORS_ALLOW_ORIGIN \
@@ -34,8 +33,6 @@ source <("$age_bin" --decrypt --identity "$age_identity" "$encrypted_env")
 decrypt_pid=$!
 set +a
 wait "$decrypt_pid"
-
-export SAKURA_AI_ACCOUNT_TOKENS="${SAKURA_AI_ACCOUNT_TOKENS:-${SAKURA_AI_ACCOUNT_TOKEN:-}}"
 
 : "${SAKURA_AI_ACCOUNT_TOKENS:?set SAKURA_AI_ACCOUNT_TOKENS}"
 : "${WEBUI_SECRET_KEY:?set WEBUI_SECRET_KEY}"
