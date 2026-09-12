@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from typing import cast
 from unittest.mock import AsyncMock, patch
@@ -283,6 +284,33 @@ class RuntimeContractTests(RuntimeTestCase):
         self.assertIn("MUST NOT use the stored response", excerpt)
         self.assertNotIn("Contents:", excerpt)
 
+    def test_explicit_section_markers_select_up_to_three_exact_body_headings(self) -> None:
+        query = "RFC 9111 published 2024 Sections 3, 3.5, and 4"
+        self.assertEqual(rt.explicit_section_references(query), ["3", "3.5", "4"])
+        text = "  3. Contents entry\n" + "\n".join(
+            f"{number}. {heading}\n" + (f"{heading} evidence " * 220)
+            for number, heading in (
+                ("3", "Storage"),
+                ("3.5", "Authenticated responses"),
+                ("4", "Reuse"),
+                ("5", "Unrequested"),
+            )
+        )
+        ranges = rt.select_passage_ranges(text, query, None)
+        self.assertEqual(len(ranges), 3)
+        selected = [text[start:end] for start, end in ranges]
+        for reference, window in zip(("3", "3.5", "4"), selected, strict=True):
+            self.assertRegex(window, rf"(?m)^{reference}\.\s")
+        fallback_text = "General introduction.\nFocused private no-store evidence for caches."
+        fallback = rt.select_passage_ranges(
+            fallback_text, "RFC 9111 private no-store", "private no-store"
+        )
+        excerpt, _score = rt.select_relevant_excerpt(
+            fallback_text, "RFC 9111 private no-store", "private no-store"
+        )
+        start = max(0, fallback_text.find(excerpt) - rt.PASSAGE_HEADING_LEAD_CHARS)
+        self.assertEqual(fallback, [(start, min(len(fallback_text), start + rt.MAX_PASSAGE_CHARS))])
+
     def test_assessment_semantic_failures_are_safe_repair_hints(self) -> None:
         expected = {
             "evidence assessment must cover every checklist item in order",
@@ -421,6 +449,29 @@ class RuntimeContractTests(RuntimeTestCase):
             assessment_prompt = json.loads(json.loads(provider.bodies[2])["messages"][1]["content"])
             self.assertIn("retrieval_hint_ids", assessment_prompt["passage_index"][0])
             self.assertNotIn("checklist_ids", assessment_prompt["passage_index"][0])
+
+        asyncio.run(run())
+
+    def test_research_dispatch_preserves_editorial_and_current_assignment_reserves(self) -> None:
+        async def run() -> None:
+            submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
+            self.assertTrue(await rt.claim_research_job(self.runtime, submitted["job_id"]))
+            self.assertEqual(rt.MAX_PHYSICAL_ATTEMPTS_PER_ASSIGNMENT, 8)
+            self.runtime.db.execute(
+                "UPDATE research_jobs SET attempts_used = 10 WHERE job_id = ?",
+                (submitted["job_id"],),
+            )
+            self.runtime.db.commit()
+            await rt.ensure_editorial_attempt_reserve(self.runtime, submitted["job_id"], request())
+            self.runtime.db.execute(
+                "UPDATE research_jobs SET attempts_used = 11 WHERE job_id = ?",
+                (submitted["job_id"],),
+            )
+            self.runtime.db.commit()
+            with self.assertRaisesRegex(rt.JobIncomplete, "attempt_budget_exhausted"):
+                await rt.ensure_editorial_attempt_reserve(
+                    self.runtime, submitted["job_id"], request()
+                )
 
         asyncio.run(run())
 
@@ -576,6 +627,88 @@ class RuntimeContractTests(RuntimeTestCase):
 
         asyncio.run(run())
 
+    def test_one_document_admits_three_explicit_section_windows(self) -> None:
+        async def run() -> None:
+            url = "https://example.com/specification"
+            query = "Specification Sections 1 2 3"
+            round_value = {
+                "queries": [
+                    {
+                        "query": query,
+                        "purpose": "collect explicit sections",
+                        "checklist_ids": ["C1"],
+                        "candidate_urls": [url],
+                    }
+                ],
+                "results": [
+                    {
+                        "id": "W1-1",
+                        "url": url,
+                        "title": "Specification",
+                        "snippet": "explicit sections",
+                        "engine": "engine",
+                        "query": query,
+                    }
+                ],
+                "fetches": [],
+            }
+            state = {
+                "plan": {"checklist": [{"id": "C1", "question": "three sections"}]},
+                "passages": [],
+                "last_result": None,
+            }
+            text = "\n".join(
+                f"{number}. Section {number}\n" + (f"Section {number} evidence " * 220)
+                for number in range(1, 4)
+            )
+            source = rt.FetchedSourceBlob(
+                url, url, "Specification", "Publisher", "text/plain", b"source"
+            )
+            extraction = rt.ExtractedSource(
+                text,
+                [{"page": 1, "start": 0, "end": len(text)}],
+                [],
+            )
+            selection = rt.CandidateSelection.model_validate(
+                {
+                    "documents": [
+                        {
+                            "result_id": "W1-1",
+                            "purpose": "collect explicit sections",
+                            "checklist_ids": ["C1"],
+                        }
+                    ]
+                }
+            )
+            with (
+                patch.object(
+                    rt,
+                    "stored_source_blob",
+                    new=AsyncMock(return_value=("S1", source)),
+                ),
+                patch.object(
+                    rt,
+                    "stored_extraction",
+                    new=AsyncMock(return_value=(1, extraction)),
+                ),
+                patch.object(rt, "save_research_state", new=AsyncMock()),
+            ):
+                await rt.collect_selected_candidates(
+                    self.runtime, "job", request(), state, round_value, selection
+                )
+            self.assertEqual(len(state["passages"]), 3)
+            self.assertEqual(
+                [item["checklist_ids"] for item in state["passages"]],
+                [["C1"], ["C1"], ["C1"]],
+            )
+            for passage in state["passages"]:
+                self.assertEqual(
+                    passage["hash"],
+                    hashlib.sha256(text[passage["start"] : passage["end"]].encode()).hexdigest(),
+                )
+
+        asyncio.run(run())
+
     def test_stored_source_and_extraction_hashes_fail_closed(self) -> None:
         async def run() -> None:
             submitted = await rt.submit_research_job(self.runtime, "owner-1", request())
@@ -695,6 +828,17 @@ class RuntimeContractTests(RuntimeTestCase):
             ),
             long_unit,
         )
+
+    def test_author_unit_rejects_a_fifth_markdown_block_with_a_safe_hint(self) -> None:
+        outline = rt.DecisionLedger.model_validate_json(ledger_json("S1:P0-80")).outline[0]
+        unit = "## Unit 1\n\n" + "\n\n".join(
+            f"Supported body {index}. [S1:P0-80]" for index in range(1, 5)
+        )
+        with self.assertRaisesRegex(ValueError, "more than 4 Markdown blocks") as caught:
+            rt.validate_author_unit(
+                request(query="Give a brief answer"), outline, unit, {"S1:P0-80"}
+            )
+        self.assertEqual(rt.safe_model_validation_hint(caught.exception), str(caught.exception))
 
     def test_numeric_derivation_ignores_directive_assignment_as_arithmetic(self) -> None:
         rt.validate_numeric_derivations("Use s-maxage=60 as specified. [S1:P0-80]")
@@ -1038,6 +1182,10 @@ class RuntimeContractTests(RuntimeTestCase):
             ):
                 with self.subTest(assignment=assignment):
                     self.assertIn(phrase, systems[assignment])
+            author_request = json.loads(provider.bodies[4])
+            author_prompt = json.loads(author_request["messages"][1]["content"])
+            self.assertIn("at most three body blocks", author_prompt["contract"]["shape"])
+            self.assertIn("End every body block", systems[4])
             stages = self.runtime.db.execute(
                 "SELECT stage FROM review_records WHERE job_id = ? ORDER BY id", (job_id,)
             ).fetchall()

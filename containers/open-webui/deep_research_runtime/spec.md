@@ -127,8 +127,12 @@ Passage-to-checklist relevance tags are retrieval hints, not admission boundarie
 any prompt-visible passage may support any checklist item when its text entails it.
 When a selected result is collected, the runtime extracts passages for both the
 selector's hints and every checklist item targeted by the query that produced it.
-Within a long extracted paragraph, the bounded passage window favors the densest
-query-term occurrence rather than blindly taking the first table-of-contents hit.
+When a checklist-specific query explicitly names numbered `Section`, `Sections`, or
+`§` references, the runtime admits up to three non-overlapping verbatim windows from
+matching exact unindented body headings. Document numbers and years outside those
+markers are not section references. If no named heading matches, a bounded passage
+window favors the densest query-term occurrence rather than blindly taking the first
+table-of-contents hit.
 
 The runtime deduplicates exact URLs and content identities. It MUST NOT discard a
 document merely because another accepted document shares its host. It MUST NOT use
@@ -193,6 +197,9 @@ Unless the user requests another length, target roughly 2,000-3,000 substantive
 characters per unit. A unit below 1,200 substantive characters is incomplete unless
 the original request explicitly asks for a shorter report. Length is an
 anti-truncation signal, not a quality score; repetition and filler do not count.
+Each unit contains at most four blank-line-separated Markdown blocks total: the
+required level-two heading and no more than three body blocks. This keeps one unit
+inside one four-block initial review range without shortening its substantive target.
 
 Later units may reopen exact earlier blocks and neighboring source passages by ID.
 A restart reuses committed units without generating them again.
@@ -362,6 +369,7 @@ content quality. A high score cannot override a failed review or corrupt artifac
 | Stored source/extraction payload per job | 128 MiB |
 | Draft units | 2-4 |
 | Draft unit length when unspecified | 1,200-3,000 substantive characters |
+| Markdown blocks per draft unit | 4 |
 | Publication | 256 KiB |
 | Candidate generations | 2 |
 | Edit passes per candidate | 1 |
@@ -377,10 +385,13 @@ approved validator messages. Rejected values are not copied into logs or hints.
 Static review cross-field failures use those approved messages for their sole correction.
 
 Before research dispatch, reserve at least `4 * units + 6` provider attempts for
-two complete ledger/write/review/edit/recheck candidate paths. Additional packed
-review ranges consume the shared cap and are admitted from actual serialized bytes.
-Each review range contains at most 4 draft blocks; long reports split at unit
-boundaries before further byte-based packing.
+two complete ledger/write/review/edit/recheck candidate paths. The four-block author
+unit ceiling guarantees no more than one initial review range per unit. Also reserve
+eight physical attempts for the research assignment about to start: its initial call
+and sole format correction can each use one send plus three bounded transport retries.
+Additional packed review ranges consume the shared cap and are admitted from actual
+serialized bytes. Each review range contains at most 4 draft blocks; long reports
+split at unit boundaries before further byte-based packing.
 If the remaining budget cannot complete required editorial work, stop before the
 next research call.
 

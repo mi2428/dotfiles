@@ -135,8 +135,14 @@ class FormatRepairTests(RuntimeTestCase):
             self.assertIn("each blank-line-separated non-heading block", repair_prompt)
             self.assertIn("every numeric derivation has explicit assumptions", repair_prompt)
             self.assertIn("instead of drafting from scratch", repair_prompt)
+            self.assertIn("at most four Markdown blocks", repair_prompt)
+            self.assertIn("do not expand", repair_prompt)
             repair_input = json.loads(repair_request["messages"][1]["content"])
             self.assertEqual(repair_input["invalid_response_to_repair"], "bad")
+            self.assertEqual(
+                repair_input["invalid_author_block_ordinals"],
+                {"missing_citations": [1, 3], "missing_estimate_controls": []},
+            )
 
         asyncio.run(run())
 

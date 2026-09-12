@@ -75,8 +75,11 @@ MAX_RESEARCH_ROUNDS = 4
 MAX_FETCHED_DOCUMENTS = 24
 MAX_CHECKLIST_ITEMS = 12
 MAX_PASSAGE_CHARS = 4_000
+MAX_HEADING_PASSAGES_PER_CHECKLIST = 3
+PASSAGE_HEADING_LEAD_CHARS = 300
 MAX_PROMPT_PASSAGE_BYTES = 2_400
 MAX_REVIEW_BLOCKS_PER_RANGE = 4
+MAX_AUTHOR_BLOCKS_PER_UNIT = 4
 MIN_UNIT_SUBSTANTIVE_CHARS = 1_200
 MAX_UNIT_SUBSTANTIVE_CHARS = 3_000
 MAX_PUBLICATION_BYTES = 256 * 1024
@@ -152,6 +155,7 @@ SAFE_MODEL_VALIDATION_HINTS = frozenset(
         "author unit heading does not match its outline",
         "author citations are invalid",
         "author unit has no admitted citation",
+        "author unit has more than 4 Markdown blocks",
         "author unit is shorter than 1200 substantive characters",
         "author unit is longer than 3000 substantive characters",
         "every Markdown block containing a digit needs an admitted citation in that block",
@@ -866,6 +870,48 @@ def select_relevant_excerpt(text: str, query: str, focus: str | None) -> tuple[s
     if not excerpt or not is_verbatim_excerpt(excerpt, text):
         raise ValueError("could not select source excerpt")
     return excerpt, min(1.0, 0.5 + scores[index] * 0.1) if scores[index] else 0.0
+
+
+def explicit_section_references(query: str) -> list[str]:
+    references: list[str] = []
+    for marker in re.finditer(r"(?i)(?:\bsections?\b|§+)", query):
+        for token in query[marker.end() :].split():
+            value = token.strip(",;:()[]{}")
+            if re.fullmatch(r"\d+(?:\.\d+)*", value):
+                references.append(value)
+            elif value.casefold() not in {"and", "or", "&"}:
+                break
+    return list(dict.fromkeys(references))
+
+
+def select_passage_ranges(text: str, query: str, focus: str | None) -> list[tuple[int, int]]:
+    ranges: list[tuple[int, int]] = []
+    for reference in explicit_section_references(query):
+        match = re.search(rf"(?m)^{re.escape(reference)}\.\s+\S", text)
+        if match is None:
+            continue
+        start = max(0, match.start() - PASSAGE_HEADING_LEAD_CHARS)
+        end = min(len(text), start + MAX_PASSAGE_CHARS)
+        overlap = max(
+            (
+                max(0, min(end, prior_end) - max(start, prior_start))
+                for prior_start, prior_end in ranges
+            ),
+            default=0,
+        )
+        if overlap > MAX_PASSAGE_CHARS // 2:
+            continue
+        ranges.append((start, end))
+        if len(ranges) >= MAX_HEADING_PASSAGES_PER_CHECKLIST:
+            return ranges
+    if ranges:
+        return ranges
+    excerpt, _score = select_relevant_excerpt(text, query, focus)
+    excerpt_start = text.find(excerpt)
+    if excerpt_start < 0:
+        raise ValueError("selected excerpt is not verbatim")
+    start = max(0, excerpt_start - PASSAGE_HEADING_LEAD_CHARS)
+    return [(start, min(len(text), start + MAX_PASSAGE_CHARS))]
 
 
 def source_quality(url: str) -> float:
@@ -1725,6 +1771,8 @@ def validate_author_unit(
         raise ValueError("author unit heading is invalid")
     if not re.match(rf"^##\s+{re.escape(outline.heading)}\s*(?:\r?\n|$)", visible):
         raise ValueError("author unit heading does not match its outline")
+    if len(markdown_block_spans(visible)) > MAX_AUTHOR_BLOCKS_PER_UNIT:
+        raise ValueError("author unit has more than 4 Markdown blocks")
     citations = passage_ids(unit_text)
     if citations - admitted_passages or citations - set(outline.passage_ids):
         raise ValueError("author citations are invalid")
@@ -3114,6 +3162,9 @@ def transport_attempt_keys(assignment_key: str) -> list[str]:
     ]
 
 
+MAX_PHYSICAL_ATTEMPTS_PER_ASSIGNMENT = 2 * len(transport_attempt_keys("assignment"))
+
+
 async def invoke_with_transport_retries(
     runtime: Runtime,
     job_id: str,
@@ -3230,13 +3281,18 @@ async def invoke_job_model(
         (validation_hint or "").startswith(prefix + ":")
         for prefix in (MISSING_DIGIT_CITATIONS, MISSING_ESTIMATE_CONTROLS)
     )
-    if numeric_repair:
+    author_repair = (
+        numeric_repair or validation_hint == "author unit has more than 4 Markdown blocks"
+    )
+    if author_repair:
         correction += (
-            " Recheck each blank-line-separated non-heading block. If it contains a digit, keep it "
-            "only when supported and append an exact admitted citation in that block; otherwise "
-            "remove or rephrase it. Also ensure every numeric derivation has explicit assumptions "
-            "or sensitivity. Edit invalid_response_to_repair instead of drafting from scratch, "
-            "preserve its valid supported blocks, and return the whole corrected unit."
+            " Edit invalid_response_to_repair instead of drafting from scratch. Preserve its exact "
+            "heading and valid supported text, add no facts, do not expand it, and return the "
+            "whole corrected unit in at most four Markdown blocks total. Recheck each "
+            "blank-line-separated non-heading block. If it contains a digit, keep it only when "
+            "supported and append an "
+            "exact admitted citation in that block; otherwise remove or rephrase it. Also ensure "
+            "every numeric derivation has explicit assumptions or sensitivity."
         )
         if invalid_output is not None:
             try:
@@ -3245,6 +3301,20 @@ async def invoke_job_model(
                 repair_prompt = None
             if isinstance(repair_prompt, dict):
                 repair_prompt["invalid_response_to_repair"] = invalid_output
+                repair_prompt["invalid_author_block_ordinals"] = {
+                    name: [int(value) for value in match.group(1).split(", ")]
+                    if (
+                        match := re.search(
+                            rf"(?:^|; ){re.escape(prefix)}: ([\d, ]+)(?:;|$)",
+                            validation_hint or "",
+                        )
+                    )
+                    else []
+                    for name, prefix in (
+                        ("missing_citations", MISSING_DIGIT_CITATIONS),
+                        ("missing_estimate_controls", MISSING_ESTIMATE_CONTROLS),
+                    )
+                }
                 user_prompt = json.dumps(
                     repair_prompt,
                     ensure_ascii=False,
@@ -3692,7 +3762,10 @@ async def ensure_editorial_attempt_reserve(
 ) -> None:
     row = await load_job(runtime, job_id)
     reserve = 4 * request.max_units + 6
-    if int(row["max_attempts"]) - int(row["attempts_used"]) <= reserve:
+    if (
+        int(row["max_attempts"]) - int(row["attempts_used"])
+        < reserve + MAX_PHYSICAL_ATTEMPTS_PER_ASSIGNMENT
+    ):
         raise JobIncomplete("attempt_budget_exhausted")
 
 
@@ -3942,48 +4015,43 @@ async def collect_selected_candidates(
                 for checklist_id in item["checklist_ids"]
             ]
             for checklist_id in dict.fromkeys([*selected.checklist_ids, *query_targets]):
-                excerpt, _score = select_relevant_excerpt(
+                for start, end in select_passage_ranges(
                     extraction.extracted_text,
                     str(metadata["query"]),
                     checklist[checklist_id],
-                )
-                excerpt_start = extraction.extracted_text.find(excerpt)
-                if excerpt_start < 0:
-                    raise ValueError("selected excerpt is not verbatim")
-                start = max(0, excerpt_start - 300)
-                end = min(len(extraction.extracted_text), start + MAX_PASSAGE_CHARS)
-                if end <= start:
-                    raise ValueError("empty source passage")
-                passage_id = f"{source_id_value}:P{start}-{end}"
-                existing = next(
-                    (item for item in state_value["passages"] if item["id"] == passage_id),
-                    None,
-                )
-                if existing is not None:
-                    existing["checklist_ids"] = list(
-                        dict.fromkeys([*existing["checklist_ids"], checklist_id])
+                ):
+                    if end <= start:
+                        raise ValueError("empty source passage")
+                    passage_id = f"{source_id_value}:P{start}-{end}"
+                    existing = next(
+                        (item for item in state_value["passages"] if item["id"] == passage_id),
+                        None,
                     )
-                    continue
-                host = urlparse(source.final_url).hostname or source.final_url
-                state_value["passages"].append(
-                    {
-                        "id": passage_id,
-                        "source_id": source_id_value,
-                        "extraction_revision": extraction_revision,
-                        "start": start,
-                        "end": end,
-                        "hash": hashlib.sha256(
-                            extraction.extracted_text[start:end].encode()
-                        ).hexdigest(),
-                        "checklist_ids": [checklist_id],
-                        "origin": host,
-                        "authority": (
-                            "authoritative"
-                            if source_quality(source.final_url) >= 0.8
-                            else "secondary"
-                        ),
-                    }
-                )
+                    if existing is not None:
+                        existing["checklist_ids"] = list(
+                            dict.fromkeys([*existing["checklist_ids"], checklist_id])
+                        )
+                        continue
+                    host = urlparse(source.final_url).hostname or source.final_url
+                    state_value["passages"].append(
+                        {
+                            "id": passage_id,
+                            "source_id": source_id_value,
+                            "extraction_revision": extraction_revision,
+                            "start": start,
+                            "end": end,
+                            "hash": hashlib.sha256(
+                                extraction.extracted_text[start:end].encode()
+                            ).hexdigest(),
+                            "checklist_ids": [checklist_id],
+                            "origin": host,
+                            "authority": (
+                                "authoritative"
+                                if source_quality(source.final_url) >= 0.8
+                                else "secondary"
+                            ),
+                        }
+                    )
             state_value["last_result"] = {
                 "action": "collect",
                 "source_id": source_id_value,
@@ -4641,6 +4709,22 @@ async def create_raw_candidate(
                     "prior_handoffs": prior_handoffs,
                     "selected_prior_blocks": selected_prior_blocks,
                     "failure_feedback": list(failure_feedback),
+                    "contract": {
+                        "shape": (
+                            "the required level-2 heading plus at most three body blocks; "
+                            "no subheadings"
+                        ),
+                        "body_blocks": (
+                            "use two or three unless the request explicitly requires shorter output"
+                        ),
+                        "citations": (
+                            "end every body block with one or more exact admitted citations"
+                        ),
+                        "numeric_blocks": (
+                            "every digit-bearing body block has an admitted citation in that block"
+                        ),
+                        "tables": "keep each Markdown table contiguous as one body block",
+                    },
                 },
                 ensure_ascii=False,
                 separators=(",", ":"),
@@ -4656,7 +4740,11 @@ async def create_raw_candidate(
             "the request explicitly sets a different length. Remove repetition before returning. "
             "Use exact [Sx:Pstart-end] citations from supplied passages. Do not output JSON, "
             "private reasoning, Sources, or Limitations sections. Begin with exactly one level-2 "
-            f"heading named: ## {outline.heading}. Do not emit a level-1 heading. Every separate "
+            f"heading named: ## {outline.heading}. Follow it with two or three body blocks unless "
+            "the request explicitly requires shorter output; emit at most four Markdown blocks "
+            "total and no subheadings. End every body block with one or more exact admitted "
+            "citations and keep each table contiguous as one body block. Do not emit a level-1 "
+            "heading. Every separate "
             "Markdown paragraph, list, or table containing any digit—including a year, RFC or "
             "section number, version, percentage, or example setting—must contain an exact "
             "admitted citation in that same block; a citation in a neighboring block does not "
