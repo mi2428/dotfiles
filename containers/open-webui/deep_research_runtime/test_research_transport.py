@@ -157,6 +157,17 @@ class ResearchTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(b"reasoning_effort", self.body)
         self.assertNotIn(b"tool_choice", self.body)
         self.assertEqual(self.body, prepare_research_request("public-model", "system", "user"))
+        low_effort = json.loads(
+            prepare_research_request("public-model", "system", "user", reasoning_effort="low")
+        )
+        self.assertEqual(low_effort["reasoning_effort"], "low")
+        with self.assertRaisesRegex(ValueError, "RESEARCH_REQUEST_INVALID"):
+            prepare_research_request(
+                "public-model",
+                "system",
+                "user",
+                reasoning_effort="high",  # type: ignore[arg-type]
+            )
         with self.assertRaisesRegex(ValueError, "RESEARCH_REQUEST_TOO_LARGE"):
             prepare_research_request("public-model", "system", "x" * 65_536)
         self.assertEqual(

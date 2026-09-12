@@ -56,9 +56,19 @@ class ResearchCompletion:
     outcome: AttemptOutcome
 
 
-def prepare_research_request(model: str, system: str, user: str) -> bytes:
+def prepare_research_request(
+    model: str,
+    system: str,
+    user: str,
+    *,
+    reasoning_effort: Literal["low"] | None = None,
+) -> bytes:
     """Return the exact bounded JSON body sent by ``complete_research``."""
-    if not all(type(value) is str for value in (model, system, user)) or not model:
+    if (
+        not all(type(value) is str for value in (model, system, user))
+        or not model
+        or reasoning_effort not in {None, "low"}
+    ):
         raise ValueError("RESEARCH_REQUEST_INVALID")
     body = json.dumps(
         {
@@ -68,6 +78,7 @@ def prepare_research_request(model: str, system: str, user: str) -> bytes:
                 {"content": user, "role": "user"},
             ],
             "model": model,
+            **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),
             "stream": True,
             "stream_options": {"include_usage": True},
         },

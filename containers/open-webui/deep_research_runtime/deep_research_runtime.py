@@ -101,6 +101,10 @@ UNTRUSTED_JOB_DATA_RULE = (
 )
 MISSING_DIGIT_CITATIONS = "digit-bearing non-heading blocks without admitted citations"
 MISSING_ESTIMATE_CONTROLS = "numeric derivation blocks without assumptions or sensitivity"
+LEDGER_ENTRY_ID_PATTERN_HINT = "ledger entry IDs must match K-[A-Z0-9_-]{1,32}"
+OUTLINE_CHECKLIST_ID_PATTERN_HINT = (
+    "outline checklist_ids must copy exact C<number> IDs from research_plan"
+)
 SAFE_JOB_ERROR_CODES = frozenset(
     {
         "abandoned_unresolved",
@@ -173,6 +177,8 @@ SAFE_MODEL_VALIDATION_HINTS = frozenset(
         "query too long",
         "purpose is empty",
         "purpose too long",
+        LEDGER_ENTRY_ID_PATTERN_HINT,
+        OUTLINE_CHECKLIST_ID_PATTERN_HINT,
         "review references are foreign or stale",
         "material findings require checklist and source references",
         "public caveats require checklist and source references",
@@ -2044,6 +2050,14 @@ def safe_model_validation_hint(error: ValueError | ValidationError) -> str | Non
         if message in SAFE_MODEL_VALIDATION_HINTS:
             return message
     for detail in details:
+        if str(detail.get("type")) != "string_pattern_mismatch":
+            continue
+        location = tuple(detail.get("loc", ()))
+        if len(location) >= 3 and location[0] == "entries" and location[-1] == "id":
+            return LEDGER_ENTRY_ID_PATTERN_HINT
+        if len(location) >= 4 and location[0] == "outline" and location[-2] == "checklist_ids":
+            return OUTLINE_CHECKLIST_ID_PATTERN_HINT
+    for detail in details:
         if str(detail.get("type")) not in {"too_long", "string_too_long"}:
             continue
         location = ".".join(str(part) for part in detail.get("loc", ()))[:120]
@@ -3339,7 +3353,12 @@ async def _invoke_job_model_once(
     accept: Callable[[str], str],
 ) -> str:
     try:
-        body = prepare_research_request(runtime.settings.model, system_prompt, user_prompt)
+        body = prepare_research_request(
+            runtime.settings.model,
+            system_prompt,
+            user_prompt,
+            reasoning_effort="low" if "_author_unit_" in assignment_key else None,
+        )
     except ValueError as exc:
         raise JobIncomplete("request_not_admitted") from exc
     if len(body) > JOB_REQUEST_BYTES:
@@ -4569,7 +4588,11 @@ async def create_report_outline(
             "prior_candidate_failure_feedback": list(failure_feedback),
             "contract": {
                 "entries": "1 to 12 important cross-section commitments",
+                "ledger_entry_ids": "unique IDs matching K-[A-Z0-9_-]{1,32}",
                 "reference_namespaces": ["Fx", "Sx:Pstart-end"],
+                "outline_checklist_ids": (
+                    "copy only exact C<number> IDs such as C1 from research_plan.checklist"
+                ),
                 "outline_passage_ids": (
                     "only exact Sx:Pstart-end IDs from the admitted passage index"
                 ),
@@ -4598,7 +4621,9 @@ async def create_report_outline(
         UNTRUSTED_JOB_DATA_RULE
         + "After evidence assessment, return exactly one DecisionLedger JSON object containing "
         "the localized report title and a two-to-four-unit outline. Obey every schema and semantic "
-        "constraint in the request. Keep only important "
+        "constraint in the request. Use unique ledger entry IDs matching "
+        "K-[A-Z0-9_-]{1,32}, and copy outline checklist_ids exactly from the C<number> IDs in "
+        "research_plan.checklist. Keep only important "
         "cross-unit commitments. The first unit states the answer or key findings; the final unit "
         "synthesizes the conclusion, confidence, and decision-relevant uncertainty. Do not invent "
         "measurements or change explicit user constraints."

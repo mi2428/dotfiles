@@ -378,6 +378,24 @@ class RuntimeContractTests(RuntimeTestCase):
             "follow-up research requires three to six queries",
         )
 
+        invalid_ledger = json.loads(ledger_json("S1:P0-80"))
+        invalid_ledger["entries"][0]["id"] = "bad-id"
+        with self.assertRaises(ValidationError) as entry_id:
+            rt.DecisionLedger.model_validate(invalid_ledger)
+        self.assertEqual(
+            rt.safe_model_validation_hint(entry_id.exception),
+            rt.LEDGER_ENTRY_ID_PATTERN_HINT,
+        )
+
+        invalid_ledger = json.loads(ledger_json("S1:P0-80"))
+        invalid_ledger["outline"][0]["checklist_ids"] = ["C-1"]
+        with self.assertRaises(ValidationError) as checklist_id:
+            rt.DecisionLedger.model_validate(invalid_ledger)
+        self.assertEqual(
+            rt.safe_model_validation_hint(checklist_id.exception),
+            rt.OUTLINE_CHECKLIST_ID_PATTERN_HINT,
+        )
+
     def test_adaptive_research_runs_at_most_four_rounds(self) -> None:
         async def run() -> None:
             outputs = [completion(plan_json())]
@@ -1184,6 +1202,13 @@ class RuntimeContractTests(RuntimeTestCase):
                     self.assertIn(phrase, systems[assignment])
             author_request = json.loads(provider.bodies[4])
             author_prompt = json.loads(author_request["messages"][1]["content"])
+            outline_prompt = json.loads(json.loads(provider.bodies[3])["messages"][1]["content"])
+            self.assertNotIn("reasoning_effort", json.loads(provider.bodies[3]))
+            self.assertEqual(author_request["reasoning_effort"], "low")
+            self.assertIn("K-[A-Z0-9_-]{1,32}", outline_prompt["contract"]["ledger_entry_ids"])
+            self.assertIn(
+                "exact C<number> IDs", outline_prompt["contract"]["outline_checklist_ids"]
+            )
             self.assertIn("at most three body blocks", author_prompt["contract"]["shape"])
             self.assertIn("End every body block", systems[4])
             stages = self.runtime.db.execute(

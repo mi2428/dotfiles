@@ -200,6 +200,8 @@ anti-truncation signal, not a quality score; repetition and filler do not count.
 Each unit contains at most four blank-line-separated Markdown blocks total: the
 required level-two heading and no more than three body blocks. This keeps one unit
 inside one four-block initial review range without shortening its substantive target.
+Author-unit requests and their sole corrections use the provider's low reasoning effort
+while retaining the same 16,384-token ceiling. Other stages retain the provider default.
 
 Later units may reopen exact earlier blocks and neighboring source passages by ID.
 A restart reuses committed units without generating them again.

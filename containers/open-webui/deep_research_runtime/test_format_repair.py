@@ -131,6 +131,10 @@ class FormatRepairTests(RuntimeTestCase):
                     "good",
                 )
             repair_request = json.loads(provider.await_args_list[1].args[2])
+            self.assertEqual(
+                json.loads(provider.await_args_list[0].args[2])["reasoning_effort"], "low"
+            )
+            self.assertEqual(repair_request["reasoning_effort"], "low")
             repair_prompt = repair_request["messages"][0]["content"]
             self.assertIn("each blank-line-separated non-heading block", repair_prompt)
             self.assertIn("every numeric derivation has explicit assumptions", repair_prompt)
