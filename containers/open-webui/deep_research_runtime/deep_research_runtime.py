@@ -3879,7 +3879,7 @@ def selected_assessment_passages(
             if checklist.id in passage["checklist_ids"] and passage not in selected:
                 selected.append(passage)
                 break
-    for passage in passages:
+    for passage in reversed(passages):
         if passage not in selected:
             selected.append(passage)
         if len(selected) >= MAX_CHECKLIST_ITEMS:

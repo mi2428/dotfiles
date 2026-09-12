@@ -1404,6 +1404,48 @@ class RuntimeContractTests(RuntimeTestCase):
                 {"S1:P0-80"},
             )
 
+    def test_assessment_passages_keep_checklist_coverage_and_new_followups(self) -> None:
+        plan = rt.ResearchPlan(
+            requested_language="ja",
+            time_horizon="current",
+            checklist=[
+                rt.ChecklistItem(
+                    id=f"C{index}",
+                    question=f"question {index}",
+                    essential=True,
+                    preferred_source_types=["official"],
+                    fragment_ids=[f"F{index}"],
+                )
+                for index in range(1, 5)
+            ],
+            initial_queries=[
+                rt.ResearchQuery(
+                    query=f"query {index}",
+                    purpose="collect evidence",
+                    checklist_ids=[f"C{index}"],
+                )
+                for index in range(1, 4)
+            ],
+        )
+        passages = [
+            {"id": f"S{index}:P0-80", "checklist_ids": [f"C{index}"]} for index in range(1, 5)
+        ] + [{"id": f"S{index}:P0-80", "checklist_ids": ["C1"]} for index in range(5, 21)]
+        original = json.dumps(passages, sort_keys=True)
+        selected = rt.selected_assessment_passages(plan, passages)
+
+        self.assertEqual(len(selected), rt.MAX_CHECKLIST_ITEMS)
+        self.assertTrue(
+            all(
+                any(checklist_id in item["checklist_ids"] for item in selected)
+                for checklist_id in ("C1", "C2", "C3", "C4")
+            )
+        )
+        self.assertEqual(
+            [item["id"] for item in selected[4:]],
+            [f"S{index}:P0-80" for index in range(20, 12, -1)],
+        )
+        self.assertEqual(json.dumps(passages, sort_keys=True), original)
+
     def test_only_evidence_caveats_change_the_publication_outcome(self) -> None:
         async def run() -> None:
             fixture = research_jobs.ResearchJobTests()

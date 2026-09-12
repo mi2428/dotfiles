@@ -125,6 +125,9 @@ origin and authority: multiple hosts repeating one report are one origin, while
 different useful pages on the same official site remain valid separate documents.
 Passage-to-checklist relevance tags are retrieval hints, not admission boundaries;
 any prompt-visible passage may support any checklist item when its text entails it.
+Assessment selection first reserves the earliest distinct passage for each checklist,
+then fills the remaining bounded slots from newest to oldest so later follow-up
+evidence remains visible; selection does not mutate the stored passage order.
 When a selected result is collected, the runtime extracts passages for both the
 selector's hints and every checklist item targeted by the query that produced it.
 When a checklist-specific query explicitly names numbered `Section`, `Sections`, or
