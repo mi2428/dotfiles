@@ -7,7 +7,6 @@ action="${2:?action is required}"
 encrypted_env="$repo_root/secrets/open-webui.env.age"
 age_identity="${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/key.txt"
 gateway_env_file="${XDG_STATE_HOME:-$HOME/.local/state}/open-webui/cptr-gateway.env"
-deep_research_env_file="${XDG_STATE_HOME:-$HOME/.local/state}/open-webui/deep-research-runtime.env"
 age_root="$(nix build --no-link --print-out-paths nixpkgs#age)"
 age_bin="$age_root/bin/age"
 
@@ -20,7 +19,6 @@ unset \
   CPTR_WORKSPACE_DIR \
   OPEN_TERMINAL_API_KEY \
   OPEN_WEBUI_PORT \
-  DEEP_RESEARCH_RUNTIME_API_KEY \
   SAKURA_AI_ACCOUNT_TOKEN \
   SAKURA_AI_ACCOUNT_TOKENS \
   SEARXNG_SECRET \
@@ -39,18 +37,6 @@ wait "$decrypt_pid"
 
 export SAKURA_AI_ACCOUNT_TOKENS="${SAKURA_AI_ACCOUNT_TOKENS:-${SAKURA_AI_ACCOUNT_TOKEN:-}}"
 
-if [[ ! -s "$deep_research_env_file" ]]; then
-  mkdir -p "$(dirname "$deep_research_env_file")"
-  umask 077
-  deep_research_key="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
-  printf 'DEEP_RESEARCH_RUNTIME_API_KEY=%s\n' "$deep_research_key" >"$deep_research_env_file"
-  unset deep_research_key
-fi
-set -a
-# shellcheck disable=SC1090
-source "$deep_research_env_file"
-set +a
-
 : "${SAKURA_AI_ACCOUNT_TOKENS:?set SAKURA_AI_ACCOUNT_TOKENS}"
 : "${WEBUI_SECRET_KEY:?set WEBUI_SECRET_KEY}"
 : "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
@@ -58,7 +44,6 @@ set +a
 : "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
 : "${CPTR_WORKSPACE_DIR:?set CPTR_WORKSPACE_DIR}"
 : "${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}"
-: "${DEEP_RESEARCH_RUNTIME_API_KEY:?failed to initialize DEEP_RESEARCH_RUNTIME_API_KEY}"
 : "${SEARXNG_SECRET:?set SEARXNG_SECRET}"
 [[ -d "$CPTR_WORKSPACE_DIR" ]] || { printf 'CPTR_WORKSPACE_DIR is not a directory\n' >&2; exit 1; }
 
@@ -92,14 +77,21 @@ local_url="http://127.0.0.1:${OPEN_WEBUI_PORT:-38080}"
 export WEBUI_URL="$local_url"
 export CORS_ALLOW_ORIGIN="$WEBUI_URL;http://localhost:${OPEN_WEBUI_PORT:-38080}"
 
+tailscale_bin=
+if [[ "$action" == up || "$action" == compose ]]; then
+  if tailscale_bin="$(resolve_tailscale_bin)" \
+    && tailscale_url="$(tailscale_webui_url "$tailscale_bin")"; then
+    export WEBUI_URL="$tailscale_url"
+    export CORS_ALLOW_ORIGIN="$CORS_ALLOW_ORIGIN;$WEBUI_URL"
+  fi
+fi
+
 case "$action" in
+  compose)
+    # Reuse the protected environment for targeted updates; never print expanded config.
+    "${compose[@]}" "${@:3}"
+    ;;
   up)
-    tailscale_bin=
-    if tailscale_bin="$(resolve_tailscale_bin)" \
-      && tailscale_url="$(tailscale_webui_url "$tailscale_bin")"; then
-      export WEBUI_URL="$tailscale_url"
-      export CORS_ALLOW_ORIGIN="$CORS_ALLOW_ORIGIN;$WEBUI_URL"
-    fi
     "${compose[@]}" up -d cptr
     "$repo_root/scripts/bootstrap-cptr.sh" "$repo_root"
     unset CPTR_GATEWAY_API_KEY

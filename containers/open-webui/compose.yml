@@ -30,7 +30,7 @@ services:
         {"capabilities": {"web_search": true, "code_interpreter": true},
         "defaultFeatureIds": ["web_search", "code_interpreter"]}
       DEFAULT_MODELS: "sacloud.kimi-k2.6-high"
-      DEFAULT_PINNED_MODELS: "sacloud.kimi-k2.6-low,sacloud.kimi-k2.6-high,sacloud.kimi-k2.6-max,sacloud.kimi-k2.7-deep-research"
+      DEFAULT_PINNED_MODELS: "sacloud.kimi-k2.6-low,sacloud.kimi-k2.6-high,sacloud.kimi-k2.6-max"
       ENABLE_AUTOCOMPLETE_GENERATION: "false"
       ENABLE_COMMUNITY_SHARING: "false"
       ENABLE_CONTEXT_COMPACTION: "true"
@@ -70,8 +70,6 @@ services:
       OPENAI_API_KEYS: "sakura-proxy;${CPTR_GATEWAY_API_KEY:-bootstrap}"
       RAG_TEXT_SPLITTER: "token"
       RAG_TOP_K: "5"
-      DEEP_RESEARCH_RUNTIME_API_KEY: >-
-        ${DEEP_RESEARCH_RUNTIME_API_KEY:?set DEEP_RESEARCH_RUNTIME_API_KEY}
       SEARXNG_LANGUAGE: "all"
       SEARXNG_QUERY_URL: "http://searxng:8080/search"
       SUBAGENTS_BACKGROUND_ENABLED: "false"
@@ -116,9 +114,7 @@ services:
       - ./assets/sakura-ai-engine-high.png:/app/backend/declarative/assets/sakura-ai-engine-high.png:ro
       - ./assets/sakura-ai-engine-max.png:/app/backend/declarative/assets/sakura-ai-engine-max.png:ro
       - ./config:/app/backend/declarative/config:ro
-      - ./functions:/app/backend/declarative/functions:ro
       - ./scripts:/app/backend/declarative-scripts:ro
-      - ./skills:/app/backend/declarative/skills:ro
     command: [bash, /app/backend/declarative-scripts/start.sh]
     healthcheck:
       test:
@@ -136,67 +132,10 @@ services:
         condition: service_started
       open-terminal:
         condition: service_healthy
-      deep-research-runtime:
-        condition: service_healthy
       sakura-proxy:
         condition: service_healthy
       searxng:
         condition: service_healthy
-    restart: unless-stopped
-
-  deep-research-runtime:
-    build: ./deep_research_runtime
-    cap_drop:
-      - ALL
-    environment:
-      DEEP_RESEARCH_DB_PATH: /data/deep-research.sqlite3
-      DEEP_RESEARCH_LLM_API_KEY: sakura-proxy
-      DEEP_RESEARCH_LLM_BASE_URL: http://sakura-proxy:8080/v1
-      DEEP_RESEARCH_RUNTIME_API_KEY: >-
-        ${DEEP_RESEARCH_RUNTIME_API_KEY:?set DEEP_RESEARCH_RUNTIME_API_KEY}
-      DEEP_RESEARCH_MODEL: preview/Kimi-K2.7-Code
-      DEEP_RESEARCH_KIMI_TIMEOUT_SECONDS: "3600"
-      DEEP_RESEARCH_WALL_QUICK_SECONDS: "3900"
-      DEEP_RESEARCH_WALL_STANDARD_SECONDS: "5400"
-      DEEP_RESEARCH_WALL_DEEP_SECONDS: "10350"
-      DEEP_RESEARCH_SEARCH_BUDGET_QUICK: "8"
-      DEEP_RESEARCH_SEARCH_BUDGET_STANDARD: "24"
-      DEEP_RESEARCH_SEARCH_BUDGET_DEEP: "96"
-      DEEP_RESEARCH_SEARCH_LIMIT_DEEP: "96"
-      DEEP_RESEARCH_EVIDENCE_BUDGET_QUICK: "10"
-      DEEP_RESEARCH_EVIDENCE_BUDGET_STANDARD: "28"
-      DEEP_RESEARCH_EVIDENCE_BUDGET_DEEP: "60"
-      DEEP_RESEARCH_TARGET_EVIDENCE_DEEP: "30"
-      DEEP_RESEARCH_MIN_EVIDENCE_QUICK: "2"
-      DEEP_RESEARCH_MIN_EVIDENCE_STANDARD: "4"
-      DEEP_RESEARCH_MIN_EVIDENCE_DEEP: "1"
-      DEEP_RESEARCH_MODEL_TURNS_QUICK: "20"
-      DEEP_RESEARCH_MODEL_TURNS_STANDARD: "40"
-      DEEP_RESEARCH_MODEL_TURNS_DEEP: "270"
-      SEARXNG_URL: http://searxng:8080
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - >-
-          import urllib.request;
-          urllib.request.urlopen('http://127.0.0.1:8000/health')
-      interval: 5s
-      timeout: 5s
-      retries: 12
-    depends_on:
-      sakura-proxy:
-        condition: service_healthy
-      searxng:
-        condition: service_healthy
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-    tmpfs:
-      - /tmp
-    volumes:
-      - deep-research-runtime-data:/data
     restart: unless-stopped
 
   sakura-proxy:
@@ -307,5 +246,4 @@ volumes:
   open-webui-data:
   cptr-data:
   open-terminal-data:
-  deep-research-runtime-data:
   searxng-data:
