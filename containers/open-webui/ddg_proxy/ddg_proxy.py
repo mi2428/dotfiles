@@ -7,8 +7,11 @@ access logs are suppressed. A lock serializes the shared primp client used by Se
 from __future__ import annotations
 
 import logging
+import math
 import os
 import threading
+import time
+from email.utils import parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Protocol, cast
 from urllib.parse import parse_qsl, urlsplit
@@ -17,6 +20,22 @@ LOG = logging.getLogger("ddg-proxy")
 LISTEN_ADDRESS = ("0.0.0.0", 8081)
 MAX_REQUEST_BYTES = 64 * 1024
 UPSTREAM_URL = "https://html.duckduckgo.com/html/"
+
+
+def env_seconds(name: str, default: float) -> float:
+    """Read a finite, non-negative duration or fail fast at startup."""
+    value = float(os.getenv(name, str(default)))
+    if not math.isfinite(value) or value < 0:
+        raise ValueError(f"{name} must be a finite, non-negative number")
+    return value
+
+
+MIN_INTERVAL_SECONDS = env_seconds("DDG_MIN_INTERVAL", 10)
+CAPTCHA_COOLDOWN_SECONDS = env_seconds("DDG_CAPTCHA_COOLDOWN", 3600)
+RATE_LIMIT_COOLDOWN_SECONDS = env_seconds("DDG_429_COOLDOWN", 1800)
+MONOTONIC = time.monotonic
+WALL_TIME = time.time
+SLEEP = time.sleep
 
 
 class Response(Protocol):
@@ -52,6 +71,66 @@ def make_client() -> Client:
 
 CLIENT: Client | None = None
 CLIENT_LOCK = threading.Lock()
+LAST_REQUEST_AT: float | None = None
+COOLDOWN_UNTIL = 0.0
+
+
+def response_header(response: Response, name: str, default: str = "") -> str:
+    """Read a response header without relying on mapping case behavior."""
+    return next(
+        (value for key, value in response.headers.items() if key.lower() == name.lower()),
+        default,
+    )
+
+
+def retry_after_seconds(value: str) -> float:
+    """Interpret Retry-After and cap it at the configured 429 cooldown."""
+    try:
+        delay = float(value)
+    except ValueError:
+        try:
+            delay = parsedate_to_datetime(value).timestamp() - WALL_TIME()
+        except (TypeError, ValueError, OverflowError):
+            return RATE_LIMIT_COOLDOWN_SECONDS
+    if not math.isfinite(delay) or delay <= 0:
+        return RATE_LIMIT_COOLDOWN_SECONDS
+    return min(delay, RATE_LIMIT_COOLDOWN_SECONDS)
+
+
+def request_upstream(form: dict[str, str]) -> tuple[Response | None, float]:
+    """Serialize DDG access and atomically enforce interval and cooldown state."""
+    global COOLDOWN_UNTIL, LAST_REQUEST_AT
+
+    assert CLIENT is not None
+    with CLIENT_LOCK:
+        now = MONOTONIC()
+        remaining = COOLDOWN_UNTIL - now
+        if remaining > 0:
+            return None, remaining
+
+        if LAST_REQUEST_AT is not None:
+            wait = MIN_INTERVAL_SECONDS - (now - LAST_REQUEST_AT)
+            if wait > 0:
+                SLEEP(wait)
+        LAST_REQUEST_AT = MONOTONIC()
+        response = CLIENT.post(UPSTREAM_URL, data=form)
+        lower = response.content.lower()
+        captcha = b"challenge-form" in lower
+        LOG.info(
+            "Upstream status=%d captcha=%s results=%s",
+            response.status_code,
+            captcha,
+            b"result__a" in lower,
+        )
+
+        if captcha:
+            cooldown = CAPTCHA_COOLDOWN_SECONDS
+        elif response.status_code == 429:
+            cooldown = retry_after_seconds(response_header(response, "retry-after"))
+        else:
+            return response, 0
+        COOLDOWN_UNTIL = MONOTONIC() + cooldown
+        return None, cooldown
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -75,26 +154,25 @@ class Handler(BaseHTTPRequestHandler):
         if form is None:
             return
 
-        assert CLIENT is not None
         try:
-            with CLIENT_LOCK:
-                response = CLIENT.post(UPSTREAM_URL, data=form)
-        except Exception:
-            LOG.exception("DuckDuckGo request failed")
+            response, retry_after = request_upstream(form)
+        except Exception as error:  # noqa: BLE001 - isolate all provider failures
+            LOG.error("DuckDuckGo request failed (%s)", type(error).__name__)
             self._send(502, b'{"error":"upstream unavailable"}', "application/json")
             return
 
-        lower = response.content.lower()
-        LOG.info(
-            "Upstream status=%d captcha=%s results=%s",
-            response.status_code,
-            b"challenge-form" in lower,
-            b"result__a" in lower,
-        )
+        if response is None:
+            self._send(
+                429,
+                b'{"error":"temporarily unavailable"}',
+                "application/json",
+                retry_after=math.ceil(retry_after),
+            )
+            return
         self._send(
             response.status_code,
             response.content,
-            response.headers.get("content-type", "text/html; charset=UTF-8"),
+            response_header(response, "content-type", "text/html; charset=UTF-8"),
         )
 
     def _read_form(self) -> dict[str, str] | None:
@@ -122,10 +200,19 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return form
 
-    def _send(self, status: int, body: bytes, content_type: str) -> None:
+    def _send(
+        self,
+        status: int,
+        body: bytes,
+        content_type: str,
+        *,
+        retry_after: int | None = None,
+    ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        if retry_after is not None:
+            self.send_header("Retry-After", str(retry_after))
         self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)

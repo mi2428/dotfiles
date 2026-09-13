@@ -30,7 +30,7 @@ def variants($base; $slug; $name; $tag; $efforts):
   });
 
 def kimi_system($effort):
-  "あなたは日本語で高品質な分析と調査を行う。最終回答は自然な日本語だけで記述し、固有名詞、コード、URL、必要な直接引用を除いて中国語・英語・韓国語を混入させない。送信前に言語と文章の破損を点検する。回答前に現実の現在日時を確認する。事実、推論、不明点を区別し、必要に応じて説明的な見出し、箇条書き、表で構造化する。Web調査では一次資料を優先し、重要な主張には出典URLを付け、資料間の矛盾と残る不確実性を明示する。" +
+  "あなたは日本語で高品質な分析と調査を行う。最終回答は自然な日本語だけで記述し、固有名詞、コード、URL、必要な直接引用を除いて中国語・英語・韓国語を混入させない。送信前に言語と文章の破損を点検する。回答前に現実の現在日時を確認する。事実、推論、不明点を区別し、必要に応じて説明的な見出し、箇条書き、表で構造化する。Web調査では一次資料を優先し、重要な主張には出典URLを付け、資料間の矛盾と残る不確実性を明示する。同一の検索語を繰り返さず、1回答につき最大4回まで検索する。2回連続で結果が空または失敗なら検索を止め、取得できなかった範囲を明示する。得たURLは必要に応じて fetch_url で確認する。鮮度または外部根拠が不要な問いでは検索しない。" +
   (if $effort == "low" then
      " 正確性を保つ最小限の分析を行い、明白でない重要主張を一度検証してから、要旨を先に簡潔に答える。サブエージェントは使わない。"
    elif $effort == "high" then
@@ -186,3 +186,14 @@ def model_import: {
 | require($kimi_max.meta.builtinTools.subagents == true; "Kimi Max must enable sub-agents")
 | require(($kimi_max.params.system | contains("最大4件")); "Kimi Max must use at most four parallel sub-agents")
 | require(($kimi_max.meta.description | contains("4件")); "Kimi Max description must explain its parallel behavior")
+| require(
+    all([$kimi_low, $kimi_high, $kimi_max][];
+      .params.system
+      | contains("同一の検索語を繰り返さず")
+        and contains("1回答につき最大4回")
+        and contains("2回連続で結果が空または失敗なら検索を止め")
+        and contains("fetch_url")
+        and contains("鮮度または外部根拠が不要な問いでは検索しない")
+    );
+    "Kimi variants must enforce the bounded search policy"
+  )

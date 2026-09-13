@@ -1,14 +1,37 @@
 ---
-use_default_settings: true
+use_default_settings:
+  engines:
+    keep_only:
+      - wikipedia
+      - bing
+      - mwmbl
+      - duckduckgo
 
 search:
+  autocomplete: ""
   formats:
     - html
     - json
 
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 8.0
+  retries: 0
+  pool_connections: 4
+  pool_maxsize: 4
+
 engines:
+  - name: wikipedia
+    disabled: true
+    display_type:
+      - list
+  - name: bing
+    disabled: true
+  - name: mwmbl
+    disabled: true
   - name: duckduckgo
     engine: duckduckgo
     shortcut: ddg
     ddg_url: http://ddg-proxy:8081/html/
     enable_http: true
+    disabled: true
