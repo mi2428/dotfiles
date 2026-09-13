@@ -240,7 +240,7 @@ services:
     restart: unless-stopped
 
   open-terminal:
-    image: ghcr.io/open-webui/open-terminal:0.12.3@sha256:8f6d2045aa69e348e39d89bf59e6b267773532335333eed14ff16bbc7c964b73
+    image: ghcr.io/open-webui/open-terminal:0.12.5@sha256:8d3a93d382c922c37352984302ebb8ee729cb01efd4ae8b221d9f881efb4b5c6
     environment:
       OPEN_TERMINAL_API_KEY: >-
         ${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}
