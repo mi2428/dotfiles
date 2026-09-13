@@ -170,6 +170,26 @@ class SearchGatewayTest(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(len(fetcher.calls), 1)
 
+    def test_cache_separates_forwarded_parameter_variants(self) -> None:
+        cases = (
+            ("pageno", "1", "2"),
+            ("safesearch", "0", "1"),
+            ("time_range", "day", "month"),
+            ("categories", "general", "images"),
+            ("theme", "simple", "dark"),
+            ("image_proxy", "0", "1"),
+        )
+        for name, first, second in cases:
+            with self.subTest(parameter=name):
+                gateway, fetcher, _ = gateway_with(
+                    {"mwmbl": response("1", "2", "3", "4", "5")}
+                )
+
+                gateway.search({"q": "cache variant", name: first})
+                gateway.search({"q": "cache variant", name: second})
+
+                self.assertEqual(len(fetcher.calls), 2)
+
     def test_cache_is_ttl_lru_bounded(self) -> None:
         gateway, fetcher, clock = gateway_with(
             {"mwmbl": response("1", "2", "3", "4", "5")},

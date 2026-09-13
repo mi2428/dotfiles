@@ -277,9 +277,9 @@ class SearchGateway:
         self.sleeper = sleeper
         providers = dict.fromkeys(settings.japanese_route + settings.other_route)
         self.providers = {provider: ProviderState() for provider in providers}
-        self.cache: OrderedDict[tuple[str, str], tuple[float, list[dict[str, str]]]] = (
-            OrderedDict()
-        )
+        self.cache: OrderedDict[
+            tuple[tuple[str, str], ...], tuple[float, list[dict[str, str]]]
+        ] = OrderedDict()
         # ponytail: one process-wide lock and in-memory state are intentional;
         # use shared storage/coordination only when multiple replicas are required.
         self.search_lock = threading.Lock()
@@ -324,9 +324,15 @@ class SearchGateway:
     def _search_locked(
         self, parameters: dict[str, str], deadline: float
     ) -> tuple[int, dict[str, object]]:
-        key = (
-            parameters["q"].casefold(),
-            normalized_query(parameters.get("language", "")).casefold(),
+        key = tuple(
+            (
+                name,
+                normalized_query(parameters[name]).casefold()
+                if name in {"q", "language"}
+                else parameters[name],
+            )
+            for name in ("q", "format", *OPTIONAL_PARAMETERS)
+            if name in parameters
         )
         cached = self._cache_get(key, self.clock())
         if cached is not None:
@@ -527,7 +533,7 @@ class SearchGateway:
         state.reason = None
 
     def _cache_get(
-        self, key: tuple[str, str], now: float
+        self, key: tuple[tuple[str, str], ...], now: float
     ) -> list[dict[str, str]] | None:
         entry = self.cache.get(key)
         if entry is None:
@@ -540,7 +546,10 @@ class SearchGateway:
         return [result.copy() for result in results]
 
     def _cache_put(
-        self, key: tuple[str, str], results: list[dict[str, str]], now: float
+        self,
+        key: tuple[tuple[str, str], ...],
+        results: list[dict[str, str]],
+        now: float,
     ) -> None:
         self._purge_cache(now)
         self.cache[key] = (now, [result.copy() for result in results])
