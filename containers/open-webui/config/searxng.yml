@@ -2,7 +2,6 @@
 use_default_settings:
   engines:
     keep_only:
-      - wikipedia
       - bing
       - mwmbl
       - duckduckgo
@@ -21,10 +20,19 @@ outgoing:
   pool_maxsize: 4
 
 engines:
-  - name: wikipedia
+  - name: yahoo japan
+    engine: xpath
+    shortcut: yjp
+    search_url: "https://search.yahoo.co.jp/search?p={query}"
+    results_xpath: //ol/li[a[starts-with(@href, 'http')]]
+    url_xpath: ./a[1]/@href
+    title_xpath: ./a
+    content_xpath: ./div
+    headers:
+      User-Agent: Mozilla/5.0
+      Accept-Language: ja-JP,ja;q=0.9
+    categories: general
     disabled: true
-    display_type:
-      - list
   - name: bing
     disabled: true
   - name: mwmbl

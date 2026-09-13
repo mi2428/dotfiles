@@ -51,7 +51,7 @@ class Settings:
     """Runtime settings with only the requested calibration knobs."""
 
     upstream_url: str = "http://searxng:8080/search"
-    japanese_route: tuple[str, ...] = ("wikipedia", "bing", "duckduckgo")
+    japanese_route: tuple[str, ...] = ("yahoo japan", "bing", "duckduckgo")
     other_route: tuple[str, ...] = ("mwmbl", "bing", "duckduckgo")
     result_threshold: int = 5
     provider_interval: float = 2.0

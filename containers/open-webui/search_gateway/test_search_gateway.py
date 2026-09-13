@@ -83,8 +83,8 @@ def gateway_with(
 class SearchGatewayTest(unittest.TestCase):
     def test_routes_japanese_and_non_japanese_queries(self) -> None:
         cases = (
-            ("猫について", "wikipedia"),
-            ("𠮷野家", "wikipedia"),
+            ("猫について", "yahoo japan"),
+            ("𠮷野家", "yahoo japan"),
             ("python docs", "mwmbl"),
         )
         for query, expected_provider in cases:
@@ -191,14 +191,14 @@ class SearchGatewayTest(unittest.TestCase):
         cases = (
             ("mwmbl", rate_limit, "rate_limit"),
             (
-                "wikipedia",
-                response(unresponsive=[["wikipedia", "CAPTCHA challenge"]]),
+                "yahoo japan",
+                response(unresponsive=[["yahoo japan", "CAPTCHA challenge"]]),
                 "captcha",
             ),
         )
         for provider, reply, reason in cases:
             with self.subTest(reason=reason):
-                query = "猫" if provider == "wikipedia" else "python"
+                query = "猫" if provider == "yahoo japan" else "python"
                 gateway, _, clock = gateway_with(
                     {
                         provider: reply,
