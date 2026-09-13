@@ -295,7 +295,7 @@ describe("todo overlay state", () => {
     }
   });
 
-  it("keeps every task scrollable and centers the initial window around the current task", () => {
+  it("keeps every task scrollable and gives future tasks most of the initial window", () => {
     const longContent = "x".repeat(140);
     const manyTodos = [
       { content: "oldest done", status: "completed" },
@@ -324,8 +324,8 @@ describe("todo overlay state", () => {
       { kind: "pending", text: "▸ hidden future" },
     ]);
     assert.equal(view.lines.every((line) => line.text.startsWith("▸ ")), true);
-    assert.equal(view.windowStart, 2);
-    assert.equal(view.windowEnd, 6);
+    assert.equal(view.windowStart, 3);
+    assert.equal(view.windowEnd, 7);
     assert.equal(view.total, 9);
     assert.equal(view.active, 5);
     assert.equal(view.completed, 4);
@@ -346,9 +346,9 @@ describe("todo overlay state", () => {
     assert.equal(body.props.height, 6);
     assert.equal(body.children?.length, 9);
     assert.deepEqual(body.scrollWindow, {
-      startID: "opencode-todo-line-2",
-      endID: "opencode-todo-line-6",
-      key: "4:5:opencode-todo-line-2:opencode-todo-line-6",
+      startID: "opencode-todo-line-3",
+      endID: "opencode-todo-line-7",
+      key: "4:5:opencode-todo-line-3:opencode-todo-line-7",
     });
     assert.deepEqual(body.children?.map((line) => line.props.fg), [
       "muted",
@@ -654,7 +654,7 @@ describe("todo overlay state", () => {
       "warning",
     ]);
     assert.equal(firstScrollBox.height, 5);
-    assert.equal(firstScrollBox.scrollTop, 0);
+    assert.equal(firstScrollBox.scrollTop, 1);
     firstScrollBox.scrollTop = 3;
 
     const second = appSlot() as FakeNode;
@@ -689,8 +689,8 @@ describe("todo overlay state", () => {
     const fourthScrollBox = scrollBoxFrom(fourth);
     applyLayout(fourthScrollBox);
     assert.equal(headerFrom(fourth).children[0], "Todo · 4 of 6");
-    assert.equal(fourthScrollBox.scrollTop, 2);
-    assert.equal(fourthScrollBox.height, 4);
+    assert.equal(fourthScrollBox.scrollTop, 1);
+    assert.equal(fourthScrollBox.height, 5);
     assert.equal(lineNodesFrom(fourthScrollBox)[3]?.props.fg, "muted");
     assert.equal(lineNodesFrom(fourthScrollBox)[4]?.props.fg, "success");
     assert.equal(reads, 4);
