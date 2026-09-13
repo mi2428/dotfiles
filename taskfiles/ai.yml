@@ -29,9 +29,7 @@ tasks:
     cmds:
       - PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s '{{.REPO_ROOT}}/containers/open-webui/scripts' -p 'test_*.py'
       - PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s '{{.REPO_ROOT}}/containers/open-webui/sakura_proxy' -p 'test_*.py'
-      - PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s '{{.REPO_ROOT}}/containers/open-webui/ddg_proxy' -p 'test_*.py'
-      - PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s '{{.REPO_ROOT}}/containers/open-webui/search_gateway' -p 'test_*.py'
-      - ruff format --check $(git -C '{{.REPO_ROOT}}' ls-files 'containers/open-webui/**/*.py')
+      - ruff format --check '{{.REPO_ROOT}}/containers/open-webui'
       - ruff check '{{.REPO_ROOT}}/containers/open-webui'
       - pyright '{{.REPO_ROOT}}/containers/open-webui'
       - shellcheck '{{.REPO_ROOT}}/containers/open-webui/scripts/reconcile.sh' '{{.REPO_ROOT}}/containers/open-webui/scripts/start.sh' '{{.REPO_ROOT}}/scripts/bootstrap-cptr.sh' '{{.REPO_ROOT}}/scripts/open-webui.sh'
@@ -40,7 +38,6 @@ tasks:
         CPTR_WORKSPACE_DIR='{{.REPO_ROOT}}' \
         OPEN_TERMINAL_API_KEY=dummy \
         SAKURA_AI_ACCOUNT_TOKENS=dummy \
-        SEARXNG_SECRET=dummy \
         WEBUI_ADMIN_EMAIL=admin@example.invalid \
         WEBUI_ADMIN_PASSWORD=dummy \
         WEBUI_ADMIN_USERNAME=admin \

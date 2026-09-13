@@ -168,7 +168,7 @@ Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `t
 
 ### Open WebUI
 
-[Open WebUI](https://openwebui.com/) and [Open WebUI Computer](https://openwebui.com/computer) run together under Docker. Web searches pass through the internal `search-gateway`, which selects providers serially through SearXNG; its DDG transport is also internal, and none of these search services publishes a host port. Computer has read-write access to `CPTR_WORKSPACE_DIR`, so mount only a trusted workspace. Persistent data lives in named volumes and `<workspace>/.cptr`; manage Open WebUI Admin UI configuration in Compose because UI changes do not survive a restart.
+[Open WebUI](https://openwebui.com/) and [Open WebUI Computer](https://openwebui.com/computer) run together under Docker. Web search uses Open WebUI's built-in DDGS integration with the Brave backend. Computer has read-write access to `CPTR_WORKSPACE_DIR`, so mount only a trusted workspace. Persistent data lives in named volumes and `<workspace>/.cptr`; manage Open WebUI Admin UI configuration in Compose because UI changes do not survive a restart.
 
 ```console
 $ task ai.webui.up

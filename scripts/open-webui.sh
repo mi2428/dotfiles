@@ -20,7 +20,6 @@ unset \
   OPEN_TERMINAL_API_KEY \
   OPEN_WEBUI_PORT \
   SAKURA_AI_ACCOUNT_TOKENS \
-  SEARXNG_SECRET \
   CORS_ALLOW_ORIGIN \
   WEBUI_URL \
   WEBUI_ADMIN_EMAIL \
@@ -41,7 +40,6 @@ wait "$decrypt_pid"
 : "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
 : "${CPTR_WORKSPACE_DIR:?set CPTR_WORKSPACE_DIR}"
 : "${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}"
-: "${SEARXNG_SECRET:?set SEARXNG_SECRET}"
 [[ -d "$CPTR_WORKSPACE_DIR" ]] || { printf 'CPTR_WORKSPACE_DIR is not a directory\n' >&2; exit 1; }
 
 resolve_tailscale_bin() {
@@ -96,7 +94,7 @@ case "$action" in
     # shellcheck disable=SC1090
     source "$gateway_env_file"
     set +a
-    "${compose[@]}" up -d --build --wait
+    "${compose[@]}" up -d --build --wait --remove-orphans
     [[ -z "$tailscale_bin" ]] \
       || TAILSCALE_BE_CLI=1 "$tailscale_bin" serve --bg "$local_url" \
       || true

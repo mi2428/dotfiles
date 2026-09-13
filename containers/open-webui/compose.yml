@@ -71,8 +71,6 @@ services:
       OPENAI_API_KEYS: "sakura-proxy;${CPTR_GATEWAY_API_KEY:-bootstrap}"
       RAG_TEXT_SPLITTER: "token"
       RAG_TOP_K: "5"
-      SEARXNG_LANGUAGE: "all"
-      SEARXNG_QUERY_URL: "http://search-gateway:8082/search"
       SUBAGENTS_BACKGROUND_ENABLED: "false"
       SUBAGENTS_MAX_CONCURRENT: "4"
       SUBAGENTS_MAX_ITERATIONS: "12"
@@ -99,7 +97,8 @@ services:
             "config": {}
           }
         ]
-      WEB_SEARCH_ENGINE: "searxng"
+      DDGS_BACKEND: "brave"
+      WEB_SEARCH_ENGINE: "duckduckgo"
       WEB_FETCH_MAX_CONTENT_LENGTH: "16000"
       WEB_SEARCH_RESULT_COUNT: "10"
       WEBUI_ADMIN_EMAIL: "${WEBUI_ADMIN_EMAIL:?set WEBUI_ADMIN_EMAIL}"
@@ -139,8 +138,6 @@ services:
         condition: service_healthy
       sakura-proxy:
         condition: service_healthy
-      search-gateway:
-        condition: service_healthy
     restart: unless-stopped
 
   sakura-proxy:
@@ -165,69 +162,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
-    restart: unless-stopped
-
-  ddg-proxy:
-    build: ./ddg_proxy
-    cap_drop:
-      - ALL
-    environment:
-      DDG_429_COOLDOWN: "1800"
-      DDG_CAPTCHA_COOLDOWN: "3600"
-      DDG_IMPERSONATE: "chrome_151"
-      DDG_IMPERSONATE_OS: "macos"
-      DDG_MIN_INTERVAL: "10"
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - >-
-          import urllib.request;
-          urllib.request.urlopen('http://127.0.0.1:8081/health')
-      interval: 5s
-      timeout: 5s
-      retries: 12
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-    restart: unless-stopped
-
-  search-gateway:
-    build: ./search_gateway
-    cap_drop:
-      - ALL
-    environment:
-      SEARCH_GATEWAY_BACKOFF_BASE_SECONDS: "30"
-      SEARCH_GATEWAY_BACKOFF_MAX_SECONDS: "300"
-      SEARCH_GATEWAY_CACHE_MAX_ENTRIES: "512"
-      SEARCH_GATEWAY_CACHE_TTL_SECONDS: "900"
-      SEARCH_GATEWAY_DEADLINE_SECONDS: "25"
-      SEARCH_GATEWAY_JA_ROUTE: "yahoo japan,duckduckgo,bing"
-      SEARCH_GATEWAY_LONG_COOLDOWN_SECONDS: "3600"
-      SEARCH_GATEWAY_OTHER_ROUTE: "mwmbl,bing,duckduckgo"
-      SEARCH_GATEWAY_PROVIDER_INTERVAL_SECONDS: "2"
-      SEARCH_GATEWAY_RESULT_THRESHOLD: "5"
-      SEARCH_GATEWAY_UPSTREAM_TIMEOUT_SECONDS: "10"
-      SEARXNG_URL: "http://searxng:8080/search"
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - >-
-          import urllib.request;
-          urllib.request.urlopen(
-          'http://127.0.0.1:8082/health', timeout=2).close()
-      interval: 5s
-      timeout: 5s
-      retries: 12
-    depends_on:
-      searxng:
-        condition: service_healthy
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
     restart: unless-stopped
 
   cptr:
@@ -265,30 +199,7 @@ services:
     working_dir: /workspace
     restart: unless-stopped
 
-  searxng:
-    image: ghcr.io/searxng/searxng:2026.8.29-d226b78bc@sha256:b36af7984b87191b595bc5301418ed6432c047668a4547ab531a7439b816fac3
-    environment:
-      SEARXNG_SECRET: "${SEARXNG_SECRET:?set SEARXNG_SECRET}"
-    healthcheck:
-      test:
-        - CMD
-        - wget
-        - --quiet
-        - --spider
-        - http://127.0.0.1:8080/
-      interval: 5s
-      timeout: 5s
-      retries: 12
-    depends_on:
-      ddg-proxy:
-        condition: service_healthy
-    volumes:
-      - ./config/searxng.yml:/etc/searxng/settings.yml:ro
-      - searxng-data:/var/cache/searxng
-    restart: unless-stopped
-
 volumes:
   open-webui-data:
   cptr-data:
   open-terminal-data:
-  searxng-data:
