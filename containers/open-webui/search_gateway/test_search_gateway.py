@@ -506,6 +506,27 @@ class SearchGatewayHTTPTest(unittest.TestCase):
                 self.assertEqual(status, 400)
                 self.assertNotIn(b"x" * 50, body)
 
+    def test_http_json_round_trips_lone_surrogate_and_japanese(self) -> None:
+        payload: dict[str, object] = {
+            "results": [
+                {
+                    "url": "https://example.invalid",
+                    "title": "日本語",
+                    "content": "lone surrogate: \ud800",
+                }
+            ]
+        }
+        with patch.object(
+            self.server.RequestHandlerClass.gateway,
+            "search",
+            return_value=(200, payload),
+        ):
+            status, body, headers = self.request("/search?q=unicode")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8")), payload)
+        self.assertEqual(int(headers["Content-Length"]), len(body))
+
     def test_query_and_upstream_secret_never_appear_in_logs_status_or_errors(
         self,
     ) -> None:
