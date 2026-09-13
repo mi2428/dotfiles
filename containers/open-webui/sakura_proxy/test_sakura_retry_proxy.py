@@ -10,6 +10,7 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from email.message import Message
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar, cast
 from unittest.mock import MagicMock, patch
@@ -602,9 +603,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         response.reason = "OK"
         response.getheader.return_value = "application/json"
         response.getheaders.return_value = []
-        lease, _ = handler_type.token_state.acquire(
-            time.monotonic() + 1, lambda: False
-        )
+        lease, _ = handler_type.token_state.acquire(time.monotonic() + 1, lambda: False)
         self.assertIsNotNone(lease)
 
         with (
@@ -629,15 +628,13 @@ class SakuraRetryProxyTest(unittest.TestCase):
         handler_type.token_state = SharedTokenCooldown(("token-a",))
         handler = object.__new__(handler_type)
         handler.path = "/v1/chat/completions"
-        handler.headers = {}
+        handler.headers = Message()
         handler.close_connection = False
         connection = MagicMock(spec=http.client.HTTPConnection)
         connection.sock = None
         response = MagicMock(spec=http.client.HTTPResponse)
         response.readline.side_effect = BrokenPipeError
-        lease, _ = handler_type.token_state.acquire(
-            time.monotonic() + 1, lambda: False
-        )
+        lease, _ = handler_type.token_state.acquire(time.monotonic() + 1, lambda: False)
         self.assertIsNotNone(lease)
 
         with (

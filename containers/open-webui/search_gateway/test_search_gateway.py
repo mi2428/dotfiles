@@ -8,11 +8,14 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+from email.message import Message
+from typing import cast
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from search_gateway import (
     SearchGateway,
+    SearchHandler,
     Settings,
     make_server,
     parse_search_query,
@@ -206,7 +209,7 @@ class SearchGatewayTest(unittest.TestCase):
 
     def test_429_and_captcha_open_long_cooldowns(self) -> None:
         rate_limit = urllib.error.HTTPError(
-            "http://internal", 429, "rate limited", {}, io.BytesIO(b"")
+            "http://internal", 429, "rate limited", Message(), io.BytesIO(b"")
         )
         cases = (
             ("mwmbl", rate_limit, "rate_limit"),
@@ -257,7 +260,7 @@ class SearchGatewayTest(unittest.TestCase):
             provider = parse_qs(urlsplit(url).query)["engines"][0]
             if provider == "mwmbl":
                 raise urllib.error.HTTPError(
-                    url, 503, "unavailable", {}, io.BytesIO(b"")
+                    url, 503, "unavailable", Message(), io.BytesIO(b"")
                 )
             return response("1", "2", "3", "4", "5")
 
@@ -516,8 +519,9 @@ class SearchGatewayHTTPTest(unittest.TestCase):
                 }
             ]
         }
+        handler = cast(type[SearchHandler], self.server.RequestHandlerClass)
         with patch.object(
-            self.server.RequestHandlerClass.gateway,
+            handler.gateway,
             "search",
             return_value=(200, payload),
         ):

@@ -78,7 +78,11 @@ COOLDOWN_UNTIL = 0.0
 def response_header(response: Response, name: str, default: str = "") -> str:
     """Read a response header without relying on mapping case behavior."""
     return next(
-        (value for key, value in response.headers.items() if key.lower() == name.lower()),
+        (
+            value
+            for key, value in response.headers.items()
+            if key.lower() == name.lower()
+        ),
         default,
     )
 

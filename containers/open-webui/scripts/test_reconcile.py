@@ -117,7 +117,14 @@ def visible_order(models: list[dict]) -> list[str]:
     def key(item: dict) -> tuple[str, int, str]:
         name = item["name"]
         base = re.sub(r" (Low|Medium|High|Max)$", "", name).lower()
-        suffix = next((value for value in ("Low", "Medium", "High", "Max") if name.endswith(f" {value}")), None)
+        suffix = next(
+            (
+                value
+                for value in ("Low", "Medium", "High", "Max")
+                if name.endswith(f" {value}")
+            ),
+            None,
+        )
         rank = {None: -1, "Low": 0, "Medium": 1, "High": 2, "Max": 3}[suffix]
         return base, rank, item["id"]
 
@@ -163,12 +170,23 @@ class ReconcileTests(unittest.TestCase):
                 {"capabilities": None, "description": None, "knowledge": None}
             )
         models = [item | {"user_id": OWNER} for item in regular_models]
-        icon = "data:image/webp;base64," + base64.b64encode(
-            (ROOT / "assets/profile.webp").read_bytes()
-        ).decode()
+        icon = (
+            "data:image/webp;base64,"
+            + base64.b64encode((ROOT / "assets/profile.webp").read_bytes()).decode()
+        )
         folders = []
-        for index, key in enumerate(("folder", "translation_folder", "movie_akinator_folder", "books_movies_subculture_folder")):
-            folders.append(copy.deepcopy(desired[key]) | {"id": f"folder-{index}", "user_id": OWNER})
+        for index, key in enumerate(
+            (
+                "folder",
+                "translation_folder",
+                "movie_akinator_folder",
+                "books_movies_subculture_folder",
+            )
+        ):
+            folders.append(
+                copy.deepcopy(desired[key])
+                | {"id": f"folder-{index}", "user_id": OWNER}
+            )
         return {
             "owner": OWNER,
             "models": models,
@@ -186,7 +204,9 @@ class ReconcileTests(unittest.TestCase):
             },
         }
 
-    def run_reconcile(self, state: dict, temp: Path) -> subprocess.CompletedProcess[str]:
+    def run_reconcile(
+        self, state: dict, temp: Path
+    ) -> tuple[subprocess.CompletedProcess[str], list[str], Path]:
         state_path = temp / "state.json"
         mutations = temp / "mutations"
         fake_bin = temp / "bin"
@@ -211,23 +231,21 @@ class ReconcileTests(unittest.TestCase):
             text=True,
             env=env,
         )
-        result.mutations = mutations.read_text(encoding="utf-8").splitlines()  # type: ignore[attr-defined]
-        result.state_path = state_path  # type: ignore[attr-defined]
-        return result
+        return result, mutations.read_text(encoding="utf-8").splitlines(), state_path
 
     def test_repairs_stale_models_and_second_run_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temp = Path(directory)
-            first = self.run_reconcile(self.state(), temp)
-            self.assertEqual(first.returncode, 0, first.stderr)
-            self.assertEqual(  # type: ignore[attr-defined]
-                first.mutations, ["POST /api/v1/models/import"]
+            first, first_mutations, first_state_path = self.run_reconcile(
+                self.state(), temp
             )
-            second = self.run_reconcile(
-                json.loads(first.state_path.read_text(encoding="utf-8")), temp
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(first_mutations, ["POST /api/v1/models/import"])
+            second, second_mutations, _ = self.run_reconcile(
+                json.loads(first_state_path.read_text(encoding="utf-8")), temp
             )
             self.assertEqual(second.returncode, 0, second.stderr)
-            self.assertEqual(second.mutations, [])  # type: ignore[attr-defined]
+            self.assertEqual(second_mutations, [])
 
 
 if __name__ == "__main__":
