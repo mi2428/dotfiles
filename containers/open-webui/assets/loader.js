@@ -23,7 +23,7 @@
 	const effortHues = {
 		low: '--ctp-blue',
 		medium: '--ctp-teal',
-		high: '--ctp-yellow',
+		high: '--ctp-red',
 		max: '--ctp-red'
 	};
 	const familyHues = [

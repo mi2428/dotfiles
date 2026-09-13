@@ -189,7 +189,10 @@ for endpoint in base export; do
   sakura_icon_patch="$(
     jq -c --argjson icons "$sakura_icons" '
       def sakura_icon:
-        $icons[(.params.reasoning_effort // "default")] // $icons.default;
+        (.params.reasoning_effort // "default") as $effort
+        | if $effort == "high" then $icons.max
+          elif $effort == "max" then $icons.default
+          else $icons[$effort] // $icons.default end;
       {models: [
       .[]
       | select(.id | startswith("sacloud."))
@@ -393,7 +396,10 @@ for endpoint in base export; do
   expect_success "model $endpoint GET for Sakura icon verification"
   jq -e --argjson icons "$sakura_icons" \
     'def sakura_icon:
-      $icons[(.params.reasoning_effort // "default")] // $icons.default;
+      (.params.reasoning_effort // "default") as $effort
+      | if $effort == "high" then $icons.max
+        elif $effort == "max" then $icons.default
+        else $icons[$effort] // $icons.default end;
     all(.[] | select(.id | startswith("sacloud.")); .meta.profile_image_url == sakura_icon)' \
     <<<"$api_body" >/dev/null \
     || { printf 'Sakura model icon mismatch in %s\n' "$endpoint" >&2; exit 1; }

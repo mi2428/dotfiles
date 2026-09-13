@@ -398,7 +398,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         proxy_port = self.proxy.server_address[1]
         request = urllib.request.Request(
             f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
-            data=json.dumps({"reasoning_effort": "max"}).encode(),
+            data=json.dumps({"reasoning_effort": "high"}).encode(),
         )
         with urllib.request.urlopen(request) as response:
             self.assertEqual(response.read(), b'{"ok":true}')
@@ -413,7 +413,28 @@ class SakuraRetryProxyTest(unittest.TestCase):
                 json.loads(body)["reasoning_effort"]
                 for body in UpstreamHandler.request_bodies
             ],
-            ["max", "low"],
+            ["high", "low"],
+        )
+
+    def test_timeout_retries_max_effort_without_rewriting_it(self) -> None:
+        UpstreamHandler.mode = "timeout_then_success"
+        proxy_port = self.proxy.server_address[1]
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
+            data=json.dumps({"reasoning_effort": "max"}).encode(),
+        )
+        with urllib.request.urlopen(request) as response:
+            self.assertEqual(response.read(), b'{"ok":true}')
+            self.assertEqual(response.headers["X-Sakura-Retry-Count"], "1")
+            self.assertIsNone(
+                response.headers.get("X-Sakura-Effective-Reasoning-Effort")
+            )
+        self.assertEqual(
+            [
+                json.loads(body)["reasoning_effort"]
+                for body in UpstreamHandler.request_bodies
+            ],
+            ["max", "max"],
         )
 
     def test_retries_timeout_once_unchanged_without_reasoning_effort(self) -> None:

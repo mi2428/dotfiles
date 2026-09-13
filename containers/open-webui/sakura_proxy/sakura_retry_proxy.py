@@ -53,7 +53,7 @@ RETRYABLE_ERROR_MESSAGES = {
     "server error",
     "upstream timeout",
 }
-TIMEOUT_RETRY_EFFORTS = {"medium", "high", "max"}
+TIMEOUT_RETRY_EFFORTS = {"medium", "high"}
 OPENWEBUI_MODE_HEADER = "X-OpenWebUI-Mode"
 RETRY_HEADER_NAMES = {
     "x-sakura-retry-count",
