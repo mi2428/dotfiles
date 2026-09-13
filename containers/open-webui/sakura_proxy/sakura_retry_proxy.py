@@ -10,6 +10,7 @@ from __future__ import annotations
 import http.client
 import json
 import logging
+import math
 import os
 import random
 import ssl
@@ -152,6 +153,17 @@ class Settings:
     account_tokens: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        if not all(
+            math.isfinite(value)
+            for value in (
+                self.base_backoff,
+                self.max_backoff,
+                self.jitter,
+                self.retry_budget,
+                self.upstream_timeout,
+            )
+        ):
+            raise ValueError("Sakura timeout settings must be finite")
         if (
             self.max_retries < 0
             or self.base_backoff < 0

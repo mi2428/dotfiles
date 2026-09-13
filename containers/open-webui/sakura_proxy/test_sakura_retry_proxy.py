@@ -812,6 +812,27 @@ class SakuraRetryProxyTest(unittest.TestCase):
         ):
             Settings.from_environment()
 
+    def test_settings_reject_non_finite_timing_environment(self) -> None:
+        names = (
+            "SAKURA_RETRY_BASE_SECONDS",
+            "SAKURA_RETRY_MAX_SECONDS",
+            "SAKURA_RETRY_JITTER_SECONDS",
+            "SAKURA_RETRY_BUDGET_SECONDS",
+            "SAKURA_UPSTREAM_TIMEOUT_SECONDS",
+        )
+        for name in names:
+            for value in ("nan", "inf", "-inf"):
+                with (
+                    self.subTest(name=name, value=value),
+                    patch.dict(
+                        os.environ,
+                        {"SAKURA_AI_ACCOUNT_TOKENS": "token-a", name: value},
+                        clear=True,
+                    ),
+                    self.assertRaisesRegex(ValueError, "must be finite"),
+                ):
+                    Settings.from_environment()
+
     def test_rejects_negative_content_length_without_reading_a_body(self) -> None:
         connection = http.client.HTTPConnection(
             "127.0.0.1", self.proxy.server_address[1], timeout=1
