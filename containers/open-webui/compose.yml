@@ -42,6 +42,7 @@ services:
       ENABLE_PERSISTENT_CONFIG: "false"
       ENABLE_QUERIES_CACHE: "true"
       ENABLE_RAG_HYBRID_SEARCH: "true"
+      ENABLE_SIGNUP: "false"
       ENABLE_SUBAGENTS: "true"
       ENABLE_WEB_SEARCH: "true"
       OPENAI_API_BASE_URLS: >-
