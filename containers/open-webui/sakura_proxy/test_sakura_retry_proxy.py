@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar, cast
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from sakura_retry_proxy import (
     SakuraRetryProxyHandler,
@@ -589,6 +589,76 @@ class SakuraRetryProxyTest(unittest.TestCase):
                 response.headers["X-Sakura-Retry-Reason"], "upstream_error"
             )
         self.assertEqual(calls, 2)
+
+    def test_stream_releases_resources_when_end_headers_breaks(self) -> None:
+        handler_type = cast(
+            type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass
+        )
+        handler_type.token_state = SharedTokenCooldown(("token-a",))
+        handler = object.__new__(handler_type)
+        connection = MagicMock(spec=http.client.HTTPConnection)
+        response = MagicMock(spec=http.client.HTTPResponse)
+        response.status = 200
+        response.reason = "OK"
+        response.getheader.return_value = "application/json"
+        response.getheaders.return_value = []
+        lease, _ = handler_type.token_state.acquire(
+            time.monotonic() + 1, lambda: False
+        )
+        self.assertIsNotNone(lease)
+
+        with (
+            patch.object(handler, "send_response"),
+            patch.object(handler, "send_header"),
+            patch.object(handler, "end_headers", side_effect=BrokenPipeError),
+        ):
+            handler._stream(connection, response, lease=cast(TokenLease, lease))
+
+        response.close.assert_called_once_with()
+        connection.close.assert_called_once_with()
+        reacquired, _ = handler_type.token_state.acquire(
+            time.monotonic(), lambda: False
+        )
+        self.assertIsNotNone(reacquired)
+        handler_type.token_state.release(cast(TokenLease, reacquired))
+
+    def test_proxy_releases_resources_when_prefix_read_breaks(self) -> None:
+        handler_type = cast(
+            type[SakuraRetryProxyHandler], self.proxy.RequestHandlerClass
+        )
+        handler_type.token_state = SharedTokenCooldown(("token-a",))
+        handler = object.__new__(handler_type)
+        handler.path = "/v1/chat/completions"
+        handler.headers = {}
+        handler.close_connection = False
+        connection = MagicMock(spec=http.client.HTTPConnection)
+        connection.sock = None
+        response = MagicMock(spec=http.client.HTTPResponse)
+        response.readline.side_effect = BrokenPipeError
+        lease, _ = handler_type.token_state.acquire(
+            time.monotonic() + 1, lambda: False
+        )
+        self.assertIsNotNone(lease)
+
+        with (
+            patch.object(handler, "_read_body", return_value=b"{}"),
+            patch.object(
+                handler,
+                "_request_upstream",
+                return_value=(connection, response, lease, 0.0),
+            ),
+            patch.object(handler, "_log_event"),
+        ):
+            handler._proxy()
+
+        response.close.assert_called_once_with()
+        connection.close.assert_called_once_with()
+        self.assertTrue(handler.close_connection)
+        reacquired, _ = handler_type.token_state.acquire(
+            time.monotonic(), lambda: False
+        )
+        self.assertIsNotNone(reacquired)
+        handler_type.token_state.release(cast(TokenLease, reacquired))
 
     def test_retry_after_parser(self) -> None:
         self.assertEqual(retry_after_seconds("2"), 2)

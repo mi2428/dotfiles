@@ -437,6 +437,12 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
                 )
                 return
             except BrokenPipeError:
+                if response is not None:
+                    response.close()
+                if connection is not None:
+                    connection.close()
+                if lease is not None:
+                    type(self).token_state.release(lease)
                 self._log_event(
                     correlation_id=correlation_id,
                     token_slot=None if lease is None else lease.slot,
@@ -748,28 +754,28 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
         openwebui_retry_status: bool = False,
     ) -> None:
         extra_headers = extra_headers or {}
-        status_event = (
-            OPENWEBUI_LOW_RETRY_EVENT
-            if openwebui_retry_status
-            and response.getheader("Content-Type", "")
-            .casefold()
-            .startswith("text/event-stream")
-            else b""
-        )
-        self.send_response(response.status, response.reason)
-        for name, value in response.getheaders():
-            lower_name = name.lower()
-            if (
-                lower_name not in HOP_BY_HOP_HEADERS
-                and lower_name not in RETRY_HEADER_NAMES
-                and not (status_event and lower_name == "content-length")
-            ):
-                self.send_header(name, value)
-        for name, value in extra_headers.items():
-            self.send_header(name, value)
-        self.send_header("Connection", "close")
-        self.end_headers()
         try:
+            status_event = (
+                OPENWEBUI_LOW_RETRY_EVENT
+                if openwebui_retry_status
+                and response.getheader("Content-Type", "")
+                .casefold()
+                .startswith("text/event-stream")
+                else b""
+            )
+            self.send_response(response.status, response.reason)
+            for name, value in response.getheaders():
+                lower_name = name.lower()
+                if (
+                    lower_name not in HOP_BY_HOP_HEADERS
+                    and lower_name not in RETRY_HEADER_NAMES
+                    and not (status_event and lower_name == "content-length")
+                ):
+                    self.send_header(name, value)
+            for name, value in extra_headers.items():
+                self.send_header(name, value)
+            self.send_header("Connection", "close")
+            self.end_headers()
             if status_event:
                 self.wfile.write(status_event)
                 self.wfile.flush()
