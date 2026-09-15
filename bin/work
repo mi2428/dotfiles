@@ -36,8 +36,8 @@ function usage
         'Usage:' \
         '  work [directory | -C directory] [--fetch]' \
         '  work -l|--list' \
-        '  work -w|--worktree [branch] [-C directory] [--fetch]' \
-        '  work -w|--worktree -c|--create branch [--from ref] [-C directory] [--fetch]' \
+        '  work -w|--worktree [branch] [-C directory] [--fetch] [--cd]' \
+        '  work -w|--worktree -c|--create branch [--from ref] [-C directory] [--fetch] [--cd]' \
         '' \
         'Open a tmux coding workspace where a repository is one session and each' \
         'worktree is a window containing:' \
@@ -47,6 +47,7 @@ function usage
         '' \
         'Use -C to choose a repository without changing directory. With -w and no' \
         'branch, select one with fzf. Existing worktrees are reused.' \
+        'Use --cd with -w to stop after changing to the resolved worktree directory.' \
         'Use -l from anywhere to select a managed worktree under ~/io/worktrees.' \
         'Inside tmux, each invocation opens a window in the current session; outside' \
         'tmux, a repository session and its worktree windows are created or reused.' \
@@ -272,6 +273,7 @@ set -l start_ref ''
 set -l requested_dir '.'
 set -l directory_option 0
 set -l fetch_origin 0
+set -l change_directory 0
 set -l operands
 set -l args $argv
 
@@ -298,6 +300,8 @@ while test (count $args) -gt 0
             set start_ref "$args[1]"
         case --fetch
             set fetch_origin 1
+        case --cd
+            set change_directory 1
         case --
             set args $args[2..-1]
             set -a operands $args
@@ -330,15 +334,12 @@ end
 
 test $create_branch -eq 0; or test $worktree_mode -eq 1; or die '-c requires -w'
 test -z "$start_ref"; or test $create_branch -eq 1; or die '--from requires -c'
+test $change_directory -eq 0; or test $worktree_mode -eq 1; or die '--cd requires -w'
 if test $create_branch -eq 1
     test -n "$branch"; or die '-c requires a branch name'
 end
 
 need_cmd git
-need_cmd lazygit
-need_cmd nvim
-need_cmd tmux
-need_cmd yazi
 
 set -l root ''
 set -l invocation_root ''
@@ -385,6 +386,16 @@ else
         end
     end
 end
+
+if test $change_directory -eq 1
+    printf '%s\n' "$root"
+    exit 0
+end
+
+need_cmd lazygit
+need_cmd nvim
+need_cmd tmux
+need_cmd yazi
 
 set -l main_root (repository_main_root "$root"); or die 'could not determine the main worktree'
 set main_root (path resolve "$main_root")

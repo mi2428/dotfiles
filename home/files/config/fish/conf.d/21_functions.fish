@@ -107,7 +107,19 @@ function __dotfiles_run_with_resolved_history --argument-names executable
 end
 
 function work --wraps work --description 'Open a coding workspace'
-    __dotfiles_run_with_resolved_history work $argv
+    if not contains -- --cd $argv
+        __dotfiles_run_with_resolved_history work $argv
+        return $status
+    end
+
+    set -l target (__dotfiles_run_with_resolved_history work $argv)
+    set -l work_status $status
+    test $work_status -eq 0; or return $work_status
+    test (count $target) -eq 1; and test -d "$target"; or begin
+        printf 'work: invalid worktree directory: %s\n' (string join ' ' -- $target) >&2
+        return 1
+    end
+    builtin cd -- "$target"
 end
 
 function gh-review --wraps gh-review --description 'Open a GitHub review workspace'

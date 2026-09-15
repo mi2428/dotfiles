@@ -56,4 +56,14 @@ env -u TMUX -u TMUX_PANE -u WORK_WORKTREE_HOME \
 test "$(run_tmux list-windows -a -F '#{window_id}' | wc -l | tr -d ' ')" = 1
 test "$(run_tmux list-panes -a -F '#{pane_current_path}')" = "$worktree"
 
+cd_only_pwd=$(env -u TMUX -u TMUX_PANE -u WORK_WORKTREE_HOME \
+    HOME="$TEST_ROOT/home" \
+    PATH="$DOTFILES_ROOT/bin:$PATH" \
+    DOTFILES_ROOT="$DOTFILES_ROOT" \
+    TEST_REPO="$TEST_ROOT/repo" \
+    fish -c 'source "$DOTFILES_ROOT/home/files/config/fish/conf.d/21_functions.fish"; work -w -c feature/cd-only --cd -C "$TEST_REPO"; and pwd')
+cd_only_worktree=$(git -C "$TEST_ROOT/repo" for-each-ref --format='%(worktreepath)' refs/heads/feature/cd-only)
+test "$cd_only_pwd" = "$cd_only_worktree"
+test "$(run_tmux list-windows -a -F '#{window_id}' | wc -l | tr -d ' ')" = 1
+
 printf '%s\n' 'work integration: ok'
