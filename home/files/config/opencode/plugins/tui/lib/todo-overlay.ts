@@ -64,13 +64,12 @@ export function buildTodoView(input: readonly TodoItem[] | null | undefined): To
   if (lines.length === 0) return null;
 
   const currentIndex = currentTodos.length > 0 ? completedTodos.length : undefined;
-  const preferredWindowStart = currentIndex === undefined
+  const windowStart = currentIndex === undefined
     ? pending.length > 0
       ? 0
       : Math.max(0, lines.length - TODO_WINDOW_SIZE)
     : Math.max(0, currentIndex - MIN_PREVIOUS_TODOS);
-  const windowEnd = Math.min(lines.length - 1, preferredWindowStart + TODO_WINDOW_SIZE - 1);
-  const windowStart = Math.max(0, windowEnd - TODO_WINDOW_SIZE + 1);
+  const windowEnd = Math.min(lines.length - 1, windowStart + TODO_WINDOW_SIZE - 1);
 
   return {
     total: completed + inProgress.length + pending.length,

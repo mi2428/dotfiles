@@ -287,7 +287,7 @@ describe("todo overlay state", () => {
       assert(countBold(before, 0, panel.x, panelEnd) > 0, "split diff must exercise bold syntax cells");
       assert.equal(countBold(after, 0, panel.x, panelEnd), 0);
       assert.equal(panel.y, 0);
-      assert.match(test.captureCharFrame().split("\n")[0]!.slice(panel.x, panelEnd), /Todo · 1 of 3/);
+      assert.match(test.captureCharFrame().split("\n")[0]!.slice(panel.x, panelEnd), /Todo · 2 of 3/);
       assert.deepEqual(Array.from(after.slice(0, panel.x)), Array.from(before.slice(0, panel.x)));
     } finally {
       test.renderer.destroy();
@@ -390,7 +390,7 @@ describe("todo overlay state", () => {
     assert.equal(many?.children?.[1]?.scrollWindow?.endID, "opencode-todo-line-4");
   });
 
-  it("keeps chat scrolling reachable outside the Todo panel", async () => {
+  it("renders the current position with one previous todo and keeps chat scrolling reachable", async () => {
     const test = await createTestRenderer({ width: 80, height: 20 });
     let appSlot: (() => unknown) | undefined;
     let dispose: (() => void) | undefined;
@@ -408,7 +408,13 @@ describe("todo overlay state", () => {
     const api = {
       state: {
         session: {
-          todo: () => Array.from({ length: 12 }, (_, index) => ({ content: `task ${index}`, status: "pending" })),
+          todo: () => [
+            { content: "oldest done", status: "completed" },
+            { content: "older done", status: "completed" },
+            { content: "previous done", status: "completed" },
+            { content: "current work", status: "in_progress" },
+            { content: "next work", status: "pending" },
+          ],
           messages: () => [{ id: "user-1", role: "user" }],
         },
       },
@@ -465,18 +471,26 @@ describe("todo overlay state", () => {
       await test.renderOnce();
 
       assert.equal(overlayRoot.width, popupWidth(80) + 2);
-      assert.equal(overlayRoot.height, 8);
+      assert.equal(overlayRoot.height, 6);
       const panel = overlayRoot.getChildren()[0] as BoxRenderable;
       const todoBody = panel.getChildren()[1] as ScrollBoxRenderable;
+      assert.equal(todoBody.scrollTop, 2);
+      await test.renderOnce();
+      const frame = test.captureCharFrame();
+      assert.match(frame, /Todo · 4 of 5/);
+      assert.match(frame, /previous done/);
+      assert.match(frame, /current work/);
+      assert.match(frame, /next work/);
+      assert.doesNotMatch(frame, /oldest done|older done/);
 
       await test.mockMouse.scroll(5, 12, "down", { delayMs: 0 });
       await test.renderOnce();
       assert(chat.scrollTop > 0, "chat must receive wheel events outside the Todo panel");
 
       const todoScrollTop = todoBody.scrollTop;
-      await test.mockMouse.scroll(todoBody.x + 1, todoBody.y + 1, "down", { delayMs: 0 });
+      await test.mockMouse.scroll(todoBody.x + 1, todoBody.y + 1, "up", { delayMs: 0 });
       await test.renderOnce();
-      assert(todoBody.scrollTop > todoScrollTop, "Todo panel must retain its own wheel scrolling");
+      assert(todoBody.scrollTop < todoScrollTop, "Todo panel must retain its own wheel scrolling");
     } finally {
       dispose?.();
       test.renderer.destroy();
@@ -619,10 +633,9 @@ describe("todo overlay state", () => {
         height: lines.length,
         findDescendantById: (id: string) => lines.find((line) => line.props.id === id),
       };
-      const onSizeChange = scrollbox.props.onSizeChange as ((this: FakeNode) => void) | undefined;
-      assert(onSizeChange);
-      onSizeChange.call(scrollbox);
-      onSizeChange.call(scrollbox);
+      const renderBefore = scrollbox.props.renderBefore as ((this: FakeNode) => void) | undefined;
+      assert(renderBefore);
+      renderBefore.call(scrollbox);
     };
 
     registerTodoOverlay(api as never, solid);
@@ -631,12 +644,12 @@ describe("todo overlay state", () => {
     assert(appSlot);
     const first = appSlot() as FakeNode;
     const firstScrollBox = scrollBoxFrom(first);
-    const initializeFirstScroll = firstScrollBox.props.onSizeChange as ((this: FakeNode) => void) | undefined;
+    const initializeFirstScroll = firstScrollBox.props.renderBefore as ((this: FakeNode) => void) | undefined;
     assert(initializeFirstScroll);
     initializeFirstScroll.call(firstScrollBox);
     assert.equal(firstScrollBox.scrollTop, 0);
     applyLayout(firstScrollBox);
-    assert.equal(headerFrom(first).children[0], "Todo · 2 of 6");
+    assert.equal(headerFrom(first).children[0], "Todo · 3 of 6");
     assert.deepEqual(lineTextsFrom(firstScrollBox), [
       "▸ first",
       "▸ second",
@@ -673,8 +686,9 @@ describe("todo overlay state", () => {
     const third = appSlot() as FakeNode;
     const thirdScrollBox = scrollBoxFrom(third);
     applyLayout(thirdScrollBox);
-    assert.equal(headerFrom(third).children[0], "Todo · 3 of 6");
-    assert.equal(thirdScrollBox.scrollTop, 1);
+    assert.equal(headerFrom(third).children[0], "Todo · 4 of 6");
+    assert.equal(thirdScrollBox.scrollTop, 2);
+    assert.equal(thirdScrollBox.height, 4);
     assert.equal(lineNodesFrom(thirdScrollBox)[2]?.props.fg, "muted");
     assert.equal(lineNodesFrom(thirdScrollBox)[3]?.props.fg, "success");
 
@@ -688,9 +702,9 @@ describe("todo overlay state", () => {
     const fourth = appSlot() as FakeNode;
     const fourthScrollBox = scrollBoxFrom(fourth);
     applyLayout(fourthScrollBox);
-    assert.equal(headerFrom(fourth).children[0], "Todo · 4 of 6");
-    assert.equal(fourthScrollBox.scrollTop, 1);
-    assert.equal(fourthScrollBox.height, 5);
+    assert.equal(headerFrom(fourth).children[0], "Todo · 5 of 6");
+    assert.equal(fourthScrollBox.scrollTop, 3);
+    assert.equal(fourthScrollBox.height, 3);
     assert.equal(lineNodesFrom(fourthScrollBox)[3]?.props.fg, "muted");
     assert.equal(lineNodesFrom(fourthScrollBox)[4]?.props.fg, "success");
     assert.equal(reads, 4);
@@ -702,13 +716,13 @@ describe("todo overlay state", () => {
     liveMessages = [...liveMessages, { id: "new-user-message", role: "user" }];
     const updated = appSlot() as FakeNode;
     assert.equal(updated.children.length, 1);
-    assert.equal(headerFrom(updated).children[0], "Todo · 4 of 6");
+    assert.equal(headerFrom(updated).children[0], "Todo · 5 of 6");
     assert.equal(reads, 6);
 
     todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
     assert.equal(renders, 3);
     assert.equal((appSlot() as FakeNode).children.length, 1);
-    assert.equal(headerFrom(appSlot() as FakeNode).children[0], "Todo · 4 of 6");
+    assert.equal(headerFrom(appSlot() as FakeNode).children[0], "Todo · 5 of 6");
 
     liveTodos = [
       { content: "inspect new request", status: "in_progress" },
@@ -717,7 +731,7 @@ describe("todo overlay state", () => {
     todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
     assert.equal(renders, 4);
     const next = appSlot() as FakeNode;
-    assert.equal(headerFrom(next).children[0], "Todo · 0 of 2");
+    assert.equal(headerFrom(next).children[0], "Todo · 1 of 2");
     assert.deepEqual(lineTextsFrom(scrollBoxFrom(next)), ["▸ inspect new request", "▸ implement new request"]);
 
     dispose();

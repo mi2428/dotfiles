@@ -32,6 +32,7 @@ type RenderableAdapter = {
 type ScrollBoxAdapter = {
   scrollTop: number;
   isDestroyed?: boolean;
+  renderBefore?: () => void;
   content?: RenderableAdapter & {
     findDescendantById: (id: string) => RenderableAdapter | undefined;
   };
@@ -190,7 +191,7 @@ export function buildTodoOverlayNodes(
   const view = buildTodoView(todos);
   if (!view) return null;
 
-  const header = `Todo · ${view.completed} of ${view.total}`;
+  const header = `Todo · ${view.completed + Number(view.lines.some((line) => line.kind === "in_progress"))} of ${view.total}`;
   const width = popupWidth(terminalWidth);
   const startID = `${TODO_LINE_ID_PREFIX}-${view.windowStart}`;
   const endID = `${TODO_LINE_ID_PREFIX}-${view.windowEnd}`;
@@ -370,18 +371,18 @@ export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidA
       const offset = remembered?.windowKey === nextScrollWindow.key ? remembered.scrollTop : undefined;
       const window = nextScrollWindow;
       let initialized = false;
-      solid.setProp(nextScrollBox, "onSizeChange", function (this: ScrollBoxAdapter) {
+      solid.setProp(nextScrollBox, "renderBefore", function (this: ScrollBoxAdapter) {
         if (initialized || this.isDestroyed) return;
 
-        if (offset !== undefined) {
-          initialized = true;
-          this.scrollTop = offset;
-          return;
+        let scrollTop = offset;
+        if (scrollTop === undefined) {
+          const start = this.content?.findDescendantById(window.startID);
+          if (!start || !this.content) return;
+          scrollTop = Math.max(0, start.y - this.content.y);
         }
-        const start = this.content?.findDescendantById(window.startID);
-        if (!start || !this.content) return;
         initialized = true;
-        this.scrollTop = Math.max(0, start.y - this.content.y);
+        this.scrollTop = scrollTop;
+        this.renderBefore = undefined;
       });
       mounted = { sessionID, scrollbox: nextScrollBox, windowKey: nextScrollWindow.key };
     }
