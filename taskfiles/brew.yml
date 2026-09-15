@@ -10,8 +10,7 @@ tasks:
       - /opt/homebrew/bin/brew bundle check --file '{{.BREWFILE}}' --no-upgrade
 
   brew.sync:
-    desc: Update and upgrade Homebrew, then apply the repo-managed Brewfile
+    desc: Update Homebrew, then upgrade and apply the repo-managed Brewfile
     cmds:
       - /opt/homebrew/bin/brew update
-      - /opt/homebrew/bin/brew upgrade
       - /opt/homebrew/bin/brew bundle install --file '{{.BREWFILE}}'
