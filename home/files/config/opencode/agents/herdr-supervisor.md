@@ -69,6 +69,8 @@ You remain accountable for the final result.
   opencode models "${MODEL%%/*}" | rg -Fx "$MODEL"
   ```
 
+- `opencode models` confirms catalog presence, not account access. If worker startup reports that the selected model is unsupported, retry once in the same pane with the active config's default from `opencode debug config | jq -er '.model'`; if that also fails, stop instead of guessing another model.
+
 - When `HAPPIER_MODE=0`, start the worker directly:
 
   ```sh
