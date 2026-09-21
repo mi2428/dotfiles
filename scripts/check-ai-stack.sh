@@ -63,6 +63,11 @@ if command -v claude >/dev/null 2>&1; then
 fi
 if command -v herdr >/dev/null 2>&1; then
     ok "Herdr $(herdr --version)"
+    if herdr_config_status=$(herdr config check 2>&1); then
+        ok "Herdr config is valid"
+    else
+        fail "Herdr config is invalid: $herdr_config_status"
+    fi
 fi
 
 plugin_versions="$repo_root/home/files/config/opencode/plugin-versions.json"

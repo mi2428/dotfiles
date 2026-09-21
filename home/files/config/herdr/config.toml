@@ -56,8 +56,8 @@ dark_name = "catppuccin"
 [theme.custom]
 panel_bg = "reset"
 accent = "#cba6f7"
-# Herdr 0.8.2 gives the sidebar and its highlighted rows dedicated tokens.
-sidebar_bg = "#1e1e2e"
+# Let Ghostty apply its configured opacity; keep only row highlights opaque.
+sidebar_bg = "reset"
 active_row_bg = "#313244"
 selection_bg = "#45475a"
 surface0 = "#45475a"
