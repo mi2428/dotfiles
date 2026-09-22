@@ -123,7 +123,19 @@ function work --wraps work --description 'Open a coding workspace'
 end
 
 function gh-review --wraps gh-review --description 'Open a GitHub review workspace'
-    __dotfiles_run_with_resolved_history gh-review $argv
+    if not contains -- --cd $argv
+        __dotfiles_run_with_resolved_history gh-review $argv
+        return $status
+    end
+
+    set -l target (__dotfiles_run_with_resolved_history gh-review $argv)
+    set -l review_status $status
+    test $review_status -eq 0; or return $review_status
+    test (count $target) -eq 1; and test -d "$target"; or begin
+        printf 'gh-review: invalid worktree directory: %s\n' (string join ' ' -- $target) >&2
+        return 1
+    end
+    builtin cd -- "$target"
 end
 
 function __dotfiles_zz_filter_candidates --argument-names include_all

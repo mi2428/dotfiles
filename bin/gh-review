@@ -48,7 +48,7 @@ end
 function usage
     printf '%s\n' \
         'Usage:' \
-        '  gh-review [-C directory] [pr-number|pr-url]' \
+        '  gh-review [-C directory] [--cd] [pr-number|pr-url]' \
         '  gh-review [-C directory] --local [base-ref]' \
         '' \
         'Open a tmux review session with Neovim, a stacked Snacks Explorer and' \
@@ -57,6 +57,7 @@ function usage
         'PR reviews create or reuse a detached review worktree under:' \
         '  ~/.cache/gh-review/<owner>/<repo>/pr-<number>' \
         '' \
+        'Use --cd to stop after changing to the review worktree directory.' \
         "Local reviews stay in the target repository and default to origin's default branch." \
         '' \
         'Use -C to choose a repository without changing directory. Otherwise, run' \
@@ -256,6 +257,7 @@ set -l mode pr
 set -l pr_ref ''
 set -l local_base_arg ''
 set -l requested_dir '.'
+set -l change_directory 0
 set -l operands
 set -l args $argv
 
@@ -271,6 +273,8 @@ while test (count $args) -gt 0
             set requested_dir "$args[1]"
         case --local
             set mode local
+        case --cd
+            set change_directory 1
         case --
             set args $args[2..-1]
             set -a operands $args
@@ -284,6 +288,7 @@ while test (count $args) -gt 0
 end
 
 if test "$mode" = local
+    test $change_directory -eq 0; or die '--cd cannot be combined with --local'
     test (count $operands) -le 1; or die 'expected at most one base ref after --local'
     if test (count $operands) -eq 1
         set local_base_arg "$operands[1]"
@@ -297,8 +302,6 @@ end
 
 need_cmd git
 # need_cmd lazygit
-need_cmd tmux
-need_cmd nvim
 
 set requested_dir (path resolve "$requested_dir" 2>/dev/null); or die "directory does not exist: $requested_dir"
 test -d "$requested_dir"; or die "not a directory: $requested_dir"
@@ -387,8 +390,12 @@ else
     test -n "$pr_number"; or die 'failed to resolve the pull request'
 
     if test $selected_pr_interactively -eq 1
+        set -l resolved_history_args gh-review -C "$repo_root"
+        if test $change_directory -eq 1
+            set -a resolved_history_args --cd
+        end
         report_resolved_history "$pr_title (#$pr_number) by $pr_author" \
-            gh-review -C "$repo_root" "$head_ref"
+            $resolved_history_args "$head_ref"
     end
 
     set -l url_parts (string split / -- "$pr_url")
@@ -423,6 +430,14 @@ else
     end
     builtin cd "$cwd"
 end
+
+if test $change_directory -eq 1
+    printf '%s\n' "$worktree_path"
+    exit 0
+end
+
+need_cmd tmux
+need_cmd nvim
 
 if tmux has-session -t "$session_name" 2>/dev/null
     if session_has_attached_client "$session_name"
