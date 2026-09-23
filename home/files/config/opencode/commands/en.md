@@ -1,6 +1,6 @@
 ---
 description: Translate short Japanese text into Title, OSS, and Chat English
-model: openai/gpt-5.3-codex-spark
+model: openai/gpt-5.6-luna
 variant: low
 subtask: true
 ---

@@ -13,18 +13,17 @@ let
 
   openAIModels = {
     "gpt-5.6-sol".options.reasoningEffort = "xhigh";
-    "gpt-5.3-codex-spark".options.reasoningEffort = "low";
+    "gpt-5.6-luna".options.reasoningEffort = "low";
   };
   slimOpenAIModels = openAIModels // {
     "gpt-5.6-terra".options.reasoningEffort = "xhigh";
-    "gpt-5.6-luna".options.reasoningEffort = "low";
   };
 
   commonOpenCodeConfig = {
     "$schema" = "https://opencode.ai/config.json";
     autoupdate = false;
     share = "disabled";
-    small_model = "openai/gpt-5.3-codex-spark";
+    small_model = "openai/gpt-5.6-luna";
     lsp = false;
     compaction = {
       auto = true;
