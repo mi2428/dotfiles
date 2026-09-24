@@ -28,10 +28,10 @@ tasks:
         msg: Docker Compose, base64, jq, Python, Pyright, Ruff, and ShellCheck are required
     cmds:
       - PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s '{{.REPO_ROOT}}/containers/open-webui/scripts' -p 'test_*.py'
-      - PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s '{{.REPO_ROOT}}/containers/open-webui/sakura_proxy' -p 'test_*.py'
-      - ruff format --check '{{.REPO_ROOT}}/containers/open-webui'
-      - ruff check '{{.REPO_ROOT}}/containers/open-webui'
-      - pyright '{{.REPO_ROOT}}/containers/open-webui'
+      - PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s '{{.REPO_ROOT}}/containers/sakura-proxy' -p 'test_*.py'
+      - ruff format --check '{{.REPO_ROOT}}/containers/open-webui' '{{.REPO_ROOT}}/containers/sakura-proxy'
+      - ruff check '{{.REPO_ROOT}}/containers/open-webui' '{{.REPO_ROOT}}/containers/sakura-proxy'
+      - pyright '{{.REPO_ROOT}}/containers/open-webui' '{{.REPO_ROOT}}/containers/sakura-proxy'
       - shellcheck '{{.REPO_ROOT}}/containers/open-webui/scripts/reconcile.sh' '{{.REPO_ROOT}}/containers/open-webui/scripts/start.sh' '{{.REPO_ROOT}}/scripts/bootstrap-cptr.sh' '{{.REPO_ROOT}}/scripts/open-webui.sh'
       - |
         CORS_ALLOW_ORIGIN=http://localhost \

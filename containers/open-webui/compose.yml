@@ -141,7 +141,7 @@ services:
     restart: unless-stopped
 
   sakura-proxy:
-    build: ./sakura_proxy
+    build: ../sakura-proxy
     environment:
       SAKURA_AI_ACCOUNT_TOKENS: "${SAKURA_AI_ACCOUNT_TOKENS:?set SAKURA_AI_ACCOUNT_TOKENS}"
       SAKURA_RETRY_BASE_SECONDS: "10"
@@ -151,6 +151,8 @@ services:
       SAKURA_RETRY_BUDGET_SECONDS: "3200"
       SAKURA_UPSTREAM_TIMEOUT_SECONDS: "420"
       SAKURA_UPSTREAM_URL: "https://api.ai.sakura.ad.jp"
+    ports:
+      - "127.0.0.1:38081:8080"
     healthcheck:
       test:
         - CMD
