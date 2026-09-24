@@ -19,6 +19,37 @@ let
     "gpt-5.6-terra".options.reasoningEffort = "xhigh";
   };
 
+  sakuraProvider = {
+    npm = "@ai-sdk/openai-compatible";
+    name = "Sakura AI";
+    options = {
+      baseURL = "http://127.0.0.1:38081/v1";
+      timeout = false;
+      headerTimeout = false;
+      chunkTimeout = false;
+    };
+    models."preview/Kimi-K2.7-Code" = {
+      name = "Sakura Kimi K2.7 Code";
+      reasoning = true;
+      temperature = false;
+      tool_call = true;
+      interleaved = "reasoning_content";
+      limit = {
+        context = 262144;
+        output = 32768;
+      };
+      modalities = {
+        input = [ "text" "image" ];
+        output = [ "text" ];
+      };
+    };
+  };
+
+  mkProviders = models: {
+    openai = { inherit models; };
+    sakura = sakuraProvider;
+  };
+
   commonOpenCodeConfig = {
     "$schema" = "https://opencode.ai/config.json";
     autoupdate = false;
@@ -63,7 +94,7 @@ let
     commonOpenCodeConfig
     // {
       inherit model;
-      provider.openai = { inherit models; };
+      provider = mkProviders models;
     }
     // lib.optionalAttrs (plugin != null) {
       plugin = [ plugin ];
@@ -71,7 +102,7 @@ let
 
   chatConfig = commonOpenCodeConfig // {
     model = "openai/gpt-5.6-sol";
-    provider.openai.models = openAIModels;
+    provider = mkProviders openAIModels;
     default_agent = "Chat";
     permission = commonOpenCodeConfig.permission // {
       external_directory."*" = "deny";
