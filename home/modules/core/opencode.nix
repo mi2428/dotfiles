@@ -56,6 +56,7 @@ let
     autoupdate = false;
     share = "disabled";
     small_model = "openai/gpt-5.6-luna";
+    agent.title.model = "sakura/preview/Kimi-K2.7-Code";
     lsp = false;
     compaction = {
       auto = true;
@@ -108,7 +109,7 @@ let
     permission = commonOpenCodeConfig.permission // {
       external_directory."*" = "deny";
     };
-    agent = {
+    agent = commonOpenCodeConfig.agent // {
       build.disable = true;
       plan.disable = true;
       general.disable = true;
