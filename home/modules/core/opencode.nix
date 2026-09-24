@@ -30,10 +30,11 @@ let
     };
     models."preview/Kimi-K2.7-Code" = {
       name = "Sakura Kimi K2.7 Code";
+      attachment = true;
       reasoning = true;
       temperature = false;
       tool_call = true;
-      interleaved = "reasoning_content";
+      interleaved = "reasoning";
       limit = {
         context = 262144;
         output = 32768;
