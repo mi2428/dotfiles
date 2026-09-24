@@ -119,6 +119,7 @@ def model_import: {
       hidden_model("sacloud.preview/Phi-4-mini-instruct-cpu"; "Sakura Phi-4 Mini Instruct CPU"),
       hidden_model("sacloud.preview/Qwen3-Embedding-4B-FP16"; "Sakura Qwen3 Embedding 4B FP16"),
       hidden_model("sacloud.preview/Kimi-K2.6"; "Sakura Kimi K2.6"),
+      hidden_model("sacloud.preview/Kimi-K2.7-Code"; "Sakura Kimi K2.7 Code"),
       hidden_model("sacloud.preview/gemma-4-31B-it"; "Sakura Gemma 4 31B IT"),
       hidden_model("sacloud.preview/Qwen3.6-35B-A3B"; "Sakura Qwen3.6 35B A3B"),
       hidden_model("sacloud.whisper-large-v3-turbo"; "Sakura Whisper Large V3 Turbo"),
@@ -135,6 +136,15 @@ def model_import: {
     + variants("sacloud.preview/gemma-4-31B-it"; "sacloud.gemma-4-31b-it"; "Sakura Gemma 4 31B IT"; "Gemma"; ["low", "high", "max"])
     + variants("sacloud.preview/Qwen3.6-35B-A3B"; "sacloud.qwen3.6-35b-a3b"; "Sakura Qwen3.6 35B A3B"; "Qwen"; ["high", "max"])
     + kimi_variants("sacloud.preview/Kimi-K2.6"; "sacloud.kimi-k2.6"; "Sakura Kimi K2.6"; "Kimi"; ["low", "high", "max"])
+    + [{
+      id: "sacloud.kimi-k2.7-code",
+      base_model_id: "sacloud.preview/Kimi-K2.7-Code",
+      name: "Sakura Kimi K2.7 Code",
+      meta: {hidden: false, tags: [{name: "Kimi"}], skillIds: [], toolIds: []},
+      params: {function_calling: "native", max_tokens: 32768},
+      access_grants: [],
+      is_active: true
+    }]
     + hidden_variants("sacloud.preview/Kimi-K2.6"; "sacloud.kimi-k2.6"; "Sakura Kimi K2.6"; "Kimi"; ["medium"])
     + hidden_variants("sacloud.preview/Kimi-K2.6"; "kimi-k2.6"; "Kimi K2.6"; "Kimi"; ["low", "medium", "high", "max"])
     + hidden_variants("sacloud.gpt-oss-120b"; "gpt-oss-120b"; "GPT-OSS 120B"; "GPT-OSS"; ["low", "medium", "high"])
@@ -182,7 +192,8 @@ def model_import: {
     "sacloud.qwen3.6-35b-a3b-max",
     "sacloud.kimi-k2.6-low",
     "sacloud.kimi-k2.6-high",
-    "sacloud.kimi-k2.6-max"
+    "sacloud.kimi-k2.6-max",
+    "sacloud.kimi-k2.7-code"
   ]
 })
 | . as $desired
@@ -209,6 +220,13 @@ def model_import: {
 | ($desired.model_import.models[] | select(.id == "sacloud.kimi-k2.6-low")) as $kimi_low
 | ($desired.model_import.models[] | select(.id == "sacloud.kimi-k2.6-high")) as $kimi_high
 | ($desired.model_import.models[] | select(.id == "sacloud.kimi-k2.6-max")) as $kimi_max
+| ($desired.model_import.models | map(select(.id == "sacloud.kimi-k2.7-code"))) as $kimi_k27
+| require(($kimi_k27 | length) == 1; "Kimi K2.7 Code alias must be unique")
+| require($kimi_k27[0].meta.hidden == false; "Kimi K2.7 Code alias must be visible")
+| require($kimi_k27[0].base_model_id == "sacloud.preview/Kimi-K2.7-Code"; "Kimi K2.7 Code alias base mismatch")
+| require(($kimi_k27[0].params | has("reasoning_effort") | not); "Kimi K2.7 Code alias must not set reasoning effort")
+| require($kimi_k27[0].params.function_calling == "native"; "Kimi K2.7 Code alias must use native function calling")
+| require($kimi_k27[0].params.max_tokens == 32768; "Kimi K2.7 Code alias must cap output")
 | require($kimi_low.meta.builtinTools.subagents == false; "Kimi Low must not enable sub-agents")
 | require($kimi_low.meta.capabilities.web_search == false; "Kimi Low must not advertise web search")
 | require(

@@ -247,6 +247,20 @@ class ReconcileTests(unittest.TestCase):
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertEqual(second_mutations, [])
 
+    def test_kimi_k27_alias_is_unique_visible_and_native_tool_calling(self) -> None:
+        models = self.desired["model_import"]["models"]
+        aliases = [model for model in models if model["id"] == "sacloud.kimi-k2.7-code"]
+
+        self.assertEqual(len(aliases), 1)
+        self.assertFalse(aliases[0]["meta"]["hidden"])
+        self.assertEqual(aliases[0]["base_model_id"], "sacloud.preview/Kimi-K2.7-Code")
+        self.assertNotIn("reasoning_effort", aliases[0]["params"])
+        self.assertEqual(aliases[0]["params"]["function_calling"], "native")
+        self.assertEqual(aliases[0]["params"]["max_tokens"], 32768)
+        self.assertIn(
+            "sacloud.kimi-k2.7-code", self.desired["required_visible_model_ids"]
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
