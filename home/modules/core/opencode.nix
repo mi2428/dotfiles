@@ -56,7 +56,7 @@ let
     autoupdate = false;
     share = "disabled";
     small_model = "openai/gpt-5.6-luna";
-    agent.title.model = "sakura/preview/Kimi-K2.7-Code";
+    agent.title.disable = true;
     lsp = false;
     compaction = {
       auto = true;
@@ -168,6 +168,7 @@ let
     "${config.home.homeDirectory}/.config/opencode/plugins/tui";
   firstThingsFirstPlugin = ../../files/config/opencode/plugins/first-things-first.js;
   herdrWorkerTitlePlugin = ../../files/config/opencode/plugins/herdr-worker-title.js;
+  sessionTitlePlugin = ../../files/config/opencode/plugins/session-title.js;
   profileShellEnvPlugin = ../../files/config/opencode/plugins/profile-shell-env.js;
   obsidianExportPlugin = ../../files/config/opencode/plugins/obsidian-export.js;
   obsidianExportSkill = ../../files/agents/skills/obsidian-export;
@@ -201,6 +202,7 @@ in {
     "opencode/opencode.jsonc" = mkLink generated.defaultConfig;
     "opencode/plugins/first-things-first.js" = mkLink firstThingsFirstPlugin;
     "opencode/plugins/herdr-worker-title.js" = mkLink herdrWorkerTitlePlugin;
+    "opencode/plugins/session-title.js" = mkLink sessionTitlePlugin;
     "opencode/plugins/obsidian-export.js" = mkLink obsidianExportPlugin;
     "opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
@@ -213,6 +215,8 @@ in {
       mkLink ../../files/config/opencode/plugins/chat-system.js;
     "opencode-profiles/chat/opencode/plugins/profile-shell-env.js" =
       mkLink profileShellEnvPlugin;
+    "opencode-profiles/chat/opencode/plugins/session-title.js" =
+      mkLink sessionTitlePlugin;
     "opencode-profiles/chat/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode-profiles/chat/opencode/tui.json" = mkLink generated.chatTui;
@@ -244,6 +248,8 @@ in {
       mkLink profileShellEnvPlugin;
     "opencode-profiles/omo/opencode/plugins/herdr-worker-title.js" =
       mkLink herdrWorkerTitlePlugin;
+    "opencode-profiles/omo/opencode/plugins/session-title.js" =
+      mkLink sessionTitlePlugin;
     "opencode-profiles/omo/opencode/plugins/obsidian-export.js" =
       mkLink obsidianExportPlugin;
 
@@ -272,6 +278,8 @@ in {
       mkLink profileShellEnvPlugin;
     "opencode-profiles/slim/opencode/plugins/herdr-worker-title.js" =
       mkLink herdrWorkerTitlePlugin;
+    "opencode-profiles/slim/opencode/plugins/session-title.js" =
+      mkLink sessionTitlePlugin;
     "opencode-profiles/slim/opencode/plugins/obsidian-export.js" =
       mkLink obsidianExportPlugin;
     "opencode-profiles/slim/opencode/oh-my-opencode-slim.seed.jsonc" =
