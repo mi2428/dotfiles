@@ -25,7 +25,7 @@ $hostname\
 $cmd_duration\
 $line_break\
 $character"""
-right_format = """$status$jobs$time$battery"""
+right_format = """$jobs$time$battery"""
 
 [directory]
 format = "[$path]($style)"
