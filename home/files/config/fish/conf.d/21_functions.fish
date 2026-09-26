@@ -986,7 +986,7 @@ function gk
     git add -- $target
     and git commit -m "keep: "(date)
 
-    if test -n (git remote -v)
+    if test (count (git remote)) -gt 0
         git push
         or begin
             git pull
