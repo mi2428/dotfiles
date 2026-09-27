@@ -31,6 +31,7 @@ let
     (lib.filterAttrs (_: type: type == "regular") (builtins.readDir binRoot));
   codexNvimEditEvent = ../../files/libexec/dotfiles/codex-nvim-edit-event;
   ghReviewPreview = ../../files/libexec/dotfiles/gh-review-preview;
+  aiModelRoute = ../../files/libexec/dotfiles/ai-model-route;
   hermesConfig = config.lib.file.mkOutOfStoreSymlink
     "${config.home.homeDirectory}/dotfiles/home/files/hermes/config.yaml";
   macCompatibilityFiles = lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
@@ -78,6 +79,7 @@ in {
     ".codex/en.config.toml" = mkLink ../../files/codex-en.config.toml;
     ".local/libexec/dotfiles/codex-nvim-edit-event" = mkLink codexNvimEditEvent;
     ".local/libexec/dotfiles/gh-review-preview" = mkLink ghReviewPreview;
+    ".local/libexec/dotfiles/ai-model-route" = mkLink aiModelRoute;
     ".gitignore" = mkLink ../../files/git/gitignore;
     ".curlrc" = mkLink ../../files/curl/curlrc;
     ".lesskey" = mkLink ../../files/less/lesskey;

@@ -550,7 +550,11 @@ if command -sq opencode
     end
 
     function oc++ --wraps opencode
-        __dotfiles_run_opencode opencode --auto $argv
+        set -l model_args --model smart-router/auto
+        if contains -- -m $argv; or contains -- --model $argv; or string match -q -- '--model=*' $argv
+            set model_args
+        end
+        __dotfiles_run_opencode opencode $model_args $argv --auto
     end
 
     if command -sq happier
