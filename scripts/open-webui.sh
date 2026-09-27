@@ -36,13 +36,15 @@ wait "$decrypt_pid"
 
 : "${SAKURA_AI_ACCOUNT_TOKENS:?set SAKURA_AI_ACCOUNT_TOKENS}"
 : "${SAKURA_PROXY_CLIENT_TOKEN:?set SAKURA_PROXY_CLIENT_TOKEN}"
-: "${WEBUI_SECRET_KEY:?set WEBUI_SECRET_KEY}"
-: "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
-: "${WEBUI_ADMIN_EMAIL:?set WEBUI_ADMIN_EMAIL}"
-: "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
-: "${CPTR_WORKSPACE_DIR:?set CPTR_WORKSPACE_DIR}"
-: "${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}"
-[[ -d "$CPTR_WORKSPACE_DIR" ]] || { printf 'CPTR_WORKSPACE_DIR is not a directory\n' >&2; exit 1; }
+if [[ "$action" != proxy-* ]]; then
+  : "${WEBUI_SECRET_KEY:?set WEBUI_SECRET_KEY}"
+  : "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
+  : "${WEBUI_ADMIN_EMAIL:?set WEBUI_ADMIN_EMAIL}"
+  : "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
+  : "${CPTR_WORKSPACE_DIR:?set CPTR_WORKSPACE_DIR}"
+  : "${OPEN_TERMINAL_API_KEY:?set OPEN_TERMINAL_API_KEY}"
+  [[ -d "$CPTR_WORKSPACE_DIR" ]] || { printf 'CPTR_WORKSPACE_DIR is not a directory\n' >&2; exit 1; }
+fi
 
 resolve_tailscale_bin() {
   local candidate
@@ -63,13 +65,16 @@ tailscale_webui_url() {
     | jq -er 'select(.BackendState == "Running") | .Self.DNSName | rtrimstr(".") | "https://\(.)"'
 }
 
-unset CPTR_GATEWAY_API_KEY
-set -a
-# shellcheck disable=SC1090
-[[ ! -f "$gateway_env_file" ]] || source "$gateway_env_file"
-set +a
+if [[ "$action" != proxy-* ]]; then
+  unset CPTR_GATEWAY_API_KEY
+  set -a
+  # shellcheck disable=SC1090
+  [[ ! -f "$gateway_env_file" ]] || source "$gateway_env_file"
+  set +a
+fi
 
 compose=(docker compose -f "$repo_root/containers/open-webui/compose.yml")
+compose_webui=("${compose[@]}" -f "$repo_root/containers/open-webui/compose.webui.yml" --profile webui)
 local_url="http://127.0.0.1:${OPEN_WEBUI_PORT:-38080}"
 export WEBUI_URL="$local_url"
 export CORS_ALLOW_ORIGIN="$WEBUI_URL;http://localhost:${OPEN_WEBUI_PORT:-38080}"
@@ -86,26 +91,35 @@ fi
 case "$action" in
   compose)
     # Reuse the protected environment for targeted updates; never print expanded config.
-    "${compose[@]}" "${@:3}"
+    "${compose_webui[@]}" "${@:3}"
     ;;
   up)
-    "${compose[@]}" up -d cptr
+    "${compose_webui[@]}" up -d cptr
     "$repo_root/scripts/bootstrap-cptr.sh" "$repo_root"
     unset CPTR_GATEWAY_API_KEY
     set -a
     # shellcheck disable=SC1090
     source "$gateway_env_file"
     set +a
-    "${compose[@]}" up -d --build --wait --remove-orphans
+    "${compose_webui[@]}" up -d --build --wait --remove-orphans
     [[ -z "$tailscale_bin" ]] \
       || TAILSCALE_BE_CLI=1 "$tailscale_bin" serve --bg "$local_url" \
       || true
     ;;
   down)
-    "${compose[@]}" down
+    "${compose_webui[@]}" stop open-webui cptr open-terminal
     ;;
   logs)
-    "${compose[@]}" logs -f
+    "${compose_webui[@]}" logs -f
+    ;;
+  proxy-up)
+    "${compose[@]}" up -d --wait --remove-orphans sakura-proxy
+    ;;
+  proxy-down)
+    "${compose[@]}" stop sakura-proxy
+    ;;
+  proxy-logs)
+    "${compose[@]}" logs -f sakura-proxy
     ;;
   *)
     printf 'Unknown action: %s\n' "$action" >&2

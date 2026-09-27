@@ -170,11 +170,15 @@ Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `t
 
 [Open WebUI](https://openwebui.com/) and [Open WebUI Computer](https://openwebui.com/computer) run together under Docker. Web search uses Open WebUI's built-in DDGS integration with the Brave backend. Computer has read-write access to `CPTR_WORKSPACE_DIR`, so mount only a trusted workspace. Persistent data lives in named volumes and `<workspace>/.cptr`; manage Open WebUI Admin UI configuration in Compose because UI changes do not survive a restart.
 
+`containers/open-webui/compose.yml` starts only the Sakura proxy on `127.0.0.1:38081`; `compose.webui.yml` adds the Web UI, Computer and Terminal under the `webui` profile.
+
 ```console
+$ task ai.sakura.up   # OpenCode proxy only; stops the local Web UI/Computer/Terminal
+$ task ai.sakura.down # stops the proxy
 $ task ai.webui.up
 $ task ai.webui.check   # local tests, lint, and Compose validation; no external smoke
 $ task ai.webui.logs    # follow service logs
-$ task ai.webui.down    # stops containers without deleting persistent data
+$ task ai.webui.down    # stops the UI/Computer/Terminal, leaving the proxy running
 ```
 
 `task ai.webui.up` also configures private Tailscale Serve access when Tailscale is available. Open WebUI stays bound to localhost, and Funnel is not used.

@@ -44,7 +44,7 @@ tasks:
         WEBUI_ADMIN_USERNAME=admin \
         WEBUI_SECRET_KEY=dummy \
         WEBUI_URL=http://localhost \
-          docker compose --file '{{.REPO_ROOT}}/containers/open-webui/compose.yml' config --quiet
+          python3 -c 'import subprocess; base=["docker", "compose", "-f", "{{.REPO_ROOT}}/containers/open-webui/compose.yml"]; full=[*base, "-f", "{{.REPO_ROOT}}/containers/open-webui/compose.webui.yml", "--profile", "webui"]; assert subprocess.check_output([*base, "config", "--services"], text=True).splitlines()==["sakura-proxy"]; assert set(subprocess.check_output([*full, "config", "--services"], text=True).splitlines())=={"sakura-proxy", "open-webui", "cptr", "open-terminal"}; subprocess.run([*full, "config", "--quiet"], check=True)'
 
   ai.webui.up:
     desc: Start Open WebUI and its local AI services with Docker
@@ -57,7 +57,7 @@ tasks:
       - '{{.REPO_ROOT}}/scripts/open-webui.sh ''{{.REPO_ROOT}}'' up'
 
   ai.webui.down:
-    desc: Stop Open WebUI services without deleting their data
+    desc: Stop Open WebUI, Computer and Terminal; leave Sakura proxy running
     preconditions:
       - sh: command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && command -v nix >/dev/null 2>&1
         msg: Docker Compose and Nix are required
@@ -71,3 +71,21 @@ tasks:
         msg: Docker Compose and Nix are required
     cmds:
       - '{{.REPO_ROOT}}/scripts/open-webui.sh ''{{.REPO_ROOT}}'' logs'
+
+  ai.sakura.up:
+    desc: Run only the localhost Sakura proxy for OpenCode
+    preconditions:
+      - sh: command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && command -v nix >/dev/null 2>&1
+        msg: Docker Compose and Nix are required
+      - sh: docker info >/dev/null 2>&1
+        msg: Docker is not running
+    cmds:
+      - '{{.REPO_ROOT}}/scripts/open-webui.sh ''{{.REPO_ROOT}}'' proxy-up'
+
+  ai.sakura.down:
+    desc: Stop only the localhost Sakura proxy
+    preconditions:
+      - sh: command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && command -v nix >/dev/null 2>&1
+        msg: Docker Compose and Nix are required
+    cmds:
+      - '{{.REPO_ROOT}}/scripts/open-webui.sh ''{{.REPO_ROOT}}'' proxy-down'
