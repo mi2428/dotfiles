@@ -38,6 +38,7 @@ tasks:
         CPTR_WORKSPACE_DIR='{{.REPO_ROOT}}' \
         OPEN_TERMINAL_API_KEY=dummy \
         SAKURA_AI_ACCOUNT_TOKENS=dummy \
+        SAKURA_PROXY_CLIENT_TOKEN=dummy \
         WEBUI_ADMIN_EMAIL=admin@example.invalid \
         WEBUI_ADMIN_PASSWORD=dummy \
         WEBUI_ADMIN_USERNAME=admin \

@@ -68,7 +68,7 @@ services:
             }
           }
         }
-      OPENAI_API_KEYS: "sakura-proxy;${CPTR_GATEWAY_API_KEY:-bootstrap}"
+      OPENAI_API_KEYS: "${SAKURA_PROXY_CLIENT_TOKEN:?set SAKURA_PROXY_CLIENT_TOKEN};${CPTR_GATEWAY_API_KEY:-bootstrap}"
       RAG_TEXT_SPLITTER: "token"
       RAG_TOP_K: "5"
       SUBAGENTS_BACKGROUND_ENABLED: "false"
@@ -144,6 +144,7 @@ services:
     build: ../sakura-proxy
     environment:
       SAKURA_AI_ACCOUNT_TOKENS: "${SAKURA_AI_ACCOUNT_TOKENS:?set SAKURA_AI_ACCOUNT_TOKENS}"
+      SAKURA_PROXY_CLIENT_TOKEN: "${SAKURA_PROXY_CLIENT_TOKEN:?set SAKURA_PROXY_CLIENT_TOKEN}"
       SAKURA_RETRY_BASE_SECONDS: "10"
       SAKURA_RETRY_JITTER_SECONDS: "1"
       SAKURA_RETRY_MAX: "5"

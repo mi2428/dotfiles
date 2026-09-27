@@ -7,6 +7,7 @@ events require its private header.
 
 from __future__ import annotations
 
+import hmac
 import http.client
 import json
 import logging
@@ -151,6 +152,7 @@ class Settings:
     retry_budget: float = 3200.0
     upstream_timeout: float = 420.0
     account_tokens: tuple[str, ...] = ()
+    client_token: str = ""
 
     def __post_init__(self) -> None:
         if not all(
@@ -198,6 +200,9 @@ class Settings:
             raise ValueError("SAKURA_AI_ACCOUNT_TOKENS must contain at least one token")
         if len(account_tokens) != len(set(account_tokens)):
             raise ValueError("SAKURA_AI_ACCOUNT_TOKENS must contain unique tokens")
+        client_token = os.getenv("SAKURA_PROXY_CLIENT_TOKEN", "")
+        if not client_token:
+            raise ValueError("SAKURA_PROXY_CLIENT_TOKEN is required")
         return cls(
             upstream_url=os.getenv("SAKURA_UPSTREAM_URL", defaults.upstream_url),
             max_retries=int(os.getenv("SAKURA_RETRY_MAX", defaults.max_retries)),
@@ -215,6 +220,7 @@ class Settings:
                 os.getenv("SAKURA_UPSTREAM_TIMEOUT_SECONDS", defaults.upstream_timeout)
             ),
             account_tokens=account_tokens,
+            client_token=client_token,
         )
 
 
@@ -346,6 +352,12 @@ class SakuraRetryProxyHandler(BaseHTTPRequestHandler):
     def _proxy(self) -> None:
         if self.path == "/health":
             self._send_json(200, {"status": "ok"})
+            return
+        if not hmac.compare_digest(
+            self.headers.get("Authorization", ""),
+            f"Bearer {self.settings.client_token}",
+        ):
+            self._send_json(401, {"error": {"message": "unauthorized"}})
             return
         body = self._read_body()
         if body is None:
@@ -828,6 +840,8 @@ def make_server(
     settings: Settings, address: tuple[str, int] = LISTEN_ADDRESS
 ) -> ThreadingHTTPServer:
     """Build a threaded gateway bound according to settings."""
+    if not settings.client_token:
+        raise ValueError("SAKURA_PROXY_CLIENT_TOKEN is required")
     upstream = urlsplit(settings.upstream_url)
     if upstream.scheme not in {"http", "https"} or not upstream.hostname:
         raise ValueError("SAKURA_UPSTREAM_URL must be an absolute HTTP(S) URL")

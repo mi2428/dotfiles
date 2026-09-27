@@ -1,4 +1,12 @@
 *
 !Dockerfile
 !assets/
-!assets/**
+!assets/*.css
+!assets/*.js
+!assets/*.png
+!assets/*.webp
+!config/
+!config/*.md
+!scripts/
+!scripts/reconcile.sh
+!scripts/render-declarations.jq

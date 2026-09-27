@@ -357,7 +357,6 @@ movie_akinator_folder_id="$upserted_folder_id"
 upsert_folder "$desired_books_movies_subculture_folder"
 books_movies_subculture_folder_id="$upserted_folder_id"
 
-# Open WebUI v0.11.3 builds the effective UI registry through this pinned endpoint.
 api_request GET '/api/models?refresh=true'
 expect_success 'model registry refresh'
 model_order_list="$(

@@ -26,6 +26,8 @@ from sakura_retry_proxy import (
     retryable_response_reason,
 )
 
+AUTH_HEADER = {"Authorization": "Bearer caller-secret"}
+
 
 class UpstreamHandler(BaseHTTPRequestHandler):
     attempts = 0
@@ -188,6 +190,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
                 jitter=0,
                 upstream_timeout=1,
                 account_tokens=("token-a", "token-b"),
+                client_token="caller-secret",
             ),
             ("127.0.0.1", 0),
         )
@@ -205,12 +208,29 @@ class SakuraRetryProxyTest(unittest.TestCase):
         for thread in self.threads:
             thread.join(timeout=1)
 
+    def test_auth_required_before_any_upstream_request(self) -> None:
+        port = self.proxy.server_address[1]
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health") as response:
+            self.assertEqual(response.status, 200)
+        for headers in ({}, {"Authorization": "Bearer wrong"}):
+            for data in (None, b"{}"):
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/v1/models",
+                    data=data,
+                    headers=headers,
+                )
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    urllib.request.urlopen(request)
+                self.assertEqual(error.exception.code, 401)
+                error.exception.close()
+        self.assertEqual(UpstreamHandler.attempts, 0)
+
     def test_round_robins_tokens_across_429_retries(self) -> None:
         proxy_port = self.proxy.server_address[1]
         request = urllib.request.Request(
             f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
             data=b"{}",
-            headers={"Authorization": "Bearer test"},
+            headers=AUTH_HEADER,
         )
         with urllib.request.urlopen(request) as response:
             self.assertEqual(response.status, 200)
@@ -231,6 +251,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         request = urllib.request.Request(
             f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
             data=b"{}",
+            headers=AUTH_HEADER,
         )
 
         started = time.monotonic()
@@ -268,6 +289,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
                 urllib.request.Request(
                     f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
                     data=b"{}",
+                    headers=AUTH_HEADER,
                 )
             ) as response:
                 return response.read()
@@ -295,6 +317,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
                 urllib.request.Request(
                     f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
                     data=b"{}",
+                    headers=AUTH_HEADER,
                 )
             ) as response:
                 return response.read()
@@ -323,6 +346,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
                 jitter=0,
                 upstream_timeout=1,
                 account_tokens=("token-a",),
+                client_token="caller-secret",
             ),
             ("127.0.0.1", 0),
         )
@@ -374,6 +398,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
                 max_backoff=0.01,
                 jitter=0,
                 upstream_timeout=1,
+                client_token="caller-secret",
             ),
             ("127.0.0.1", 0),
         )
@@ -400,6 +425,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         request = urllib.request.Request(
             f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
             data=json.dumps({"reasoning_effort": "high"}).encode(),
+            headers=AUTH_HEADER,
         )
         with urllib.request.urlopen(request) as response:
             self.assertEqual(response.read(), b'{"ok":true}')
@@ -423,6 +449,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         request = urllib.request.Request(
             f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
             data=json.dumps({"reasoning_effort": "max"}).encode(),
+            headers=AUTH_HEADER,
         )
         with urllib.request.urlopen(request) as response:
             self.assertEqual(response.read(), b'{"ok":true}')
@@ -445,6 +472,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         request = urllib.request.Request(
             f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
             data=body,
+            headers=AUTH_HEADER,
         )
         with urllib.request.urlopen(request) as response:
             self.assertEqual(response.read(), b'{"ok":true}')
@@ -456,7 +484,11 @@ class SakuraRetryProxyTest(unittest.TestCase):
 
         def request(openwebui_mode: bool) -> tuple[bytes, str | None]:
             UpstreamHandler.attempts = 0
-            headers = {"X-OpenWebUI-Mode": "true"} if openwebui_mode else {}
+            headers = (
+                {**AUTH_HEADER, "X-OpenWebUI-Mode": "true"}
+                if openwebui_mode
+                else AUTH_HEADER
+            )
             with urllib.request.urlopen(
                 urllib.request.Request(
                     f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
@@ -492,6 +524,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         request = urllib.request.Request(
             f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
             data=json.dumps({"reasoning_effort": "high"}).encode(),
+            headers=AUTH_HEADER,
         )
         with self.assertRaises(urllib.error.HTTPError) as error:
             urllib.request.urlopen(request)
@@ -506,6 +539,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         request = urllib.request.Request(
             f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
             data=json.dumps({"reasoning_effort": "none"}).encode(),
+            headers=AUTH_HEADER,
         )
         with self.assertRaises(urllib.error.HTTPError) as error:
             urllib.request.urlopen(request)
@@ -522,7 +556,9 @@ class SakuraRetryProxyTest(unittest.TestCase):
     def test_retries_http_and_stream_provider_errors(self) -> None:
         proxy_port = self.proxy.server_address[1]
         request = urllib.request.Request(
-            f"http://127.0.0.1:{proxy_port}/v1/chat/completions", data=b"{}"
+            f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
+            data=b"{}",
+            headers=AUTH_HEADER,
         )
         for mode, reason in (
             ("server_error_then_success", "server_error"),
@@ -579,6 +615,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         request = urllib.request.Request(
             f"http://127.0.0.1:{self.proxy.server_address[1]}/v1/chat/completions",
             data=b"{}",
+            headers=AUTH_HEADER,
         )
         with (
             patch.object(handler, "_request_upstream", flaky_request),
@@ -629,6 +666,8 @@ class SakuraRetryProxyTest(unittest.TestCase):
         handler = object.__new__(handler_type)
         handler.path = "/v1/chat/completions"
         handler.headers = Message()
+        handler.headers["Authorization"] = "Bearer caller-secret"
+        handler.settings = self.unsafe_settings(client_token="caller-secret")
         handler.close_connection = False
         connection = MagicMock(spec=http.client.HTTPConnection)
         connection.sock = None
@@ -690,6 +729,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         request = urllib.request.Request(
             f"http://127.0.0.1:{self.proxy.server_address[1]}/v1/chat/completions",
             data=b"{}",
+            headers=AUTH_HEADER,
         )
 
         with self.assertRaises(urllib.error.HTTPError) as error:
@@ -740,6 +780,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         request = urllib.request.Request(
             f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
             data=b"{}",
+            headers=AUTH_HEADER,
         )
 
         with (
@@ -773,12 +814,16 @@ class SakuraRetryProxyTest(unittest.TestCase):
     def test_settings_parse_comma_separated_account_tokens(self) -> None:
         with patch.dict(
             os.environ,
-            {"SAKURA_AI_ACCOUNT_TOKENS": " token-a,token-b ,, token-c "},
+            {
+                "SAKURA_AI_ACCOUNT_TOKENS": " token-a,token-b ,, token-c ",
+                "SAKURA_PROXY_CLIENT_TOKEN": "caller-secret",
+            },
             clear=True,
         ):
             settings = Settings.from_environment()
 
         self.assertEqual(settings.account_tokens, ("token-a", "token-b", "token-c"))
+        self.assertEqual(settings.client_token, "caller-secret")
         self.assertEqual(settings.upstream_url, "https://api.ai.sakura.ad.jp")
         self.assertEqual((settings.max_retries, settings.base_backoff), (5, 10))
         self.assertGreaterEqual(
@@ -808,6 +853,11 @@ class SakuraRetryProxyTest(unittest.TestCase):
             self.assertRaisesRegex(ValueError, "must contain unique tokens"),
         ):
             Settings.from_environment()
+        with (
+            patch.dict(os.environ, {"SAKURA_AI_ACCOUNT_TOKENS": "token-a"}, clear=True),
+            self.assertRaisesRegex(ValueError, "SAKURA_PROXY_CLIENT_TOKEN is required"),
+        ):
+            Settings.from_environment()
 
     def test_settings_reject_non_finite_timing_environment(self) -> None:
         names = (
@@ -823,7 +873,11 @@ class SakuraRetryProxyTest(unittest.TestCase):
                     self.subTest(name=name, value=value),
                     patch.dict(
                         os.environ,
-                        {"SAKURA_AI_ACCOUNT_TOKENS": "token-a", name: value},
+                        {
+                            "SAKURA_AI_ACCOUNT_TOKENS": "token-a",
+                            "SAKURA_PROXY_CLIENT_TOKEN": "caller-secret",
+                            name: value,
+                        },
                         clear=True,
                     ),
                     self.assertRaisesRegex(ValueError, "must be finite"),
@@ -836,6 +890,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
         )
         self.addCleanup(connection.close)
         connection.putrequest("POST", "/v1/chat/completions")
+        connection.putheader("Authorization", "Bearer caller-secret")
         connection.putheader("Content-Length", "-1")
         connection.endheaders()
 
@@ -855,6 +910,7 @@ class SakuraRetryProxyTest(unittest.TestCase):
                 urllib.request.Request(
                     f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
                     data=body,
+                    headers=AUTH_HEADER,
                 )
             ) as response:
                 return response.read()
