@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { ModelRouter } from "./model-router.js";
@@ -22,15 +22,36 @@ const output = (model = { providerID: "smart-router", modelID: "auto" }) => ({
 describe("model router", () => {
   test("routes a confident user turn", async () => {
     process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ answers: { tier: { choice: "SIMPLE", confidence: 0.8 } } }))) as typeof fetch;
+    const toasts = [];
+    const client = { tui: { showToast: async (options) => { toasts.push(options); return { data: true }; } } };
+    globalThis.fetch = (async () => {
+      expect(toasts.map(({ body }) => body.message)).toEqual(["Classifying with JevK5..."]);
+      return new Response(JSON.stringify({ answers: { tier: { choice: "SIMPLE", confidence: 0.8 } } }));
+    }) as typeof fetch;
 
-    const hooks = await ModelRouter();
+    const hooks = await ModelRouter({ client, directory: "/repo" });
     const result = output();
     await hooks["chat.message"]({ sessionID: "session", agent: "build" }, result);
 
     expect(result.message.model).toEqual(config.tiers.SIMPLE);
     expect(result.parts[0].metadata.modelRouter.model).toEqual(config.tiers.SIMPLE);
+    expect(toasts).toEqual([
+      {
+        body: { title: "Smart Router", message: "Classifying with JevK5...", variant: "info", duration: 12000 },
+        query: { directory: "/repo" },
+        throwOnError: true,
+      },
+      {
+        body: {
+          title: "Smart Router",
+          message: "SIMPLE · confidence 0.8 · sakura/preview/Kimi-K2.7-Code / auto",
+          variant: "success",
+          duration: 4000,
+        },
+        query: { directory: "/repo" },
+        throwOnError: true,
+      },
+    ]);
   });
 
   test("reroutes the concrete model inherited by the TUI", async () => {
@@ -39,7 +60,11 @@ describe("model router", () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ answers: { tier: { choice, confidence: 0.8 } } }))) as typeof fetch;
     const messages = [];
-    const client = { session: { messages: async () => ({ data: messages.slice(-2) }) } };
+    const toasts = [];
+    const client = {
+      session: { messages: async () => ({ data: messages.slice(-2) }) },
+      tui: { showToast: async ({ body }) => { toasts.push(body); return { data: true }; } },
+    };
 
     let hooks = await ModelRouter({ client, directory: "/repo" });
     const first = output();
@@ -52,6 +77,12 @@ describe("model router", () => {
     await hooks["chat.message"]({ sessionID: "session", agent: "build" }, second);
 
     expect(second.message.model).toEqual(config.tiers.REASONING);
+    expect(toasts.map((toast) => toast.message)).toEqual([
+      "Classifying with JevK5...",
+      "SIMPLE · confidence 0.8 · sakura/preview/Kimi-K2.7-Code / auto",
+      "Classifying with JevK5...",
+      "REASONING · confidence 0.8 · openai/gpt-6-sol / xhigh",
+    ]);
   });
 
   test("stops routing after a concrete model is selected", async () => {
@@ -62,7 +93,11 @@ describe("model router", () => {
       return new Response(JSON.stringify({ answers: { tier: { choice: "SIMPLE", confidence: 0.8 } } }));
     }) as typeof fetch;
     const messages = [];
-    const client = { session: { messages: async () => ({ data: messages.slice(-2) }) } };
+    const toasts = [];
+    const client = {
+      session: { messages: async () => ({ data: messages.slice(-2) }) },
+      tui: { showToast: async ({ body }) => { toasts.push(body); return { data: true }; } },
+    };
     const hooks = await ModelRouter({ client, directory: "/repo" });
     const first = output();
     await hooks["chat.message"]({ sessionID: "session", agent: "build" }, first);
@@ -78,6 +113,70 @@ describe("model router", () => {
     expect(manual.message.model).toEqual(manualModel);
     expect(continued.message.model).toEqual(manualModel);
     expect(classifierCalls).toBe(1);
+    expect(toasts).toHaveLength(2);
+  });
+
+  test("shows the confidence when routing falls back", async () => {
+    process.env.OPENCODE_ROUTER_CONFIG = configPath;
+    const toasts = [];
+    const client = { tui: { showToast: async ({ body }) => { toasts.push(body); return { data: true }; } } };
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ answers: { tier: { choice: "REASONING", confidence: 0.1 } } }))) as typeof fetch;
+
+    const hooks = await ModelRouter({ client, directory: "/repo" });
+    const result = output();
+    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, result);
+
+    expect(result.message.model).toEqual(config.fallback);
+    expect(toasts[1]).toEqual({
+      title: "Smart Router",
+      message: "Low confidence 0.1 · fallback · openai/gpt-6-sol / max",
+      variant: "warning",
+      duration: 4000,
+    });
+  });
+
+  test("shows a fallback toast when JevK5 is unavailable", async () => {
+    process.env.OPENCODE_ROUTER_CONFIG = configPath;
+    const toasts = [];
+    const client = { tui: { showToast: async ({ body }) => { toasts.push(body); return { data: true }; } } };
+    globalThis.fetch = (async () => { throw new Error("offline"); }) as typeof fetch;
+    const warning = spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const hooks = await ModelRouter({ client, directory: "/repo" });
+      const result = output();
+      await hooks["chat.message"]({ sessionID: "session", agent: "build" }, result);
+
+      expect(result.message.model).toEqual(config.fallback);
+      expect(toasts.map((toast) => toast.message)).toEqual([
+        "Classifying with JevK5...",
+        "Classifier unavailable · fallback · openai/gpt-6-sol / max",
+      ]);
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining("classifier unavailable"));
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
+  test("toast delivery failure does not change the selected model", async () => {
+    process.env.OPENCODE_ROUTER_CONFIG = configPath;
+    const client = { tui: { showToast: async () => { throw new Error("no TUI"); } } };
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ answers: { tier: { choice: "SIMPLE", confidence: 0.8 } } }))) as typeof fetch;
+    const warning = spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const hooks = await ModelRouter({ client, directory: "/repo" });
+      const result = output();
+      await hooks["chat.message"]({ sessionID: "session", agent: "build" }, result);
+
+      expect(result.message.model).toEqual(config.tiers.SIMPLE);
+      expect(warning).toHaveBeenCalledTimes(2);
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining("toast unavailable"));
+    } finally {
+      warning.mockRestore();
+    }
   });
 
   test("uses the fallback on low confidence and ignores concrete models", async () => {

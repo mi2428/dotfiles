@@ -42,6 +42,18 @@ const previousAutoRoute = async (client, directory, sessionID) => {
 
 export const ModelRouter = async ({ client, directory } = {}) => {
   const routes = new Map();
+  const showRoute = async (message, variant = "info", duration = 4000) => {
+    if (!client) return;
+    try {
+      await client.tui.showToast({
+        body: { title: "Smart Router", message, variant, duration },
+        query: { directory },
+        throwOnError: true,
+      });
+    } catch (error) {
+      console.warn(`[model-router] toast unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
   let config;
   let configError;
   try {
@@ -85,6 +97,9 @@ export const ModelRouter = async ({ client, directory } = {}) => {
       const state = userText(output.parts);
       if (!state) return remember();
 
+      await showRoute("Classifying with JevK5...", "info", config.timeout_ms + 2000);
+      let result = "Classifier unavailable · fallback";
+      let variant = "warning";
       try {
         const headers = { "Content-Type": "application/json" };
         if (process.env.OLLAYA_API_KEY) headers.Authorization = `Bearer ${process.env.OLLAYA_API_KEY}`;
@@ -103,16 +118,23 @@ export const ModelRouter = async ({ client, directory } = {}) => {
 
         const answer = (await response.json()).answers?.tier;
         const selected = config.tiers?.[answer?.choice];
+        const confidence = typeof answer?.confidence === "number" ? ` · confidence ${answer.confidence}` : "";
         if (
-          typeof answer?.confidence !== "number" ||
-          answer.confidence < config.min_confidence ||
-          typeof selected?.providerID !== "string" ||
-          typeof selected?.modelID !== "string" ||
-          typeof selected?.variant !== "string"
-        )
-          return remember();
-
-        output.message.model = selected;
+          typeof answer?.confidence === "number" &&
+          answer.confidence >= config.min_confidence &&
+          typeof selected?.providerID === "string" &&
+          typeof selected?.modelID === "string" &&
+          typeof selected?.variant === "string"
+        ) {
+          output.message.model = selected;
+          result = `${answer.choice}${confidence}`;
+          variant = "success";
+        } else {
+          result =
+            typeof answer?.confidence === "number" && answer.confidence < config.min_confidence
+              ? `Low confidence ${answer.confidence} · fallback`
+              : `Invalid classification${confidence} · fallback`;
+        }
       } catch (error) {
         console.warn(
           `[model-router] classifier unavailable; using fallback: ${error instanceof Error ? error.message : String(error)}`,
@@ -120,6 +142,8 @@ export const ModelRouter = async ({ client, directory } = {}) => {
       }
 
       remember();
+      const { providerID, modelID, variant: effort } = output.message.model;
+      await showRoute(`${result} · ${providerID}/${modelID} / ${effort}`, variant);
     },
   };
 };
