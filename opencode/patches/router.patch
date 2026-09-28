@@ -1,0 +1,141 @@
+diff --git a/packages/tui/src/component/prompt/index.tsx b/packages/tui/src/component/prompt/index.tsx
+index c48c751..4348a8f 100644
+--- a/packages/tui/src/component/prompt/index.tsx
++++ b/packages/tui/src/component/prompt/index.tsx
+@@ -57,6 +57,7 @@ import { usePromptWorkspace } from "./workspace"
+ import { usePromptMove } from "./move"
+ import { readLocalAttachment } from "./local-attachment"
+ import { useLocation } from "../../context/location"
++import { routerLabel } from "./router-model"
+ 
+ registerOpencodeSpinner()
+ 
+@@ -260,6 +261,15 @@ export function Prompt(props: PromptProps) {
+     if (!messages) return undefined
+     return messages.findLast((m): m is UserMessage => m.role === "user")
+   })
++  const routedLabel = createMemo(() => {
++    const msg = lastUserMessage()
++    return routerLabel(msg?.model, msg && sync.data.part[msg.id])
++  })
++  const selectedRouterLabel = createMemo(() => {
++    const selected = local.model.current()
++    if (selected?.providerID !== "smart-router" || selected.modelID !== "auto") return
++    return routedLabel()
++  })
+ 
+   const usage = createMemo(() => {
+     if (!props.sessionID) return
+@@ -313,9 +323,10 @@ export function Prompt(props: PromptProps) {
+   createEffect(() => {
+     const sessionID = props.sessionID
+     const msg = lastUserMessage()
++    const parts = msg && sync.data.part[msg.id]
+ 
+     if (sessionID !== syncedSessionID) {
+-      if (!sessionID || !msg) return
++      if (!sessionID || !msg || !parts) return
+ 
+       syncedSessionID = sessionID
+ 
+@@ -325,8 +336,9 @@ export function Prompt(props: PromptProps) {
+         // Keep command line --agent if specified.
+         if (!args.agent) local.agent.set(msg.agent)
+         if (msg.model) {
+-          local.model.set(msg.model)
+-          local.model.variant.set(msg.model.variant)
++          const routed = routerLabel(msg.model, parts)
++          local.model.set(routed ? { providerID: "smart-router", modelID: "auto" } : msg.model)
++          local.model.variant.set(routed ? undefined : msg.model.variant)
+         }
+       }
+     }
+@@ -1455,20 +1467,29 @@ export function Prompt(props: PromptProps) {
+                       <Show when={store.mode === "normal"}>
+                         <box flexDirection="row" gap={1}>
+                           <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
+-                          <text
+-                            flexShrink={0}
+-                            fg={fadeColor(leader() ? theme.textMuted : theme.text, modelMetaAlpha())}
++                          <Show
++                            when={selectedRouterLabel()}
++                            fallback={
++                              <>
++                                <text
++                                  flexShrink={0}
++                                  fg={fadeColor(leader() ? theme.textMuted : theme.text, modelMetaAlpha())}
++                                >
++                                  {local.model.parsed().model}
++                                </text>
++                                <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
++                                <Show when={showVariant()}>
++                                  <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
++                                  <text>
++                                    <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()), bold: true }}>
++                                      {local.model.variant.current()}
++                                    </span>
++                                  </text>
++                                </Show>
++                              </>
++                            }
+                           >
+-                            {local.model.parsed().model}
+-                          </text>
+-                          <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
+-                          <Show when={showVariant()}>
+-                            <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
+-                            <text>
+-                              <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()), bold: true }}>
+-                                {local.model.variant.current()}
+-                              </span>
+-                            </text>
++                            {(label) => <text fg={fadeColor(theme.text, modelMetaAlpha())}>{label()}</text>}
+                           </Show>
+                         </box>
+                       </Show>
+diff --git a/packages/tui/src/component/prompt/router-model.ts b/packages/tui/src/component/prompt/router-model.ts
+new file mode 100644
+index 0000000..dfbbfe1
+--- /dev/null
++++ b/packages/tui/src/component/prompt/router-model.ts
+@@ -0,0 +1,17 @@
++export function routerLabel(
++  model: { providerID: string; modelID: string; variant?: string } | undefined,
++  parts: readonly { type: string; metadata?: Record<string, unknown> }[] | undefined,
++) {
++  if (!model) return
++  const marker = parts?.find((part) => part.type === "text" && part.metadata?.modelRouter)?.metadata?.modelRouter
++  if (!marker || typeof marker !== "object" || !("model" in marker)) return
++  const selected = marker.model
++  if (!selected || typeof selected !== "object" || !("providerID" in selected) || !("modelID" in selected)) return
++  if (
++    selected.providerID !== model.providerID ||
++    selected.modelID !== model.modelID ||
++    ("variant" in selected ? selected.variant : undefined) !== model.variant
++  )
++    return
++  return "label" in marker && typeof marker.label === "string" ? marker.label : "Smart Router"
++}
+diff --git a/packages/tui/test/cli/tui/router-model.test.ts b/packages/tui/test/cli/tui/router-model.test.ts
+new file mode 100644
+index 0000000..78f3566
+--- /dev/null
++++ b/packages/tui/test/cli/tui/router-model.test.ts
+@@ -0,0 +1,17 @@
++import { expect, test } from "bun:test"
++import { routerLabel } from "../../../src/component/prompt/router-model"
++
++const model = { providerID: "sakura", modelID: "preview/Kimi-K2.7-Code", variant: "auto" }
++const routed = [{ type: "text", metadata: { modelRouter: { model, label: "Smart Router · SIMPLE · confidence 0.8" } } }]
++
++test("recognizes a routed user turn and keeps its compact label", () => {
++  expect(routerLabel(model, routed)).toBe("Smart Router · SIMPLE · confidence 0.8")
++  expect(routerLabel(model, [{ type: "text", metadata: { modelRouter: { model } } }])).toBe("Smart Router")
++})
++
++test("never treats a different or manual model as auto-routed", () => {
++  expect(routerLabel({ ...model, variant: "high" }, routed)).toBeUndefined()
++  expect(routerLabel({ ...model, modelID: "preview/Kimi-K2.6" }, routed)).toBeUndefined()
++  expect(routerLabel(model, [{ type: "text" }])).toBeUndefined()
++  expect(routerLabel(model, undefined)).toBeUndefined()
++})

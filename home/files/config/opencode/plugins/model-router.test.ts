@@ -18,7 +18,6 @@ const output = (model = { providerID: "smart-router", modelID: "auto" }) => ({
   message: { agent: "build", model },
   parts: [{ type: "text", text: "Fix one typo." }],
 });
-const modelLabel = (model) => `${model.providerID}/${model.modelID} / ${model.variant}`;
 
 describe("model router", () => {
   test("defines the requested six tiers and classifier criteria", () => {
@@ -46,49 +45,42 @@ describe("model router", () => {
 
     expect(result.message.model).toEqual(config.tiers.SIMPLE);
     expect(result.parts[0].metadata.modelRouter.model).toEqual(config.tiers.SIMPLE);
-    expect(result.parts[0].metadata.modelRouter.summary).toBe(`JevK5 · SIMPLE · confidence 0.8 · ${modelLabel(config.tiers.SIMPLE)}`);
+    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · SIMPLE · confidence 0.8");
   });
 
-  test("reroutes the concrete model inherited by the TUI", async () => {
+  test("reroutes a second turn while Smart Router stays selected", async () => {
     process.env.OPENCODE_ROUTER_CONFIG = configPath;
     let choice = "SIMPLE";
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ answers: { tier: { choice, confidence: 0.8 } } }))) as typeof fetch;
-    const messages = [];
-    const client = { session: { messages: async () => ({ data: messages.slice(-2) }) } };
 
-    let hooks = await ModelRouter({ client, directory: "/repo" });
+    let hooks = await ModelRouter();
     const first = output();
     await hooks["chat.message"]({ sessionID: "session", agent: "build" }, first);
-    messages.push({ info: { role: "user" }, parts: first.parts }, { info: { role: "assistant" }, parts: [] });
 
     choice = "REASONING";
-    hooks = await ModelRouter({ client, directory: "/repo" });
-    const second = output(first.message.model);
+    hooks = await ModelRouter();
+    const second = output();
     await hooks["chat.message"]({ sessionID: "session", agent: "build" }, second);
 
     expect(second.message.model).toEqual(config.tiers.REASONING);
-    expect(second.parts[0].metadata.modelRouter.summary).toBe(`JevK5 · REASONING · confidence 0.8 · ${modelLabel(config.tiers.REASONING)}`);
+    expect(second.parts[0].metadata.modelRouter.label).toBe("Smart Router · REASONING · confidence 0.8");
   });
 
-  test("stops routing after a concrete model is selected", async () => {
+  test("stops routing when the selected concrete model equals the previous auto result", async () => {
     process.env.OPENCODE_ROUTER_CONFIG = configPath;
     let classifierCalls = 0;
     globalThis.fetch = (async () => {
       classifierCalls++;
       return new Response(JSON.stringify({ answers: { tier: { choice: "SIMPLE", confidence: 0.8 } } }));
     }) as typeof fetch;
-    const messages = [];
-    const client = { session: { messages: async () => ({ data: messages.slice(-2) }) } };
-    const hooks = await ModelRouter({ client, directory: "/repo" });
+    const hooks = await ModelRouter();
     const first = output();
     await hooks["chat.message"]({ sessionID: "session", agent: "build" }, first);
-    messages.push({ info: { role: "user" }, parts: first.parts }, { info: { role: "assistant" }, parts: [] });
 
-    const manualModel = { providerID: "manual", modelID: "chosen", variant: "low" };
+    const manualModel = first.message.model;
     const manual = output(manualModel);
     await hooks["chat.message"]({ sessionID: "session", agent: "build" }, manual);
-    messages.push({ info: { role: "user" }, parts: manual.parts }, { info: { role: "assistant" }, parts: [] });
     const continued = output(manualModel);
     await hooks["chat.message"]({ sessionID: "session", agent: "build" }, continued);
 
@@ -109,7 +101,7 @@ describe("model router", () => {
     await hooks["chat.message"]({ sessionID: "session", agent: "build" }, result);
 
     expect(result.message.model).toEqual(config.fallback);
-    expect(result.parts[0].metadata.modelRouter.summary).toBe(`JevK5 · Low confidence 0.1 · fallback · ${modelLabel(config.fallback)}`);
+    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · fallback · confidence 0.1");
   });
 
   test("records fallback when JevK5 is unavailable", async () => {
@@ -123,7 +115,7 @@ describe("model router", () => {
       await hooks["chat.message"]({ sessionID: "session", agent: "build" }, result);
 
       expect(result.message.model).toEqual(config.fallback);
-      expect(result.parts[0].metadata.modelRouter.summary).toBe(`JevK5 · Classifier unavailable · fallback · ${modelLabel(config.fallback)}`);
+      expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · fallback");
       expect(warning).toHaveBeenCalledWith(expect.stringContaining("classifier unavailable"));
     } finally {
       warning.mockRestore();
