@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-config=${OPENCODE_ROUTER_CONFIG:-"${XDG_CONFIG_HOME:-${HOME:?}/.config}/opencode/model-router.json"}
+config=${OPENCODE_ROUTER_CONFIG:-"${HOME:?}/.config/opencode-profiles/router/opencode/model-router.json"}
 state_dir=${XDG_STATE_HOME:-"${HOME:?}/.local/state"}/ollaya
 
 fallback() {
@@ -68,6 +68,15 @@ else
 	exit 64
 fi
 
+if jq -ne --arg state "$state" '$state | test("(^|[^A-Za-z0-9_])xhigh([^A-Za-z0-9_]|$)"; "i")' >/dev/null 2>&1; then
+	[ -f "$config" ] || { printf 'ai-model-route: config is missing: %s\n' "$config" >&2; exit 1; }
+	selected=$(jq -er '.tiers.REASONING | .providerID + "/" + .modelID' "$config")
+	variant=$(jq -er '.tiers.REASONING.variant' "$config")
+	jq -cn --arg model "$selected" --arg variant "$variant" \
+		'{tier:"REASONING",confidence:null,model:$model,variant:$variant,fallback:false,reason:"explicit_xhigh"}'
+	exit
+fi
+
 if ! ready; then
 	fallback classifier_unavailable
 	exit
@@ -97,11 +106,26 @@ fi
 
 tier=$(printf '%s\n' "$response" | jq -er '.answers.tier.choice' 2>/dev/null || true)
 confidence=$(printf '%s\n' "$response" | jq -er '.answers.tier.confidence | numbers' 2>/dev/null || true)
+clarity=$(printf '%s\n' "$response" | jq -er '.answers.clarity.choice' 2>/dev/null || true)
+context_confidence=$(printf '%s\n' "$response" | jq -er '.answers.clarity.confidence | numbers' 2>/dev/null || true)
 minimum=$(jq -er '.min_confidence' "$config")
+context_minimum=$(jq -er '.min_context_confidence' "$config")
+
+if [ -z "$context_confidence" ] || { [ "$clarity" != CLEAR ] && [ "$clarity" != CONTEXT_REQUIRED ]; }; then
+	fallback invalid_context
+	exit
+fi
 
 if [ -z "$tier" ] || [ -z "$confidence" ] ||
 	! jq -en --argjson confidence "$confidence" --argjson minimum "$minimum" '$confidence >= $minimum' >/dev/null; then
 	fallback low_confidence
+	exit
+fi
+
+if [ "$clarity" = CONTEXT_REQUIRED ] &&
+	jq -en --argjson confidence "$context_confidence" --argjson minimum "$context_minimum" '$confidence >= $minimum' >/dev/null; then
+	# Worker assignments have no conversation history to inherit safely.
+	fallback context_missing
 	exit
 fi
 
