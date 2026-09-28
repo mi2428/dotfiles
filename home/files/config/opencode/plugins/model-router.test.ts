@@ -18,6 +18,11 @@ const output = (model = { providerID: "smart-router", modelID: "auto" }) => ({
   message: { agent: "build", model },
   parts: [{ type: "text", text: "Fix one typo." }],
 });
+const decision = (choice, confidence, clarity = "CLEAR", contextConfidence = 0.95) =>
+  new Response(JSON.stringify({ answers: {
+    tier: { choice, confidence },
+    clarity: { choice: clarity, confidence: contextConfidence },
+  } }));
 
 describe("model router", () => {
   test("defines the requested six tiers and classifier criteria", () => {
@@ -32,12 +37,12 @@ describe("model router", () => {
     expect(config.tiers.LOW.modelID).toBe(config.tiers.MEDIUM.modelID);
     expect(config.tiers.HIGH.modelID).toBe(config.tiers.REASONING.modelID);
     expect(Object.keys(config.questions.tier.criteria)).toEqual(Object.keys(config.tiers));
+    expect(Object.keys(config.questions.clarity.criteria)).toEqual(["CLEAR", "CONTEXT_REQUIRED"]);
   });
 
   test("routes a confident user turn", async () => {
     process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ answers: { tier: { choice: "SIMPLE", confidence: 0.8 } } }))) as typeof fetch;
+    globalThis.fetch = (async () => decision("SIMPLE", 0.8)) as typeof fetch;
 
     const hooks = await ModelRouter();
     const result = output();
@@ -45,14 +50,14 @@ describe("model router", () => {
 
     expect(result.message.model).toEqual(config.tiers.SIMPLE);
     expect(result.parts[0].metadata.modelRouter.model).toEqual(config.tiers.SIMPLE);
+    expect(result.parts[0].metadata.modelRouter.tier).toBe("SIMPLE");
     expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · SIMPLE · confidence 0.8");
   });
 
   test("reroutes a second turn while Smart Router stays selected", async () => {
     process.env.OPENCODE_ROUTER_CONFIG = configPath;
     let choice = "SIMPLE";
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ answers: { tier: { choice, confidence: 0.8 } } }))) as typeof fetch;
+    globalThis.fetch = (async () => decision(choice, 0.8)) as typeof fetch;
 
     let hooks = await ModelRouter();
     const first = output();
@@ -72,7 +77,7 @@ describe("model router", () => {
     let classifierCalls = 0;
     globalThis.fetch = (async () => {
       classifierCalls++;
-      return new Response(JSON.stringify({ answers: { tier: { choice: "SIMPLE", confidence: 0.8 } } }));
+      return decision("SIMPLE", 0.8);
     }) as typeof fetch;
     const hooks = await ModelRouter();
     const first = output();
@@ -93,8 +98,7 @@ describe("model router", () => {
 
   test("records the confidence when routing falls back", async () => {
     process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ answers: { tier: { choice: "REASONING", confidence: 0.1 } } }))) as typeof fetch;
+    globalThis.fetch = (async () => decision("REASONING", 0.1)) as typeof fetch;
 
     const hooks = await ModelRouter();
     const result = output();
@@ -116,7 +120,7 @@ describe("model router", () => {
 
       expect(result.message.model).toEqual(config.fallback);
       expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · fallback");
-      expect(warning).toHaveBeenCalledWith(expect.stringContaining("classifier unavailable"));
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining("routing unavailable"));
     } finally {
       warning.mockRestore();
     }
@@ -124,8 +128,7 @@ describe("model router", () => {
 
   test("uses the fallback on low confidence and ignores concrete models", async () => {
     process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ answers: { tier: { choice: "REASONING", confidence: 0.1 } } }))) as typeof fetch;
+    globalThis.fetch = (async () => decision("REASONING", 0.1)) as typeof fetch;
 
     const hooks = await ModelRouter();
     const uncertain = output();
@@ -145,5 +148,90 @@ describe("model router", () => {
     await expect(hooks["chat.message"]({ sessionID: "session", agent: "build" }, output())).rejects.toThrow(
       "config unavailable",
     );
+  });
+
+  test("inherits the previous routed model for a contextual follow-up", async () => {
+    process.env.OPENCODE_ROUTER_CONFIG = configPath;
+    globalThis.fetch = (async () => decision("SIMPLE", 0.7, "CONTEXT_REQUIRED", 0.95)) as typeof fetch;
+    const client = { session: { messages: async ({ path, query }) => {
+      expect(path.id).toBe("session");
+      expect(query.directory).toBe("/repo");
+      return { data: [
+        { info: { role: "user", id: "previous" }, parts: [{ type: "text", metadata: { modelRouter: {
+          model: config.tiers.REASONING, tier: "REASONING", label: "Smart Router · REASONING · confidence 0.8",
+        } } }] },
+        { info: { role: "user", id: "current" }, parts: [] },
+      ] };
+    } } };
+    const hooks = await ModelRouter({ client, directory: "/repo" });
+    const result = output();
+    result.parts[0].text = "まずそこ直して";
+    await hooks["chat.message"]({ sessionID: "session", messageID: "current", agent: "build" }, result);
+
+    expect(result.message.model).toEqual(config.tiers.REASONING);
+    expect(result.parts[0].metadata.modelRouter.tier).toBe("REASONING");
+    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · REASONING · inherited");
+  });
+
+  test("falls back when a contextual turn has no previous routed model", async () => {
+    process.env.OPENCODE_ROUTER_CONFIG = configPath;
+    globalThis.fetch = (async () => decision("SIMPLE", 0.7, "CONTEXT_REQUIRED", 0.95)) as typeof fetch;
+    const client = { session: { messages: async () => ({ data: [] }) } };
+    const hooks = await ModelRouter({ client, directory: "/repo" });
+    const result = output();
+    result.parts[0].text = "これ直して";
+    await hooks["chat.message"]({ sessionID: "session", messageID: "current", agent: "build" }, result);
+
+    expect(result.message.model).toEqual(config.fallback);
+    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · fallback · context missing");
+  });
+
+  test("raises the inherited tier when a follow-up adds harder requirements", async () => {
+    process.env.OPENCODE_ROUTER_CONFIG = configPath;
+    globalThis.fetch = (async () => decision("COMPLEX", 0.7, "CONTEXT_REQUIRED", 0.9)) as typeof fetch;
+    const client = { session: { messages: async () => ({ data: [
+      { info: { role: "user", id: "previous" }, parts: [{ type: "text", metadata: { modelRouter: {
+        model: config.tiers.SIMPLE, tier: "SIMPLE", label: "Smart Router · SIMPLE · confidence 0.8",
+      } } }] },
+    ] }) } };
+    const hooks = await ModelRouter({ client, directory: "/repo" });
+    const result = output();
+    result.parts[0].text = "それを全サービスに展開して安全性も検証して";
+    await hooks["chat.message"]({ sessionID: "session", messageID: "current", agent: "build" }, result);
+
+    expect(result.message.model).toEqual(config.tiers.COMPLEX);
+    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · COMPLEX · confidence 0.7");
+  });
+
+  test("does not downgrade a previous safety fallback", async () => {
+    process.env.OPENCODE_ROUTER_CONFIG = configPath;
+    globalThis.fetch = (async () => decision("COMPLEX", 0.7, "CONTEXT_REQUIRED", 0.9)) as typeof fetch;
+    const client = { session: { messages: async () => ({ data: [
+      { info: { role: "user", id: "previous" }, parts: [{ type: "text", metadata: { modelRouter: {
+        model: config.fallback, label: "Smart Router · fallback · confidence 0.2",
+      } } }] },
+    ] }) } };
+    const hooks = await ModelRouter({ client, directory: "/repo" });
+    const result = output();
+    await hooks["chat.message"]({ sessionID: "session", messageID: "current", agent: "build" }, result);
+
+    expect(result.message.model).toEqual(config.fallback);
+    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · fallback · inherited");
+  });
+
+  test("does not inherit a cheap model when new contextual requirements have low confidence", async () => {
+    process.env.OPENCODE_ROUTER_CONFIG = configPath;
+    globalThis.fetch = (async () => decision("REASONING", 0.2, "CONTEXT_REQUIRED", 0.9)) as typeof fetch;
+    const client = { session: { messages: async () => ({ data: [
+      { info: { role: "user", id: "previous" }, parts: [{ type: "text", metadata: { modelRouter: {
+        model: config.tiers.SIMPLE, tier: "SIMPLE",
+      } } }] },
+    ] }) } };
+    const hooks = await ModelRouter({ client, directory: "/repo" });
+    const result = output();
+    await hooks["chat.message"]({ sessionID: "session", messageID: "current", agent: "build" }, result);
+
+    expect(result.message.model).toEqual(config.fallback);
+    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · fallback · confidence 0.2");
   });
 });
