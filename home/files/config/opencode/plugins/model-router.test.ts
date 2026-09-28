@@ -30,6 +30,54 @@ describe("model router", () => {
     await hooks["chat.message"]({ sessionID: "session", agent: "build" }, result);
 
     expect(result.message.model).toEqual(config.tiers.SIMPLE);
+    expect(result.parts[0].metadata.modelRouter.model).toEqual(config.tiers.SIMPLE);
+  });
+
+  test("reroutes the concrete model inherited by the TUI", async () => {
+    process.env.OPENCODE_ROUTER_CONFIG = configPath;
+    let choice = "SIMPLE";
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ answers: { tier: { choice, confidence: 0.8 } } }))) as typeof fetch;
+    const messages = [];
+    const client = { session: { messages: async () => ({ data: messages.slice(-2) }) } };
+
+    let hooks = await ModelRouter({ client, directory: "/repo" });
+    const first = output();
+    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, first);
+    messages.push({ info: { role: "user" }, parts: first.parts }, { info: { role: "assistant" }, parts: [] });
+
+    choice = "REASONING";
+    hooks = await ModelRouter({ client, directory: "/repo" });
+    const second = output(first.message.model);
+    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, second);
+
+    expect(second.message.model).toEqual(config.tiers.REASONING);
+  });
+
+  test("stops routing after a concrete model is selected", async () => {
+    process.env.OPENCODE_ROUTER_CONFIG = configPath;
+    let classifierCalls = 0;
+    globalThis.fetch = (async () => {
+      classifierCalls++;
+      return new Response(JSON.stringify({ answers: { tier: { choice: "SIMPLE", confidence: 0.8 } } }));
+    }) as typeof fetch;
+    const messages = [];
+    const client = { session: { messages: async () => ({ data: messages.slice(-2) }) } };
+    const hooks = await ModelRouter({ client, directory: "/repo" });
+    const first = output();
+    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, first);
+    messages.push({ info: { role: "user" }, parts: first.parts }, { info: { role: "assistant" }, parts: [] });
+
+    const manualModel = { providerID: "manual", modelID: "chosen", variant: "low" };
+    const manual = output(manualModel);
+    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, manual);
+    messages.push({ info: { role: "user" }, parts: manual.parts }, { info: { role: "assistant" }, parts: [] });
+    const continued = output(manualModel);
+    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, continued);
+
+    expect(manual.message.model).toEqual(manualModel);
+    expect(continued.message.model).toEqual(manualModel);
+    expect(classifierCalls).toBe(1);
   });
 
   test("uses the fallback on low confidence and ignores concrete models", async () => {
