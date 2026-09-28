@@ -88,7 +88,6 @@ let
   mkProviders = models: {
     openai = { inherit models; };
     sakura = sakuraProvider;
-    ${routerPolicy.trigger.providerID} = smartRouterProvider;
   };
 
   commonOpenCodeConfig = {
@@ -132,11 +131,13 @@ let
     };
   };
 
-  mkOpenCodeConfig = { model, models ? openAIModels, plugin ? null }:
+  mkOpenCodeConfig = { model, models ? openAIModels, plugin ? null, smartRouter ? false }:
     commonOpenCodeConfig
     // {
       inherit model;
-      provider = mkProviders models;
+      provider = mkProviders models // lib.optionalAttrs smartRouter {
+        ${routerPolicy.trigger.providerID} = smartRouterProvider;
+      };
     }
     // lib.optionalAttrs (plugin != null) {
       plugin = [ plugin ];
@@ -186,6 +187,11 @@ let
     defaultConfig = json.generate "opencode-default.json" (mkOpenCodeConfig {
       model = routeModel routerPolicy.fallback;
       plugin = "${ponytail}/.opencode/plugins/ponytail.mjs";
+    });
+    routerConfig = json.generate "opencode-router.json" (mkOpenCodeConfig {
+      model = routeModel routerPolicy.trigger;
+      plugin = "${ponytail}/.opencode/plugins/ponytail.mjs";
+      smartRouter = true;
     });
     omoConfig = json.generate "opencode-omo.json" (mkOpenCodeConfig {
       model = routeModel routerPolicy.fallback;
@@ -240,9 +246,7 @@ in {
     "opencode/commands/obsidian.md" = mkLink ../../files/config/opencode/commands/obsidian.md;
     "opencode/commands/showme.md" = mkLink ../../files/config/opencode/commands/showme.md;
     "opencode/opencode.jsonc" = mkLink generated.defaultConfig;
-    "opencode/model-router.json" = mkLink ../../files/config/opencode/model-router.json;
     "opencode/plugins/first-things-first.js" = mkLink firstThingsFirstPlugin;
-    "opencode/plugins/model-router.js" = mkLink modelRouterPlugin;
     "opencode/plugins/herdr-worker-title.js" = mkLink herdrWorkerTitlePlugin;
     "opencode/plugins/session-title.js" = mkLink sessionTitlePlugin;
     "opencode/plugins/obsidian-export.js" = mkLink obsidianExportPlugin;
@@ -250,14 +254,38 @@ in {
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode/tui.json" = mkLink generated.defaultTui;
 
+    "opencode-profiles/router/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
+    "opencode-profiles/router/opencode/agents/herdr-supervisor.md" =
+      mkLink ../../files/config/opencode/agents/herdr-supervisor.md;
+    "opencode-profiles/router/opencode/agents/herdr-worker.md" =
+      mkLink ../../files/config/opencode/agents/herdr-worker.md;
+    "opencode-profiles/router/opencode/commands/en.md" = mkLink ../../files/config/opencode/commands/en.md;
+    "opencode-profiles/router/opencode/commands/obsidian.md" =
+      mkLink ../../files/config/opencode/commands/obsidian.md;
+    "opencode-profiles/router/opencode/commands/showme.md" =
+      mkLink ../../files/config/opencode/commands/showme.md;
+    "opencode-profiles/router/opencode/opencode.jsonc" = mkLink generated.routerConfig;
+    "opencode-profiles/router/opencode/model-router.json" =
+      mkLink ../../files/config/opencode/model-router.json;
+    "opencode-profiles/router/opencode/plugins/first-things-first.js" = mkLink firstThingsFirstPlugin;
+    "opencode-profiles/router/opencode/plugins/model-router.js" = mkLink modelRouterPlugin;
+    "opencode-profiles/router/opencode/plugins/tui" = {
+      force = true;
+      source = todoOverlayOpenCodePackage;
+    };
+    "opencode-profiles/router/opencode/plugins/profile-shell-env.js" = mkLink profileShellEnvPlugin;
+    "opencode-profiles/router/opencode/plugins/herdr-worker-title.js" = mkLink herdrWorkerTitlePlugin;
+    "opencode-profiles/router/opencode/plugins/session-title.js" = mkLink sessionTitlePlugin;
+    "opencode-profiles/router/opencode/plugins/obsidian-export.js" = mkLink obsidianExportPlugin;
+    "opencode-profiles/router/opencode/themes/catppuccin-mocha-mauve.json" =
+      mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
+    "opencode-profiles/router/opencode/tui.json" = mkLink generated.defaultTui;
+
     "opencode-profiles/chat/opencode/agents/chat.md" =
       mkLink ../../files/config/opencode/agents/chat.md;
     "opencode-profiles/chat/opencode/opencode.jsonc" = mkLink generated.chatConfig;
-    "opencode-profiles/chat/opencode/model-router.json" =
-      mkLink ../../files/config/opencode/model-router.json;
     "opencode-profiles/chat/opencode/plugins/chat-system.js" =
       mkLink ../../files/config/opencode/plugins/chat-system.js;
-    "opencode-profiles/chat/opencode/plugins/model-router.js" = mkLink modelRouterPlugin;
     "opencode-profiles/chat/opencode/plugins/profile-shell-env.js" =
       mkLink profileShellEnvPlugin;
     "opencode-profiles/chat/opencode/plugins/session-title.js" =
@@ -280,14 +308,11 @@ in {
     "opencode-profiles/omo/opencode/commands/showme.md" =
       mkLink ../../files/config/opencode/commands/showme.md;
     "opencode-profiles/omo/opencode/opencode.jsonc" = mkLink generated.omoConfig;
-    "opencode-profiles/omo/opencode/model-router.json" =
-      mkLink ../../files/config/opencode/model-router.json;
     "opencode-profiles/omo/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode-profiles/omo/opencode/tui.json" = mkLink generated.omoTui;
     "opencode-profiles/omo/opencode/plugins/first-things-first.js" =
       mkLink firstThingsFirstPlugin;
-    "opencode-profiles/omo/opencode/plugins/model-router.js" = mkLink modelRouterPlugin;
     "opencode-profiles/omo/opencode/plugins/tui" = {
       force = true;
       source = todoOverlayOpenCodePackage;
@@ -313,14 +338,11 @@ in {
     "opencode-profiles/slim/opencode/commands/showme.md" =
       mkLink ../../files/config/opencode/commands/showme.md;
     "opencode-profiles/slim/opencode/opencode.jsonc" = mkLink generated.slimConfig;
-    "opencode-profiles/slim/opencode/model-router.json" =
-      mkLink ../../files/config/opencode/model-router.json;
     "opencode-profiles/slim/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode-profiles/slim/opencode/tui.json" = mkLink generated.slimTui;
     "opencode-profiles/slim/opencode/plugins/first-things-first.js" =
       mkLink firstThingsFirstPlugin;
-    "opencode-profiles/slim/opencode/plugins/model-router.js" = mkLink modelRouterPlugin;
     "opencode-profiles/slim/opencode/plugins/tui" = {
       force = true;
       source = todoOverlayOpenCodePackage;
@@ -347,6 +369,9 @@ in {
     ".agents/skills/repo-qa" =
       mkLink ../../files/agents/skills/repo-qa;
     ".claude/skills/herdr-agent-layout" = mkLink herdrAgentLayoutSkill;
+  } // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+    ".local/bin/opencode-smart-router" = mkLink (config.lib.file.mkOutOfStoreSymlink
+      "${config.home.homeDirectory}/.local/share/dotfiles/opencode-smart-router/bin/opencode");
   };
 
   # Herdr is installed outside Nix on macOS. Project its generated OpenCode
@@ -355,7 +380,7 @@ in {
   home.activation.linkOpenCodeProfileHerdrIntegration =
     lib.hm.dag.entryAfter [ "installHerdrAgentIntegrations" "linkGeneration" ] ''
       integration_source="${config.home.homeDirectory}/.config/opencode/plugins/herdr-agent-state.js"
-      for profile in chat omo slim; do
+      for profile in chat omo slim router; do
         integration_target="${config.home.homeDirectory}/.config/opencode-profiles/$profile/opencode/plugins/herdr-agent-state.js"
         if [ -f "$integration_source" ]; then
           if [ -e "$integration_target" ] && [ ! -L "$integration_target" ]; then

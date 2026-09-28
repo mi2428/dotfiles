@@ -80,6 +80,8 @@ default_tui_config="$HOME/.config/opencode/tui.json"
 omo_config="$repo_root/home/files/omo/omo.jsonc"
 chat_config_home="$HOME/.config/opencode-profiles/chat"
 chat_root="$chat_config_home/opencode"
+router_config_home="$HOME/.config/opencode-profiles/router"
+router_root="$router_config_home/opencode"
 
 for pin in "OmO:$omo_plugin_spec:$omo_version" "Slim:$slim_plugin_spec:$slim_version"; do
     label=${pin%%:*}
@@ -124,6 +126,26 @@ if [ "$default_root_clean" = true ]; then
     ok "the default OpenCode config root stays framework-plugin-free"
 else
     fail "the default OpenCode config root contains a framework plugin reference"
+fi
+for config_home in "$HOME/.config" "$chat_config_home" "$HOME/.config/opencode-profiles/omo" "$HOME/.config/opencode-profiles/slim"; do
+    config_root="$config_home/opencode"
+    if [ -e "$config_root/plugins/model-router.js" ] || [ -L "$config_root/plugins/model-router.js" ] \
+        || [ -e "$config_root/model-router.json" ] || [ -L "$config_root/model-router.json" ]; then
+        fail "Homebrew OpenCode profile includes Smart Router: $config_root"
+    elif XDG_CONFIG_HOME="$config_home" OPENCODE_DISABLE_PROJECT_CONFIG=1 \
+        opencode debug config --pure 2>/dev/null | jq -e '.provider["smart-router"] == null' >/dev/null; then
+        ok "Homebrew OpenCode profile has no Smart Router: $config_root"
+    else
+        fail "Homebrew OpenCode profile exposes Smart Router: $config_root"
+    fi
+done
+if [ -f "$router_root/plugins/model-router.js" ] && [ -f "$router_root/model-router.json" ] \
+    && XDG_CONFIG_HOME="$router_config_home" OPENCODE_DISABLE_PROJECT_CONFIG=1 \
+        opencode debug config --pure 2>/dev/null \
+        | jq -e '.model == "smart-router/auto" and .provider["smart-router"].models.auto != null' >/dev/null; then
+    ok 'patched OpenCode profile owns Smart Router'
+else
+    fail 'patched OpenCode profile is missing Smart Router'
 fi
 if [ -f "$default_tui_config" ] \
     && jq -e '.plugin | index("./plugins/tui") != null' "$default_tui_config" >/dev/null; then
@@ -246,7 +268,7 @@ fi
 integration_source="$HOME/.config/opencode/plugins/herdr-agent-state.js"
 if [ -f "$integration_source" ]; then
     ok "Herdr OpenCode integration exists"
-    for profile in chat omo slim; do
+    for profile in chat omo slim router; do
         profile_integration="$HOME/.config/opencode-profiles/$profile/opencode/plugins/herdr-agent-state.js"
         if [ -e "$profile_integration" ] && [ "$profile_integration" -ef "$integration_source" ]; then
             ok "OpenCode $profile profile links the Herdr integration"
@@ -256,7 +278,7 @@ if [ -f "$integration_source" ]; then
     done
 else
     fail "Herdr OpenCode integration is missing: $integration_source"
-    for profile in chat omo slim; do
+    for profile in chat omo slim router; do
         profile_integration="$HOME/.config/opencode-profiles/$profile/opencode/plugins/herdr-agent-state.js"
         if [ -L "$profile_integration" ] && [ ! -e "$profile_integration" ]; then
             fail "OpenCode $profile profile contains a dangling Herdr integration"
