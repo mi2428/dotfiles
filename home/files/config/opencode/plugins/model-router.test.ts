@@ -18,8 +18,23 @@ const output = (model = { providerID: "smart-router", modelID: "auto" }) => ({
   message: { agent: "build", model },
   parts: [{ type: "text", text: "Fix one typo." }],
 });
+const modelLabel = (model) => `${model.providerID}/${model.modelID} / ${model.variant}`;
 
 describe("model router", () => {
+  test("defines the requested six tiers and classifier criteria", () => {
+    expect(Object.entries(config.tiers).map(([tier, model]) => [tier, model.variant])).toEqual([
+      ["SIMPLE", "auto"],
+      ["LOW", "medium"],
+      ["MEDIUM", "max"],
+      ["HIGH", "medium"],
+      ["COMPLEX", "high"],
+      ["REASONING", "max"],
+    ]);
+    expect(config.tiers.LOW.modelID).toBe(config.tiers.MEDIUM.modelID);
+    expect(config.tiers.HIGH.modelID).toBe(config.tiers.REASONING.modelID);
+    expect(Object.keys(config.questions.tier.criteria)).toEqual(Object.keys(config.tiers));
+  });
+
   test("routes a confident user turn", async () => {
     process.env.OPENCODE_ROUTER_CONFIG = configPath;
     const toasts = [];
@@ -44,7 +59,7 @@ describe("model router", () => {
       {
         body: {
           title: "Smart Router",
-          message: "SIMPLE · confidence 0.8 · sakura/preview/Kimi-K2.7-Code / auto",
+          message: `SIMPLE · confidence 0.8 · ${modelLabel(config.tiers.SIMPLE)}`,
           variant: "success",
           duration: 4000,
         },
@@ -79,9 +94,9 @@ describe("model router", () => {
     expect(second.message.model).toEqual(config.tiers.REASONING);
     expect(toasts.map((toast) => toast.message)).toEqual([
       "Classifying with JevK5...",
-      "SIMPLE · confidence 0.8 · sakura/preview/Kimi-K2.7-Code / auto",
+      `SIMPLE · confidence 0.8 · ${modelLabel(config.tiers.SIMPLE)}`,
       "Classifying with JevK5...",
-      "REASONING · confidence 0.8 · openai/gpt-6-sol / xhigh",
+      `REASONING · confidence 0.8 · ${modelLabel(config.tiers.REASONING)}`,
     ]);
   });
 
@@ -130,7 +145,7 @@ describe("model router", () => {
     expect(result.message.model).toEqual(config.fallback);
     expect(toasts[1]).toEqual({
       title: "Smart Router",
-      message: "Low confidence 0.1 · fallback · openai/gpt-6-sol / max",
+      message: `Low confidence 0.1 · fallback · ${modelLabel(config.fallback)}`,
       variant: "warning",
       duration: 4000,
     });
@@ -151,7 +166,7 @@ describe("model router", () => {
       expect(result.message.model).toEqual(config.fallback);
       expect(toasts.map((toast) => toast.message)).toEqual([
         "Classifying with JevK5...",
-        "Classifier unavailable · fallback · openai/gpt-6-sol / max",
+        `Classifier unavailable · fallback · ${modelLabel(config.fallback)}`,
       ]);
       expect(warning).toHaveBeenCalledWith(expect.stringContaining("classifier unavailable"));
     } finally {
