@@ -23,10 +23,10 @@ const sameModel = (left, right) =>
   left?.modelID === right?.modelID &&
   left?.variant === right?.variant;
 
-const markAutoRoute = (parts, model) => {
+const markAutoRoute = (parts, model, summary) => {
   const part = parts.find((item) => item.type === "text");
   if (!part) return;
-  part.metadata = { ...part.metadata, [ROUTE_METADATA]: { model } };
+  part.metadata = { ...part.metadata, [ROUTE_METADATA]: { model, summary } };
 };
 
 const previousAutoRoute = async (client, directory, sessionID) => {
@@ -42,18 +42,6 @@ const previousAutoRoute = async (client, directory, sessionID) => {
 
 export const ModelRouter = async ({ client, directory } = {}) => {
   const routes = new Map();
-  const showRoute = async (message, variant = "info", duration = 4000) => {
-    if (!client) return;
-    try {
-      await client.tui.showToast({
-        body: { title: "Smart Router", message, variant, duration },
-        query: { directory },
-        throwOnError: true,
-      });
-    } catch (error) {
-      console.warn(`[model-router] toast unavailable: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
   let config;
   let configError;
   try {
@@ -89,17 +77,15 @@ export const ModelRouter = async ({ client, directory } = {}) => {
         throw new Error("[model-router] fallback model is not configured");
 
       output.message.model = config.fallback;
-      const remember = () => {
-        markAutoRoute(output.parts, output.message.model);
+      const remember = (summary) => {
+        markAutoRoute(output.parts, output.message.model, summary);
         routes.set(input.sessionID, output.message.model);
       };
 
       const state = userText(output.parts);
       if (!state) return remember();
 
-      await showRoute("Classifying with JevK5...", "info", config.timeout_ms + 2000);
       let result = "Classifier unavailable · fallback";
-      let variant = "warning";
       try {
         const headers = { "Content-Type": "application/json" };
         if (process.env.OLLAYA_API_KEY) headers.Authorization = `Bearer ${process.env.OLLAYA_API_KEY}`;
@@ -128,7 +114,6 @@ export const ModelRouter = async ({ client, directory } = {}) => {
         ) {
           output.message.model = selected;
           result = `${answer.choice}${confidence}`;
-          variant = "success";
         } else {
           result =
             typeof answer?.confidence === "number" && answer.confidence < config.min_confidence
@@ -141,9 +126,8 @@ export const ModelRouter = async ({ client, directory } = {}) => {
         );
       }
 
-      remember();
       const { providerID, modelID, variant: effort } = output.message.model;
-      await showRoute(`${result} · ${providerID}/${modelID} / ${effort}`, variant);
+      remember(`JevK5 · ${result} · ${providerID}/${modelID} / ${effort}`);
     },
   };
 };

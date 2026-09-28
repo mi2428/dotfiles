@@ -295,6 +295,50 @@ function latestUserMessageID(messages: readonly { id: string; role: string }[]):
   return undefined;
 }
 
+export function routerStatus(api: Parameters<TuiPlugin>[0]): string | undefined {
+  const sessionID = sessionIDFromRoute(api.route.current);
+  const messageID = sessionID && latestUserMessageID(api.state.session.messages(sessionID));
+  if (!messageID) return;
+  for (const part of api.state.part(messageID)) {
+    if (part.type !== "text") continue;
+    const marker = part.metadata?.modelRouter;
+    if (marker && typeof marker === "object" && "summary" in marker && typeof marker.summary === "string")
+      return marker.summary;
+  }
+}
+
+export function registerRouterStatus(api: Parameters<TuiPlugin>[0], solid: SolidAdapter): void {
+  const [revision, setRevision] = solid.createSignal(0);
+  const unsubscribe = api.event.on("message.part.updated", ({ properties }) => {
+    if (properties.part.type !== "text") return;
+    setRevision((value) => value + 1);
+    api.renderer.requestRender();
+  });
+  api.lifecycle.onDispose(unsubscribe);
+  api.slots.register({
+    slots: {
+      app_bottom: () => {
+        const root = solid.createElement("box");
+        solid.setProp(root, "width", "100%");
+        solid.setProp(root, "paddingLeft", 2);
+        solid.insert(root, () => {
+          revision();
+          const summary = routerStatus(api);
+          solid.setProp(root, "height", summary ? 1 : 0);
+          if (!summary) return null;
+          const label = solid.createElement("text");
+          solid.setProp(label, "fg", api.theme.current.textMuted);
+          solid.setProp(label, "wrapMode", "none");
+          solid.setProp(label, "truncate", true);
+          solid.insert(label, summary);
+          return label;
+        });
+        return root;
+      },
+    },
+  });
+}
+
 export function registerTodoOverlay(api: Parameters<TuiPlugin>[0], solid: SolidAdapter): void {
   const scrollOffsets = new Map<string, { scrollTop: number; windowKey: string }>();
   const latestUserMessages = new Map<string, string>();
@@ -427,6 +471,7 @@ export const tui: TuiPlugin = async (api) => {
   ]);
   registerMessageLabelColors(api);
   registerTodoOverlay(api, { ...solid, createSignal });
+  registerRouterStatus(api, { ...solid, createSignal });
 };
 
 export default { id: "opencode-todo-overlay:tui", tui };

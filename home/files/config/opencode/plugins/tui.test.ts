@@ -16,7 +16,9 @@ import {
   MAX_PANEL_WIDTH,
   popupWidth,
   registerMessageLabelColors,
+  registerRouterStatus,
   registerTodoOverlay,
+  routerStatus,
   sessionIDFromRoute,
 } from "./tui/tui";
 
@@ -32,6 +34,63 @@ describe("runtime integration", () => {
     const source = await Bun.file(new URL("./tui/tui.ts", import.meta.url)).text();
     assert.match(source, /import\("solid-js"\)/);
     assert.doesNotMatch(source, /solid-js\/dist\//);
+  });
+});
+
+describe("router status", () => {
+  it("renders the latest routed turn below the prompt and hides manual selections", () => {
+    let messages = [{ id: "user-1", role: "user" }];
+    const parts: Record<string, unknown[]> = {
+      "user-1": [{ type: "text", metadata: { modelRouter: { summary: "JevK5 · SIMPLE · confidence 0.8" } } }],
+      "user-2": [{ type: "text", text: "manual model" }],
+    };
+    let slot: (() => unknown) | undefined;
+    let updated: ((event: { properties: { part: { type: string } } }) => void) | undefined;
+    let dispose: (() => void) | undefined;
+    let renders = 0;
+    let subscribed = true;
+    const api = {
+      route: { current: { name: "session", params: { sessionID: "ses_1" } } },
+      state: { session: { messages: () => messages }, part: (id: string) => parts[id] ?? [] },
+      event: { on: (name: string, handler: (event: { properties: { part: { type: string } } }) => void) => {
+        assert.equal(name, "message.part.updated");
+        updated = handler;
+        return () => (subscribed = false);
+      } },
+      renderer: { requestRender: () => (renders += 1) },
+      theme: { current: { textMuted: "muted" } },
+      lifecycle: { onDispose: (handler: () => void) => (dispose = handler) },
+      slots: { register: (entry: { slots: { app_bottom: () => unknown } }) => (slot = entry.slots.app_bottom) },
+    };
+    const solid = {
+      createSignal: <T>(value: T) => [() => value, (next: (value: T) => T) => (value = next(value))] as const,
+      createElement: (kind: string) => ({ kind, props: {} as Record<string, unknown>, children: [] as unknown[] }),
+      setProp: (node: { props: Record<string, unknown> }, name: string, value: unknown) => (node.props[name] = value),
+      insert: (node: { children: unknown[] }, child: unknown) => node.children.push(child),
+    };
+
+    registerRouterStatus(api as never, solid as never);
+    assert(slot && updated && dispose);
+    const root = slot() as ReturnType<typeof solid.createElement>;
+    const render = root.children[0] as () => ReturnType<typeof solid.createElement> | null;
+    assert.equal(root.props.width, "100%");
+    assert.equal(root.props.paddingLeft, 2);
+    const label = render();
+    assert(label);
+    assert.equal(label.kind, "text");
+    assert.equal(label.children[0], "JevK5 · SIMPLE · confidence 0.8");
+    assert.deepEqual([label.props.wrapMode, label.props.truncate, root.props.height], ["none", true, 1]);
+
+    messages = [{ id: "user-1", role: "user" }, { id: "user-2", role: "user" }];
+    updated({ properties: { part: { type: "text" } } });
+    assert.equal(routerStatus(api as never), undefined);
+    assert.equal(render(), null);
+    assert.equal(root.props.height, 0);
+    assert.equal(renders, 1);
+    api.route.current.name = "home";
+    assert.equal(routerStatus(api as never), undefined);
+    dispose();
+    assert.equal(subscribed, false);
   });
 });
 
