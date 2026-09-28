@@ -554,7 +554,15 @@ if command -sq opencode
         if contains -- -m $argv; or contains -- --model $argv; or string match -q -- '--model=*' $argv
             set model_args
         end
-        __dotfiles_run_opencode opencode $model_args $argv --auto
+        set -l executable opencode
+        if test (uname -s) = Darwin
+            set executable "$HOME/.local/bin/opencode-smart-router"
+            if not test -x "$executable"
+                printf '%s\n' 'Patched OpenCode is missing; run bash opencode/scripts/build.sh' >&2
+                return 1
+            end
+        end
+        __dotfiles_run_opencode $executable $model_args $argv --auto
     end
 
     if command -sq happier

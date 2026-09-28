@@ -347,6 +347,9 @@ in {
     ".agents/skills/repo-qa" =
       mkLink ../../files/agents/skills/repo-qa;
     ".claude/skills/herdr-agent-layout" = mkLink herdrAgentLayoutSkill;
+  } // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+    ".local/bin/opencode-smart-router" = mkLink (config.lib.file.mkOutOfStoreSymlink
+      "${config.home.homeDirectory}/.local/share/dotfiles/opencode-smart-router/bin/opencode");
   };
 
   # Herdr is installed outside Nix on macOS. Project its generated OpenCode
