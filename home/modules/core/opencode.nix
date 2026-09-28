@@ -26,6 +26,22 @@ let
         ([ routerPolicy.fallback ] ++ builtins.attrValues routerPolicy.tiers))
   );
 
+  mkSakuraModel = name: {
+    inherit name;
+    attachment = true;
+    reasoning = true;
+    temperature = false;
+    tool_call = true;
+    interleaved = "reasoning";
+    limit = {
+      context = 262144;
+      output = 32768;
+    };
+    modalities = {
+      input = [ "text" "image" ];
+      output = [ "text" ];
+    };
+  };
   sakuraProvider = {
     npm = "@ai-sdk/openai-compatible";
     name = "Sakura AI";
@@ -35,21 +51,12 @@ let
       headerTimeout = false;
       chunkTimeout = false;
     };
-    models."preview/Kimi-K2.7-Code" = {
-      name = "Sakura Kimi K2.7 Code";
-      attachment = true;
-      reasoning = true;
-      temperature = false;
-      tool_call = true;
-      interleaved = "reasoning";
-      limit = {
-        context = 262144;
-        output = 32768;
-      };
-      modalities = {
-        input = [ "text" "image" ];
-        output = [ "text" ];
-      };
+    models = {
+      "preview/Kimi-K2.6" = mkSakuraModel "Kimi K2.6 Thinking";
+      ${routerPolicy.tiers.SIMPLE.modelID} =
+        mkSakuraModel "Sakura Kimi K2.7 Code" // {
+          variants.${routerPolicy.tiers.SIMPLE.variant} = { };
+        };
     };
   };
 

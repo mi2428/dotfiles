@@ -10,29 +10,29 @@
   },
   "fallback": {
     "providerID": "openai",
-    "modelID": "gpt-5.6-sol",
-    "variant": "xhigh"
+    "modelID": "gpt-6-sol",
+    "variant": "max"
   },
   "tiers": {
     "SIMPLE": {
-      "providerID": "openai",
-      "modelID": "gpt-5.6-luna",
-      "variant": "low"
+      "providerID": "sakura",
+      "modelID": "preview/Kimi-K2.7-Code",
+      "variant": "auto"
     },
     "MEDIUM": {
       "providerID": "openai",
-      "modelID": "gpt-5.6-terra",
-      "variant": "medium"
+      "modelID": "gpt-6-luna",
+      "variant": "max"
     },
     "COMPLEX": {
       "providerID": "openai",
-      "modelID": "gpt-5.6-sol",
+      "modelID": "gpt-6-sol",
       "variant": "high"
     },
     "REASONING": {
-      "providerID": "amazon-bedrock",
-      "modelID": "global.anthropic.claude-opus-5",
-      "variant": "max"
+      "providerID": "openai",
+      "modelID": "gpt-6-sol",
+      "variant": "xhigh"
     }
   },
   "questions": {
