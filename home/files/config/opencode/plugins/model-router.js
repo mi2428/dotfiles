@@ -7,7 +7,7 @@ const ROUTE_METADATA = "modelRouter";
 
 const configPath = () => {
   if (process.env.OPENCODE_ROUTER_CONFIG) return process.env.OPENCODE_ROUTER_CONFIG;
-  const root = process.env.OPENCODE_CHILD_XDG_CONFIG_HOME ?? process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config");
+  const root = process.env.XDG_CONFIG_HOME ?? process.env.OPENCODE_CHILD_XDG_CONFIG_HOME ?? join(homedir(), ".config");
   return join(root, "opencode", "model-router.json");
 };
 

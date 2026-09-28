@@ -542,7 +542,13 @@ if command -sq opencode
             end
         end
 
-        command $executable $agent_args $argv
+        if test "$executable" = opencode-profile
+            set -l profile $argv[1]
+            set -e argv[1]
+            command $executable $profile $agent_args $argv
+        else
+            command $executable $agent_args $argv
+        end
     end
 
     function oc --wraps opencode
@@ -550,16 +556,13 @@ if command -sq opencode
     end
 
     function oc++ --wraps opencode
-        set -l model_args --model smart-router/auto
-        if contains -- -m $argv; or contains -- --model $argv; or string match -q -- '--model=*' $argv
-            set model_args
-        end
         set -l executable opencode
-        if test (uname -s) = Darwin
-            set executable "$HOME/.local/bin/opencode-smart-router"
-            if not test -x "$executable"
-                printf '%s\n' 'Patched OpenCode is missing; run bash opencode/scripts/build.sh' >&2
-                return 1
+        set -l model_args
+        if test (uname -s) = Darwin; and test -x "$HOME/.local/bin/opencode-smart-router"
+            set executable opencode-profile
+            set model_args router --model smart-router/auto
+            if contains -- -m $argv; or contains -- --model $argv; or string match -q -- '--model=*' $argv
+                set model_args router
             end
         end
         __dotfiles_run_opencode $executable $model_args $argv --auto
