@@ -17,7 +17,7 @@ case "$*" in
     *)
         [ "${FAKE_FAIL:-0}" != 1 ] || exit 22
         printf '{"answers":{"tier":{"choice":"%s","confidence":%s},"clarity":{"choice":"%s","confidence":%s}}}\n' \
-            "${FAKE_TIER:-SIMPLE}" "${FAKE_CONFIDENCE:-0.8}" "${FAKE_CLARITY:-CLEAR}" "${FAKE_CONTEXT_CONFIDENCE:-0.9}"
+            "${FAKE_TIER:-SIMPLE}" "${FAKE_CONFIDENCE:-0.95}" "${FAKE_CLARITY:-CLEAR}" "${FAKE_CONTEXT_CONFIDENCE:-0.95}"
         ;;
 esac
 EOF
@@ -41,8 +41,11 @@ printf '%s\n' "$simple" | jq -e --arg model "$simple_model" --arg variant "$simp
 default=$(env -u OPENCODE_ROUTER_CONFIG HOME="$tmp" PATH="$tmp:$PATH" FAKE_TIER=SIMPLE "$route" 'Fix a typo')
 printf '%s\n' "$default" | jq -e --arg model "$simple_model" '.model == $model and .fallback == false' >/dev/null
 
-reasoning=$(PATH="$tmp:$PATH" OPENCODE_ROUTER_CONFIG="$config" FAKE_TIER=REASONING "$route" 'Prove the security property')
-printf '%s\n' "$reasoning" | jq -e --arg model "$reasoning_model" --arg variant "$reasoning_variant" '.model == $model and .variant == $variant and .fallback == false' >/dev/null
+other=$(PATH="$tmp:$PATH" OPENCODE_ROUTER_CONFIG="$config" FAKE_TIER=DEFAULT "$route" 'Prove the security property')
+printf '%s\n' "$other" | jq -e --arg model "$fallback_model" --arg variant "$fallback_variant" '.model == $model and .variant == $variant and .fallback == true and .reason == "not_simple"' >/dev/null
+
+invalid_tier=$(PATH="$tmp:$PATH" OPENCODE_ROUTER_CONFIG="$config" FAKE_TIER=REASONING "$route" 'Prove the security property')
+printf '%s\n' "$invalid_tier" | jq -e --arg model "$fallback_model" '.model == $model and .fallback == true and .reason == "invalid_tier"' >/dev/null
 
 uncertain=$(PATH="$tmp:$PATH" OPENCODE_ROUTER_CONFIG="$config" FAKE_CONFIDENCE=0.1 "$route" 'Ambiguous task')
 printf '%s\n' "$uncertain" | jq -e --arg model "$fallback_model" --arg variant "$fallback_variant" '.model == $model and .variant == $variant and .fallback == true and .reason == "low_confidence"' >/dev/null
@@ -53,8 +56,8 @@ printf '%s\n' "$contextual" | jq -e --arg model "$fallback_model" '.model == $mo
 context_uncertain=$(PATH="$tmp:$PATH" OPENCODE_ROUTER_CONFIG="$config" FAKE_CLARITY=CONTEXT_REQUIRED FAKE_CONFIDENCE=0.1 "$route" 'Unclear task')
 printf '%s\n' "$context_uncertain" | jq -e --arg model "$fallback_model" '.model == $model and .fallback == true and .reason == "low_confidence"' >/dev/null
 
-unclear=$(PATH="$tmp:$PATH" OPENCODE_ROUTER_CONFIG="$config" FAKE_CLARITY=CONTEXT_REQUIRED FAKE_CONTEXT_CONFIDENCE=0.2 "$route" 'Fix a typo')
-printf '%s\n' "$unclear" | jq -e --arg model "$simple_model" '.model == $model and .fallback == false' >/dev/null
+unclear=$(PATH="$tmp:$PATH" OPENCODE_ROUTER_CONFIG="$config" FAKE_CONTEXT_CONFIDENCE=0.2 "$route" 'Fix a typo')
+printf '%s\n' "$unclear" | jq -e --arg model "$fallback_model" '.model == $model and .fallback == true and .reason == "context_missing"' >/dev/null
 
 invalid=$(PATH="$tmp:$PATH" OPENCODE_ROUTER_CONFIG="$config" FAKE_CLARITY=INVALID "$route" 'Fix this')
 printf '%s\n' "$invalid" | jq -e --arg model "$fallback_model" '.model == $model and .fallback == true and .reason == "invalid_context"' >/dev/null

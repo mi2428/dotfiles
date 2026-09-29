@@ -111,23 +111,29 @@ context_confidence=$(printf '%s\n' "$response" | jq -er '.answers.clarity.confid
 minimum=$(jq -er '.min_confidence' "$config")
 context_minimum=$(jq -er '.min_context_confidence' "$config")
 
-if [ -z "$context_confidence" ] || { [ "$clarity" != CLEAR ] && [ "$clarity" != CONTEXT_REQUIRED ]; }; then
+if [ -z "$context_confidence" ] || { [ "$clarity" != CLEAR ] && [ "$clarity" != CONTEXT_REQUIRED ]; } ||
+	! jq -en --argjson value "$context_confidence" '$value >= 0 and $value <= 1' >/dev/null; then
 	fallback invalid_context
 	exit
 fi
 
 if [ -z "$tier" ] || [ -z "$confidence" ] ||
-	! jq -en --argjson confidence "$confidence" --argjson minimum "$minimum" '$confidence >= $minimum' >/dev/null; then
+	! jq -en --argjson confidence "$confidence" --argjson minimum "$minimum" '$confidence >= $minimum and $confidence <= 1' >/dev/null; then
 	fallback low_confidence
 	exit
 fi
 
-if [ "$clarity" = CONTEXT_REQUIRED ] &&
-	jq -en --argjson confidence "$context_confidence" --argjson minimum "$context_minimum" '$confidence >= $minimum' >/dev/null; then
-	# Worker assignments have no conversation history to inherit safely.
+if [ "$clarity" != CLEAR ] ||
+	! jq -en --argjson confidence "$context_confidence" --argjson minimum "$context_minimum" '$confidence >= $minimum' >/dev/null; then
 	fallback context_missing
 	exit
 fi
+
+if [ "$tier" = DEFAULT ]; then
+	fallback not_simple
+	exit
+fi
+[ "$tier" = SIMPLE ] || { fallback invalid_tier; exit; }
 
 selected=$(jq -er --arg tier "$tier" '.tiers[$tier] | .providerID + "/" + .modelID' "$config" 2>/dev/null || true)
 variant=$(jq -er --arg tier "$tier" '.tiers[$tier].variant' "$config" 2>/dev/null || true)

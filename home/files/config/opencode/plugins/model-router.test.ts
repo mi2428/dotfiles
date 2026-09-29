@@ -25,242 +25,93 @@ const decision = (choice, confidence, clarity = "CLEAR", contextConfidence = 0.9
   } }));
 
 describe("model router", () => {
-  test("defines the requested six tiers and classifier criteria", () => {
-    expect(Object.entries(config.tiers).map(([tier, model]) => [tier, model.variant])).toEqual([
-      ["SIMPLE", "low"],
-      ["LOW", "medium"],
-      ["MEDIUM", "max"],
-      ["HIGH", "medium"],
-      ["COMPLEX", "high"],
-      ["REASONING", "max"],
-    ]);
-    expect(config.tiers.SIMPLE).toEqual({ providerID: "openai", modelID: "gpt-6-luna", variant: "low" });
-    expect(config.tiers.SIMPLE.modelID).toBe(config.tiers.LOW.modelID);
-    expect(config.tiers.LOW.modelID).toBe(config.tiers.MEDIUM.modelID);
-    expect(config.tiers.HIGH.modelID).toBe(config.tiers.REASONING.modelID);
-    expect(Object.keys(config.questions.tier.criteria)).toEqual(Object.keys(config.tiers));
-    expect(Object.keys(config.questions.clarity.criteria)).toEqual(["CLEAR", "CONTEXT_REQUIRED"]);
+  test("only downgrades clearly SIMPLE requests; includes the model name and compact score", async () => {
+    process.env.OPENCODE_ROUTER_CONFIG = configPath;
+    globalThis.fetch = (async () => decision("SIMPLE", 0.95)) as typeof fetch;
+    const result = output();
+    await (await ModelRouter())["chat.message"]({}, result);
+    expect(result.message.model).toEqual(config.tiers.SIMPLE);
+    expect(result.parts[0].metadata.modelRouter).toEqual({
+      model: config.tiers.SIMPLE, tier: "SIMPLE", label: "Smart Router · SIMPLE (GPT-6 Luna) · 0.95",
+    });
   });
 
-  test("routes a confident user turn", async () => {
+  test("keeps the default for non-simple, uncertain and contextual requests", async () => {
     process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    globalThis.fetch = (async () => decision("SIMPLE", 0.8)) as typeof fetch;
-
     const hooks = await ModelRouter();
-    const result = output();
-    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, result);
+    for (const [response, label] of [
+      [decision("DEFAULT", 0.97), "Smart Router · fallback (GPT-6 Sol) · 0.97"],
+      [decision("SIMPLE", 0.2588), "Smart Router · fallback (GPT-6 Sol) · 0.2588"],
+      [decision("SIMPLE", 0.97, "CONTEXT_REQUIRED"), "Smart Router · fallback (GPT-6 Sol) · 0.97"],
+      [decision("SIMPLE", 0.97, "CLEAR", 0.2), "Smart Router · fallback (GPT-6 Sol) · 0.97"],
+    ] as const) {
+      globalThis.fetch = (async () => response) as typeof fetch;
+      const result = output();
+      await hooks["chat.message"]({}, result);
+      expect(result.message.model).toEqual(config.fallback);
+      expect(result.parts[0].metadata.modelRouter.label).toBe(label);
+    }
+  });
 
-    expect(result.message.model).toEqual(config.tiers.SIMPLE);
-    expect(result.parts[0].metadata.modelRouter.model).toEqual(config.tiers.SIMPLE);
-    expect(result.parts[0].metadata.modelRouter.tier).toBe("SIMPLE");
-    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · SIMPLE · confidence 0.8");
+  test("does not inherit a SIMPLE override on the next turn", async () => {
+    process.env.OPENCODE_ROUTER_CONFIG = configPath;
+    let choice = "SIMPLE";
+    globalThis.fetch = (async () => decision(choice, 0.99, choice === "SIMPLE" ? "CLEAR" : "CONTEXT_REQUIRED")) as typeof fetch;
+    const hooks = await ModelRouter();
+    const first = output();
+    await hooks["chat.message"]({}, first);
+    choice = "DEFAULT";
+    const next = output();
+    next.parts[0].text = "その続きやって";
+    await hooks["chat.message"]({}, next);
+    expect(first.message.model).toEqual(config.tiers.SIMPLE);
+    expect(next.message.model).toEqual(config.fallback);
   });
 
   test("honors an explicit router:max token without calling the classifier", async () => {
     process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    let calls = 0;
-    globalThis.fetch = (async () => { calls++; throw new Error("classifier should not run"); }) as typeof fetch;
-    const hooks = await ModelRouter();
+    globalThis.fetch = (async () => { throw new Error("classifier should not run"); }) as typeof fetch;
     const result = output();
     result.parts[0].text = "これを ROUTER:MAX で検証して";
-    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, result);
+    await (await ModelRouter())["chat.message"]({}, result);
     expect(result.message.model).toEqual(config.tiers.REASONING);
-    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · REASONING · router:max");
-    expect(calls).toBe(0);
+    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · REASONING (GPT-6 Sol) · router:max");
   });
 
-  test("does not force REASONING for xhigh or partial router:max tokens", async () => {
+  test("does not treat partial router:max tokens as explicit model choices", async () => {
     process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    let calls = 0;
-    globalThis.fetch = (async () => { calls++; return decision("SIMPLE", 0.8); }) as typeof fetch;
+    globalThis.fetch = (async () => decision("DEFAULT", 0.95)) as typeof fetch;
     const hooks = await ModelRouter();
-    for (const text of ["xhigh", "prerouter:max", "router:maximum"]) {
+    for (const text of ["prerouter:max", "router:maximum", "xhigh"]) {
       const result = output();
       result.parts[0].text = text;
-      await hooks["chat.message"]({ sessionID: "session", agent: "build" }, result);
-      expect(result.message.model).toEqual(config.tiers.SIMPLE);
+      await hooks["chat.message"]({}, result);
+      expect(result.message.model).toEqual(config.fallback);
     }
-    expect(calls).toBe(3);
   });
 
-  test("reroutes a second turn while Smart Router stays selected", async () => {
-    process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    let choice = "SIMPLE";
-    globalThis.fetch = (async () => decision(choice, 0.8)) as typeof fetch;
-
-    let hooks = await ModelRouter();
-    const first = output();
-    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, first);
-
-    choice = "REASONING";
-    hooks = await ModelRouter();
-    const second = output();
-    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, second);
-
-    expect(second.message.model).toEqual(config.tiers.REASONING);
-    expect(second.parts[0].metadata.modelRouter.label).toBe("Smart Router · REASONING · confidence 0.8");
-  });
-
-  test("stops routing when the selected concrete model equals the previous auto result", async () => {
-    process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    let classifierCalls = 0;
-    globalThis.fetch = (async () => {
-      classifierCalls++;
-      return decision("SIMPLE", 0.8);
-    }) as typeof fetch;
-    const hooks = await ModelRouter();
-    const first = output();
-    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, first);
-
-    const manualModel = first.message.model;
-    const manual = output(manualModel);
-    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, manual);
-    const continued = output(manualModel);
-    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, continued);
-
-    expect(manual.message.model).toEqual(manualModel);
-    expect(continued.message.model).toEqual(manualModel);
-    expect(classifierCalls).toBe(1);
+  test("respects a manually selected model even if the classifier or config is unavailable", async () => {
+    process.env.OPENCODE_ROUTER_CONFIG = resolve(import.meta.dir, "missing-model-router.json");
+    globalThis.fetch = (async () => { throw new Error("classifier should not run"); }) as typeof fetch;
+    const manual = output({ providerID: "openai", modelID: "gpt-6-sol", variant: "high" });
+    await (await ModelRouter())["chat.message"]({}, manual);
+    expect(manual.message.model.variant).toBe("high");
     expect(manual.parts[0].metadata).toBeUndefined();
-    expect(continued.parts[0].metadata).toBeUndefined();
+    await expect((await ModelRouter())["chat.message"]({}, output())).rejects.toThrow("config unavailable");
   });
 
-  test("records the confidence when routing falls back", async () => {
-    process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    globalThis.fetch = (async () => decision("REASONING", 0.1)) as typeof fetch;
-
-    const hooks = await ModelRouter();
-    const result = output();
-    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, result);
-
-    expect(result.message.model).toEqual(config.fallback);
-    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · fallback · confidence 0.1");
-  });
-
-  test("records fallback when JevK5 is unavailable", async () => {
+  test("keeps the default and names it when the classifier fails", async () => {
     process.env.OPENCODE_ROUTER_CONFIG = configPath;
     globalThis.fetch = (async () => { throw new Error("offline"); }) as typeof fetch;
     const warning = spyOn(console, "warn").mockImplementation(() => {});
-
     try {
-      const hooks = await ModelRouter();
       const result = output();
-      await hooks["chat.message"]({ sessionID: "session", agent: "build" }, result);
-
+      await (await ModelRouter())["chat.message"]({}, result);
       expect(result.message.model).toEqual(config.fallback);
-      expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · fallback");
+      expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · fallback (GPT-6 Sol)");
       expect(warning).toHaveBeenCalledWith(expect.stringContaining("routing unavailable"));
     } finally {
       warning.mockRestore();
     }
-  });
-
-  test("uses the fallback on low confidence and ignores concrete models", async () => {
-    process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    globalThis.fetch = (async () => decision("REASONING", 0.1)) as typeof fetch;
-
-    const hooks = await ModelRouter();
-    const uncertain = output();
-    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, uncertain);
-    expect(uncertain.message.model).toEqual(config.fallback);
-
-    const concreteModel = { providerID: "manual", modelID: "chosen", variant: "low" };
-    const concrete = output(concreteModel);
-    await hooks["chat.message"]({ sessionID: "session", agent: "build" }, concrete);
-    expect(concrete.message.model).toEqual(concreteModel);
-  });
-
-  test("fails visibly when the routing policy is unavailable", async () => {
-    process.env.OPENCODE_ROUTER_CONFIG = resolve(import.meta.dir, "missing-model-router.json");
-
-    const hooks = await ModelRouter();
-    await expect(hooks["chat.message"]({ sessionID: "session", agent: "build" }, output())).rejects.toThrow(
-      "config unavailable",
-    );
-  });
-
-  test("inherits the previous routed model for a contextual follow-up", async () => {
-    process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    globalThis.fetch = (async () => decision("SIMPLE", 0.7, "CONTEXT_REQUIRED", 0.95)) as typeof fetch;
-    const client = { session: { messages: async ({ path, query }) => {
-      expect(path.id).toBe("session");
-      expect(query.directory).toBe("/repo");
-      return { data: [
-        { info: { role: "user", id: "previous" }, parts: [{ type: "text", metadata: { modelRouter: {
-          model: config.tiers.REASONING, tier: "REASONING", label: "Smart Router · REASONING · confidence 0.8",
-        } } }] },
-        { info: { role: "user", id: "current" }, parts: [] },
-      ] };
-    } } };
-    const hooks = await ModelRouter({ client, directory: "/repo" });
-    const result = output();
-    result.parts[0].text = "まずそこ直して";
-    await hooks["chat.message"]({ sessionID: "session", messageID: "current", agent: "build" }, result);
-
-    expect(result.message.model).toEqual(config.tiers.REASONING);
-    expect(result.parts[0].metadata.modelRouter.tier).toBe("REASONING");
-    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · REASONING · inherited");
-  });
-
-  test("falls back when a contextual turn has no previous routed model", async () => {
-    process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    globalThis.fetch = (async () => decision("SIMPLE", 0.7, "CONTEXT_REQUIRED", 0.95)) as typeof fetch;
-    const client = { session: { messages: async () => ({ data: [] }) } };
-    const hooks = await ModelRouter({ client, directory: "/repo" });
-    const result = output();
-    result.parts[0].text = "これ直して";
-    await hooks["chat.message"]({ sessionID: "session", messageID: "current", agent: "build" }, result);
-
-    expect(result.message.model).toEqual(config.fallback);
-    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · fallback · context missing");
-  });
-
-  test("raises the inherited tier when a follow-up adds harder requirements", async () => {
-    process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    globalThis.fetch = (async () => decision("COMPLEX", 0.7, "CONTEXT_REQUIRED", 0.9)) as typeof fetch;
-    const client = { session: { messages: async () => ({ data: [
-      { info: { role: "user", id: "previous" }, parts: [{ type: "text", metadata: { modelRouter: {
-        model: config.tiers.SIMPLE, tier: "SIMPLE", label: "Smart Router · SIMPLE · confidence 0.8",
-      } } }] },
-    ] }) } };
-    const hooks = await ModelRouter({ client, directory: "/repo" });
-    const result = output();
-    result.parts[0].text = "それを全サービスに展開して安全性も検証して";
-    await hooks["chat.message"]({ sessionID: "session", messageID: "current", agent: "build" }, result);
-
-    expect(result.message.model).toEqual(config.tiers.COMPLEX);
-    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · COMPLEX · confidence 0.7");
-  });
-
-  test("does not downgrade a previous safety fallback", async () => {
-    process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    globalThis.fetch = (async () => decision("COMPLEX", 0.7, "CONTEXT_REQUIRED", 0.9)) as typeof fetch;
-    const client = { session: { messages: async () => ({ data: [
-      { info: { role: "user", id: "previous" }, parts: [{ type: "text", metadata: { modelRouter: {
-        model: config.fallback, label: "Smart Router · fallback · confidence 0.2",
-      } } }] },
-    ] }) } };
-    const hooks = await ModelRouter({ client, directory: "/repo" });
-    const result = output();
-    await hooks["chat.message"]({ sessionID: "session", messageID: "current", agent: "build" }, result);
-
-    expect(result.message.model).toEqual(config.fallback);
-    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · fallback · inherited");
-  });
-
-  test("does not inherit a cheap model when new contextual requirements have low confidence", async () => {
-    process.env.OPENCODE_ROUTER_CONFIG = configPath;
-    globalThis.fetch = (async () => decision("REASONING", 0.2, "CONTEXT_REQUIRED", 0.9)) as typeof fetch;
-    const client = { session: { messages: async () => ({ data: [
-      { info: { role: "user", id: "previous" }, parts: [{ type: "text", metadata: { modelRouter: {
-        model: config.tiers.SIMPLE, tier: "SIMPLE",
-      } } }] },
-    ] }) } };
-    const hooks = await ModelRouter({ client, directory: "/repo" });
-    const result = output();
-    await hooks["chat.message"]({ sessionID: "session", messageID: "current", agent: "build" }, result);
-
-    expect(result.message.model).toEqual(config.fallback);
-    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · fallback · confidence 0.2");
   });
 });
