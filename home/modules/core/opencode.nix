@@ -53,9 +53,9 @@ let
     };
     models = {
       "preview/Kimi-K2.6" = mkSakuraModel "Kimi K2.6 Thinking";
-      ${routerPolicy.tiers.SIMPLE.modelID} =
+      "preview/Kimi-K2.7-Code" =
         mkSakuraModel "Sakura Kimi K2.7 Code" // {
-          variants.${routerPolicy.tiers.SIMPLE.variant} = { };
+          variants.auto = { };
         };
     };
   };

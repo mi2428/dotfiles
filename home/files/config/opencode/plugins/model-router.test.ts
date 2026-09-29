@@ -27,13 +27,15 @@ const decision = (choice, confidence, clarity = "CLEAR", contextConfidence = 0.9
 describe("model router", () => {
   test("defines the requested six tiers and classifier criteria", () => {
     expect(Object.entries(config.tiers).map(([tier, model]) => [tier, model.variant])).toEqual([
-      ["SIMPLE", "auto"],
+      ["SIMPLE", "low"],
       ["LOW", "medium"],
       ["MEDIUM", "max"],
       ["HIGH", "medium"],
       ["COMPLEX", "high"],
       ["REASONING", "max"],
     ]);
+    expect(config.tiers.SIMPLE).toEqual({ providerID: "openai", modelID: "gpt-6-luna", variant: "low" });
+    expect(config.tiers.SIMPLE.modelID).toBe(config.tiers.LOW.modelID);
     expect(config.tiers.LOW.modelID).toBe(config.tiers.MEDIUM.modelID);
     expect(config.tiers.HIGH.modelID).toBe(config.tiers.REASONING.modelID);
     expect(Object.keys(config.questions.tier.criteria)).toEqual(Object.keys(config.tiers));

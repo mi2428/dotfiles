@@ -16,9 +16,9 @@
   },
   "tiers": {
     "SIMPLE": {
-      "providerID": "sakura",
-      "modelID": "preview/Kimi-K2.7-Code",
-      "variant": "auto"
+      "providerID": "openai",
+      "modelID": "gpt-6-luna",
+      "variant": "low"
     },
     "LOW": {
       "providerID": "openai",
