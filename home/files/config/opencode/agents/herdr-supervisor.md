@@ -62,14 +62,7 @@ You remain accountable for the final result.
 
 ## Start OpenCode workers
 
-- Unless the user explicitly selected a worker model, classify each assignment before validating or launching it:
-
-  ```sh
-  route=$("$HOME/.local/libexec/dotfiles/ai-model-route" "$ASSIGNMENT_SUMMARY")
-  MODEL=$(printf '%s\n' "$route" | jq -er '.model')
-  ```
-
-  Record the returned tier, variant, confidence, and fallback flag in orchestration context. The helper uses local JevK5 and the configured strong fallback; do not replace its result with an unvalidated guess.
+- Unless the user explicitly selected a worker model, select the cheapest suitable model for the assignment from the active OpenCode catalog. Record the choice and rationale in orchestration context.
 
 - Before the first start, validate the selected model in the same environment; do not probe by launching:
 
