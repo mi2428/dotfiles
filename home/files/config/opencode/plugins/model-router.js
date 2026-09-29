@@ -70,12 +70,12 @@ export const ModelRouter = async ({ client, directory } = {}) => {
 
       const state = userText(output.parts);
       if (!state) return remember();
-      if (/(^|[^a-z\d_])xhigh(?=$|[^a-z\d_])/i.test(state)) {
+      if (/(^|[^a-z\d_])router:max(?=$|[^a-z\d_])/i.test(state)) {
         const selected = config.tiers?.REASONING;
         if (!selected?.providerID || !selected?.modelID || !selected?.variant)
           throw new Error("[model-router] REASONING tier is not configured");
         output.message.model = selected;
-        return remember("Smart Router · REASONING · xhigh", "REASONING");
+        return remember("Smart Router · REASONING · router:max", "REASONING");
       }
 
       let label = "Smart Router · fallback";

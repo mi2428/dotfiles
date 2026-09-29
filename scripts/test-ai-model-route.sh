@@ -59,11 +59,13 @@ printf '%s\n' "$unclear" | jq -e --arg model "$simple_model" '.model == $model a
 invalid=$(PATH="$tmp:$PATH" OPENCODE_ROUTER_CONFIG="$config" FAKE_CLARITY=INVALID "$route" 'Fix this')
 printf '%s\n' "$invalid" | jq -e --arg model "$fallback_model" '.model == $model and .fallback == true and .reason == "invalid_context"' >/dev/null
 
-explicit=$(env -u OPENCODE_ROUTER_CONFIG HOME="$tmp" PATH="$tmp:$PATH" FAKE_FAIL=1 "$route" 'これを XHIGH で検証して')
+explicit=$(env -u OPENCODE_ROUTER_CONFIG HOME="$tmp" PATH="$tmp:$PATH" FAKE_FAIL=1 "$route" 'これを ROUTER:MAX で検証して')
 printf '%s\n' "$explicit" | jq -e --arg model "$reasoning_model" --arg variant "$reasoning_variant" \
-    '.tier == "REASONING" and .model == $model and .variant == $variant and .confidence == null and .fallback == false and .reason == "explicit_xhigh"' >/dev/null
-not_explicit=$(env -u OPENCODE_ROUTER_CONFIG HOME="$tmp" PATH="$tmp:$PATH" "$route" 'notxhighest')
-printf '%s\n' "$not_explicit" | jq -e --arg model "$simple_model" '.model == $model and .fallback == false' >/dev/null
+    '.tier == "REASONING" and .model == $model and .variant == $variant and .confidence == null and .fallback == false and .reason == "explicit_router_max"' >/dev/null
+for text in xhigh prerouter:max router:maximum; do
+    not_explicit=$(env -u OPENCODE_ROUTER_CONFIG HOME="$tmp" PATH="$tmp:$PATH" "$route" "$text")
+    printf '%s\n' "$not_explicit" | jq -e --arg model "$simple_model" '.model == $model and .fallback == false' >/dev/null
+done
 
 unavailable=$(PATH="$tmp:$PATH" OPENCODE_ROUTER_CONFIG="$config" FAKE_FAIL=1 "$route" 'Any task')
 printf '%s\n' "$unavailable" | jq -e --arg model "$fallback_model" --arg variant "$fallback_variant" '.model == $model and .variant == $variant and .fallback == true and .reason == "classifier_unavailable"' >/dev/null

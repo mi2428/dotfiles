@@ -54,17 +54,31 @@ describe("model router", () => {
     expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · SIMPLE · confidence 0.8");
   });
 
-  test("honors an explicit xhigh token without calling the classifier", async () => {
+  test("honors an explicit router:max token without calling the classifier", async () => {
     process.env.OPENCODE_ROUTER_CONFIG = configPath;
     let calls = 0;
     globalThis.fetch = (async () => { calls++; throw new Error("classifier should not run"); }) as typeof fetch;
     const hooks = await ModelRouter();
     const result = output();
-    result.parts[0].text = "これを XHIGH で検証して";
+    result.parts[0].text = "これを ROUTER:MAX で検証して";
     await hooks["chat.message"]({ sessionID: "session", agent: "build" }, result);
     expect(result.message.model).toEqual(config.tiers.REASONING);
-    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · REASONING · xhigh");
+    expect(result.parts[0].metadata.modelRouter.label).toBe("Smart Router · REASONING · router:max");
     expect(calls).toBe(0);
+  });
+
+  test("does not force REASONING for xhigh or partial router:max tokens", async () => {
+    process.env.OPENCODE_ROUTER_CONFIG = configPath;
+    let calls = 0;
+    globalThis.fetch = (async () => { calls++; return decision("SIMPLE", 0.8); }) as typeof fetch;
+    const hooks = await ModelRouter();
+    for (const text of ["xhigh", "prerouter:max", "router:maximum"]) {
+      const result = output();
+      result.parts[0].text = text;
+      await hooks["chat.message"]({ sessionID: "session", agent: "build" }, result);
+      expect(result.message.model).toEqual(config.tiers.SIMPLE);
+    }
+    expect(calls).toBe(3);
   });
 
   test("reroutes a second turn while Smart Router stays selected", async () => {

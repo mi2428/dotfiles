@@ -68,12 +68,12 @@ else
 	exit 64
 fi
 
-if jq -ne --arg state "$state" '$state | test("(^|[^A-Za-z0-9_])xhigh([^A-Za-z0-9_]|$)"; "i")' >/dev/null 2>&1; then
+if jq -ne --arg state "$state" '$state | test("(^|[^A-Za-z0-9_])router:max([^A-Za-z0-9_]|$)"; "i")' >/dev/null 2>&1; then
 	[ -f "$config" ] || { printf 'ai-model-route: config is missing: %s\n' "$config" >&2; exit 1; }
 	selected=$(jq -er '.tiers.REASONING | .providerID + "/" + .modelID' "$config")
 	variant=$(jq -er '.tiers.REASONING.variant' "$config")
 	jq -cn --arg model "$selected" --arg variant "$variant" \
-		'{tier:"REASONING",confidence:null,model:$model,variant:$variant,fallback:false,reason:"explicit_xhigh"}'
+		'{tier:"REASONING",confidence:null,model:$model,variant:$variant,fallback:false,reason:"explicit_router_max"}'
 	exit
 fi
 
