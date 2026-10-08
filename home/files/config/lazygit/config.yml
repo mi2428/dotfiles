@@ -11,16 +11,17 @@ gui:
     - [branches, remotes, tags]
   mainPanelSplitMode: flexible
   enlargedSideViewLocation: left
-  wrapLinesInStagingView: true
-  useHunkModeInStagingView: true
+  wrapLinesInDiffView: true
+  useHunkModeInDiffView: true
   filterMode: fuzzy
-  branchColorPatterns:
-    "^main$": green
-    "^master$": green
-    "^release/": yellow
-    "^hotfix/": red
-    "^docs/": cyan
-    "^chore/": blue
+  theme:
+    branchColorPatterns:
+      "^main$": green
+      "^master$": green
+      "^release/": yellow
+      "^hotfix/": red
+      "^docs/": cyan
+      "^chore/": blue
 
 git:
   diffRenderers:
