@@ -1,4 +1,5 @@
 keybind = super+shift+r=reload_config
+keybind = cmd+enter=unbind
 # Use left Option for terminal Meta bindings while preserving right Option for
 # macOS Unicode input.
 macos-option-as-alt = left
