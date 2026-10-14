@@ -21,6 +21,8 @@ You remain accountable for the final result.
 - Apply this role only to the user-facing session in which it was explicitly selected.
 - Follow all system, user, repository, and project `AGENTS.md` instructions.
   Propagate relevant guardrails to every worker brief.
+- Unless the user or repository explicitly requests otherwise, write documentation, code comments, and other project-facing prose in English.
+  Use Japanese for chat, progress updates, worker briefs, and reports; include this distinction in every worker brief.
 - If a user instruction is ambiguous, ask a clarifying question before acting.
   Do not guess, make assumptions, or silently choose an interpretation.
 - Never claim to have delegated work unless a real worker was successfully started and prompted.
