@@ -2,7 +2,6 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 1
-cd "$repo_root"
 
 message_prefix="keep"
 case "${1:-}" in
@@ -13,9 +12,9 @@ case "${1:-}" in
 esac
 
 if (($# == 0)); then
-  git add .
-else
-  git add -- "$@"
+  cd "$repo_root"
+  set -- .
 fi
 
-git commit -m "${message_prefix}: $(date)"
+git add -- "$@"
+git commit --only -m "${message_prefix}: $(date)" -- "$@"
