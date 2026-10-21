@@ -47,7 +47,7 @@ services:
       ENABLE_SUBAGENTS: "true"
       ENABLE_WEB_SEARCH: "true"
       OPENAI_API_BASE_URLS: >-
-        http://sakura-proxy:8080/v1;http://cptr:8000/v1
+        http://sakura-ai-engine-gateway:8080/v1;http://cptr:8000/v1
       OPENAI_API_CONFIGS: >-
         {
           "0": {
@@ -137,8 +137,8 @@ services:
         condition: service_started
       open-terminal:
         condition: service_healthy
-      sakura-proxy:
-        condition: service_healthy
+      sakura-ai-engine-gateway:
+        condition: service_started
     restart: unless-stopped
 
   cptr:

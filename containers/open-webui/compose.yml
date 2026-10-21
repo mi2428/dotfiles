@@ -1,28 +1,18 @@
 ---
 services:
-  sakura-proxy:
-    build: ../sakura-proxy
+  # Source implementation: https://github.com/mi2428/sakura-ai-engine-gateway
+  sakura-ai-engine-gateway:
+    image: ghcr.io/mi2428/sakura-ai-engine-gateway:latest
+    pull_policy: always
     environment:
-      SAKURA_AI_ACCOUNT_TOKENS: "${SAKURA_AI_ACCOUNT_TOKENS:?set SAKURA_AI_ACCOUNT_TOKENS}"
-      SAKURA_PROXY_CLIENT_TOKEN: "${SAKURA_PROXY_CLIENT_TOKEN:?set SAKURA_PROXY_CLIENT_TOKEN}"
-      SAKURA_RETRY_BASE_SECONDS: "10"
-      SAKURA_RETRY_JITTER_SECONDS: "1"
+      SAKURA_AI_ENGINE_ACCOUNT_TOKENS: "${SAKURA_AI_ENGINE_ACCOUNT_TOKENS:?set SAKURA_AI_ENGINE_ACCOUNT_TOKENS}"
+      GATEWAY_CLIENT_TOKENS: "${GATEWAY_CLIENT_TOKENS:?set GATEWAY_CLIENT_TOKENS}"
       SAKURA_RETRY_MAX: "5"
-      SAKURA_RETRY_MAX_SECONDS: "120"
-      SAKURA_RETRY_BUDGET_SECONDS: "3200"
-      SAKURA_UPSTREAM_TIMEOUT_SECONDS: "420"
-      SAKURA_UPSTREAM_URL: "https://api.ai.sakura.ad.jp"
+      SAKURA_RETRY_BASE_INTERVAL: "10s"
+      SAKURA_RETRY_JITTER: "1s"
+      SAKURA_RETRY_MAX_INTERVAL: "120s"
+      SAKURA_RETRY_BUDGET: "3200s"
+      SAKURA_UPSTREAM_IDLE_TIMEOUT: "420s"
     ports:
       - "127.0.0.1:38081:8080"
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - >-
-          import urllib.request;
-          urllib.request.urlopen('http://127.0.0.1:8080/health')
-      interval: 5s
-      timeout: 5s
-      retries: 12
     restart: unless-stopped

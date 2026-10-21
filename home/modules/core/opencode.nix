@@ -41,7 +41,7 @@ let
     npm = "@ai-sdk/openai-compatible";
     name = "Sakura AI";
     options = {
-      baseURL = "http://127.0.0.1:38081/v1";
+      baseURL = "https://sakura-ai-engine-gateway.tailef845a.ts.net/v1";
       timeout = false;
       headerTimeout = false;
       chunkTimeout = false;
