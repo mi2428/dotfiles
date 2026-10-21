@@ -1,7 +1,16 @@
 { pkgs, platformName, ... }:
 let
   sharedPackages = with pkgs; [
-    atuin
+    # Shell PTY e2e tests cannot find atuin inside the macOS Nix sandbox.
+    (if stdenv.hostPlatform.isDarwin then
+      atuin.overrideAttrs (old: {
+        checkFlags = (old.checkFlags or [ ]) ++ [
+          "--skip=filtered_commands_leave_no_captured_output"
+          "--skip=setup_2_tests_shells_bash_preexec_toml"
+        ];
+      })
+    else
+      atuin)
     comrak
     eza
     fd
