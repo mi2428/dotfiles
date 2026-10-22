@@ -26,9 +26,6 @@
 		high: '--ctp-red',
 		max: '--ctp-red'
 	};
-	const familyHues = [
-		['sacloud.kimi-k2.6', '--ctp-mauve']
-	];
 	const selector = 'img.assistant-message-profile-image';
 
 	const applyModelAccent = (image) => {
@@ -44,8 +41,7 @@
 		let hash = 0;
 		for (const character of family) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
 
-		const familyHue = familyHues.find(([prefix]) => family.startsWith(prefix))?.[1];
-		const hue = effortHues[effort] ?? familyHue ?? hues[hash % hues.length];
+		const hue = effortHues[effort] ?? hues[hash % hues.length];
 
 		message.style.setProperty('--ctp-model-hue', `var(${hue})`);
 		message.style.setProperty('--ctp-model-intensity', '100%');

@@ -112,6 +112,20 @@ auth_response="$({
 token="$(jq -er '.token' <<<"$auth_response")"
 owner_id="$(jq -er '.id' <<<"$auth_response")"
 
+# Retire only the exact administrator-owned K2.6 entries created by this renderer.
+retired_ids="$(jq -c '.retired_model_ids' <<<"$desired")"
+api_request GET /api/v1/models/all
+expect_success 'model list before retirement'
+jq -e --arg owner "$owner_id" --argjson ids "$retired_ids" '
+  all(.[] | select(.id as $id | $ids | index($id));
+    .user_id == $owner and
+    (if .id == "sacloud.preview/Kimi-K2.6" then .base_model_id == null
+     else .base_model_id == "sacloud.preview/Kimi-K2.6" end))
+  and all(.[] | select(.base_model_id == "sacloud.preview/Kimi-K2.6");
+    .id as $id | $ids | index($id) != null)
+' <<<"$api_body" >/dev/null || { printf '%s\n' 'Refusing unmanaged Kimi K2.6 models' >&2; exit 1; }
+retired_present="$(jq -c --argjson ids "$retired_ids" '[.[] | select(.id as $id | $ids | index($id)) | .id]' <<<"$api_body")"
+
 # Enforce user-specific prompt and title behavior; static UI defaults stay in Compose.
 api_request GET '/api/v1/users/user/settings?raw=true'
 expect_success 'raw user settings GET'
@@ -181,6 +195,14 @@ if [[ "$current_regular_models" != "$desired_regular_models" ]]; then
   expect_success 'model import'
   jq -e '. == true' <<<"$api_body" >/dev/null
 fi
+
+while IFS= read -r retired_id; do
+  if jq -e --arg id "$retired_id" 'index($id) != null' <<<"$retired_present" >/dev/null; then
+    api_request POST /api/v1/models/model/delete "$(jq -nc --arg id "$retired_id" '{id: $id}')"
+    expect_success "retire model $retired_id"
+    jq -e '. == true' <<<"$api_body" >/dev/null
+  fi
+done < <(jq -r '.retired_model_ids | reverse[]' <<<"$desired")
 
 # Open WebUI exposes provider bases and custom variants through separate import views.
 for endpoint in base export; do

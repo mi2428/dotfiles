@@ -67,8 +67,16 @@ if path == "/api/v1/auths/signin":
     body = state["profile"] | {"id": state["owner"], "token": "fake-token"}
 elif path == "/api/v1/models/export":
     body = state["models"]
+elif path == "/api/v1/models/all":
+    body = state["models"]
 elif path == "/api/v1/models/base":
     body = state["models"]
+elif path == "/api/v1/models/model/delete":
+    mutate()
+    model_id = json.loads(payload)["id"]
+    state["models"] = [item for item in state["models"] if item["id"] != model_id]
+    save()
+    body = True
 elif path == "/api/v1/models/import":
     mutate()
     for item in json.loads(payload)["models"]:
@@ -236,9 +244,9 @@ class ReconcileTests(unittest.TestCase):
     def test_repairs_stale_models_and_second_run_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temp = Path(directory)
-            first, first_mutations, first_state_path = self.run_reconcile(
-                self.state(), temp
-            )
+            state = self.state()
+            state["models"][0]["name"] = "outdated model name"
+            first, first_mutations, first_state_path = self.run_reconcile(state, temp)
             self.assertEqual(first.returncode, 0, first.stderr)
             self.assertEqual(first_mutations, ["POST /api/v1/models/import"])
             second, second_mutations, _ = self.run_reconcile(
@@ -260,6 +268,64 @@ class ReconcileTests(unittest.TestCase):
         self.assertIn(
             "sacloud.kimi-k2.7-code", self.desired["required_visible_model_ids"]
         )
+
+    def test_retired_kimi_entries_are_deleted_once(self) -> None:
+        state = self.state()
+        base = "sacloud.preview/Kimi-K2.6"
+        for model_id in self.desired["retired_model_ids"]:
+            state["models"].append(
+                {
+                    "id": model_id,
+                    "name": model_id,
+                    "user_id": OWNER,
+                    "base_model_id": None if model_id == base else base,
+                }
+            )
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            first, mutations, state_path = self.run_reconcile(state, temp)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(mutations.count("POST /api/v1/models/model/delete"), 9)
+            updated = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertFalse(
+                set(self.desired["retired_model_ids"])
+                & {item["id"] for item in updated["models"]}
+            )
+            second, mutations, _ = self.run_reconcile(updated, temp)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(mutations, [])
+
+    def test_foreign_kimi_model_is_not_deleted(self) -> None:
+        state = self.state()
+        state["models"].append(
+            {
+                "id": "sacloud.kimi-k2.6-high",
+                "name": "foreign model",
+                "user_id": "other-user",
+                "base_model_id": "sacloud.preview/Kimi-K2.6",
+            }
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            result, mutations, _ = self.run_reconcile(state, Path(directory))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Refusing unmanaged Kimi K2.6 models", result.stderr)
+            self.assertEqual(mutations, [])
+
+    def test_unknown_kimi_variant_is_not_orphaned(self) -> None:
+        state = self.state()
+        state["models"].append(
+            {
+                "id": "user.custom-kimi-k2.6",
+                "name": "custom model",
+                "user_id": OWNER,
+                "base_model_id": "sacloud.preview/Kimi-K2.6",
+            }
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            result, mutations, _ = self.run_reconcile(state, Path(directory))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Refusing unmanaged Kimi K2.6 models", result.stderr)
+            self.assertEqual(mutations, [])
 
 
 if __name__ == "__main__":
