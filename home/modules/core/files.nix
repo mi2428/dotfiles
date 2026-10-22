@@ -106,6 +106,15 @@ in {
           || [ -x "/opt/homebrew/bin/$target" ] \
           || [ -x "/usr/local/bin/$target" ] \
           || [ -x "/home/linuxbrew/.linuxbrew/bin/$target" ]; then
+          if [ "$target" = opencode ]; then
+            tui_config="${config.home.homeDirectory}/.config/opencode/tui.json"
+            if [ -L "$tui_config" ]; then
+              writable_copy="$(mktemp "$tui_config.XXXXXX")"
+              cp "$tui_config" "$writable_copy"
+              chmod 0644 "$writable_copy"
+              mv -f "$writable_copy" "$tui_config"
+            fi
+          fi
           "$herdr_bin" integration install "$target" >/dev/null
         fi
       done
