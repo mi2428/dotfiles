@@ -48,10 +48,10 @@ let
     };
     models = {
       "preview/Kimi-K2.6" = mkSakuraModel "Kimi K2.6 Thinking";
-      "preview/Kimi-K2.7-Code" =
-        mkSakuraModel "Sakura Kimi K2.7 Code" // {
-          variants.auto = { };
-        };
+      # K2.7 Code always thinks; reasoning_effort is unsupported. Its 256K
+      # context and 32K output limits are already set by mkSakuraModel.
+      # https://platform.kimi.ai/docs/api/models-overview
+      "preview/Kimi-K2.7-Code" = mkSakuraModel "Sakura Kimi K2.7 Code";
     };
   };
 
