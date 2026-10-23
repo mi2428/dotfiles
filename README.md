@@ -168,21 +168,18 @@ Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `t
 
 ### Open WebUI
 
-[Open WebUI](https://openwebui.com/) and [Open WebUI Computer](https://openwebui.com/computer) run together under Docker. Web search uses a small adapter to route Open WebUI's external search requests to Sakura Search Tool.
-Store the Search Tool client token and provider API keys in the age-encrypted Open WebUI environment; edit it with `task secrets.edit.webui`.
-Computer has read-write access to `CPTR_WORKSPACE_DIR`, so mount only a trusted workspace.
-Persistent data lives in named volumes and `<workspace>/.cptr`; manage Open WebUI Admin UI configuration in Compose because UI changes do not survive a restart.
-Both local services use their latest images: [Sakura AI Engine Gateway](https://github.com/mi2428/sakura-ai-engine-gateway) and [Search Tool](https://github.com/mi2428/searchtool).
-The UI shim uses Open WebUI's `custom.css` and `loader.js` hooks; the image build checks these hooks and the DOM anchors styled by the shim. Before changing the pinned version, review its release notes, build and inspect the shim against a separate test database, then back up the persistent data before applying a release with database migrations.
+[Open WebUI](https://openwebui.com/) and [Open WebUI Computer](https://openwebui.com/computer) run in Docker alongside [Sakura AI Engine Gateway](https://github.com/mi2428/sakura-ai-engine-gateway) and [Search Tool](https://github.com/mi2428/searchtool), which handles web search through an adapter.
+Keep API keys and the Search Tool token in the age-encrypted environment (`task secrets.edit.webui`). Mount only trusted workspaces as `CPTR_WORKSPACE_DIR`; Computer can write to them. Data persists in named volumes and `<workspace>/.cptr`.
+Before upgrading Open WebUI, test the UI shim and back up data for database migrations.
 
 ```console
 $ task ai.webui.up
-$ task ai.webui.check   # local UI tests, lint, and Compose validation; no external smoke
-$ task ai.webui.logs    # follow service logs
-$ task ai.webui.down    # stops the local UI and development services
+$ task ai.webui.check
+$ task ai.webui.logs
+$ task ai.webui.down
 ```
 
-`task ai.webui.up` also configures private Tailscale Serve access when Tailscale is available. Open WebUI stays bound to localhost, and Funnel is not used.
+`task ai.webui.up` enables private Tailscale Serve when available; Open WebUI remains bound to localhost.
 
 ## Random Notes
 
