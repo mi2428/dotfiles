@@ -20,45 +20,11 @@ def model($id; $name): {
 def hidden_model($id; $name):
   model($id; $name) | .meta.hidden = true;
 
-def variants($base; $slug; $name; $tag; $efforts):
-  $efforts
-  | map(. as $effort | {
-    id: ($slug + "-" + $effort),
-    base_model_id: $base,
-    name: ($name + " " + (($effort[0:1] | ascii_upcase) + $effort[1:])),
-    meta: {hidden: false, tags: [{name: $tag}], skillIds: [], toolIds: []},
-    params: {reasoning_effort: $effort},
-    access_grants: [],
-    is_active: true
-  });
-
-def hidden_variants($base; $slug; $name; $tag; $efforts):
-  variants($base; $slug; $name; $tag; $efforts) | map(.meta.hidden = true);
-
-# The Sakura subset represents the speed/accuracy Pareto frontier as of August 2026.
 def model_import: {
   models: (
     [
-      hidden_model("sacloud.llm-jp-3.1-8x13b-instruct4"; "Sakura LLM-jp 3.1 8x13B Instruct 4"),
-      hidden_model("sacloud.preview/Qwen3-0.6B-cpu"; "Sakura Qwen3 0.6B CPU"),
-      hidden_model("sacloud.preview/Phi-4-mini-instruct-cpu"; "Sakura Phi-4 Mini Instruct CPU"),
-      hidden_model("sacloud.preview/Qwen3-Embedding-4B-FP16"; "Sakura Qwen3 Embedding 4B FP16"),
-      hidden_model("sacloud.preview/Kimi-K2.7-Code"; "Sakura Kimi K2.7 Code"),
-      hidden_model("sacloud.preview/gemma-4-31B-it"; "Sakura Gemma 4 31B IT"),
-      hidden_model("sacloud.preview/Qwen3.6-35B-A3B"; "Sakura Qwen3.6 35B A3B"),
-      hidden_model("sacloud.whisper-large-v3-turbo"; "Sakura Whisper Large V3 Turbo"),
-      hidden_model("sacloud.preview/Qwen3-VL-30B-A3B-Instruct"; "Sakura Qwen3 VL 30B A3B Instruct"),
-      hidden_model("sacloud.multilingual-e5-large"; "Sakura Multilingual E5 Large"),
-      hidden_model("sacloud.gpt-oss-120b"; "Sakura GPT-OSS 120B"),
-      hidden_model("groq.groq/compound"; "Groq Compound"),
-      hidden_model("groq.groq/compound-mini"; "Groq Compound Mini"),
-      hidden_model("groq.openai/gpt-oss-120b"; "Groq GPT-OSS 120B"),
-      hidden_model("groq.openai/gpt-oss-20b"; "Groq GPT-OSS 20B"),
-      hidden_model("groq.qwen/qwen3.6-27b"; "Groq Qwen3.6 27B"),
-      hidden_model("groq.qwen/qwen3.8-27b"; "Groq Qwen3.8 27B")
+      hidden_model("sacloud.preview/Kimi-K2.7-Code"; "Sakura Kimi K2.7 Code")
     ]
-    + variants("sacloud.preview/gemma-4-31B-it"; "sacloud.gemma-4-31b-it"; "Sakura Gemma 4 31B IT"; "Gemma"; ["low", "high", "max"])
-    + variants("sacloud.preview/Qwen3.6-35B-A3B"; "sacloud.qwen3.6-35b-a3b"; "Sakura Qwen3.6 35B A3B"; "Qwen"; ["high", "max"])
     + [{
       id: "sacloud.kimi-k2.7-code",
       base_model_id: "sacloud.preview/Kimi-K2.7-Code",
@@ -68,7 +34,6 @@ def model_import: {
       access_grants: [],
       is_active: true
     }]
-    + hidden_variants("sacloud.gpt-oss-120b"; "gpt-oss-120b"; "GPT-OSS 120B"; "GPT-OSS"; ["low", "medium", "high"])
   )
 } | .models |= map(
   if (.id | startswith("sacloud.")) then
@@ -106,19 +71,23 @@ def model_import: {
   },
   model_import: model_import,
   retired_model_ids: [
+    "sacloud.llm-jp-3.1-8x13b-instruct4", "sacloud.preview/Qwen3-0.6B-cpu",
+    "sacloud.preview/Phi-4-mini-instruct-cpu", "sacloud.preview/Qwen3-Embedding-4B-FP16",
+    "sacloud.preview/gemma-4-31B-it", "sacloud.preview/Qwen3.6-35B-A3B",
+    "sacloud.whisper-large-v3-turbo", "sacloud.preview/Qwen3-VL-30B-A3B-Instruct",
+    "sacloud.multilingual-e5-large", "sacloud.gpt-oss-120b",
+    "groq.groq/compound", "groq.groq/compound-mini",
+    "groq.openai/gpt-oss-120b", "groq.openai/gpt-oss-20b",
+    "groq.qwen/qwen3.6-27b", "groq.qwen/qwen3.8-27b",
+    "sacloud.gemma-4-31b-it-low", "sacloud.gemma-4-31b-it-high", "sacloud.gemma-4-31b-it-max",
+    "sacloud.qwen3.6-35b-a3b-high", "sacloud.qwen3.6-35b-a3b-max",
+    "gpt-oss-120b-low", "gpt-oss-120b-medium", "gpt-oss-120b-high",
     "sacloud.preview/Kimi-K2.6",
     "sacloud.kimi-k2.6-low", "sacloud.kimi-k2.6-medium",
     "sacloud.kimi-k2.6-high", "sacloud.kimi-k2.6-max",
     "kimi-k2.6-low", "kimi-k2.6-medium", "kimi-k2.6-high", "kimi-k2.6-max"
   ],
-  required_visible_model_ids: [
-    "sacloud.gemma-4-31b-it-low",
-    "sacloud.gemma-4-31b-it-high",
-    "sacloud.gemma-4-31b-it-max",
-    "sacloud.qwen3.6-35b-a3b-high",
-    "sacloud.qwen3.6-35b-a3b-max",
-    "sacloud.kimi-k2.7-code"
-  ]
+  required_visible_model_ids: ["sacloud.kimi-k2.7-code"]
 })
 | . as $desired
 | require(($desired.user_settings.ui.system | length) > 0; "chat personality is required")

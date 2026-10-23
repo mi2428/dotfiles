@@ -13,7 +13,7 @@ services:
       CHUNK_MIN_SIZE_TARGET: "1000"
       CHUNK_OVERLAP: "200"
       CHUNK_SIZE: "2000"
-      CONTEXT_COMPACTION_MODEL: "sacloud.preview/gemma-4-31B-it"
+      CONTEXT_COMPACTION_MODEL: "sacloud.kimi-k2.7-code"
       CONTEXT_COMPACTION_PROMPT_TEMPLATE: >-
         あなたは長時間の調査を継続するための状態要約を作成する。
         圧縮対象から、ユーザーの目的と制約、確認済みの事実と出典URL、重要な推論と判断、失敗した方法、未解決事項、後続作業に必要なツール結果を日本語で保存する。
@@ -56,13 +56,7 @@ services:
         {
           "0": {
             "enable": true,
-            "model_ids": [
-              "whisper-large-v3-turbo", "preview/Qwen3-VL-30B-A3B-Instruct",
-              "preview/gemma-4-31B-it", "preview/Qwen3.6-35B-A3B",
-              "llm-jp-3.1-8x13b-instruct4", "preview/Qwen3-0.6B-cpu",
-              "preview/Phi-4-mini-instruct-cpu", "preview/Qwen3-Embedding-4B-FP16",
-              "preview/Kimi-K2.7-Code", "multilingual-e5-large", "gpt-oss-120b"
-            ],
+            "model_ids": ["preview/Kimi-K2.7-Code"],
             "headers": {"X-OpenWebUI-Mode": "true"},
             "prefix_id": "sacloud",
             "provider": "llama.cpp",
@@ -94,7 +88,7 @@ services:
         自然な日本語で、結論、確認済み根拠と出典URL、反証または不確実性、取得失敗、親が次に確認すべき点を簡潔に返す。
         同じ検索を繰り返さず、2回連続で結果が空または失敗なら止める。親向けのdelegate_task指示はこのsubagentには適用せず、再委譲しない。
         tool call batchは最大6回とし、十分な根拠または上限に達したらtoolを止める。重要URLと不確実性を残して4000字以内で必ず報告し、割当範囲を越えて最終回答全体を作らない。
-      TASK_MODEL_EXTERNAL: "sacloud.preview/gemma-4-31B-it"
+      TASK_MODEL_EXTERNAL: "sacloud.kimi-k2.7-code"
       TASK_MODEL_PARAMS: '{"max_tokens": 4096}'
       TERMINAL_SERVER_CONNECTIONS: >-
         [
@@ -122,6 +116,7 @@ services:
       WEBUI_URL: "${WEBUI_URL:?set WEBUI_URL}"
     volumes:
       - open-webui-data:/app/backend/data
+      - ./assets/catppuccin-mocha.css:/app/backend/open_webui/static/custom.css:ro
       - ./assets/profile.webp:/app/backend/declarative/assets/profile.webp:ro
       - ./assets/sakura-ai-engine.png:/app/backend/declarative/assets/sakura-ai-engine.png:ro
       - ./assets/sakura-ai-engine-low.png:/app/backend/declarative/assets/sakura-ai-engine-low.png:ro

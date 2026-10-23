@@ -254,7 +254,7 @@ html.dark #response-message-model-name {
 	}
 }
 
-html.dark [id^='message-']:has(img.assistant-message-profile-image[src*='-max']) {
+html.dark [id^='message-']:has(img.assistant-message-profile-image[src*='sacloud.kimi-k2.7-code']) {
 	--ctp-max-gradient: linear-gradient(
 		135deg,
 		#5ba4ff,
@@ -266,13 +266,13 @@ html.dark [id^='message-']:has(img.assistant-message-profile-image[src*='-max'])
 }
 
 html.dark
-	[id^='message-']:has(img.assistant-message-profile-image[src*='-max'])
+	[id^='message-']:has(img.assistant-message-profile-image[src*='sacloud.kimi-k2.7-code'])
 	img.assistant-message-profile-image {
 	filter: none;
 }
 
 html.dark
-	[id^='message-']:has(img.assistant-message-profile-image[src*='-max'])
+	[id^='message-']:has(img.assistant-message-profile-image[src*='sacloud.kimi-k2.7-code'])
 	#response-message-model-name {
 	animation: ctp-max-flow 4s ease-in-out infinite alternate;
 	background: var(--ctp-max-gradient) 0% 0% / 200% 200% no-repeat;
@@ -283,13 +283,13 @@ html.dark
 }
 
 html.dark
-	[id^='message-']:has(img.assistant-message-profile-image[src*='-max'])
+	[id^='message-']:has(img.assistant-message-profile-image[src*='sacloud.kimi-k2.7-code'])
 	div:has(> img.assistant-message-profile-image) {
 	background: none;
 }
 
 html.dark
-	[id^='message-']:has(img.assistant-message-profile-image[src*='-max'])
+	[id^='message-']:has(img.assistant-message-profile-image[src*='sacloud.kimi-k2.7-code'])
 	div:has(> img.assistant-message-profile-image)::after {
 	animation: ctp-max-flow 4s ease-in-out infinite alternate;
 	background: var(--ctp-max-gradient) 0% 0% / 200% 200% no-repeat;
@@ -301,10 +301,10 @@ html.dark
 
 @media (prefers-reduced-motion: reduce) {
 	html.dark
-		[id^='message-']:has(img.assistant-message-profile-image[src*='-max'])
+		[id^='message-']:has(img.assistant-message-profile-image[src*='sacloud.kimi-k2.7-code'])
 		#response-message-model-name,
 	html.dark
-		[id^='message-']:has(img.assistant-message-profile-image[src*='-max'])
+		[id^='message-']:has(img.assistant-message-profile-image[src*='sacloud.kimi-k2.7-code'])
 		div:has(> img.assistant-message-profile-image)::after {
 		animation: none;
 	}
@@ -430,6 +430,13 @@ html.dark #message-input-container {
 	background-color: color-mix(in srgb, var(--ctp-sapphire) 10%, var(--ctp-base)) !important;
 	border-color: transparent !important;
 	box-shadow: none !important;
+}
+
+@media (min-width: 768px) {
+	html.dark #message-input-container {
+		max-width: 48rem;
+		margin-inline: auto;
+	}
 }
 
 html.dark #message-input-container :is(textarea, [contenteditable='true'], .ProseMirror) {

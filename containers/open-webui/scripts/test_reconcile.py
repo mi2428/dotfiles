@@ -274,6 +274,13 @@ class ReconcileTests(unittest.TestCase):
 
     def test_kimi_k27_alias_is_unique_visible_and_native_tool_calling(self) -> None:
         models = self.desired["model_import"]["models"]
+        self.assertEqual(
+            {model["id"] for model in models},
+            {"sacloud.preview/Kimi-K2.7-Code", "sacloud.kimi-k2.7-code"},
+        )
+        self.assertEqual(
+            self.desired["required_visible_model_ids"], ["sacloud.kimi-k2.7-code"]
+        )
         aliases = [model for model in models if model["id"] == "sacloud.kimi-k2.7-code"]
 
         self.assertEqual(len(aliases), 1)
@@ -290,6 +297,8 @@ class ReconcileTests(unittest.TestCase):
         state = self.state()
         base = "sacloud.preview/Kimi-K2.6"
         for model_id in self.desired["retired_model_ids"]:
+            if model_id != base and "kimi-k2.6" not in model_id:
+                continue
             state["models"].append(
                 {
                     "id": model_id,
@@ -312,6 +321,54 @@ class ReconcileTests(unittest.TestCase):
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertEqual(mutations, [])
 
+    def test_previous_provider_models_are_retired_without_touching_unmanaged_models(
+        self,
+    ) -> None:
+        state = self.state()
+        state["models"].extend(
+            [
+                {
+                    "id": "sacloud.preview/gemma-4-31B-it",
+                    "name": "old base",
+                    "user_id": OWNER,
+                    "base_model_id": None,
+                },
+                {
+                    "id": "sacloud.gemma-4-31b-it-low",
+                    "name": "old variant",
+                    "user_id": OWNER,
+                    "base_model_id": "sacloud.preview/gemma-4-31B-it",
+                },
+                {
+                    "id": "groq.groq/compound",
+                    "name": "old provider",
+                    "user_id": OWNER,
+                    "base_model_id": None,
+                },
+                {
+                    "id": "user.custom",
+                    "name": "unmanaged model",
+                    "user_id": OWNER,
+                    "base_model_id": None,
+                },
+            ]
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            result, mutations, state_path = self.run_reconcile(state, Path(directory))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(mutations.count("POST /api/v1/models/model/delete"), 3)
+            remaining = {
+                model["id"] for model in json.loads(state_path.read_text())["models"]
+            }
+            self.assertEqual(
+                remaining,
+                {
+                    "user.custom",
+                    "sacloud.preview/Kimi-K2.7-Code",
+                    "sacloud.kimi-k2.7-code",
+                },
+            )
+
     def test_foreign_kimi_model_is_not_deleted(self) -> None:
         state = self.state()
         state["models"].append(
@@ -325,7 +382,7 @@ class ReconcileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result, mutations, _ = self.run_reconcile(state, Path(directory))
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("Refusing unmanaged Kimi K2.6 models", result.stderr)
+            self.assertIn("Refusing unmanaged retired models", result.stderr)
             self.assertEqual(mutations, [])
 
     def test_unknown_kimi_variant_is_not_orphaned(self) -> None:
@@ -341,7 +398,7 @@ class ReconcileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result, mutations, _ = self.run_reconcile(state, Path(directory))
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("Refusing unmanaged Kimi K2.6 models", result.stderr)
+            self.assertIn("Refusing unmanaged retired models", result.stderr)
             self.assertEqual(mutations, [])
 
 

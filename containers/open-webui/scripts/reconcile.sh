@@ -112,7 +112,7 @@ auth_response="$({
 token="$(jq -er '.token' <<<"$auth_response")"
 owner_id="$(jq -er '.id' <<<"$auth_response")"
 
-# Retire only the exact administrator-owned K2.6 entries created by this renderer.
+# Retire only the exact administrator-owned model IDs previously declared here.
 retired_ids="$(jq -c '.retired_model_ids' <<<"$desired")"
 api_request GET /api/v1/models/all
 expect_success 'model list before retirement'
@@ -120,10 +120,18 @@ jq -e --arg owner "$owner_id" --argjson ids "$retired_ids" '
   all(.[] | select(.id as $id | $ids | index($id));
     .user_id == $owner and
     (if .id == "sacloud.preview/Kimi-K2.6" then .base_model_id == null
-     else .base_model_id == "sacloud.preview/Kimi-K2.6" end))
-  and all(.[] | select(.base_model_id == "sacloud.preview/Kimi-K2.6");
-    .id as $id | $ids | index($id) != null)
-' <<<"$api_body" >/dev/null || { printf '%s\n' 'Refusing unmanaged Kimi K2.6 models' >&2; exit 1; }
+     elif (.id | test("^(sacloud\\.kimi-k2\\.6|kimi-k2\\.6)-")) then
+       .base_model_id == "sacloud.preview/Kimi-K2.6"
+     elif (.id | startswith("sacloud.gemma-4-31b-it-")) then
+       .base_model_id == "sacloud.preview/gemma-4-31B-it"
+     elif (.id | startswith("sacloud.qwen3.6-35b-a3b-")) then
+       .base_model_id == "sacloud.preview/Qwen3.6-35B-A3B"
+     elif (.id | startswith("gpt-oss-120b-")) then
+       .base_model_id == "sacloud.gpt-oss-120b"
+     else .base_model_id == null end))
+   and all(.[] | select(.base_model_id as $base | $ids | index($base) != null);
+     .id as $id | $ids | index($id) != null)
+  ' <<<"$api_body" >/dev/null || { printf '%s\n' 'Refusing unmanaged retired models' >&2; exit 1; }
 retired_present="$(jq -c --argjson ids "$retired_ids" '[.[] | select(.id as $id | $ids | index($id)) | .id]' <<<"$api_body")"
 
 # Enforce user-specific prompt and title behavior; static UI defaults stay in Compose.
@@ -217,7 +225,7 @@ for endpoint in base export; do
           else $icons[$effort] // $icons.default end;
       {models: [
       .[]
-      | select(.id | startswith("sacloud."))
+      | select(.id == "sacloud.kimi-k2.7-code" or .id == "sacloud.preview/Kimi-K2.7-Code")
       | select(.meta.profile_image_url != sakura_icon)
       | .meta.profile_image_url = sakura_icon
     ]}' <<<"$api_body"
@@ -421,7 +429,7 @@ for endpoint in base export; do
       | if $effort == "high" then $icons.max
         elif $effort == "max" then $icons.default
         else $icons[$effort] // $icons.default end;
-    all(.[] | select(.id | startswith("sacloud.")); .meta.profile_image_url == sakura_icon)' \
+    all(.[] | select(.id == "sacloud.kimi-k2.7-code" or .id == "sacloud.preview/Kimi-K2.7-Code"); .meta.profile_image_url == sakura_icon)' \
     <<<"$api_body" >/dev/null \
     || { printf 'Sakura model icon mismatch in %s\n' "$endpoint" >&2; exit 1; }
 done
