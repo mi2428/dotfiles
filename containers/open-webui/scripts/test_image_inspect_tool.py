@@ -27,12 +27,20 @@ class InspectImageTests(unittest.IsolatedAsyncioTestCase):
         async def get_image(file_id: str, user: types.SimpleNamespace) -> str | None:
             return encoded if file_id == "my-image" and user.id == "owner" else None
 
+        async def accessible_chat(chat_id: str, user: types.SimpleNamespace):
+            return chat_id == "my-chat" and user.id == "owner"
+
+        async def message_files(chat_id: str, message_id: str, key: str):
+            assert (chat_id, message_id, key) == ("my-chat", "my-message", "files")
+            return [{"id": "my-image", "type": "file", "content_type": "image/png"}]
+
         modules = {
             name: types.ModuleType(name)
             for name in (
                 "open_webui",
                 "open_webui.models",
                 "open_webui.models.users",
+                "open_webui.models.chats",
                 "open_webui.utils",
                 "open_webui.utils.files",
             )
@@ -42,6 +50,10 @@ class InspectImageTests(unittest.IsolatedAsyncioTestCase):
         )
         modules["open_webui.utils.files"].__dict__["get_image_base64_from_file_id"] = (
             get_image
+        )
+        modules["open_webui.models.chats"].__dict__["Chats"] = types.SimpleNamespace(
+            get_accessible_chat_by_id=accessible_chat,
+            get_message_metadata=message_files,
         )
         self.module_patch = patch.dict(sys.modules, modules)
         self.module_patch.start()
@@ -70,25 +82,29 @@ class InspectImageTests(unittest.IsolatedAsyncioTestCase):
         with Image.open(io.BytesIO(base64.b64decode(output.split(",", 1)[1]))) as crop:
             self.assertNotEqual(crop.getpixel((1, 1)), (255, 0, 0))
 
-    async def test_image_from_user_message_when_metadata_files_are_empty(self) -> None:
+    async def test_saved_image_when_model_messages_and_metadata_files_are_empty(
+        self,
+    ) -> None:
         output = await self.tool.inspect_image(
             0.5,
             0,
             1,
             1,
-            __messages__=[
-                {
-                    "role": "user",
-                    "files": [
-                        {"id": "my-image", "type": "file", "content_type": "image/png"}
-                    ],
-                }
-            ],
+            __metadata__={"chat_id": "my-chat", "user_message_id": "my-message"},
             __files__=[],
             __user__={"id": "owner"},
         )
         with Image.open(io.BytesIO(base64.b64decode(output.split(",", 1)[1]))) as crop:
             self.assertEqual(crop.getpixel((4, 3)), (0, 0, 255))
+        denied = await self.tool.inspect_image(
+            0,
+            0,
+            1,
+            1,
+            __metadata__={"chat_id": "my-chat", "user_message_id": "my-message"},
+            __user__={"id": "other"},
+        )
+        self.assertEqual(denied, "Error: chat is not accessible.")
 
     async def test_rejects_missing_images_and_invalid_geometry(self) -> None:
         self.assertIn("Error:", await self.tool.inspect_image(0, 0, 1, 1))

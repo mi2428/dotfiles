@@ -22,7 +22,7 @@ class Tools:
         angle: float = 0,
         contrast: float = 1,
         grayscale: bool = False,
-        __messages__: list | None = None,
+        __metadata__: dict | None = None,
         __files__: list | None = None,
         __user__: dict | None = None,
     ) -> str:
@@ -37,6 +37,7 @@ class Tools:
         :param contrast: Contrast multiplier from 0.5 to 3; default 1 leaves pixels unchanged.
         :param grayscale: Remove color for reading faint details; do not infer colors from this output.
         """
+        from open_webui.models.chats import Chats
         from open_webui.models.users import UserModel
         from open_webui.utils.files import get_image_base64_from_file_id
 
@@ -53,12 +54,19 @@ class Tools:
         if not __user__:
             return "Error: user identity is required to inspect an attachment."
 
-        attachments = [
-            file
-            for message in reversed(__messages__ or [])
-            if isinstance(message, dict) and message.get("role") == "user"
-            for file in reversed(message.get("files") or [])
-        ] + list(reversed(__files__ or []))
+        user = UserModel(**__user__)
+        chat_id = (__metadata__ or {}).get("chat_id")
+        message_id = (__metadata__ or {}).get("user_message_id")
+        if chat_id and message_id:
+            if not await Chats.get_accessible_chat_by_id(chat_id, user):
+                return "Error: chat is not accessible."
+            attachments = list(
+                reversed(
+                    await Chats.get_message_metadata(chat_id, message_id, "files") or []
+                )
+            )
+        else:
+            attachments = list(reversed(__files__ or []))
         images = []
         for attachment in attachments:
             if not isinstance(attachment, dict):
@@ -77,9 +85,7 @@ class Tools:
         if image_index < 0 or image_index >= len(images):
             return f"Error: image_index is outside the {len(images)} attached images."
 
-        encoded = await get_image_base64_from_file_id(
-            images[image_index], user=UserModel(**__user__)
-        )
+        encoded = await get_image_base64_from_file_id(images[image_index], user=user)
         if not encoded or not encoded.startswith("data:image/"):
             return "Error: attached image is unavailable or is not an image."
         raw = base64.b64decode(encoded.split(",", 1)[1])
