@@ -23,6 +23,12 @@ unset \
   SAKURA_AI_ENGINE_ACCOUNT_TOKENS \
   SAKURA_AI_ACCOUNT_TOKENS \
   SAKURA_PROXY_CLIENT_TOKEN \
+  SEARCHTOOL_CLIENT_TOKEN \
+  SEARCHTOOL_BRAVE_API_KEY \
+  SEARCHTOOL_TAVILY_API_KEY \
+  SEARCHTOOL_EXA_API_KEY \
+  SEARCHTOOL_FIRECRAWL_API_KEY \
+  SEARCHTOOL_PARALLEL_API_KEY \
   CORS_ALLOW_ORIGIN \
   WEBUI_URL \
   WEBUI_ADMIN_EMAIL \
@@ -38,6 +44,12 @@ wait "$decrypt_pid"
 
 : "${SAKURA_AI_ACCOUNT_TOKENS:?set SAKURA_AI_ACCOUNT_TOKENS}"
 : "${SAKURA_PROXY_CLIENT_TOKEN:?set SAKURA_PROXY_CLIENT_TOKEN}"
+: "${SEARCHTOOL_CLIENT_TOKEN:?set SEARCHTOOL_CLIENT_TOKEN}"
+: "${SEARCHTOOL_BRAVE_API_KEY:?set SEARCHTOOL_BRAVE_API_KEY}"
+: "${SEARCHTOOL_TAVILY_API_KEY:?set SEARCHTOOL_TAVILY_API_KEY}"
+: "${SEARCHTOOL_EXA_API_KEY:?set SEARCHTOOL_EXA_API_KEY}"
+: "${SEARCHTOOL_FIRECRAWL_API_KEY:?set SEARCHTOOL_FIRECRAWL_API_KEY}"
+: "${SEARCHTOOL_PARALLEL_API_KEY:?set SEARCHTOOL_PARALLEL_API_KEY}"
 SAKURA_AI_ENGINE_ACCOUNT_TOKENS="$(
   SAKURA_AI_ACCOUNT_TOKENS="$SAKURA_AI_ACCOUNT_TOKENS" python3 -c 'import json, os; print(json.dumps([token.strip() for token in os.environ["SAKURA_AI_ACCOUNT_TOKENS"].split(",") if token.strip()]))'
 )"
@@ -112,7 +124,7 @@ case "$action" in
       || true
     ;;
   down)
-    "${compose_webui[@]}" stop open-webui cptr open-terminal sakura-ai-engine-gateway
+    "${compose_webui[@]}" stop
     ;;
   logs)
     "${compose_webui[@]}" logs -f

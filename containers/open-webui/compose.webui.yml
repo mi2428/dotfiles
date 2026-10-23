@@ -46,6 +46,8 @@ services:
       ENABLE_SIGNUP: "false"
       ENABLE_SUBAGENTS: "true"
       ENABLE_WEB_SEARCH: "true"
+      EXTERNAL_WEB_SEARCH_API_KEY: "${SEARCHTOOL_CLIENT_TOKEN:?set SEARCHTOOL_CLIENT_TOKEN}"
+      EXTERNAL_WEB_SEARCH_URL: "http://searchtool:8082/search"
       OPENAI_API_BASE_URLS: >-
         http://sakura-ai-engine-gateway:8080/v1;http://cptr:8000/v1
       OPENAI_API_CONFIGS: >-
@@ -105,8 +107,7 @@ services:
             "config": {}
           }
         ]
-      DDGS_BACKEND: "brave"
-      WEB_SEARCH_ENGINE: "duckduckgo"
+      WEB_SEARCH_ENGINE: "external"
       WEB_FETCH_MAX_CONTENT_LENGTH: "16000"
       WEB_SEARCH_RESULT_COUNT: "10"
       WEBUI_ADMIN_EMAIL: "${WEBUI_ADMIN_EMAIL:?set WEBUI_ADMIN_EMAIL}"
@@ -144,7 +145,28 @@ services:
         condition: service_started
       open-terminal:
         condition: service_healthy
+      searchtool:
+        condition: service_started
       sakura-ai-engine-gateway:
+        condition: service_started
+    restart: unless-stopped
+
+  searchtool:
+    profiles: [webui]
+    build:
+      context: ./searchtool_proxy
+      dockerfile: Dockerfile
+    environment:
+      SEARCHTOOL_CLIENT_TOKEN: "${SEARCHTOOL_CLIENT_TOKEN:?set SEARCHTOOL_CLIENT_TOKEN}"
+    read_only: true
+    user: "65532:65532"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_reservation: 16m
+    mem_limit: 128m
+    depends_on:
+      sakura-ai-engine-searchtool:
         condition: service_started
     restart: unless-stopped
 
