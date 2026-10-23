@@ -439,6 +439,21 @@ html.dark #message-input-container {
 	}
 }
 
+@media (max-width: 767px) {
+	html.dark #message-input-container {
+		max-width: calc(100% - 2rem);
+		margin-inline: auto;
+	}
+
+	html.dark #message-input-container:has(#chat-input:focus-within) {
+		max-width: 100%;
+	}
+
+	html.dark #message-input-container:has(#chat-input:focus-within) #chat-input-container {
+		min-height: 3rem;
+	}
+}
+
 html.dark #message-input-container :is(textarea, [contenteditable='true'], .ProseMirror) {
 	font-size: 0.875rem !important;
 	line-height: 1.5 !important;
