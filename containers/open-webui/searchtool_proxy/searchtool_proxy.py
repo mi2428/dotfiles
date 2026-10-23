@@ -1,4 +1,4 @@
-"""Adapt Open WebUI external search requests to Sakura Search Tool."""
+"""Search with DDGS first; use Sakura Search Tool only when DDGS fails."""
 
 from __future__ import annotations
 
@@ -6,14 +6,20 @@ import hmac
 import json
 import logging
 import os
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar, Final, TypedDict
 from urllib.request import Request, urlopen
+
+from ddgs import DDGS
+from ddgs.exceptions import DDGSException, RatelimitException
 
 SEARCHTOOL_URL: Final = "http://sakura-ai-engine-searchtool:8081/search"
 MAX_REQUEST_BYTES: Final = 64 * 1024
 MAX_QUERY_BYTES: Final = 2048
 REQUEST_TIMEOUT: Final = 120
+DDGS_COOLDOWN: Final = 300
+ddgs_retry_after = 0.0
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -93,6 +99,30 @@ def search_tool(query: str, count: int, token: str) -> list[SearchResult]:
     return results
 
 
+def search(query: str, count: int, token: str) -> list[SearchResult]:
+    """Save keyed search requests when DDGS returns usable results."""
+    global ddgs_retry_after
+    if count == 0:
+        return []
+    if time.monotonic() < ddgs_retry_after:
+        return search_tool(query, count, token)
+    try:
+        results = DDGS(timeout=10).text(query, max_results=count, backend="duckduckgo")
+        normalized: list[SearchResult] = []
+        for row in results:
+            title, link, snippet = row["title"], row["href"], row["body"]
+            if not all(isinstance(value, str) for value in (title, link, snippet)):
+                raise TypeError("DDGS returned an invalid result")
+            normalized.append({"title": title, "link": link, "snippet": snippet})
+        if normalized:
+            return normalized
+    except (DDGSException, OSError, KeyError, TypeError) as error:
+        logger.warning("DDGS search failed (%s)", type(error).__name__)
+        if isinstance(error, RatelimitException):
+            ddgs_retry_after = time.monotonic() + DDGS_COOLDOWN
+    return search_tool(query, count, token)
+
+
 class ProxyHandler(BaseHTTPRequestHandler):
     """Serve authenticated Open WebUI external-search requests."""
 
@@ -128,7 +158,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            results = search_tool(query, count, self.client_token)
+            results = search(query, count, self.client_token)
         except (OSError, TypeError, ValueError) as error:
             logger.warning("Search Tool request failed (%s)", type(error).__name__)
             self._send_json(502, {"error": "search_tool_unavailable"})
