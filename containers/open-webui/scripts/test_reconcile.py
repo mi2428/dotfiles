@@ -75,6 +75,15 @@ status = 200
 body = None
 if path == "/api/v1/auths/signin":
     body = state["profile"] | {"id": state["owner"], "token": "fake-token"}
+elif path == "/api/v1/tools/id/image_inspect" and method == "GET":
+    body = state["tools"].get("image_inspect")
+    if body is None:
+        status, body = 404, {"detail": "not found"}
+elif path in ("/api/v1/tools/create", "/api/v1/tools/id/image_inspect/update"):
+    mutate()
+    body = json.loads(payload) | {"user_id": state["owner"]}
+    state["tools"]["image_inspect"] = body
+    save()
 elif path == "/api/v1/models/export":
     body = state["models"]
 elif path == "/api/v1/models/all":
@@ -213,6 +222,10 @@ class ReconcileTests(unittest.TestCase):
             )
         return {
             "owner": OWNER,
+            "tools": {
+                "image_inspect": copy.deepcopy(desired["image_inspect_tool"])
+                | {"user_id": OWNER}
+            },
             "models": models,
             "settings": {
                 "ui": {**desired["user_settings"]["ui"], "widescreenMode": True}
@@ -289,9 +302,47 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual(aliases[0]["params"]["reasoning_effort"], "max")
         self.assertEqual(aliases[0]["params"]["function_calling"], "native")
         self.assertEqual(aliases[0]["params"]["max_tokens"], 32768)
+        self.assertEqual(aliases[0]["meta"]["toolIds"], ["image_inspect"])
         self.assertIn(
             "sacloud.kimi-k2.7-code", self.desired["required_visible_model_ids"]
         )
+
+    def test_image_tool_is_created_and_reconciled_before_models(self) -> None:
+        state = self.state()
+        state["tools"] = {}
+        state["models"][1]["name"] = "outdated model name"
+        with tempfile.TemporaryDirectory() as directory:
+            result, mutations, state_path = self.run_reconcile(state, Path(directory))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                mutations[:2],
+                ["POST /api/v1/tools/create", "POST /api/v1/models/import"],
+            )
+            created = json.loads(state_path.read_text())["tools"]["image_inspect"]
+            self.assertIn("async def inspect_image(", created["content"])
+
+    def test_unmanaged_image_tool_is_not_replaced(self) -> None:
+        state = self.state()
+        state["tools"]["image_inspect"]["meta"]["provisioned_by"] = "other"
+        with tempfile.TemporaryDirectory() as directory:
+            result, mutations, _ = self.run_reconcile(state, Path(directory))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Refusing unmanaged image inspection tool", result.stderr)
+            self.assertEqual(mutations, [])
+
+    def test_image_tool_update_is_idempotent(self) -> None:
+        state = self.state()
+        state["tools"]["image_inspect"]["content"] = "stale"
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            first, mutations, state_path = self.run_reconcile(state, temp)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(mutations, ["POST /api/v1/tools/id/image_inspect/update"])
+            second, mutations, _ = self.run_reconcile(
+                json.loads(state_path.read_text()), temp
+            )
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(mutations, [])
 
     def test_retired_kimi_entries_are_deleted_once(self) -> None:
         state = self.state()

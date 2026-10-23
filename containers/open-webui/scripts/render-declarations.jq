@@ -29,7 +29,7 @@ def model_import: {
       id: "sacloud.kimi-k2.7-code",
       base_model_id: "sacloud.preview/Kimi-K2.7-Code",
       name: "Sakura Kimi K2.7 Code",
-      meta: {hidden: false, tags: [{name: "Kimi"}], skillIds: [], toolIds: []},
+      meta: {hidden: false, tags: [{name: "Kimi"}], skillIds: [], toolIds: ["image_inspect"]},
       params: {function_calling: "native", max_tokens: 32768, reasoning_effort: "max"},
       access_grants: [],
       is_active: true
@@ -50,6 +50,13 @@ def model_import: {
     parent_id: null,
     meta: {provisioned_by: "dotfiles:geoguessor-folder", icon: "earth_asia"},
     data: {system_prompt: $geoguessor_system, files: []}
+  },
+  image_inspect_tool: {
+    id: "image_inspect",
+    name: "Inspect Image",
+    content: $image_inspect_tool,
+    meta: {provisioned_by: "dotfiles:image-inspect-tool"},
+    access_grants: []
   },
   translation_folder: {
     name: "翻訳（エンジニア）",
@@ -109,7 +116,9 @@ def model_import: {
     "model import contains duplicate IDs"
   )
 | require(all($desired.model_import.models[]; .meta.skillIds == []); "regular models must not enable skills")
-| require(all($desired.model_import.models[]; .meta.toolIds == []); "regular models must not enable external tools")
+| require(all($desired.model_import.models[]; .meta.toolIds == (if .id == "sacloud.kimi-k2.7-code" then ["image_inspect"] else [] end)); "unexpected model tool bindings")
+| require(($desired.image_inspect_tool.content | length) > 0; "image inspection tool is required")
+| require($desired.image_inspect_tool.meta.provisioned_by == "dotfiles:image-inspect-tool"; "image inspection tool marker mismatch")
 | ($desired.model_import.models | map(select(.id == "sacloud.kimi-k2.7-code"))) as $kimi_k27
 | require(($kimi_k27 | length) == 1; "Kimi K2.7 Code alias must be unique")
 | require($kimi_k27[0].meta.hidden == false; "Kimi K2.7 Code alias must be visible")

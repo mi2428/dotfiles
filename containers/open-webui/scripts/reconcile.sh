@@ -9,6 +9,7 @@ config_dir="${1:?configuration directory is required}"
 mode="${2:-reconcile}"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 geoguessor_system_file="$config_dir/config/geoguessor-system.md"
+image_inspect_tool_file="$script_dir/image_inspect_tool.py"
 github_oss_translation_system_file="$config_dir/config/github-oss-translation-system.md"
 movie_akinator_system_file="$config_dir/config/movie-akinator-system.md"
 books_movies_subculture_system_file="$config_dir/config/books-movies-subculture-system.md"
@@ -22,7 +23,8 @@ sakura_icon_high_file="$config_dir/assets/sakura-ai-engine-high.png"
 sakura_icon_max_file="$config_dir/assets/sakura-ai-engine-max.png"
 
 for file in \
-  "$geoguessor_system_file" "$github_oss_translation_system_file" \
+  "$geoguessor_system_file" "$image_inspect_tool_file" \
+  "$github_oss_translation_system_file" \
   "$movie_akinator_system_file" \
   "$books_movies_subculture_system_file" \
   "$chat_personality_file" "$renderer_file" \
@@ -42,6 +44,7 @@ sakura_icons="$(jq -n \
 desired="$(jq -n \
   --argjson sakura_icons "$sakura_icons" \
   --rawfile geoguessor_system "$geoguessor_system_file" \
+  --rawfile image_inspect_tool "$image_inspect_tool_file" \
   --rawfile github_oss_translation_system "$github_oss_translation_system_file" \
   --rawfile movie_akinator_system "$movie_akinator_system_file" \
   --rawfile books_movies_subculture_system "$books_movies_subculture_system_file" \
@@ -111,6 +114,35 @@ auth_response="$({
 })"
 token="$(jq -er '.token' <<<"$auth_response")"
 owner_id="$(jq -er '.id' <<<"$auth_response")"
+
+desired_image_tool="$(jq -c '.image_inspect_tool' <<<"$desired")"
+image_tool_projection() {
+  jq -cS '{id, name, content, provisioned_by: .meta.provisioned_by,
+    access_grants: ((.access_grants // []) | map({principal_type, principal_id, permission}))}' <<<"$1"
+}
+api_request GET /api/v1/tools/id/image_inspect
+if [[ "$api_status" == 404 ]]; then
+  api_request POST /api/v1/tools/create "$desired_image_tool"
+  expect_success 'image inspection tool create'
+else
+  expect_success 'image inspection tool GET'
+  jq -e --arg owner "$owner_id" \
+    '.id == "image_inspect" and .user_id == $owner
+      and .meta.provisioned_by == "dotfiles:image-inspect-tool"' \
+    <<<"$api_body" >/dev/null \
+    || { printf '%s\n' 'Refusing unmanaged image inspection tool' >&2; exit 1; }
+  if [[ "$(image_tool_projection "$api_body")" != "$(image_tool_projection "$desired_image_tool")" ]]; then
+    api_request POST /api/v1/tools/id/image_inspect/update "$desired_image_tool"
+    expect_success 'image inspection tool update'
+  fi
+fi
+api_request GET /api/v1/tools/id/image_inspect
+expect_success 'image inspection tool verification'
+jq -e --arg owner "$owner_id" \
+  '.user_id == $owner and .meta.provisioned_by == "dotfiles:image-inspect-tool"' \
+  <<<"$api_body" >/dev/null
+[[ "$(image_tool_projection "$api_body")" == "$(image_tool_projection "$desired_image_tool")" ]] \
+  || { printf '%s\n' 'image inspection tool mismatch' >&2; exit 1; }
 
 # Retire only the exact administrator-owned model IDs previously declared here.
 retired_ids="$(jq -c '.retired_model_ids' <<<"$desired")"

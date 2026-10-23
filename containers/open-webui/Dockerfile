@@ -22,4 +22,4 @@ COPY assets/catppuccin-mocha.css /app/build/static/custom.css
 COPY assets/loader.js /app/build/static/loader.js
 COPY assets/ /app/backend/declarative/assets/
 COPY config/ /app/backend/declarative/config/
-COPY scripts/reconcile.sh scripts/render-declarations.jq /app/backend/declarative-scripts/
+COPY scripts/reconcile.sh scripts/render-declarations.jq scripts/image_inspect_tool.py /app/backend/declarative-scripts/
