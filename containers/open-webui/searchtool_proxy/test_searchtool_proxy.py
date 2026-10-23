@@ -99,7 +99,7 @@ class SearchToolProxyTests(unittest.TestCase):
                 ],
             )
             ddgs.return_value.text.assert_called_once_with(
-                "Sakura", max_results=5, backend="duckduckgo"
+                "Sakura", max_results=5, backend="auto"
             )
             paid.assert_not_called()
 
@@ -117,6 +117,17 @@ class SearchToolProxyTests(unittest.TestCase):
                 )
                 search("Sakura", 5, "x" * 32)
             self.assertEqual(paid.call_count, 2)
+
+    def test_invalid_ddgs_link_does_not_become_a_search_result(self) -> None:
+        with (
+            patch("searchtool_proxy.DDGS") as ddgs,
+            patch("searchtool_proxy.search_tool", return_value=[]) as paid,
+        ):
+            ddgs.return_value.text.return_value = [
+                {"title": "invalid", "href": "javascript:alert(1)", "body": "text"}
+            ]
+            self.assertEqual(search("Sakura", 5, "x" * 32), [])
+            paid.assert_called_once()
 
     def test_zero_count_skips_both_backends(self) -> None:
         with (

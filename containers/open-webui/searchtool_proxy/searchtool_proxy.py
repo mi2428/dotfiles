@@ -9,6 +9,7 @@ import os
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar, Final, TypedDict
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from ddgs import DDGS
@@ -21,7 +22,7 @@ REQUEST_TIMEOUT: Final = 120
 DDGS_COOLDOWN: Final = 300
 ddgs_retry_after = 0.0
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -107,16 +108,23 @@ def search(query: str, count: int, token: str) -> list[SearchResult]:
     if time.monotonic() < ddgs_retry_after:
         return search_tool(query, count, token)
     try:
-        results = DDGS(timeout=10).text(query, max_results=count, backend="duckduckgo")
+        results = DDGS(timeout=10).text(query, max_results=count, backend="auto")
         normalized: list[SearchResult] = []
         for row in results:
             title, link, snippet = row["title"], row["href"], row["body"]
             if not all(isinstance(value, str) for value in (title, link, snippet)):
                 raise TypeError("DDGS returned an invalid result")
+            parsed = urlsplit(link)
+            if (
+                not title.strip()
+                or parsed.scheme not in ("http", "https")
+                or not parsed.netloc
+            ):
+                raise ValueError("DDGS returned an invalid link")
             normalized.append({"title": title, "link": link, "snippet": snippet})
         if normalized:
             return normalized
-    except (DDGSException, OSError, KeyError, TypeError) as error:
+    except (DDGSException, OSError, KeyError, TypeError, ValueError) as error:
         logger.warning("DDGS search failed (%s)", type(error).__name__)
         if isinstance(error, RatelimitException):
             ddgs_retry_after = time.monotonic() + DDGS_COOLDOWN
