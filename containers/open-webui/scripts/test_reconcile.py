@@ -1,3 +1,5 @@
+"""Behavioral tests for declarative Open WebUI reconciliation."""
+
 from __future__ import annotations
 
 import base64
@@ -10,12 +12,16 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from typing import Any, TypeAlias
 
 ROOT = Path(__file__).resolve().parents[1]
 RECONCILE = ROOT / "scripts" / "reconcile.sh"
 OWNER = "admin-id"
+JsonObject: TypeAlias = dict[str, Any]
 
-FAKE_CURL = r"""#!/usr/bin/env python3
+FAKE_CURL = r'''#!/usr/bin/env python3
+"""Fake HTTP responder for the reconciliation shell script."""
+
 import json
 import os
 import sys
@@ -23,7 +29,8 @@ from urllib.parse import unquote, urlsplit
 
 state_path = os.environ["FAKE_API_STATE"]
 log_path = os.environ["FAKE_API_MUTATIONS"]
-state = json.loads(open(state_path, encoding="utf-8").read())
+with open(state_path, encoding="utf-8") as handle:
+    state = json.load(handle)
 args = sys.argv[1:]
 method = "GET"
 payload = None
@@ -39,15 +46,18 @@ url = next(value for value in reversed(args) if value.startswith(("http://", "ht
 parts = urlsplit(url)
 path = unquote(parts.path)
 
-def save():
+def save() -> None:
+    """Persist the fake Open WebUI state."""
     with open(state_path, "w", encoding="utf-8") as handle:
         json.dump(state, handle, ensure_ascii=False)
 
-def mutate():
+def mutate() -> None:
+    """Record a mutating fake API request."""
     with open(log_path, "a", encoding="utf-8") as handle:
         handle.write(f"{method} {path}\n")
 
-def model_registry():
+def model_registry() -> dict[str, list[dict[str, object]]]:
+    """Project fake models into the Open WebUI registry response."""
     rows = []
     for model in state["models"]:
         row = {
@@ -94,7 +104,7 @@ elif path == "/api/v1/configs/models":
         state["model_config"] = json.loads(payload)
         save()
         body = state["model_config"]
-elif path in {"/api/v1/users/user/settings", "/api/v1/users/user/settings"}:
+elif path == "/api/v1/users/user/settings":
     body = state["settings"]
 elif path == "/api/v1/users/user/settings/update":
     mutate()
@@ -116,13 +126,14 @@ else:
 
 rendered = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
 sys.stdout.write(rendered + (f"\n{status}" if write_status else ""))
-"""
+'''
 
 
-def visible_order(models: list[dict]) -> list[str]:
+def visible_order(models: list[JsonObject]) -> list[str]:
+    """Return visible model ids in the order expected by the UI."""
     visible = [item for item in models if not item.get("meta", {}).get("hidden", False)]
 
-    def key(item: dict) -> tuple[str, int, str]:
+    def key(item: JsonObject) -> tuple[str, int, str]:
         name = item["name"]
         base = re.sub(r" (Low|Medium|High|Max)$", "", name).lower()
         suffix = next(
@@ -140,6 +151,10 @@ def visible_order(models: list[dict]) -> list[str]:
 
 
 class ReconcileTests(unittest.TestCase):
+    """Exercise reconciliation against a stateful fake Open WebUI API."""
+
+    desired: JsonObject
+
     @classmethod
     def setUpClass(cls) -> None:
         result = subprocess.run(
@@ -170,7 +185,8 @@ class ReconcileTests(unittest.TestCase):
             self.assertNotIn("pipe", desired)
             self.assertNotIn("model", desired)
 
-    def state(self) -> dict:
+    def state(self) -> JsonObject:
+        """Build a clean persisted state for a reconciliation test."""
         desired = self.desired
         regular_models = copy.deepcopy(desired["model_import"]["models"])
         for regular_model in regular_models:
@@ -213,8 +229,9 @@ class ReconcileTests(unittest.TestCase):
         }
 
     def run_reconcile(
-        self, state: dict, temp: Path
+        self, state: JsonObject, temp: Path
     ) -> tuple[subprocess.CompletedProcess[str], list[str], Path]:
+        """Run reconciliation against the fake API and return its effects."""
         state_path = temp / "state.json"
         mutations = temp / "mutations"
         fake_bin = temp / "bin"

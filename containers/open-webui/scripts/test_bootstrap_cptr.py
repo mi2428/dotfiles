@@ -7,6 +7,7 @@ import io
 import os
 import unittest
 import urllib.error
+from collections.abc import Mapping
 from email.message import Message
 from unittest.mock import patch
 
@@ -14,6 +15,8 @@ import bootstrap_cptr as subject
 
 
 class FakeClient:
+    """Small Computer API double for bootstrap behavior tests."""
+
     def __init__(self, *, needs_setup: bool, gateway_valid: bool) -> None:
         self.needs_setup = needs_setup
         self.gateway_valid = gateway_valid
@@ -25,8 +28,9 @@ class FakeClient:
         payload: object | None = None,
         *,
         method: str | None = None,
-        headers: object | None = None,
+        headers: Mapping[str, str] | None = None,
     ) -> subject.Json:
+        """Record the API call and return the configured fake response."""
         self.calls.append((path, payload, method))
         if path == "/api/config":
             return {"needs_setup": self.needs_setup}
@@ -49,6 +53,8 @@ class FakeClient:
 
 
 class BootstrapComputerTests(unittest.TestCase):
+    """Verify Computer setup and gateway-key rotation behavior."""
+
     def run_main(self, client: FakeClient, **environment: str) -> str:
         output = io.StringIO()
         with (
