@@ -7,7 +7,12 @@ gateway_env_file="${XDG_STATE_HOME:-$HOME/.local/state}/open-webui/cptr-gateway.
 : "${WEBUI_ADMIN_USERNAME:?set WEBUI_ADMIN_USERNAME}"
 : "${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD}"
 
-compose=(docker compose -f "$repo_root/containers/open-webui/compose.yml")
+compose=(
+  docker compose
+  -f "$repo_root/containers/open-webui/compose.yml"
+  -f "$repo_root/containers/open-webui/compose.webui.yml"
+  --profile webui
+)
 
 export CPTR_STARTUP_TOKEN=
 for _ in {1..60}; do
