@@ -22,6 +22,7 @@ class Tools:
         angle: float = 0,
         contrast: float = 1,
         grayscale: bool = False,
+        __messages__: list | None = None,
         __files__: list | None = None,
         __user__: dict | None = None,
     ) -> str:
@@ -49,18 +50,32 @@ class Tools:
             and 0.5 <= contrast <= 3
         ):
             return "Error: invalid crop, rotation, or contrast settings."
-        if not __user__ or not __files__:
-            return "Error: attach the original image to this chat before cropping."
+        if not __user__:
+            return "Error: user identity is required to inspect an attachment."
 
-        images = [
-            file["id"]
-            for attachment in reversed(__files__)
-            if isinstance(attachment, dict)
-            for file in [attachment.get("file") or attachment]
-            if isinstance(file, dict) and file.get("id")
-        ]
+        attachments = [
+            file
+            for message in reversed(__messages__ or [])
+            if isinstance(message, dict) and message.get("role") == "user"
+            for file in reversed(message.get("files") or [])
+        ] + list(reversed(__files__ or []))
+        images = []
+        for attachment in attachments:
+            if not isinstance(attachment, dict):
+                continue
+            file = attachment.get("file") or attachment
+            if not isinstance(file, dict):
+                continue
+            content_type = attachment.get("content_type") or file.get("content_type")
+            if file.get("id") and (
+                not content_type
+                or isinstance(content_type, str)
+                and content_type.startswith("image/")
+            ):
+                images.append(file["id"])
+        images = list(dict.fromkeys(images))
         if image_index < 0 or image_index >= len(images):
-            return f"Error: image_index is outside the {len(images)} attached files."
+            return f"Error: image_index is outside the {len(images)} attached images."
 
         encoded = await get_image_base64_from_file_id(
             images[image_index], user=UserModel(**__user__)

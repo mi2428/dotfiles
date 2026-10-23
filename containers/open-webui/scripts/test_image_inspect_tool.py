@@ -70,6 +70,26 @@ class InspectImageTests(unittest.IsolatedAsyncioTestCase):
         with Image.open(io.BytesIO(base64.b64decode(output.split(",", 1)[1]))) as crop:
             self.assertNotEqual(crop.getpixel((1, 1)), (255, 0, 0))
 
+    async def test_image_from_user_message_when_metadata_files_are_empty(self) -> None:
+        output = await self.tool.inspect_image(
+            0.5,
+            0,
+            1,
+            1,
+            __messages__=[
+                {
+                    "role": "user",
+                    "files": [
+                        {"id": "my-image", "type": "file", "content_type": "image/png"}
+                    ],
+                }
+            ],
+            __files__=[],
+            __user__={"id": "owner"},
+        )
+        with Image.open(io.BytesIO(base64.b64decode(output.split(",", 1)[1]))) as crop:
+            self.assertEqual(crop.getpixel((4, 3)), (0, 0, 255))
+
     async def test_rejects_missing_images_and_invalid_geometry(self) -> None:
         self.assertIn("Error:", await self.tool.inspect_image(0, 0, 1, 1))
         self.assertIn(
