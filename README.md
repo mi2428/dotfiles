@@ -172,7 +172,8 @@ Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `t
 Store the Search Tool client token and provider API keys in the age-encrypted Open WebUI environment; edit it with `task secrets.edit.webui`.
 Computer has read-write access to `CPTR_WORKSPACE_DIR`, so mount only a trusted workspace.
 Persistent data lives in named volumes and `<workspace>/.cptr`; manage Open WebUI Admin UI configuration in Compose because UI changes do not survive a restart.
-Both local services use the latest [Sakura AI Engine Gateway image](https://github.com/mi2428/sakura-ai-engine-gateway); Search Tool starts its bundled `/searchtool` binary.
+Both local services use their latest images: [Sakura AI Engine Gateway](https://github.com/mi2428/sakura-ai-engine-gateway) and [Search Tool](https://github.com/mi2428/searchtool).
+The UI shim uses Open WebUI's `custom.css` and `loader.js` hooks; the image build checks these hooks and the DOM anchors styled by the shim. Before changing the pinned version, review its release notes, build and inspect the shim against a separate test database, then back up the persistent data before applying a release with database migrations.
 
 ```console
 $ task ai.webui.up

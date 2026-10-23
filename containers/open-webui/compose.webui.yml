@@ -2,7 +2,8 @@
 services:
   open-webui:
     profiles: [webui]
-    build: .
+    image: ghcr.io/mi2428/open-webui:latest
+    pull_policy: always
     ports:
       - "127.0.0.1:${OPEN_WEBUI_PORT:-38080}:8080"
     environment:

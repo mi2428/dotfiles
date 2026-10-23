@@ -196,6 +196,7 @@ html.dark a.selected[href^='/c/']:hover {
 	background: color-mix(in srgb, var(--ctp-lavender) 24%, var(--ctp-mantle)) !important;
 }
 
+/* Semantic DOM anchors below are checked against the pinned frontend during image build. */
 html.dark [id^='message-']:has(img.assistant-message-profile-image) {
 	--ctp-model-accent: color-mix(
 		in srgb,
@@ -546,40 +547,7 @@ html.dark .cm-foldPlaceholder {
 	color: var(--ctp-overlay-0);
 }
 
-/* ponytail: Open WebUI v0.11.1 emits these CodeMirror classes; remap after an editor upgrade. */
-html.dark .cm-editor .ͼp {
-	color: var(--ctp-mauve) !important;
-}
-
-html.dark .cm-editor :is(.ͼq, .ͼr, .ͼ11) {
-	color: var(--ctp-blue) !important;
-}
-
-html.dark .cm-editor .ͼs,
-html.dark .cm-editor .ͼ12 {
-	color: var(--ctp-peach) !important;
-}
-
-html.dark .cm-editor .ͼt,
-html.dark .cm-editor .ͼw {
-	color: var(--ctp-overlay-2) !important;
-}
-
-html.dark .cm-editor .ͼu {
-	color: var(--ctp-yellow) !important;
-}
-
-html.dark .cm-editor .ͼv {
-	color: var(--ctp-sky) !important;
-}
-
-html.dark .cm-editor .ͼ13 {
-	color: var(--ctp-green) !important;
-}
-
-html.dark .cm-editor .ͼ14 {
-	color: var(--ctp-red) !important;
-}
+/* Let CodeMirror theme syntax tokens; its generated ͼ class names change between versions. */
 
 html.dark .hljs-comment,
 html.dark .hljs-quote {

@@ -17,11 +17,11 @@ services:
       - "127.0.0.1:38081:8080"
     restart: unless-stopped
 
+  # Source implementation: https://github.com/mi2428/searchtool
   sakura-ai-engine-searchtool:
     profiles: [webui]
-    image: ghcr.io/mi2428/sakura-ai-engine-gateway:latest
+    image: ghcr.io/mi2428/searchtool:latest
     pull_policy: always
-    command: ["/searchtool"]
     environment:
       SEARCHTOOL_LISTEN_ADDRESS: ":8081"
       SEARCHTOOL_CLIENT_TOKEN: "${SEARCHTOOL_CLIENT_TOKEN:?set SEARCHTOOL_CLIENT_TOKEN}"
