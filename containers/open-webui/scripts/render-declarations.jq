@@ -30,7 +30,7 @@ def model_import: {
       base_model_id: "sacloud.preview/Kimi-K2.7-Code",
       name: "Sakura Kimi K2.7 Code",
       meta: {hidden: false, tags: [{name: "Kimi"}], skillIds: [], toolIds: []},
-      params: {function_calling: "native", max_tokens: 32768},
+      params: {function_calling: "native", max_tokens: 32768, reasoning_effort: "max"},
       access_grants: [],
       is_active: true
     }]
@@ -114,6 +114,6 @@ def model_import: {
 | require(($kimi_k27 | length) == 1; "Kimi K2.7 Code alias must be unique")
 | require($kimi_k27[0].meta.hidden == false; "Kimi K2.7 Code alias must be visible")
 | require($kimi_k27[0].base_model_id == "sacloud.preview/Kimi-K2.7-Code"; "Kimi K2.7 Code alias base mismatch")
-| require(($kimi_k27[0].params | has("reasoning_effort") | not); "Kimi K2.7 Code alias must not set reasoning effort")
+| require($kimi_k27[0].params.reasoning_effort == "max"; "Kimi K2.7 Code alias must use max reasoning effort")
 | require($kimi_k27[0].params.function_calling == "native"; "Kimi K2.7 Code alias must use native function calling")
 | require($kimi_k27[0].params.max_tokens == 32768; "Kimi K2.7 Code alias must cap output")

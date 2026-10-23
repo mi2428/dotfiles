@@ -286,7 +286,7 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual(len(aliases), 1)
         self.assertFalse(aliases[0]["meta"]["hidden"])
         self.assertEqual(aliases[0]["base_model_id"], "sacloud.preview/Kimi-K2.7-Code")
-        self.assertNotIn("reasoning_effort", aliases[0]["params"])
+        self.assertEqual(aliases[0]["params"]["reasoning_effort"], "max")
         self.assertEqual(aliases[0]["params"]["function_calling"], "native")
         self.assertEqual(aliases[0]["params"]["max_tokens"], 32768)
         self.assertIn(

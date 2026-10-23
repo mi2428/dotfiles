@@ -47,9 +47,8 @@ let
       chunkTimeout = false;
     };
     models = {
-      # K2.7 Code always thinks; reasoning_effort is unsupported. Its 256K
-      # context and 32K output limits are already set by mkSakuraModel.
-      # https://platform.kimi.ai/docs/api/models-overview
+      # The Gateway supplies max reasoning when omitted; the client owns tools.
+      # Its 256K context and 32K output limits are set by mkSakuraModel.
       "preview/Kimi-K2.7-Code" = mkSakuraModel "Sakura Kimi K2.7 Code";
     };
   };
