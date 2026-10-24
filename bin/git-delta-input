@@ -3,12 +3,21 @@
 set -uo pipefail
 
 range=""
+include_staged=0
 
 while (($#)); do
   case "$1" in
     --range)
+      if (($# < 2)); then
+        echo 'git-delta-input: --range requires a revision' >&2
+        exit 2
+      fi
       range="$2"
       shift 2
+      ;;
+    --include-staged)
+      include_staged=1
+      shift
       ;;
     --)
       shift
@@ -117,8 +126,15 @@ emit_diff() {
   local -a diff_args=()
   local -a pathspecs=()
 
-  if [[ -n "$range" ]]; then
-    diff_args+=("$range")
+  if (( include_staged )); then
+    if [[ -n "$range" && "$range" != HEAD ]]; then
+      git diff --no-color "$range" HEAD "$@" || return $?
+    fi
+    git diff --cached --no-color "$@" || return $?
+  else
+    if [[ -n "$range" ]]; then
+      diff_args+=("$range")
+    fi
   fi
   diff_args+=("$@")
 

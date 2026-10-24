@@ -96,6 +96,17 @@ function __dotfiles_git_ui_render_pr_preview --argument-names pr_ref glow_style_
 end
 
 function __dotfiles_git_ui_delta_lazygit
+    set -l adaptive 0
+    set -l unified 0
+    for arg in $argv
+        switch "$arg"
+            case --adaptive
+                set adaptive 1
+            case --unified
+                set unified 1
+        end
+    end
+
     command -q delta; or begin
         printf 'dotfiles-git-ui: missing required command: delta\n' >&2
         return 127
@@ -121,16 +132,36 @@ function __dotfiles_git_ui_delta_lazygit
         "--file-modified-label=$modified_label" \
         "--file-removed-label=$removed_label" \
         "--file-renamed-label=$renamed_label" \
-        --line-numbers \
-        --side-by-side
+        --line-numbers
+
+    if test $adaptive -eq 0; and test $unified -eq 0
+        set -a delta_args --side-by-side
+    end
 
     if isatty stdout
         set paging always
-        set -a delta_args --pager "$less_bin -Rc"
+        if test $adaptive -eq 0
+            set -a delta_args --pager "$less_bin -Rc"
+        else if set -q COLUMNS; and string match -qr '^[1-9][0-9]*$' -- "$COLUMNS"
+            set -a delta_args --width="$COLUMNS"
+        end
     end
 
     if not set -q TMUX
         set -a delta_args --hyperlinks '--hyperlinks-file-link-format=lazygit-edit://{path}:{line}'
+    end
+
+    if test $adaptive -eq 1
+        set -l layout_args
+        if test $unified -eq 1
+            set layout_args --unified
+        end
+        if isatty stdout
+            command python3 "$__dotfiles_git_ui_helper_dir/dotfiles_git_delta_sections.py" $layout_args "$delta_bin" --paging=never $delta_args | command "$less_bin" -Rc
+        else
+            command python3 "$__dotfiles_git_ui_helper_dir/dotfiles_git_delta_sections.py" $layout_args "$delta_bin" --paging=never $delta_args
+        end
+        return $pipestatus[1]
     end
 
     command "$delta_bin" --paging="$paging" $delta_args

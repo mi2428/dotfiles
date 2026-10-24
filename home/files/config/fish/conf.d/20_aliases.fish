@@ -54,7 +54,7 @@ alias gpl='g pl'
 alias ldk='lazydocker'
 
 function __git_delta_lazygit
-    __dotfiles_git_ui_delta_lazygit
+    __dotfiles_git_ui_delta_lazygit $argv
 end
 
 function __dotfiles_git_handler_name --argument-names subcmd
@@ -120,13 +120,104 @@ function __dotfiles_git_subcommand_caa
 end
 
 function __dotfiles_git_subcommand_d
-    if test (count $argv) -eq 0
-        set argv (__dotfiles_git_select_changed_files 'diff> ')
-        test (count $argv) -gt 0; or return 0
+    set -l mode ''
+    set -l count_value ''
+    set -l unified 0
+    set -l paths $argv
+    set -l delimited 0
+
+    while test (count $paths) -gt 0
+        switch "$paths[1]"
+            case -u --unified
+                set unified 1
+            case -a --all --last --unpushed --unmerged
+                test -z "$mode"; or begin
+                    printf 'gd: choose only one comparison range\n' >&2
+                    return 2
+                end
+                set mode "$paths[1]"
+                if test "$mode" = --last
+                    set paths $paths[2..-1]
+                    set count_value "$paths[1]"
+                    string match -qr '^[1-9][0-9]*$' -- "$count_value"; or begin
+                        printf 'gd: --last requires a positive commit count\n' >&2
+                        return 2
+                    end
+                end
+            case --help -h
+                printf '%s\n' \
+                    'Usage: gd [-u] [-a | --last N | --unpushed | --unmerged] [--] [path ...]' \
+                    '  -u           Unified (vertical) view' \
+                    '  -a           All uncommitted changes, including staged and untracked files' \
+                    '  --last N     Last N commits and all uncommitted changes' \
+                    '  --unpushed   Changes since the upstream merge base, including uncommitted changes' \
+                    '  --unmerged   Changes since the origin default branch merge base, including uncommitted changes'
+                return 0
+            case --
+                set delimited 1
+                set paths $paths[2..-1]
+                break
+            case '*'
+                break
+        end
+        set paths $paths[2..-1]
     end
 
-    git-delta-input -- $argv | __git_delta_lazygit
-    return $pipestatus[1]
+    set -l base ''
+    switch "$mode"
+        case -a --all
+            set base HEAD
+        case --last
+            set base "HEAD~$count_value"
+            command git rev-parse --verify --quiet "$base^{commit}" >/dev/null 2>/dev/null; or begin
+                printf 'gd: cannot resolve %s\n' "$base" >&2
+                return 1
+            end
+        case --unpushed --unmerged
+            set -l ref ''
+            if test "$mode" = --unpushed
+                set ref (command git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)
+                test -n "$ref"; or begin
+                    printf 'gd: no upstream branch is configured\n' >&2
+                    return 1
+                end
+            else
+                set ref (command git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
+                test -n "$ref"; or begin
+                    printf 'gd: origin/HEAD is not set (try git remote set-head origin -a)\n' >&2
+                    return 1
+                end
+            end
+            set base (command git merge-base HEAD "$ref")
+            test -n "$base"; or begin
+                printf 'gd: no merge base with %s\n' "$ref" >&2
+                return 1
+            end
+    end
+
+    if test -z "$mode"; and test (count $paths) -eq 0; and test $delimited -eq 0
+        set paths (__dotfiles_git_select_changed_files 'diff> ')
+        test (count $paths) -gt 0; or return 0
+    end
+
+    set -l view_args --adaptive
+    if test $unified -eq 1
+        set -a view_args --unified
+    end
+    set -l pipeline_status
+    if test -n "$base"
+        if test $delimited -eq 0; and test (count $paths) -gt 0; and string match -q -- '-*' "$paths[1]"
+            printf 'gd: use -- before paths beginning with -\n' >&2
+            return 2
+        end
+        git-delta-input --range "$base" --include-staged -- -- $paths | __git_delta_lazygit $view_args
+        set pipeline_status $pipestatus
+    else
+        git-delta-input -- $paths | __git_delta_lazygit $view_args
+        set pipeline_status $pipestatus
+    end
+    test $pipeline_status[1] -eq 0; or return $pipeline_status[1]
+    return $pipeline_status[2]
 end
 
 function __dotfiles_git_subcommand_dd
