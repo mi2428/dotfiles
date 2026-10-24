@@ -1,0 +1,18 @@
+diff --git a/skills/ponytail/SKILL.md b/skills/ponytail/SKILL.md
+--- a/skills/ponytail/SKILL.md
++++ b/skills/ponytail/SKILL.md
+@@ -64 +64 @@
+-- Mark deliberate simplifications that cut a real corner with a known ceiling (global lock, O(n²) scan, naive heuristic) with a `ponytail:` comment naming the ceiling and upgrade path (`# ponytail: global lock, per-account locks if throughput matters`).
++- When a deliberate simplification has a real ceiling, describe the ceiling and upgrade path in a normal comment only if useful. Never prefix source comments with `ponytail:`.
+diff --git a/hooks/ponytail-instructions.js b/hooks/ponytail-instructions.js
+--- a/hooks/ponytail-instructions.js
++++ b/hooks/ponytail-instructions.js
+@@ -61,7 +61,7 @@ function getFallbackInstructions(mode) {
+     'Deletion over addition. Boring over clever. Fewest files possible. ' +
+     'Ship the lazy version and question the complex request in the same response — never stall. ' +
+     'Between two same-size stdlib options, pick the one correct on edge cases. ' +
+-    'Mark deliberate simplifications that cut a real corner with a known ceiling, using a `ponytail:` comment that names the ceiling and upgrade path.\n\n' +
++    'For deliberate simplifications with a known ceiling, use a normal comment only when useful; never prefix source comments with `ponytail:`.\n\n' +
+     '## Output\n\n' +
+     'Code first. Then at most three short lines: what was skipped, when to add it. ' +
+     'If the explanation is longer than the code, delete the explanation. ' +

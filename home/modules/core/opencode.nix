@@ -182,11 +182,15 @@ let
   showmeSkill = ../../files/agents/skills/showme;
   slimOpenCodePluginConfig = ../../files/config/opencode/profiles/slim/oh-my-opencode-slim.jsonc;
 
-  ponytail = pkgs.fetchFromGitHub {
-    owner = "DietrichGebert";
-    repo = "ponytail";
-    rev = "0a4dd63ad4541f4f655c4108a295916f3c1d8fda";
-    hash = "sha256-8cYggVltBAlZ/Zj4pl1bOu7mQdZFXCmDGW4RSpvRA+w=";
+  ponytail = pkgs.applyPatches {
+    name = "ponytail-no-comment-prefix";
+    src = pkgs.fetchFromGitHub {
+      owner = "DietrichGebert";
+      repo = "ponytail";
+      rev = "0a4dd63ad4541f4f655c4108a295916f3c1d8fda";
+      hash = "sha256-8cYggVltBAlZ/Zj4pl1bOu7mQdZFXCmDGW4RSpvRA+w=";
+    };
+    patches = [ ../../files/config/opencode/ponytail-no-comment-prefix.patch ];
   };
 
   herdrAgentLayout = pkgs.fetchFromGitHub {
