@@ -102,17 +102,30 @@ in {
 
     if [ -n "$herdr_bin" ]; then
       for target in claude codex opencode; do
+        target_available=false
         if command -v "$target" >/dev/null 2>&1 \
           || [ -x "/opt/homebrew/bin/$target" ] \
           || [ -x "/usr/local/bin/$target" ] \
           || [ -x "/home/linuxbrew/.linuxbrew/bin/$target" ]; then
+          target_available=true
+        fi
+        if [ "$target" = opencode ]; then
+          if command -v opencode-v2 >/dev/null 2>&1 \
+            && opencode-v2 --version >/dev/null 2>&1; then
+            target_available=true
+          else
+            target_available=false
+          fi
+        fi
+
+        if [ "$target_available" = true ]; then
           if [ "$target" = opencode ]; then
-            tui_config="${config.home.homeDirectory}/.config/opencode/tui.json"
-            if [ -L "$tui_config" ]; then
-              writable_copy="$(mktemp "$tui_config.XXXXXX")"
-              cp "$tui_config" "$writable_copy"
+            cli_config="${config.home.homeDirectory}/.config/opencode/cli.json"
+            if [ -L "$cli_config" ]; then
+              writable_copy="$(mktemp "$cli_config.XXXXXX")"
+              cp "$cli_config" "$writable_copy"
               chmod 0644 "$writable_copy"
-              mv -f "$writable_copy" "$tui_config"
+              mv -f "$writable_copy" "$cli_config"
             fi
           fi
           "$herdr_bin" integration install "$target" >/dev/null
@@ -120,6 +133,70 @@ in {
       done
     fi
   '';
+
+  # Profile roots have their own cli.json, so mirror Herdr's V2 TUI plugin and
+  # registration alongside the server integration links created by OpenCode.
+  home.activation.linkHerdrProfileTuiPlugins =
+    lib.hm.dag.entryAfter [ "installHerdrAgentIntegrations" "linkGeneration" ] ''
+      herdr_config="${config.home.homeDirectory}/.config/opencode"
+      herdr_tui_source="$herdr_config/herdr-opencode"
+      herdr_tui_shared="$herdr_config/herdr-tui-session.js"
+      herdr_tui_plugin="./herdr-opencode"
+
+      if [ -f "$herdr_tui_source/tui.js" ] && [ -f "$herdr_tui_shared" ]; then
+        link_herdr_tui_target() {
+          source=$1
+          target=$2
+          if [ -L "$target" ]; then
+            current_target=$(readlink "$target")
+            [ "$current_target" = "$source" ] && return 0
+            rm -f "$target"
+          elif [ -e "$target" ]; then
+            echo "Refusing to replace non-symlink Herdr TUI entry: $target" >&2
+            exit 1
+          fi
+          mkdir -p "$(dirname "$target")"
+          ln -s "$source" "$target"
+        }
+
+        register_herdr_tui_plugin() {
+          cli_config=$1
+          [ -f "$cli_config" ] || {
+            echo "OpenCode profile cli.json is missing: $cli_config" >&2
+            exit 1
+          }
+          cli_source=$cli_config
+          if [ -L "$cli_config" ]; then
+            cli_source=$(mktemp "$cli_config.XXXXXX")
+            cp "$cli_config" "$cli_source"
+            chmod 0644 "$cli_source"
+          fi
+          cli_temporary=$(mktemp "$cli_config.XXXXXX")
+          if ${pkgs.jq}/bin/jq --arg plugin "$herdr_tui_plugin" '
+            if .plugins == null then .plugins = []
+            elif (.plugins | type) != "array" then error("plugins must be an array")
+            else . end
+            | if (.plugins | index($plugin)) == null then .plugins += [$plugin] else . end
+          ' "$cli_source" > "$cli_temporary"; then
+            chmod 0644 "$cli_temporary"
+            mv -f "$cli_temporary" "$cli_config"
+          else
+            rm -f "$cli_temporary"
+            [ "$cli_source" = "$cli_config" ] || rm -f "$cli_source"
+            echo "Failed to register Herdr in OpenCode profile cli.json: $cli_config" >&2
+            exit 1
+          fi
+          [ "$cli_source" = "$cli_config" ] || rm -f "$cli_source"
+        }
+
+        for profile in chat omo slim; do
+          profile_root="${config.home.homeDirectory}/.config/opencode-profiles/$profile/opencode"
+          link_herdr_tui_target "$herdr_tui_source" "$profile_root/herdr-opencode"
+          link_herdr_tui_target "$herdr_tui_shared" "$profile_root/herdr-tui-session.js"
+          register_herdr_tui_plugin "$profile_root/cli.json"
+        done
+      fi
+    '';
 
   # Herdr owns its SessionStart hook but preserves other entries in
   # ~/.codex/hooks.json. Merge the private Neovim edit bridge from its
