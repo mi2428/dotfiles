@@ -307,6 +307,15 @@ class ReconcileTests(unittest.TestCase):
             "sacloud.kimi-k2.7-code", self.desired["required_visible_model_ids"]
         )
 
+    def test_chat_prompt_requires_source_checks_and_respects_requested_depth(
+        self,
+    ) -> None:
+        prompt = self.desired["user_settings"]["ui"]["system"]
+        self.assertIn("search_web", prompt)
+        self.assertIn("fetch_url", prompt)
+        self.assertIn("長文や詳しい説明", prompt)
+        self.assertIn("最大4つ", prompt)
+
     def test_image_tool_is_created_and_reconciled_before_models(self) -> None:
         state = self.state()
         state["tools"] = {}
