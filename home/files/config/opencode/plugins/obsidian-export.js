@@ -1,18 +1,9 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { tool } from "@opencode-ai/plugin";
+import { Plugin } from "@opencode/plugin";
 
 const DEFAULT_DIRECTORY = join(homedir(), "obsidian", "OpenCode");
-
-function responseData(response, label) {
-  if (response?.error) {
-    throw new Error(`${label}: ${response.error.message ?? String(response.error)}`);
-  }
-  const data = response?.data ?? response;
-  if (data == null) throw new Error(`${label}: empty response`);
-  return data;
-}
 
 function outputDirectory() {
   const configured = process.env.OPENCODE_OBSIDIAN_DIR?.trim();
@@ -46,30 +37,51 @@ function normalizeTags(tags) {
     .slice(0, 6);
 }
 
+async function allMessages(session, sessionID) {
+  const messages = [];
+  let cursor;
+  do {
+    const page = await session.message.list(
+      cursor ? { sessionID, cursor } : { sessionID, order: "asc" },
+    );
+    messages.push(...page.data);
+    cursor = page.cursor.next ?? undefined;
+  } while (cursor);
+  return messages;
+}
+
 function visibleTurns(messages, currentMessageID) {
   const ordered = [...messages].sort(
-    (left, right) => (left.info?.time?.created ?? 0) - (right.info?.time?.created ?? 0),
+    (left, right) => (left.time?.created ?? 0) - (right.time?.created ?? 0),
   );
-  const currentIndex = ordered.findIndex(({ info }) => info?.id === currentMessageID);
-  const current = currentIndex >= 0 ? ordered[currentIndex] : undefined;
-  const parentIndex = current?.info?.parentID
-    ? ordered.findIndex(({ info }) => info?.id === current.info.parentID)
-    : -1;
-  const prior = ordered.slice(0, parentIndex >= 0 ? parentIndex : currentIndex >= 0 ? currentIndex : ordered.length);
+  const currentIndex = ordered.findIndex(({ id }) => id === currentMessageID);
+  const boundary = currentIndex >= 0 ? currentIndex : ordered.length;
+  let cutoff = -1;
+  for (let index = boundary - 1; index >= 0; index -= 1) {
+    if (ordered[index].type === "user") {
+      cutoff = index;
+      break;
+    }
+  }
+  if (cutoff < 0) throw new Error("Could not identify the current /obsidian turn");
 
-  return prior.flatMap(({ info, parts }) => {
-    if (!info || !["user", "assistant"].includes(info.role) || info.summary === true) return [];
+  return ordered.slice(0, cutoff).flatMap((message) => {
+    if (!["user", "assistant"].includes(message.type)) return [];
 
-    const text = (parts ?? [])
-      .filter((part) => part.type === "text" && !part.synthetic && !part.ignored && part.text.trim())
-      .map((part) => part.text)
-      .join("\n\n")
-      .trim();
-    const attachments = (parts ?? [])
-      .filter((part) => part.type === "file" && part.filename)
-      .map((part) => `_Attachment: \`${part.filename.replaceAll("`", "\\`")}\`_`);
+    const text = message.type === "user"
+      ? message.text.trim()
+      : (message.content ?? [])
+        .filter((part) => part.type === "text" && part.text.trim())
+        .map((part) => part.text)
+        .join("\n\n")
+        .trim();
+    const attachments = message.type === "user"
+      ? (message.files ?? [])
+        .filter(({ name }) => name)
+        .map(({ name }) => `_Attachment: \`${name.replaceAll("`", "\\`")}\`_`)
+      : [];
     const content = [text, ...attachments].filter(Boolean).join("\n\n");
-    return content ? [{ role: info.role, content }] : [];
+    return content ? [{ role: message.type, content }] : [];
   });
 }
 
@@ -122,52 +134,67 @@ async function writeNewNote(directory, baseName, contents) {
   throw new Error("Could not choose a unique Obsidian note name");
 }
 
-export const ObsidianExport = async ({ client, directory }) => ({
-  tool: {
-    obsidian_export: tool({
-      description: "Export the current visible OpenCode conversation and a flexible summary to an Obsidian note.",
-      args: {
-        title: tool.schema.string().trim().min(1).max(200).describe("A concise note title"),
-        summary: tool.schema.string().trim().min(1).describe("A one-to-three sentence reusable summary"),
-        body: tool.schema
-          .string()
-          .optional()
-          .describe("Optional Markdown organized with only the headings useful for this conversation"),
-        tags: tool.schema.array(tool.schema.string()).max(5).optional().describe("Optional topic tags"),
-      },
-      async execute(args, context) {
-        const [sessionResponse, messagesResponse] = await Promise.all([
-          client.session.get({ path: { id: context.sessionID }, query: { directory } }),
-          client.session.messages({ path: { id: context.sessionID }, query: { directory } }),
-        ]);
-        const session = responseData(sessionResponse, "Failed to read the OpenCode session");
-        const messages = responseData(messagesResponse, "Failed to read the OpenCode conversation");
-        const turns = visibleTurns(messages, context.messageID);
-        if (turns.length === 0) throw new Error("The session has no visible conversation to export");
+export const ObsidianExport = Plugin.define({
+  id: "dotfiles.obsidian-export",
+  async setup(ctx) {
+    await ctx.tool.transform((editor) => {
+      editor.add({
+        name: "obsidian_export",
+        description: "Export the current visible OpenCode conversation and a flexible summary to an Obsidian note.",
+        input: {
+          type: "object",
+          properties: {
+            title: { type: "string", minLength: 1, maxLength: 200, description: "A concise note title" },
+            summary: { type: "string", minLength: 1, description: "A one-to-three sentence reusable summary" },
+            body: {
+              type: "string",
+              description: "Optional Markdown organized with only the headings useful for this conversation",
+            },
+            tags: {
+              type: "array",
+              items: { type: "string" },
+              maxItems: 5,
+              description: "Optional topic tags",
+            },
+          },
+          required: ["title", "summary"],
+          additionalProperties: false,
+        },
+        async execute(args, context) {
+          const [session, messages] = await Promise.all([
+            ctx.session.get({ sessionID: context.sessionID }),
+            allMessages(ctx.session, context.sessionID),
+          ]);
+          const turns = visibleTurns(messages, context.messageID);
+          if (turns.length === 0) throw new Error("The session has no visible conversation to export");
 
-        const destinationDirectory = outputDirectory();
-        await context.ask({
-          permission: "external_directory",
-          patterns: [destinationDirectory],
-          always: [join(destinationDirectory, "**")],
-          metadata: { destination: destinationDirectory },
-        });
+          const destinationDirectory = outputDirectory();
+          const resource = join(destinationDirectory, "*");
+          await ctx.permission.assert({
+            sessionID: context.sessionID,
+            agent: context.agent,
+            source: { type: "tool", messageID: context.messageID, id: context.id },
+            action: "external_directory",
+            resources: [resource],
+            save: [resource],
+            metadata: { destination: destinationDirectory },
+          });
 
-        const exportedAt = new Date();
-        const title = args.title.replace(/\s+/g, " ").trim();
-        const note = renderNote({ ...args, title, session, exportedAt, turns });
-        const destination = await writeNewNote(
-          destinationDirectory,
-          `${timestamp(exportedAt)} - ${safeFileName(title)}`,
-          note,
-        );
-        return {
-          title: "Obsidian note exported",
-          output: `Saved ${turns.length} visible turns to ${destination}`,
-          metadata: { destination, turns: turns.length },
-        };
-      },
-    }),
+          const exportedAt = new Date();
+          const title = args.title.replace(/\s+/g, " ").trim();
+          const note = renderNote({ ...args, title, session, exportedAt, turns });
+          const destination = await writeNewNote(
+            destinationDirectory,
+            `${timestamp(exportedAt)} - ${safeFileName(title)}`,
+            note,
+          );
+          return {
+            content: `Saved ${turns.length} visible turns to ${destination}`,
+            metadata: { destination, turns: turns.length },
+          };
+        },
+      });
+    });
   },
 });
 

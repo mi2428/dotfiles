@@ -1,80 +1,90 @@
 import { strict as assert } from "node:assert";
-import { describe, it } from "bun:test";
-import { ChatSystem } from "./chat-system.js";
-import { HerdrWorkerTitle } from "./herdr-worker-title.js";
-import { SessionTitle } from "./session-title.js";
+import { describe, it, mock } from "bun:test";
+
+mock.module("@opencode/plugin", () => ({
+  Plugin: { define: <T>(plugin: T) => plugin },
+}));
+
+const { ChatSystem } = await import("./chat-system.js");
+const { FirstThingsFirst } = await import("./first-things-first.js");
+const { SessionTitle } = await import("./session-title.js");
+
+async function setup(plugin: { setup: (context: unknown) => unknown }, session = {}) {
+  const hooks: Record<string, (event: any) => unknown> = {};
+  const tools: Record<string, any> = {};
+  await plugin.setup({
+    session: {
+      ...session,
+      hook: async (name: string, callback: (event: any) => unknown) => {
+        hooks[name] = callback;
+      },
+    },
+    tool: {
+      transform: async (transform: (editor: unknown) => void) => transform({
+        add: (tool: { name: string }) => { tools[tool.name] = tool; },
+      }),
+    },
+  });
+  return { hooks, tools };
+}
+
+describe("V2 system context plugins", () => {
+  it("keeps the title instruction with either Chat profile plugin order", async () => {
+    const title = await setup(SessionTitle);
+    const chat = await setup(ChatSystem);
+    for (const hooks of [
+      [title.hooks.context, chat.hooks.context],
+      [chat.hooks.context, title.hooks.context],
+    ]) {
+      const event = { system: [
+        { type: "text", text: "<chat-agent>Conversation policy</chat-agent>" },
+        { type: "text", text: "Other instructions" },
+      ] };
+      for (const hook of hooks) await hook(event);
+      const system = event.system.map(({ text }) => text).join("\n");
+      assert.match(system, /Call session_title with that summary/);
+      assert.doesNotMatch(system, /Other instructions/);
+    }
+  });
+
+  it("appends first-things-first as a V2 text system part", async () => {
+    const { hooks } = await setup(FirstThingsFirst);
+    const event = { system: [{ type: "text", text: "Base policy" }] };
+    await hooks.context(event);
+    assert.equal(FirstThingsFirst.id, "dotfiles.first-things-first");
+    assert.match(event.system.at(-1)?.text ?? "", /<first-things-first>/);
+  });
+});
 
 describe("conversation-based session titles", () => {
-  it("keeps the title instruction with either Chat profile plugin order", async () => {
-    const title = await SessionTitle({ client: {} } as never);
-    assert.equal("chat.message" in title, false);
-    const chat = await ChatSystem();
-    for (const hooks of [[title, chat], [chat, title]]) {
-      const output = { system: ["<chat-agent>Conversation policy</chat-agent>", "Other instructions"] };
-      for (const hook of hooks) await hook["experimental.chat.system.transform"]({ sessionID: "ses_1" } as never, output);
-      assert.match(output.system.join("\n"), /Call session_title with that summary/);
-      assert.doesNotMatch(output.system.join("\n"), /Other instructions/);
-    }
-  });
-
-  it("updates the active top-level session only when the title changes", async () => {
+  it("registers a strict V2 tool and updates top-level sessions only when needed", async () => {
     const updates: unknown[] = [];
     const session = { title: "New session - 2026-09-25T00:00:00.000Z" };
-    const client = {
-      session: {
-        get: async () => ({ data: session }),
-        update: async (request: { body: { title: string } }) => {
-          updates.push(request);
-          session.title = request.body.title;
-          return { data: session };
-        },
+    const { tools } = await setup(SessionTitle, {
+      get: async () => session,
+      update: async (request: { title: string }) => {
+        updates.push(request);
+        session.title = request.title;
       },
-    };
-    const plugin = await SessionTitle({ client } as never);
-    const context = { sessionID: "ses_1", directory: "/repo" };
-    const execute = (title: string) => plugin.tool.session_title.execute({ title }, context as never);
+    });
+    const tool = tools.session_title;
+    const context = { sessionID: "ses_1" };
+    const execute = (title: string) => tool.execute({ title }, context);
 
-    assert.equal(await execute("  Build   dotfiles  "), "Session title updated");
-    assert.equal(await execute("Build dotfiles"), "Session title unchanged");
-    assert.equal(await execute("Investigate deployment"), "Session title updated");
+    assert.equal(SessionTitle.id, "dotfiles.session-title");
+    assert.equal(tool.input.additionalProperties, false);
+    assert.deepEqual(await execute("  Build   dotfiles  "), { content: "Session title updated" });
+    assert.deepEqual(await execute("Build dotfiles"), { content: "Session title unchanged" });
+    assert.deepEqual(await execute("Investigate deployment"), { content: "Session title updated" });
     await assert.rejects(execute(" "), /Invalid session title/);
     await assert.rejects(execute("x".repeat(81)), /Invalid session title/);
-    assert.deepEqual(updates, ["Build dotfiles", "Investigate deployment"].map((title) => ({
-      path: { id: "ses_1" }, query: { directory: "/repo" }, body: { title },
-    })));
+    assert.deepEqual(updates, [
+      { sessionID: "ses_1", title: "Build dotfiles" },
+      { sessionID: "ses_1", title: "Investigate deployment" },
+    ]);
 
     Object.assign(session, { parentID: "ses_parent" });
-    assert.equal(await execute("Child title"), "Child session title unchanged");
+    assert.deepEqual(await execute("Child title"), { content: "Child session title unchanged" });
     assert.equal(updates.length, 2);
-  });
-
-  it("preserves the existing [Subagent] prefix on initial and revised titles", async () => {
-    const original = process.env.HERDR_AGENT_LAYOUT_WORKER;
-    const originalHappier = process.env.HERDR_HAPPIER_WORKER;
-    try {
-      process.env.HERDR_AGENT_LAYOUT_WORKER = "1";
-      delete process.env.HERDR_HAPPIER_WORKER;
-      const session = { id: "ses_worker", title: "New session - 2026-09-25T00:00:00.000Z" };
-      let worker: Awaited<ReturnType<typeof HerdrWorkerTitle>>;
-      const client = { session: {
-        get: async () => ({ data: session }),
-        update: async ({ body }: { body: { title: string } }) => {
-          session.title = body.title;
-          await worker.event?.({ event: { type: "session.updated", properties: { info: { ...session } } } } as never);
-          return { data: session };
-        },
-      } };
-      worker = await HerdrWorkerTitle({ client, directory: "/repo" } as never);
-      const title = await SessionTitle({ client, directory: "/repo" } as never);
-      await title.tool.session_title.execute({ title: "Review changes" }, { sessionID: session.id, directory: "/repo" } as never);
-      assert.equal(session.title, "[Subagent] Review changes");
-      await title.tool.session_title.execute({ title: "Investigate deployment" }, { sessionID: session.id, directory: "/repo" } as never);
-      assert.equal(session.title, "[Subagent] Investigate deployment");
-    } finally {
-      if (original === undefined) delete process.env.HERDR_AGENT_LAYOUT_WORKER;
-      else process.env.HERDR_AGENT_LAYOUT_WORKER = original;
-      if (originalHappier === undefined) delete process.env.HERDR_HAPPIER_WORKER;
-      else process.env.HERDR_HAPPIER_WORKER = originalHappier;
-    }
   });
 });

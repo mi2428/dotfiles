@@ -1,3 +1,5 @@
+import { Plugin } from "@opencode/plugin";
+
 const POLICY = `<first-things-first>
 Before changing code:
 - Understand the real flow and consider materially different approaches. Choose the clearest solution that meets the request with the least code.
@@ -9,9 +11,12 @@ Before changing code:
 - Deliver the smallest necessary diff and remove every unnecessary changed line.
 </first-things-first>`;
 
-export const FirstThingsFirst = async () => ({
-  "experimental.chat.system.transform": async (_input, output) => {
-    output.system.push(POLICY);
+export const FirstThingsFirst = Plugin.define({
+  id: "dotfiles.first-things-first",
+  async setup(ctx) {
+    await ctx.session.hook("context", (event) => {
+      event.system.push({ type: "text", text: POLICY });
+    });
   },
 });
 
