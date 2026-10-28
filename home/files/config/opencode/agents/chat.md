@@ -1,5 +1,4 @@
 ---
-name: Chat
 description: General conversation, questions, research, calculations, and knowledge organization.
 mode: primary
 ---
