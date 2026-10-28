@@ -16,3 +16,9 @@ diff --git a/hooks/ponytail-instructions.js b/hooks/ponytail-instructions.js
      '## Output\n\n' +
      'Code first. Then at most three short lines: what was skipped, when to add it. ' +
      'If the explanation is longer than the code, delete the explanation. ' +
+diff --git a/.opencode/command/ponytail.md b/.opencode/command/ponytail.md
+--- a/.opencode/command/ponytail.md
++++ b/.opencode/command/ponytail.md
+@@ -5 +5 @@
+-Switch to ponytail $ARGUMENTS mode. If no level specified, use full. Lazy senior dev mode, before any code: does it need to exist at all (YAGNI)? Does the standard library do it? A native platform feature? Can it be one line? Build the minimum that works. No unrequested abstractions, no avoidable dependencies, no boilerplate. Mark deliberate simplifications that cut a real corner with a known ceiling using a ponytail: comment that names the ceiling and upgrade path.
++Switch to ponytail $ARGUMENTS mode. If no level specified, use full. Lazy senior dev mode, before any code: does it need to exist at all (YAGNI)? Does the standard library do it? A native platform feature? Can it be one line? Build the minimum that works. No unrequested abstractions, no avoidable dependencies, no boilerplate. Describe a real simplification ceiling in a normal comment only if useful; never prefix source comments with `ponytail:`.
