@@ -620,43 +620,63 @@ if command -sq codex
     alias codex++='codex --dangerously-bypass-approvals-and-sandbox'
 end
 
-if command -sq opencode
-    # The default XDG root stays framework-plugin-free. `oc-omo` and `oc-slim`
-    # select isolated framework roots while all three keep the shared Todo HUD.
+if command -sq opencode-v2
+    # The default root stays framework-plugin-free. `oc-slim` selects its
+    # isolated V2 plugin root; `oc-omo` fails closed until its V2 runtime exists.
+    function __dotfiles_opencode_config_with_default_agent --argument-names agent
+        set -l config '{}'
+        if set -q OPENCODE_CONFIG_CONTENT
+            set config "$OPENCODE_CONFIG_CONTENT"
+        end
+        printf '%s\n' "$config" |
+            command jq -ce --arg agent "$agent" '. + {default_agent: $agent}'
+    end
+
     function __dotfiles_run_opencode --argument-names executable
         set -e argv[1]
-        set -l agent_args
+        set -l standalone_args --standalone
+        set -l config_args
 
-        if set -q HERDR_ENV; and test "$HERDR_ENV" = 1; and command -sq herdr
-            if not contains -- --agent $argv; and not string match -q -- '--agent=*' $argv
-                set agent_args --agent 'Herdr Supervisor'
+        for arg in $argv
+            if test "$arg" = --server; or string match -q -- '--server=*' "$arg"
+                set standalone_args
+                break
             end
         end
 
-        command $executable $agent_args $argv
+        if set -q HERDR_ENV; and test "$HERDR_ENV" = 1; and command -sq herdr
+            set -l config_content (__dotfiles_opencode_config_with_default_agent herdr-supervisor)
+            or return $status
+            set config_args OPENCODE_CONFIG_CONTENT="$config_content"
+        end
+
+        command env $config_args $executable $standalone_args $argv
     end
 
-    function oc --wraps opencode
-        __dotfiles_run_opencode opencode $argv
+    function oc --wraps opencode-v2
+        __dotfiles_run_opencode opencode-v2 $argv
     end
 
-    function oc++ --wraps opencode
-        __dotfiles_run_opencode opencode --auto $argv
+    function oc++ --wraps opencode-v2
+        __dotfiles_run_opencode opencode-v2 --auto $argv
     end
 
     if command -sq happier
-        function oc+++ --wraps opencode
+        function oc+++ --wraps opencode-v2
             set -l agent_args
-            set -l config_content '{}'
+            set -l config_args
 
             if set -q HERDR_ENV; and test "$HERDR_ENV" = 1; and command -sq herdr
                 if not contains -- --agent-mode $argv; and not string match -q -- '--agent-mode=*' $argv
-                    set agent_args --agent-mode 'Herdr Supervisor'
+                    set agent_args --agent-mode herdr-supervisor
                 end
-                set config_content '{"default_agent":"Herdr Supervisor"}'
+                set -l config_content (__dotfiles_opencode_config_with_default_agent herdr-supervisor)
+                or return $status
+                set config_args OPENCODE_CONFIG_CONTENT="$config_content"
             end
 
-            command env HAPPIER_OPENCODE_BACKEND_MODE=server OPENCODE_CONFIG_CONTENT="$config_content" happier opencode --permission-mode yolo $agent_args $argv
+            set -l opencode_path (command -s opencode-v2)
+            command env HAPPIER_OPENCODE_PATH="$opencode_path" HAPPIER_OPENCODE_BACKEND_MODE=server $config_args happier opencode --permission-mode yolo $agent_args $argv
         end
     end
 

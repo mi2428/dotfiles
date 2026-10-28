@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+
+die() {
+    printf 'opencode-v2: %s\n' "$*" >&2
+    exit 69
+}
+
+opencode_bin=$(command -v opencode) || die 'OpenCode is not installed'
+version_output=$("$opencode_bin" --version) || die 'could not read the OpenCode version'
+version=${version_output##* }
+version=${version#v}
+
+case "$version" in
+    *-* | *+*) die "a stable OpenCode release is required (found: $version_output)" ;;
+    '' | *[!0-9.]* | .* | *..* | *.) die "invalid OpenCode version: $version_output" ;;
+    *.*.*.*) die "invalid OpenCode version: $version_output" ;;
+    *.*.*) ;;
+    *) die "invalid OpenCode version: $version_output" ;;
+esac
+
+major=${version%%.*}
+rest=${version#*.}
+minor=${rest%%.*}
+if [ "$major" -lt 2 ] \
+    || { [ "$major" -eq 2 ] && [ "$minor" -lt 2 ]; }; then
+    die "OpenCode 2.2.0 or newer is required (found: $version_output)"
+fi
+
+exec "$opencode_bin" "$@"

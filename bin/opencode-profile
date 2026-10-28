@@ -9,7 +9,11 @@ fi
 shift
 
 case "$profile" in
-    chat|omo|slim)
+    omo)
+        printf '%s\n' 'opencode-profile: OmO is unsupported on OpenCode V2 until plugin compatibility is verified' >&2
+        exit 69
+        ;;
+    chat|slim)
         ;;
     *)
         printf 'opencode-profile: unknown profile: %s\n' "$profile" >&2
@@ -25,6 +29,34 @@ if [ ! -f "$profile_config/opencode.jsonc" ]; then
     printf '%s\n' 'run the Home Manager activation, then retry' >&2
     exit 78
 fi
+if [ "$profile" = slim ]; then
+    if ! command -v jq >/dev/null 2>&1; then
+        printf '%s\n' 'opencode-profile: jq is required to verify the Slim V2 plugin pin' >&2
+        exit 69
+    fi
+    if ! slim_plugin_spec=$(jq -er '[.plugins[]? | select(type == "string" and startswith("oh-my-opencode-slim@"))][0]' "$profile_config/opencode.jsonc"); then
+        printf '%s\n' 'opencode-profile: the Slim V2 plugin pin is missing or invalid' >&2
+        exit 69
+    fi
+    slim_version=${slim_plugin_spec#*@}
+    slim_base=${slim_version%%[-+]*}
+    slim_major=${slim_base%%.*}
+    slim_rest=${slim_base#*.}
+    slim_minor=${slim_rest%%.*}
+    slim_patch=${slim_rest#*.}
+    case "$slim_major:$slim_minor:$slim_patch" in
+        *[!0-9:]* | :* | *::*)
+            printf 'opencode-profile: invalid Slim plugin version: %s\n' "$slim_version" >&2
+            exit 69
+            ;;
+    esac
+    if [ "$slim_major" -lt 3 ] \
+        || { [ "$slim_major" -eq 3 ] && [ "$slim_minor" -eq 0 ] && [ "$slim_patch" -lt 5 ]; }; then
+        printf 'opencode-profile: oh-my-opencode-slim %s is V1-only; OpenCode V2 requires the verified 3.0.5+ line\n' "$slim_version" >&2
+        printf '%s\n' 'update the pin, apply Home Manager, then retry' >&2
+        exit 69
+    fi
+fi
 
 export OPENCODE_CHILD_XDG_CONFIG_HOME="$caller_config_home"
 export XDG_CONFIG_HOME="$profile_config_home"
@@ -36,4 +68,14 @@ if [ "$profile" = slim ]; then
     export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
 fi
 
-exec opencode "$@"
+use_standalone=true
+for arg do
+    case "$arg" in
+        --server | --server=*) use_standalone=false ;;
+    esac
+done
+
+if [ "$use_standalone" = true ]; then
+    exec opencode-v2 --standalone "$@"
+fi
+exec opencode-v2 "$@"
