@@ -20,6 +20,7 @@ export function popupWidth(columns: number): number {
 
 type Messages = ReturnType<Context["data"]["session"]["message"]["list"]>;
 type TodoSnapshot = { messageID: string; todos: TodoItem[] };
+type ScrollMemory = { offsets: Record<string, { windowKey: string; scrollTop: number }> };
 
 function parseTodos(input: unknown): TodoItem[] | undefined {
   if (!Array.isArray(input)) return;
@@ -84,13 +85,25 @@ function TodoOverlay(props: { context: Context }) {
   const context = props.context;
   const [columns, setColumns] = createSignal(context.renderer.width);
   const [recent, setRecent] = createSignal<{ sessionID: string; messageID?: string; todos: TodoItem[] }>();
+  const [scrollMemory, updateScrollMemory] = context.storage.memory<ScrollMemory>("scroll-offsets", {
+    initial: { offsets: {} },
+  });
   const started = new Map<string, string>();
+  let scrollbox: ScrollBoxRenderable | undefined;
+  let scrolled = "";
   let generation = 0;
+  const rememberScroll = (id: string | undefined) => {
+    if (!id || !scrolled || !scrollbox || scrollbox.isDestroyed) return;
+    const value = { windowKey: scrolled, scrollTop: scrollbox.scrollTop };
+    updateScrollMemory((draft) => { draft.offsets[id] = value; });
+  };
   const resize = () => setColumns(context.renderer.width);
   context.renderer.on("resize", resize);
-  const sessionID = createMemo(() => {
+  const sessionID = createMemo<string | undefined>((previous) => {
     const route = context.ui.router.current();
-    return route.type === "session" ? route.sessionID : undefined;
+    const id = route.type === "session" ? route.sessionID : undefined;
+    if (previous !== id) rememberScroll(previous);
+    return id;
   });
   const restore = (id: string) => {
     const current = ++generation;
@@ -153,7 +166,15 @@ function TodoOverlay(props: { context: Context }) {
     context.data.session.message.invalidate(event.data.sessionID);
     restore(event.data.sessionID);
   });
-  onCleanup(() => { generation++; stopStarted(); stopSuccess(); stopFailed(); stopRevert(); context.renderer.off("resize", resize); });
+  onCleanup(() => {
+    rememberScroll(sessionID());
+    generation++;
+    stopStarted();
+    stopSuccess();
+    stopFailed();
+    stopRevert();
+    context.renderer.off("resize", resize);
+  });
   createEffect(() => {
     const id = sessionID();
     started.clear();
@@ -170,16 +191,20 @@ function TodoOverlay(props: { context: Context }) {
     return buildTodoView(live ?? latestTodos(context.data.session.message.list(id), boundary)?.todos);
   });
   const width = createMemo(() => popupWidth(columns()));
-  let scrollbox: ScrollBoxRenderable | undefined;
-  let scrolled = "";
   createEffect(() => {
+    const id = sessionID();
     const current = view();
-    const key = `${sessionID()}:${current?.completed}:${current?.windowStart}`;
+    const key = `${id}:${current?.completed}:${current?.windowStart}`;
     if (!current) { scrolled = ""; return; }
     if (key === scrolled) return;
     scrolled = key;
     void context.renderer.idle().then(() => {
-      if (!scrollbox || scrollbox.isDestroyed) return;
+      if (!id || !scrollbox || scrollbox.isDestroyed || sessionID() !== id) return;
+      const remembered = scrollMemory.offsets[id];
+      if (remembered?.windowKey === key) {
+        scrollbox.scrollTop = remembered.scrollTop;
+        return;
+      }
       const start = scrollbox.content?.findDescendantById(`todo-line-${current.windowStart}`);
       if (start && scrollbox.content) scrollbox.scrollTop = Math.max(0, start.y - scrollbox.content.y);
     });

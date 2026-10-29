@@ -2,8 +2,9 @@
 import { strict as assert } from "node:assert";
 import { it } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
-import { ScrollBoxRenderable, TextRenderable } from "@opentui/core";
+import { BoxRenderable, ScrollBoxRenderable, TextRenderable } from "@opentui/core";
 import { render } from "@opentui/solid";
+import { createSignal } from "solid-js";
 import { parseThemeDocument, resolveThemeDocument } from "@opencode/theme/tui";
 import plugin from "./tui";
 import theme from "../../themes/catppuccin-mocha-mauve.json";
@@ -18,13 +19,16 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
   }
   test.renderer.root.add(chat);
   let slot: (() => unknown) | undefined;
+  const [route, setRoute] = createSignal("ses_1");
+  const scrollMemory = { offsets: {} as Record<string, { windowKey: string; scrollTop: number }> };
   const handlers = new Map<string, (event: any) => void>();
   let invalidations = 0;
   const cleanup = plugin.setup({
     renderer: test.renderer,
     theme: resolved,
+    storage: { memory: () => [scrollMemory, (mutate: (draft: typeof scrollMemory) => void) => mutate(scrollMemory)] },
     ui: {
-      router: { current: () => ({ type: "session", sessionID: "ses_1" }) },
+      router: { current: () => ({ type: "session", sessionID: route() }) },
       slot: (claim: { render: () => unknown }) => { slot = claim.render; return () => {}; },
     },
     data: {
@@ -73,7 +77,14 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
     assert.match(frame, /current work/);
     assert.match(frame, /next/);
     assert.doesNotMatch(frame, /oldest|older/);
-    assert.equal(test.renderer.root.findDescendantById("todo-panel")?.width, 68);
+    const panel = test.renderer.root.findDescendantById("todo-panel") as BoxRenderable;
+    assert(panel);
+    assert.equal(panel.width, 68);
+    assert(panel.backgroundColor.equals(resolved.background.raised.base));
+    assert.equal(panel.backgroundColor.a, 1);
+    assert((test.renderer.root.findDescendantById("todo-line-0") as TextRenderable).fg.equals(resolved.text.muted));
+    assert((test.renderer.root.findDescendantById("todo-line-4") as TextRenderable).fg.equals(resolved.text.feedback.success.base));
+    assert((test.renderer.root.findDescendantById("todo-line-5") as TextRenderable).fg.equals(resolved.text.feedback.warning.base));
     const todos = test.renderer.root.findDescendantById("todo-scroll") as ScrollBoxRenderable;
     assert(todos);
     assert.equal(todos.scrollTop, 3);
@@ -83,6 +94,18 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
     await test.mockMouse.scroll(todos.x + 1, todos.y + 1, "up", { delayMs: 0 });
     await test.renderOnce();
     assert(todos.scrollTop < 3, "HUD retains its own scrollback");
+    const savedScrollTop = todos.scrollTop;
+    setRoute("ses_2");
+    await test.renderOnce();
+    await test.renderer.idle();
+    setRoute("ses_1");
+    await test.renderOnce();
+    await test.renderer.idle();
+    assert.equal(todos.scrollTop, savedScrollTop, "HUD restores manual scroll after a session switch");
+    assert.deepEqual(scrollMemory.offsets.ses_1, {
+      windowKey: "ses_1:4:3",
+      scrollTop: savedScrollTop,
+    });
     assert(handlers.has("session.tool.input.started"));
     assert(handlers.has("session.tool.success"));
     handlers.get("session.tool.input.started")?.({ data: {
@@ -148,6 +171,7 @@ it("restores an old Todo on cold start when the TUI message cache has no Todo", 
   plugin.setup({
     renderer: test.renderer,
     theme: resolveThemeDocument(parseThemeDocument(theme), "dark"),
+    storage: { memory: (_key: string, options: { initial: object }) => [options.initial, () => {}] },
     ui: {
       router: { current: () => ({ type: "session", sessionID: "ses_old" }) },
       slot: (claim: { render: () => unknown }) => { slot = claim.render; return () => {}; },
