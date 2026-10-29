@@ -189,7 +189,7 @@ in {
           [ "$cli_source" = "$cli_config" ] || rm -f "$cli_source"
         }
 
-        for profile in chat omo slim; do
+        for profile in chat slim; do
           profile_root="${config.home.homeDirectory}/.config/opencode-profiles/$profile/opencode"
           link_herdr_tui_target "$herdr_tui_source" "$profile_root/herdr-opencode"
           link_herdr_tui_target "$herdr_tui_shared" "$profile_root/herdr-tui-session.js"

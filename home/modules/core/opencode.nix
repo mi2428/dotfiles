@@ -120,6 +120,7 @@ let
   commonOpenCodeConfig = {
     "$schema" = "https://opencode.ai/config.json";
     update = "disable";
+    share = "disabled";
     agents.title = {
       model = "openai/gpt-6-luna";
       disabled = true;
@@ -211,18 +212,19 @@ let
       })
       // {
         skills = [ "${ponytail}/skills" ];
+        instructions = [ "${firstThingsFirstInstruction}" ];
       }
     );
-    # OmO 5.1.48 exposes only a V2 startup stub; keep this profile OmO-free
-    # until its agents, tools, and hooks are supported.
-    omoConfig = json.generate "opencode-omo.json" (mkOpenCodeConfig {
-      model = "openai/gpt-6-sol";
-    });
-    slimConfig = json.generate "opencode-slim.json" (mkOpenCodeConfig {
-      model = "amazon-bedrock/global.anthropic.claude-opus-5";
-      models = slimOpenAIModels;
-      plugins = [ slimPlugin ];
-    });
+    slimConfig = json.generate "opencode-slim.json" (
+      (mkOpenCodeConfig {
+        model = "amazon-bedrock/global.anthropic.claude-opus-5";
+        models = slimOpenAIModels;
+        plugins = [ slimPlugin ];
+      })
+      // {
+        instructions = [ "${firstThingsFirstInstruction}" ];
+      }
+    );
     chatConfig = json.generate "opencode-chat.json" chatConfig;
     todoCli = json.generate "opencode-cli.json" todoCliConfig;
     chatCli = json.generate "opencode-chat-cli.json" chatCliConfig;
@@ -231,8 +233,8 @@ let
   todoOverlayPackageRoot = ../../files/config/opencode/plugins/tui;
   todoOverlayOpenCodePackage = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/.config/opencode/tui-plugins/todo";
   ponytailV2 = ../../files/config/opencode/plugins/ponytail-v2;
-  firstThingsFirstPlugin = ../../files/config/opencode/plugins/first-things-first.js;
-  herdrWorkerTitlePlugin = ../../files/config/opencode/plugins/herdr-worker-title.js;
+  firstThingsFirstInstruction = ../../files/config/opencode/policies/first-things-first.md;
+  herdrShellEnvPlugin = ../../files/config/opencode/plugins/herdr-shell-env.js;
   sessionTitlePlugin = ../../files/config/opencode/plugins/session-title.js;
   profileShellEnvPlugin = ../../files/config/opencode/plugins/profile-shell-env.js;
   obsidianExportPlugin = ../../files/config/opencode/plugins/obsidian-export.js;
@@ -270,10 +272,9 @@ in
     "opencode/commands/showme.md" = mkLink ../../files/config/opencode/commands/showme.md;
     "opencode/opencode.jsonc" = mkLink generated.defaultConfig;
     "opencode/cli.json" = mkLink generated.todoCli;
-    "opencode/plugins/first-things-first.js" = mkLink firstThingsFirstPlugin;
-    "opencode/plugins/herdr-worker-title.js" = mkLink herdrWorkerTitlePlugin;
-    "opencode/plugins/session-title.js" = mkLink sessionTitlePlugin;
-    "opencode/plugins/obsidian-export.js" = mkLink obsidianExportPlugin;
+    "opencode/plugins/herdr-shell-env/index.js" = mkLink herdrShellEnvPlugin;
+    "opencode/plugins/session-title/index.js" = mkLink sessionTitlePlugin;
+    "opencode/plugins/obsidian-export/index.js" = mkLink obsidianExportPlugin;
     "opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
 
@@ -281,39 +282,13 @@ in
       mkLink ../../files/config/opencode/agents/chat.md;
     "opencode-profiles/chat/opencode/opencode.jsonc" = mkLink generated.chatConfig;
     "opencode-profiles/chat/opencode/cli.json" = mkLink generated.chatCli;
-    "opencode-profiles/chat/opencode/plugins/chat-system.js" =
-      mkLink ../../files/config/opencode/plugins/chat-system.js;
-    "opencode-profiles/chat/opencode/plugins/profile-shell-env.js" = mkLink profileShellEnvPlugin;
-    "opencode-profiles/chat/opencode/plugins/session-title.js" = mkLink sessionTitlePlugin;
+    "opencode-profiles/chat/opencode/plugins/profile-shell-env/index.js" = mkLink profileShellEnvPlugin;
+    "opencode-profiles/chat/opencode/plugins/session-title/index.js" = mkLink sessionTitlePlugin;
     "opencode-profiles/chat/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
 
     # These are config-only profiles: sessions, auth, cache, and state remain
     # shared, while framework plugin registries stay isolated.
-    "opencode-profiles/omo/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
-    "opencode-profiles/omo/opencode/agents/herdr-supervisor.md" =
-      mkLink ../../files/config/opencode/agents/herdr-supervisor.md;
-    "opencode-profiles/omo/opencode/agents/herdr-worker.md" =
-      mkLink ../../files/config/opencode/agents/herdr-worker.md;
-    "opencode-profiles/omo/opencode/commands/en.md" = mkLink ../../files/config/opencode/commands/en.md;
-    "opencode-profiles/omo/opencode/commands/obsidian.md" =
-      mkLink ../../files/config/opencode/commands/obsidian.md;
-    "opencode-profiles/omo/opencode/commands/showme.md" =
-      mkLink ../../files/config/opencode/commands/showme.md;
-    "opencode-profiles/omo/opencode/opencode.jsonc" = mkLink generated.omoConfig;
-    "opencode-profiles/omo/opencode/cli.json" = mkLink generated.todoCli;
-    "opencode-profiles/omo/opencode/themes/catppuccin-mocha-mauve.json" =
-      mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
-    "opencode-profiles/omo/opencode/plugins/first-things-first.js" = mkLink firstThingsFirstPlugin;
-    "opencode-profiles/omo/opencode/tui-plugins/todo" = {
-      force = true;
-      source = todoOverlayOpenCodePackage;
-    };
-    "opencode-profiles/omo/opencode/plugins/profile-shell-env.js" = mkLink profileShellEnvPlugin;
-    "opencode-profiles/omo/opencode/plugins/herdr-worker-title.js" = mkLink herdrWorkerTitlePlugin;
-    "opencode-profiles/omo/opencode/plugins/session-title.js" = mkLink sessionTitlePlugin;
-    "opencode-profiles/omo/opencode/plugins/obsidian-export.js" = mkLink obsidianExportPlugin;
-
     "opencode-profiles/slim/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
     "opencode-profiles/slim/opencode/agents/herdr-supervisor.md" =
       mkLink ../../files/config/opencode/agents/herdr-supervisor.md;
@@ -329,20 +304,18 @@ in
     "opencode-profiles/slim/opencode/cli.json" = mkLink generated.todoCli;
     "opencode-profiles/slim/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
-    "opencode-profiles/slim/opencode/plugins/first-things-first.js" = mkLink firstThingsFirstPlugin;
     "opencode-profiles/slim/opencode/tui-plugins/todo" = {
       force = true;
       source = todoOverlayOpenCodePackage;
     };
-    "opencode-profiles/slim/opencode/plugins/profile-shell-env.js" = mkLink profileShellEnvPlugin;
-    "opencode-profiles/slim/opencode/plugins/herdr-worker-title.js" = mkLink herdrWorkerTitlePlugin;
-    "opencode-profiles/slim/opencode/plugins/session-title.js" = mkLink sessionTitlePlugin;
-    "opencode-profiles/slim/opencode/plugins/obsidian-export.js" = mkLink obsidianExportPlugin;
+    "opencode-profiles/slim/opencode/plugins/profile-shell-env/index.js" = mkLink profileShellEnvPlugin;
+    "opencode-profiles/slim/opencode/plugins/herdr-shell-env/index.js" = mkLink herdrShellEnvPlugin;
+    "opencode-profiles/slim/opencode/plugins/session-title/index.js" = mkLink sessionTitlePlugin;
+    "opencode-profiles/slim/opencode/plugins/obsidian-export/index.js" = mkLink obsidianExportPlugin;
     "opencode-profiles/slim/opencode/oh-my-opencode-slim.seed.jsonc" = mkLink slimOpenCodePluginConfig;
   };
 
   home.file = {
-    ".omo/omo.jsonc" = mkLink ../../files/omo/omo.jsonc;
     ".agents/skills/herdr-agent-layout" = mkLink herdrAgentLayoutSkill;
     ".agents/skills/obsidian-export" = mkLink obsidianExportSkill;
     ".agents/skills/showme" = mkLink showmeSkill;
@@ -359,7 +332,6 @@ in
         integration_source="${config.home.homeDirectory}/.config/opencode/plugins/herdr-agent-state.js"
         integration_targets=(
           "${config.home.homeDirectory}/.config/opencode-profiles/chat/opencode/plugins/herdr-agent-state.js"
-          "${config.home.homeDirectory}/.config/opencode-profiles/omo/opencode/plugins/herdr-agent-state.js"
           "${config.home.homeDirectory}/.config/opencode-profiles/slim/opencode/plugins/herdr-agent-state.js"
         )
         for integration_target in "''${integration_targets[@]}"; do
@@ -376,8 +348,8 @@ in
         done
       '';
 
-  # Install the shared Todo package once. OmO and Slim link to this package so
-  # they never create incompatible duplicate OpenTUI dependency trees.
+  # Install the shared Todo package once. Slim links to this package so it
+  # never creates an incompatible duplicate OpenTUI dependency tree.
   home.activation.installOpenCodeTodoOverlayDeps = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
     todo_overlay_source="${todoOverlayPackageRoot}"
     todo_overlay_package="${config.home.homeDirectory}/.config/opencode/tui-plugins/todo"

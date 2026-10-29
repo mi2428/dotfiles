@@ -622,7 +622,7 @@ end
 
 if command -sq opencode-v2
     # The default root stays framework-plugin-free. `oc-slim` selects its
-    # isolated V2 plugin root; `oc-omo` fails closed until its V2 runtime exists.
+    # isolated V2 plugin root.
     function __dotfiles_opencode_config_with_default_agent --argument-names agent
         set -l config '{}'
         if set -q OPENCODE_CONFIG_CONTENT
@@ -680,15 +680,6 @@ if command -sq opencode-v2
         end
     end
 
-    if command -sq oc-omo
-        function ocomo --wraps oc-omo
-            __dotfiles_run_opencode oc-omo $argv
-        end
-
-        function ocomo++ --wraps oc-omo
-            __dotfiles_run_opencode oc-omo --auto $argv
-        end
-    end
     if command -sq oc-slim
         function ocslim --wraps oc-slim
             __dotfiles_run_opencode oc-slim $argv
