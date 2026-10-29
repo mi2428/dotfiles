@@ -141,6 +141,7 @@ export const ObsidianExport = Plugin.define({
       editor.add({
         name: "obsidian_export",
         description: "Export the current visible OpenCode conversation and a flexible summary to an Obsidian note.",
+        options: { codemode: false },
         input: {
           type: "object",
           properties: {

@@ -82,6 +82,7 @@ describe("Obsidian conversation export", () => {
       },
     };
     await ObsidianExport.setup(ctx);
+    assert.equal(tools.obsidian_export.options.codemode, false);
     const args = {
       title: "A/B: comparison",
       summary: "Compared two possible approaches.",
