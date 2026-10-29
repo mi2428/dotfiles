@@ -66,9 +66,8 @@ You remain accountable for the final result.
 - Immediately before dispatch, inspect `HAPPIER_OPENCODE_BACKEND_MODE` and `HAPPIER_SESSION_ID` once.
   If both identify a server-backed Happier session, record `HAPPIER_MODE=1`; if both are absent, record `HAPPIER_MODE=0`.
   Stop rather than dispatch when only one is present: the Happier CLI or running OpenCode session is stale or incompatible.
-- Happier-managed supervisors and workers must use `HAPPIER_OPENCODE_BACKEND_MODE=server`; unlike ACP mode, this starts the OpenCode runtime immediately and supports the local TUI.
-- When `HAPPIER_MODE=1`, require `happier-opencode-worker` and `happier` in `PATH` and launch every OpenCode worker through a fresh Happier session.
-  The helper gives each worker a unique managed-server fingerprint and an OpenCode config whose default agent and model match the worker, so it neither reuses nor restarts the supervisor's server.
+- Happier-managed supervisors and workers would require `HAPPIER_OPENCODE_BACKEND_MODE=server`; ACP mode cannot provide the local full TUI.
+- Happier server mode has not been live-verified with OpenCode V2. When `HAPPIER_MODE=1`, report `BLOCKED` and do not dispatch OpenCode workers or fall back to direct OpenCode startup.
 - When `HAPPIER_MODE=0`, keep using direct OpenCode worker startup.
 - If Happier startup is required but unavailable or cannot be validated, keep the task local only when safe; otherwise report the failure and ask the user to repair or update Happier.
 
@@ -87,9 +86,10 @@ You remain accountable for the final result.
 
 ## Start OpenCode workers
 
-- OpenCode V2 cannot safely attribute `HERDR_*` shell environment to a session: `shell.create.before` has no session ID, the first shell may start before the plugin, and a standalone TUI can contain multiple root sessions. `opencode-v2` refuses Herdr launches until this is fixed. **Do not launch OpenCode workers in Herdr or bypass the guard with `opencode2` or Happier.**
-- Keep the task local only when it remains safe. Otherwise report `BLOCKED`, the exact missing session-attribution capability, and the actions not performed. Never substitute an invisible `subagent` or a different runtime family for a visible Herdr worker.
-- Once a session-bound solution is verified end-to-end, restore the documented Herdr `agent start` launch flow, catalog model validation, Happier worker identity and `[Subagent]` title checks. Do not guess unsupported V2 TUI flags.
+- The patched Herdr/OpenCode V2 contract is verified for automatic root creation and registration, targeted prompt delivery, rejection while another root is selected, delivery after restoring the original root, and Ctrl-C cleanup limited to the target TUI and its private server.
+- Use only the Agent Layout Skill's documented `herdr agent start` flow. Validate the model in the OpenCode catalog, pass it as `HERDR_OPENCODE_MODEL`, and launch `opencode-profile herdr`; the profile injects `model` and `default_agent` through `OPENCODE_CONFIG_CONTENT` and obtains the launcher's one-use approval for its private `--standalone` server.
+- Send work only with the documented `herdr agent prompt` command. A route mismatch is an explicit failed delivery, not permission to inject terminal text or target another root; retry only after the original root is visibly restored.
+- Never launch a Herdr worker through naked `opencode-v2`, `opencode2`, a shared server, or Happier. Permission-wait and reconnect behavior remain unverified; if either makes delivery or worker state uncertain, report `BLOCKED` and do not use a fallback runtime or infer success.
 
 ## Optimize for cost
 

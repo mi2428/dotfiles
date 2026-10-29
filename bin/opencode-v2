@@ -30,7 +30,26 @@ fi
 if [ "${HERDR_ENV:-}" = 1 ]; then
     case "${1:-}" in
         --version | -v | --help | -h) ;;
-        *) die 'Herdr pane sessions require session-bound shell attribution; OpenCode V2 does not expose it safely' ;;
+        *)
+            private_config=${DOTFILES_OPENCODE_HERDR_PRIVATE_CONFIG:-}
+            [ -n "$private_config" ] \
+                && [ "${XDG_CONFIG_HOME:-}/opencode" = "$private_config" ] \
+                && [ -f "$private_config/opencode.jsonc" ] \
+                && [ -f "$private_config/cli.json" ] \
+                || die 'Herdr OpenCode V2 must use the managed private profile'
+
+            standalone=false
+            for arg in "$@"; do
+                case "$arg" in
+                    --standalone) standalone=true ;;
+                    --server | --server=* | --attach | --attach=*)
+                        die 'Herdr OpenCode V2 cannot use a shared server'
+                        ;;
+                esac
+            done
+            [ "$standalone" = true ] || die 'Herdr OpenCode V2 requires --standalone'
+            unset DOTFILES_OPENCODE_HERDR_PRIVATE_CONFIG
+            ;;
     esac
 fi
 

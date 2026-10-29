@@ -623,19 +623,15 @@ end
 if command -sq opencode-v2
     # The default root stays framework-plugin-free. `oc-slim` selects its
     # isolated V2 plugin root.
-    function __dotfiles_opencode_config_with_default_agent --argument-names agent
-        set -l config '{}'
-        if set -q OPENCODE_CONFIG_CONTENT
-            set config "$OPENCODE_CONFIG_CONTENT"
-        end
-        printf '%s\n' "$config" |
-            command jq -ce --arg agent "$agent" '. + {default_agent: $agent}'
-    end
-
     function __dotfiles_run_opencode --argument-names executable
         set -e argv[1]
+        # Only the managed Herdr profile can authorize a private V2 TUI.
+        if test "$executable" = opencode-v2; and set -q HERDR_ENV; and test "$HERDR_ENV" = 1
+            command opencode-profile herdr $argv
+            return $status
+        end
+
         set -l standalone_args --standalone
-        set -l config_args
 
         for arg in $argv
             if test "$arg" = --server; or string match -q -- '--server=*' "$arg"
@@ -644,13 +640,7 @@ if command -sq opencode-v2
             end
         end
 
-        if set -q HERDR_ENV; and test "$HERDR_ENV" = 1; and command -sq herdr
-            set -l config_content (__dotfiles_opencode_config_with_default_agent herdr-supervisor)
-            or return $status
-            set config_args OPENCODE_CONFIG_CONTENT="$config_content"
-        end
-
-        command env $config_args $executable $standalone_args $argv
+        command $executable $standalone_args $argv
     end
 
     function oc --wraps opencode-v2
@@ -663,20 +653,13 @@ if command -sq opencode-v2
 
     if command -sq happier
         function oc+++ --wraps opencode-v2
-            set -l agent_args
-            set -l config_args
-
-            if set -q HERDR_ENV; and test "$HERDR_ENV" = 1; and command -sq herdr
-                if not contains -- --agent-mode $argv; and not string match -q -- '--agent-mode=*' $argv
-                    set agent_args --agent-mode herdr-supervisor
-                end
-                set -l config_content (__dotfiles_opencode_config_with_default_agent herdr-supervisor)
-                or return $status
-                set config_args OPENCODE_CONFIG_CONTENT="$config_content"
+            if set -q HERDR_ENV; and test "$HERDR_ENV" = 1
+                printf '%s\n' 'oc+++: Happier OpenCode V2 is blocked until server-mode compatibility is live-verified' >&2
+                return 69
             end
 
             set -l opencode_path (command -s opencode-v2)
-            command env HAPPIER_OPENCODE_PATH="$opencode_path" HAPPIER_OPENCODE_BACKEND_MODE=server $config_args happier opencode --permission-mode yolo $agent_args $argv
+            command env HAPPIER_OPENCODE_PATH="$opencode_path" HAPPIER_OPENCODE_BACKEND_MODE=server happier opencode --permission-mode yolo $argv
         end
     end
 

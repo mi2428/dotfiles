@@ -14,6 +14,7 @@ let
     builtins.readFile ../../files/config/opencode/plugin-versions.json
   );
   slimPlugin = "oh-my-opencode-slim@${pluginVersions.slim}";
+  herdrPackage = config.dotfiles.herdr.package;
 
   openAIModels = {
     "gpt-5.6-sol".settings.reasoningEffort = "xhigh";
@@ -195,6 +196,18 @@ let
   todoCliConfig = commonCliConfig // {
     plugins = [ "./tui-plugins/todo" ];
   };
+  herdrCliConfig = todoCliConfig // {
+    plugins = todoCliConfig.plugins ++ [ "./herdr-opencode" ];
+    session = {
+      thinking = "show";
+      grouping = "none";
+      tps = true;
+    };
+    tabs = {
+      mode = "auto";
+      indicators = "status";
+    };
+  };
   chatCliConfig = commonCliConfig // {
     keybinds = commonCliConfig.keybinds // {
       "agent.list" = "none";
@@ -227,6 +240,7 @@ let
     );
     chatConfig = json.generate "opencode-chat.json" chatConfig;
     todoCli = json.generate "opencode-cli.json" todoCliConfig;
+    herdrCli = json.generate "opencode-herdr-cli.json" herdrCliConfig;
     chatCli = json.generate "opencode-chat-cli.json" chatCliConfig;
   };
 
@@ -287,6 +301,41 @@ in
     "opencode-profiles/chat/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
 
+    # Herdr sessions use the normal server configuration plus a dedicated TUI
+    # profile. The launcher injects the selected agent and model at runtime.
+    "opencode-profiles/herdr/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
+    "opencode-profiles/herdr/opencode/agents/herdr-supervisor.md" =
+      mkLink ../../files/config/opencode/agents/herdr-supervisor.md;
+    "opencode-profiles/herdr/opencode/agents/herdr-worker.md" =
+      mkLink ../../files/config/opencode/agents/herdr-worker.md;
+    "opencode-profiles/herdr/opencode/commands/en.md" =
+      mkLink ../../files/config/opencode/commands/en.md;
+    "opencode-profiles/herdr/opencode/commands/obsidian.md" =
+      mkLink ../../files/config/opencode/commands/obsidian.md;
+    "opencode-profiles/herdr/opencode/commands/showme.md" =
+      mkLink ../../files/config/opencode/commands/showme.md;
+    "opencode-profiles/herdr/opencode/opencode.jsonc" = mkLink generated.defaultConfig;
+    "opencode-profiles/herdr/opencode/cli.json" = mkLink generated.herdrCli;
+    "opencode-profiles/herdr/opencode/herdr-opencode/tui.js" = mkLink (
+      herdrPackage + "/share/herdr/opencode/tui.js"
+    );
+    "opencode-profiles/herdr/opencode/herdr-tui-session.js" = mkLink (
+      herdrPackage + "/share/herdr/herdr-tui-session.js"
+    );
+    "opencode-profiles/herdr/opencode/plugins/herdr-agent-state/index.js" = mkLink (
+      herdrPackage + "/share/herdr/opencode/herdr-agent-state.js"
+    );
+    "opencode-profiles/herdr/opencode/themes/catppuccin-mocha-mauve.json" =
+      mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
+    "opencode-profiles/herdr/opencode/tui-plugins/todo" = {
+      force = true;
+      source = todoOverlayOpenCodePackage;
+    };
+    "opencode-profiles/herdr/opencode/plugins/profile-shell-env/index.js" =
+      mkLink profileShellEnvPlugin;
+    "opencode-profiles/herdr/opencode/plugins/session-title/index.js" = mkLink sessionTitlePlugin;
+    "opencode-profiles/herdr/opencode/plugins/obsidian-export/index.js" = mkLink obsidianExportPlugin;
+
     # These are config-only profiles: sessions, auth, cache, and state remain
     # shared, while framework plugin registries stay isolated.
     "opencode-profiles/slim/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
@@ -323,30 +372,6 @@ in
     ".agents/skills/repo-qa" = mkLink ../../files/agents/skills/repo-qa;
     ".claude/skills/herdr-agent-layout" = mkLink herdrAgentLayoutSkill;
   };
-
-  # Herdr is installed outside Nix on macOS. Project its generated OpenCode
-  # plugin into each profile after the installer has run.
-  home.activation.linkOpenCodeProfileHerdrIntegration =
-    lib.hm.dag.entryAfter [ "installHerdrAgentIntegrations" "linkGeneration" ]
-      ''
-        integration_source="${config.home.homeDirectory}/.config/opencode/plugins/herdr-agent-state.js"
-        integration_targets=(
-          "${config.home.homeDirectory}/.config/opencode-profiles/chat/opencode/plugins/herdr-agent-state.js"
-          "${config.home.homeDirectory}/.config/opencode-profiles/slim/opencode/plugins/herdr-agent-state.js"
-        )
-        for integration_target in "''${integration_targets[@]}"; do
-          if [ -f "$integration_source" ]; then
-            if [ -e "$integration_target" ] && [ ! -L "$integration_target" ]; then
-              echo "Refusing to replace non-symlink OpenCode integration: $integration_target" >&2
-              exit 1
-            fi
-            mkdir -p "$(dirname "$integration_target")"
-            ln -sfn "$integration_source" "$integration_target"
-          elif [ -L "$integration_target" ]; then
-            rm -f "$integration_target"
-          fi
-        done
-      '';
 
   # Install the shared Todo package once. Slim links to this package so it
   # never creates an incompatible duplicate OpenTUI dependency tree.
