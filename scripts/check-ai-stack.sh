@@ -46,9 +46,18 @@ require_command Herdr herdr
 require_command jq jq
 require_command curl curl
 
+if command -v herdr >/dev/null 2>&1; then
+    herdr_path=$(command -v herdr)
+    managed_herdr="$HOME/.nix-profile/bin/herdr"
+    if [ -x "$managed_herdr" ] && [ "$herdr_path" -ef "$managed_herdr" ]; then
+        ok "Herdr resolves to the Home Manager package: $herdr_path"
+    else
+        fail "Herdr does not resolve to the Home Manager package: $herdr_path"
+    fi
+fi
+
 if [ "$(uname -s)" = Darwin ]; then
     require_brewfile_entry 'brew "anomalyco/tap/opencode-v2", trusted: true'
-    require_brewfile_entry 'brew "herdr"'
     require_brewfile_entry 'cask "codex"'
     require_brewfile_entry 'cask "claude-code"'
 fi
@@ -88,6 +97,7 @@ slim_plugin_spec="oh-my-opencode-slim@$slim_version"
 default_config_home="$HOME/.config"
 default_cli_config="$default_config_home/opencode/cli.json"
 chat_config_home="$HOME/.config/opencode-profiles/chat"
+herdr_config_home="$HOME/.config/opencode-profiles/herdr"
 slim_config_home="$HOME/.config/opencode-profiles/slim"
 
 if printf '%s\n' "$slim_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)*$'; then
@@ -170,21 +180,20 @@ check_cli_config() {
     profile_name=$1
     cli_config=$2
     expect_todo_plugin=$3
+    expect_herdr_plugin=$4
     if [ ! -f "$cli_config" ]; then
         fail "OpenCode $profile_name cli.json is missing: $cli_config"
-    elif jq -e '
+    elif jq -e \
+        --argjson expect_todo "$expect_todo_plugin" \
+        --argjson expect_herdr "$expect_herdr_plugin" '
         .["$schema"] == "https://opencode.ai/v2/cli.json"
         and .theme.name == "catppuccin-mocha-mauve"
-        and (.plugins | index("./herdr-opencode") != null)
+        and ((((.plugins // []) | index("./tui-plugins/todo")) != null) == ($expect_todo == 1))
+        and ((((.plugins // []) | index("./herdr-opencode")) != null) == ($expect_herdr == 1))
     ' "$cli_config" >/dev/null; then
-        if [ "$expect_todo_plugin" = 1 ] \
-            && ! jq -e '.plugins | index("./tui-plugins/todo") != null' "$cli_config" >/dev/null; then
-            fail "OpenCode $profile_name cli.json does not load the shared Todo TUI plugin"
-        else
-            ok "OpenCode $profile_name cli.json uses the V2 theme settings"
-        fi
+        ok "OpenCode $profile_name cli.json uses the declared V2 TUI plugins"
     else
-        fail "OpenCode $profile_name cli.json is missing its V2 schema or theme"
+        fail "OpenCode $profile_name cli.json has unexpected V2 theme or plugin declarations"
     fi
 }
 
@@ -246,9 +255,38 @@ check_v2_herdr_shell_source() {
     fi
 }
 
-check_cli_config Default "$default_cli_config" 1
-check_cli_config Chat "$chat_config_home/opencode/cli.json" 0
-check_cli_config Slim "$slim_config_home/opencode/cli.json" 1
+check_cli_config Default "$default_cli_config" 1 0
+check_cli_config Chat "$chat_config_home/opencode/cli.json" 0 0
+check_cli_config Herdr "$herdr_config_home/opencode/cli.json" 1 1
+check_cli_config Slim "$slim_config_home/opencode/cli.json" 1 0
+
+if jq -e '
+    .session.thinking == "show"
+    and .session.grouping == "none"
+    and .session.tps == true
+    and .tabs.mode == "auto"
+    and .tabs.indicators == "status"
+    and .attention.notifications == true
+    and .attention.sound == false
+' "$herdr_config_home/opencode/cli.json" >/dev/null; then
+    ok 'OpenCode Herdr uses native TUI thinking, TPS, and status indicators without sound'
+else
+    fail 'OpenCode Herdr cli.json is missing its native TUI status settings'
+fi
+
+for regular_profile_cli in \
+    "$chat_config_home/opencode/cli.json" \
+    "$slim_config_home/opencode/cli.json"; do
+    if jq -e '
+        .session.thinking == null
+        and .session.grouping == null
+        and .session.tps == null
+    ' "$regular_profile_cli" >/dev/null; then
+        ok "OpenCode profile keeps Herdr-only session display settings out of $regular_profile_cli"
+    else
+        fail "OpenCode profile forces Herdr-only session display settings in $regular_profile_cli"
+    fi
+done
 
 if default_config=$(read_v2_config "$default_config_home" 2>/dev/null); then
     if printf '%s\n' "$default_config" | jq -e '
@@ -291,9 +329,15 @@ check_profile_config() {
 }
 
 check_profile_config Chat "$chat_config_home" openai gpt-6-sol
+check_profile_config Herdr "$herdr_config_home" openai gpt-6-sol
 check_profile_config Slim "$slim_config_home" amazon-bedrock global.anthropic.claude-opus-5 "$slim_plugin_spec"
 check_v2_herdr_shell_source Default "$HOME/.config/opencode/plugins/herdr-shell-env/index.js"
 check_v2_herdr_shell_source Slim "$slim_config_home/opencode/plugins/herdr-shell-env/index.js"
+if [ ! -e "$herdr_config_home/opencode/plugins/herdr-shell-env/index.js" ]; then
+    ok 'OpenCode Herdr profile does not scrub the pane environment needed by visible delegation'
+else
+    fail 'OpenCode Herdr profile still loads the incompatible shell environment scrubber'
+fi
 warn 'V2 server plugin activation is not checked through /api/plugin because startup inventory is asynchronous; inspect plugin state after OpenCode starts'
 
 if chat_config=$(read_v2_config "$chat_config_home" 2>/dev/null); then
@@ -336,7 +380,14 @@ else
     fail 'the default OpenCode profile exposes Chat through the V2 API'
 fi
 
-fail 'OpenCode V2 Herdr Supervisor delegation is intentionally blocked until shell environment can be bound to a verified session'
+if grep -Fq 'DOTFILES_OPENCODE_HERDR_PRIVATE_CONFIG' "$repo_root/bin/opencode-profile" \
+    && grep -Fq 'Herdr OpenCode V2 must use the managed private profile' "$repo_root/bin/opencode-v2" \
+    && grep -Fq 'Herdr OpenCode V2 cannot use a shared server' "$repo_root/bin/opencode-v2"; then
+    ok 'OpenCode V2 Herdr startup is limited to the managed private standalone profile'
+else
+    fail 'OpenCode V2 Herdr private-profile launch guard is missing'
+fi
+warn 'Herdr targeted prompt, route isolation, recovery, and scoped Ctrl-C passed isolated E2E; permission and reconnect remain unverified'
 
 if command -v happier >/dev/null 2>&1; then
     happier_version=$(happier --version 2>/dev/null || true)
@@ -350,7 +401,7 @@ fi
 
 if command -v herdr >/dev/null 2>&1; then
     integration_status=$(herdr integration status)
-    for target in claude codex opencode; do
+    for target in claude codex; do
         status_line=$(printf '%s\n' "$integration_status" | grep "^${target}:" || true)
         case "$status_line" in
             "$target: current "*) ok "Herdr $status_line" ;;
@@ -359,45 +410,43 @@ if command -v herdr >/dev/null 2>&1; then
     done
 fi
 
-herdr_tui_source="$HOME/.config/opencode/herdr-opencode/tui.js"
-herdr_tui_shared="$HOME/.config/opencode/herdr-tui-session.js"
-if [ -f "$herdr_tui_source" ] && [ -f "$herdr_tui_shared" ]; then
-    ok 'Herdr V2 TUI plugin entrypoints are installed'
-    for profile in chat slim; do
-        profile_root="$HOME/.config/opencode-profiles/$profile/opencode"
-        if [ -e "$profile_root/herdr-opencode/tui.js" ] \
-            && [ "$profile_root/herdr-opencode/tui.js" -ef "$herdr_tui_source" \
-            ] && [ -e "$profile_root/herdr-tui-session.js" \
-            ] && [ "$profile_root/herdr-tui-session.js" -ef "$herdr_tui_shared" ]; then
-            ok "OpenCode $profile profile links Herdr V2 TUI entrypoints"
-        else
-            fail "OpenCode $profile profile does not link the Herdr V2 TUI entrypoints"
-        fi
-    done
+herdr_profile_root="$herdr_config_home/opencode"
+herdr_tui="$herdr_profile_root/herdr-opencode/tui.js"
+herdr_tui_shared="$herdr_profile_root/herdr-tui-session.js"
+herdr_server="$herdr_profile_root/plugins/herdr-agent-state/index.js"
+if [ -L "$herdr_tui" ] \
+    && [ -L "$herdr_tui_shared" ] \
+    && [ -L "$herdr_server" ] \
+    && grep -Fq 'HERDR_INTEGRATION_ID=opencode-tui-v2' "$herdr_tui" \
+    && grep -Fq '../herdr-tui-session.js' "$herdr_tui" \
+    && grep -Fq 'HERDR_INTEGRATION_ID=opencode-tui' "$herdr_tui_shared" \
+    && grep -Fq 'HERDR_INTEGRATION_ID=opencode' "$herdr_server"; then
+    ok 'OpenCode Herdr profile links immutable Nix TUI and server plugin assets'
 else
-    fail 'Herdr V2 TUI plugin entrypoints are missing; run herdr integration install opencode'
+    fail 'OpenCode Herdr profile is missing immutable Nix TUI or server plugin assets'
 fi
 
-integration_source="$HOME/.config/opencode/plugins/herdr-agent-state.js"
-if [ -f "$integration_source" ]; then
-    ok "Herdr OpenCode integration exists"
-    for profile in chat slim; do
-        profile_integration="$HOME/.config/opencode-profiles/$profile/opencode/plugins/herdr-agent-state/index.js"
-        if [ -e "$profile_integration" ] && [ "$profile_integration" -ef "$integration_source" ]; then
-            ok "OpenCode $profile profile links the Herdr integration"
-        else
-            fail "OpenCode $profile profile does not link $integration_source"
-        fi
-    done
-else
-    fail "Herdr OpenCode integration is missing: $integration_source"
-    for profile in chat slim; do
-        profile_integration="$HOME/.config/opencode-profiles/$profile/opencode/plugins/herdr-agent-state/index.js"
-        if [ -L "$profile_integration" ] && [ ! -e "$profile_integration" ]; then
-            fail "OpenCode $profile profile contains a dangling Herdr integration"
-        fi
-    done
-fi
+for legacy_herdr_path in \
+    "$HOME/.config/opencode/plugins/herdr-agent-state.js" \
+    "$HOME/.config/opencode/herdr-opencode" \
+    "$HOME/.config/opencode/herdr-tui-session.js"; do
+    if [ -e "$legacy_herdr_path" ] || [ -L "$legacy_herdr_path" ]; then
+        fail "Mutable Herdr OpenCode integration still exists: $legacy_herdr_path"
+    else
+        ok "Mutable Herdr OpenCode integration is absent: $legacy_herdr_path"
+    fi
+done
+
+for regular_profile in chat slim; do
+    regular_profile_root="$HOME/.config/opencode-profiles/$regular_profile/opencode"
+    if [ ! -e "$regular_profile_root/herdr-opencode" ] \
+        && [ ! -e "$regular_profile_root/herdr-tui-session.js" ] \
+        && [ ! -e "$regular_profile_root/plugins/herdr-agent-state/index.js" ]; then
+        ok "OpenCode $regular_profile profile stays independent of Herdr runtime plugins"
+    else
+        fail "OpenCode $regular_profile profile still contains Herdr runtime plugins"
+    fi
+done
 
 for skill_path in \
     "$HOME/.agents/skills/herdr-agent-layout" \

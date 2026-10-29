@@ -33,6 +33,72 @@ let
   ghReviewPreview = ../../files/libexec/dotfiles/gh-review-preview;
   hermesConfig = config.lib.file.mkOutOfStoreSymlink
     "${config.home.homeDirectory}/dotfiles/home/files/hermes/config.yaml";
+  herdrPackage = config.dotfiles.herdr.package;
+  removeHerdrFile = ''
+    remove_herdr_file() {
+      path=$1
+      expected_target=''${2:-}
+      expected_marker=''${3:-}
+      if [ -L "$path" ]; then
+        current_target=$(readlink "$path")
+        if [ -n "$expected_target" ] && [ "$current_target" = "$expected_target" ]; then
+          rm -f "$path"
+        else
+          echo "Refusing to remove unknown OpenCode symlink: $path -> $current_target" >&2
+          exit 1
+        fi
+      elif [ -f "$path" ]; then
+        first_line=
+        if [ -n "$expected_marker" ] \
+          && IFS= read -r first_line < "$path" \
+          && [ "$first_line" = '// installed by herdr' ] \
+          && ${pkgs.gnugrep}/bin/grep -Fxq "// HERDR_INTEGRATION_ID=$expected_marker" "$path"; then
+          rm -f "$path"
+        else
+          echo "Refusing to remove unmanaged OpenCode file: $path" >&2
+          exit 1
+        fi
+      elif [ -e "$path" ]; then
+        echo "Refusing to remove unmanaged OpenCode path: $path" >&2
+        exit 1
+      fi
+    }
+  '';
+  legacyCleanupCheck = pkgs.runCommand "check-legacy-opencode-herdr-cleanup" { } ''
+    ${removeHerdrFile}
+
+    printf '%s\n' \
+      '// installed by herdr' \
+      '// HERDR_INTEGRATION_ID=opencode' \
+      > "$TMPDIR/managed"
+    remove_herdr_file "$TMPDIR/managed" "" opencode
+    [ ! -e "$TMPDIR/managed" ]
+
+    printf '%s\n' \
+      '// installed by herdr' \
+      '// HERDR_INTEGRATION_ID=other' \
+      > "$TMPDIR/wrong-id"
+    ! (remove_herdr_file "$TMPDIR/wrong-id" "" opencode >/dev/null 2>&1)
+    [ -f "$TMPDIR/wrong-id" ]
+
+    printf '%s\n' \
+      'console.log("// installed by herdr")' \
+      '// installed by herdr' \
+      '// HERDR_INTEGRATION_ID=opencode' \
+      > "$TMPDIR/user-file"
+    ! (remove_herdr_file "$TMPDIR/user-file" "" opencode >/dev/null 2>&1)
+    [ -f "$TMPDIR/user-file" ]
+
+    ln -s /known/herdr/source "$TMPDIR/known-link"
+    remove_herdr_file "$TMPDIR/known-link" /known/herdr/source
+    [ ! -L "$TMPDIR/known-link" ]
+
+    ln -s /other/source "$TMPDIR/unknown-link"
+    ! (remove_herdr_file "$TMPDIR/unknown-link" /known/herdr/source >/dev/null 2>&1)
+    [ -L "$TMPDIR/unknown-link" ]
+
+    touch "$out"
+  '';
   macCompatibilityFiles = lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
     "Library/Application Support/com.mitchellh.ghostty/themes" =
       mkLink ../../files/config/ghostty/themes;
@@ -86,116 +152,55 @@ in {
     ".hermes/config.yaml" = mkLink hermesConfig;
   };
 
-  # Herdr's installers are idempotent and keep each harness hook at the
-  # integration version shipped by the installed Herdr binary. Run this after
-  # links exist so the generated OpenCode plugin can also feed isolated roots.
+  # OpenCode uses immutable package assets. Only harnesses that still require
+  # an installer are updated here, with the exact patched Herdr binary.
   home.activation.installHerdrAgentIntegrations = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-    herdr_bin="$(command -v herdr || true)"
-    if [ -z "$herdr_bin" ]; then
-      for candidate in /opt/homebrew/bin/herdr /usr/local/bin/herdr /home/linuxbrew/.linuxbrew/bin/herdr; do
-        if [ -x "$candidate" ]; then
-          herdr_bin="$candidate"
-          break
-        fi
-      done
+    herdr_bin="${herdrPackage}/bin/herdr"
+    if [ ! -x "$herdr_bin" ]; then
+      echo "Patched Herdr binary is missing: $herdr_bin" >&2
+      exit 1
     fi
 
-    if [ -n "$herdr_bin" ]; then
-      for target in claude codex opencode; do
-        target_available=false
-        if command -v "$target" >/dev/null 2>&1 \
-          || [ -x "/opt/homebrew/bin/$target" ] \
-          || [ -x "/usr/local/bin/$target" ] \
-          || [ -x "/home/linuxbrew/.linuxbrew/bin/$target" ]; then
-          target_available=true
-        fi
-        if [ "$target" = opencode ]; then
-          if command -v opencode-v2 >/dev/null 2>&1 \
-            && opencode-v2 --version >/dev/null 2>&1; then
-            target_available=true
-          else
-            target_available=false
-          fi
-        fi
-
-        if [ "$target_available" = true ]; then
-          if [ "$target" = opencode ]; then
-            cli_config="${config.home.homeDirectory}/.config/opencode/cli.json"
-            if [ -L "$cli_config" ]; then
-              writable_copy="$(mktemp "$cli_config.XXXXXX")"
-              cp "$cli_config" "$writable_copy"
-              chmod 0644 "$writable_copy"
-              mv -f "$writable_copy" "$cli_config"
-            fi
-          fi
-          "$herdr_bin" integration install "$target" >/dev/null
-        fi
-      done
-    fi
+    for target in claude codex; do
+      if command -v "$target" >/dev/null 2>&1 \
+        || [ -x "/opt/homebrew/bin/$target" ] \
+        || [ -x "/usr/local/bin/$target" ] \
+        || [ -x "/home/linuxbrew/.linuxbrew/bin/$target" ]; then
+        "$herdr_bin" integration install "$target" >/dev/null
+      fi
+    done
   '';
 
-  # Profile roots have their own cli.json, so mirror Herdr's V2 TUI plugin and
-  # registration alongside the server integration links created by OpenCode.
-  home.activation.linkHerdrProfileTuiPlugins =
-    lib.hm.dag.entryAfter [ "installHerdrAgentIntegrations" "linkGeneration" ] ''
-      herdr_config="${config.home.homeDirectory}/.config/opencode"
-      herdr_tui_source="$herdr_config/herdr-opencode"
-      herdr_tui_shared="$herdr_config/herdr-tui-session.js"
-      herdr_tui_plugin="./herdr-opencode"
+  # Remove only files carrying Herdr's installer marker and links to those
+  # known paths. OpenCode now loads the patched dedicated Nix profile.
+  home.activation.removeLegacyOpenCodeHerdrIntegration =
+    lib.hm.dag.entryAfter [ "installHerdrAgentIntegrations" ] ''
+      test -e "${legacyCleanupCheck}"
+      ${removeHerdrFile}
 
-      if [ -f "$herdr_tui_source/tui.js" ] && [ -f "$herdr_tui_shared" ]; then
-        link_herdr_tui_target() {
-          source=$1
-          target=$2
-          if [ -L "$target" ]; then
-            current_target=$(readlink "$target")
-            [ "$current_target" = "$source" ] && return 0
-            rm -f "$target"
-          elif [ -e "$target" ]; then
-            echo "Refusing to replace non-symlink Herdr TUI entry: $target" >&2
-            exit 1
-          fi
-          mkdir -p "$(dirname "$target")"
-          ln -s "$source" "$target"
-        }
-
-        register_herdr_tui_plugin() {
-          cli_config=$1
-          [ -f "$cli_config" ] || {
-            echo "OpenCode profile cli.json is missing: $cli_config" >&2
-            exit 1
-          }
-          cli_source=$cli_config
-          if [ -L "$cli_config" ]; then
-            cli_source=$(mktemp "$cli_config.XXXXXX")
-            cp "$cli_config" "$cli_source"
-            chmod 0644 "$cli_source"
-          fi
-          cli_temporary=$(mktemp "$cli_config.XXXXXX")
-          if ${pkgs.jq}/bin/jq --arg plugin "$herdr_tui_plugin" '
-            if .plugins == null then .plugins = []
-            elif (.plugins | type) != "array" then error("plugins must be an array")
-            else . end
-            | if (.plugins | index($plugin)) == null then .plugins += [$plugin] else . end
-          ' "$cli_source" > "$cli_temporary"; then
-            chmod 0644 "$cli_temporary"
-            mv -f "$cli_temporary" "$cli_config"
-          else
-            rm -f "$cli_temporary"
-            [ "$cli_source" = "$cli_config" ] || rm -f "$cli_source"
-            echo "Failed to register Herdr in OpenCode profile cli.json: $cli_config" >&2
-            exit 1
-          fi
-          [ "$cli_source" = "$cli_config" ] || rm -f "$cli_source"
-        }
-
-        for profile in chat slim; do
-          profile_root="${config.home.homeDirectory}/.config/opencode-profiles/$profile/opencode"
-          link_herdr_tui_target "$herdr_tui_source" "$profile_root/herdr-opencode"
-          link_herdr_tui_target "$herdr_tui_shared" "$profile_root/herdr-tui-session.js"
-          register_herdr_tui_plugin "$profile_root/cli.json"
-        done
+      opencode_root="${config.home.homeDirectory}/.config/opencode"
+      remove_herdr_file "$opencode_root/plugins/herdr-agent-state.js" "" opencode
+      remove_herdr_file "$opencode_root/herdr-tui-session.js" "" opencode-tui
+      if [ -L "$opencode_root/herdr-opencode" ]; then
+        echo "Refusing to traverse unknown OpenCode symlink: $opencode_root/herdr-opencode" >&2
+        exit 1
+      elif [ -d "$opencode_root/herdr-opencode" ]; then
+        remove_herdr_file "$opencode_root/herdr-opencode/tui.js" "" opencode-tui-v2
+        rmdir "$opencode_root/herdr-opencode" 2>/dev/null || true
+      elif [ -e "$opencode_root/herdr-opencode" ]; then
+        echo "Refusing to remove unmanaged OpenCode path: $opencode_root/herdr-opencode" >&2
+        exit 1
       fi
+
+      for profile in chat slim; do
+        profile_root="${config.home.homeDirectory}/.config/opencode-profiles/$profile/opencode"
+        remove_herdr_file "$profile_root/herdr-opencode" "$opencode_root/herdr-opencode"
+        remove_herdr_file "$profile_root/herdr-tui-session.js" "$opencode_root/herdr-tui-session.js"
+        remove_herdr_file \
+          "$profile_root/plugins/herdr-agent-state/index.js" \
+          "$opencode_root/plugins/herdr-agent-state.js"
+        rmdir "$profile_root/plugins/herdr-agent-state" 2>/dev/null || true
+      done
     '';
 
   # Herdr owns its SessionStart hook but preserves other entries in

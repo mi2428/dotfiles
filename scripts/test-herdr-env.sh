@@ -7,6 +7,67 @@ FISH=$(command -v fish)
 FAKE_BIN=$(mktemp -d)
 trap 'rm -rf "$FAKE_BIN"' EXIT
 
+qa_remove_legacy_file() {
+  path=$1
+  expected_target=${2:-}
+  expected_marker=${3:-}
+  if [ -L "$path" ]; then
+    [ -n "$expected_target" ] && [ "$(readlink "$path")" = "$expected_target" ] || return 1
+    rm -f "$path"
+  elif [ -f "$path" ]; then
+    first_line=
+    [ -n "$expected_marker" ] \
+      && IFS= read -r first_line <"$path" \
+      && [ "$first_line" = '// installed by herdr' ] \
+      && grep -Fxq "// HERDR_INTEGRATION_ID=$expected_marker" "$path" \
+      || return 1
+    rm -f "$path"
+  elif [ -e "$path" ]; then
+    return 1
+  fi
+}
+
+printf '%s\n' \
+  'console.log("// installed by herdr")' \
+  '// installed by herdr' \
+  '// HERDR_INTEGRATION_ID=opencode' \
+  >"$FAKE_BIN/user-file"
+if qa_remove_legacy_file "$FAKE_BIN/user-file" '' opencode; then
+  printf '%s\n' 'Legacy cleanup accepted a user file with a non-leading installer marker' >&2
+  exit 1
+fi
+[ -f "$FAKE_BIN/user-file" ]
+
+printf '%s\n' \
+  '// installed by herdr' \
+  '// HERDR_INTEGRATION_ID=other' \
+  >"$FAKE_BIN/wrong-id"
+if qa_remove_legacy_file "$FAKE_BIN/wrong-id" '' opencode; then
+  printf '%s\n' 'Legacy cleanup accepted an unexpected integration ID' >&2
+  exit 1
+fi
+[ -f "$FAKE_BIN/wrong-id" ]
+
+printf '%s\n' \
+  '// installed by herdr' \
+  '// HERDR_INTEGRATION_ID=opencode' \
+  >"$FAKE_BIN/managed"
+qa_remove_legacy_file "$FAKE_BIN/managed" '' opencode
+[ ! -e "$FAKE_BIN/managed" ]
+
+ln -s /known/herdr/source "$FAKE_BIN/known-link"
+qa_remove_legacy_file "$FAKE_BIN/known-link" /known/herdr/source
+[ ! -L "$FAKE_BIN/known-link" ]
+
+ln -s /other/source "$FAKE_BIN/unknown-link"
+if qa_remove_legacy_file "$FAKE_BIN/unknown-link" /known/herdr/source; then
+  printf '%s\n' 'Legacy cleanup accepted an unknown symlink target' >&2
+  exit 1
+fi
+[ -L "$FAKE_BIN/unknown-link" ]
+
+printf '%s\n' 'Herdr legacy cleanup tests: ok'
+
 cat >"$FAKE_BIN/ps" <<'EOF'
 #!/bin/sh
 
@@ -49,6 +110,7 @@ cat >"$FAKE_BIN/opencode-v2" <<'EOF'
 
 printf 'xdg=%s\n' "$XDG_CONFIG_HOME"
 printf 'content=%s\n' "${OPENCODE_CONFIG_CONTENT-<unset>}"
+printf 'marker=%s\n' "${DOTFILES_OPENCODE_HERDR_PRIVATE_CONFIG-<unset>}"
 printf 'args'
 for arg in "$@"; do
   printf '|%s' "$arg"
@@ -56,6 +118,7 @@ done
 printf '\n'
 EOF
 chmod +x "$FAKE_BIN/opencode-v2"
+ln -s "$DOTFILES_ROOT/bin/opencode-profile" "$FAKE_BIN/opencode-profile"
 
 cat >"$FAKE_BIN/opencode" <<'EOF'
 #!/bin/sh
@@ -64,6 +127,7 @@ if [ "${1:-}" = --version ]; then
   printf 'opencode %s\n' "$FAKE_OPENCODE_VERSION"
   exit 0
 fi
+printf 'marker=%s\n' "${DOTFILES_OPENCODE_HERDR_PRIVATE_CONFIG-<unset>}"
 printf 'args'
 for arg in "$@"; do
   printf '|%s' "$arg"
@@ -96,7 +160,7 @@ if herdr_launch=$(env PATH="$FAKE_BIN:$PATH" FAKE_OPENCODE_VERSION=v2.2.0 HERDR_
   exit 1
 fi
 case "$herdr_launch" in
-  *'Herdr pane sessions require session-bound shell attribution'*) ;;
+  *'Herdr OpenCode V2 must use the managed private profile'*) ;;
   *) printf 'OpenCode V2 launcher rejected Herdr with an unexpected error: %s\n' "$herdr_launch" >&2; exit 1 ;;
 esac
 
@@ -131,27 +195,122 @@ assert_opencode_output() {
   esac
 }
 
+herdr_profile_config_home="$FAKE_BIN/profiles/herdr"
+mkdir -p "$herdr_profile_config_home/opencode"
+printf '%s\n' '{}' >"$herdr_profile_config_home/opencode/opencode.jsonc"
+printf '%s\n' '{}' >"$herdr_profile_config_home/opencode/cli.json"
+
+private_launch=$(env \
+  PATH="$FAKE_BIN:$PATH" \
+  FAKE_OPENCODE_VERSION=v2.2.0 \
+  XDG_CONFIG_HOME="$herdr_profile_config_home" \
+  HERDR_ENV=1 \
+  DOTFILES_OPENCODE_HERDR_PRIVATE_CONFIG="$herdr_profile_config_home/opencode" \
+  "$DOTFILES_ROOT/bin/opencode-v2" --standalone --auto)
+case "$private_launch" in
+  *'marker=<unset>'*'args|--standalone|--auto'*) ;;
+  *)
+    printf '%s\n' 'OpenCode V2 launcher did not consume the managed private-profile marker' >&2
+    printf '%s\n' "$private_launch" >&2
+    exit 1
+    ;;
+esac
+
+if env \
+  PATH="$FAKE_BIN:$PATH" \
+  FAKE_OPENCODE_VERSION=v2.2.0 \
+  XDG_CONFIG_HOME="$herdr_profile_config_home" \
+  HERDR_ENV=1 \
+  DOTFILES_OPENCODE_HERDR_PRIVATE_CONFIG="$herdr_profile_config_home/opencode" \
+  "$DOTFILES_ROOT/bin/opencode-v2" --auto >/dev/null 2>&1; then
+  printf '%s\n' 'OpenCode V2 launcher accepted Herdr without --standalone' >&2
+  exit 1
+fi
+
+if env \
+  PATH="$FAKE_BIN:$PATH" \
+  FAKE_OPENCODE_VERSION=v2.2.0 \
+  XDG_CONFIG_HOME="$herdr_profile_config_home" \
+  HERDR_ENV=1 \
+  DOTFILES_OPENCODE_HERDR_PRIVATE_CONFIG="$herdr_profile_config_home/opencode" \
+  "$DOTFILES_ROOT/bin/opencode-v2" --standalone --server http://127.0.0.1:4096 >/dev/null 2>&1; then
+  printf '%s\n' 'OpenCode V2 launcher accepted a shared Herdr server' >&2
+  exit 1
+fi
+
+if env \
+  PATH="$FAKE_BIN:$PATH" \
+  FAKE_OPENCODE_VERSION=v2.2.0 \
+  XDG_CONFIG_HOME="$herdr_profile_config_home" \
+  HERDR_ENV=1 \
+  DOTFILES_OPENCODE_HERDR_PRIVATE_CONFIG="$herdr_profile_config_home/opencode" \
+  "$DOTFILES_ROOT/bin/opencode-v2" --standalone --attach http://127.0.0.1:4096 >/dev/null 2>&1; then
+  printf '%s\n' 'OpenCode V2 launcher accepted a shared Herdr attachment' >&2
+  exit 1
+fi
+
 opencode_output=$(
   env \
     PATH="$FAKE_BIN:$PATH" \
     HOME="$FAKE_BIN/home" \
     XDG_CONFIG_HOME="$FAKE_BIN/default-config" \
+    OPENCODE_PROFILE_CONFIG_HOME="$herdr_profile_config_home" \
     OPENCODE_CONFIG_CONTENT='{"model":"openai/gpt-test"}' \
     HERDR_ENV=1 \
+    HERDR_AGENT_LAYOUT_WORKER=0 \
     "$FISH" --no-config -c \
       "source '$DOTFILES_ROOT/home/files/config/fish/conf.d/20_aliases.fish'; oc++ --prompt 'verify v2'"
 )
-assert_opencode_output "xdg=$FAKE_BIN/default-config"
+assert_opencode_output "xdg=$herdr_profile_config_home"
 assert_opencode_output '"default_agent":"herdr-supervisor"'
-assert_opencode_output '"model":"openai/gpt-test"'
+assert_opencode_output '"model":"openai/gpt-6-sol"'
+assert_opencode_output "marker=$herdr_profile_config_home/opencode"
 assert_opencode_output 'args|--standalone|--auto|--prompt|verify v2'
 case "$opencode_output" in
-  *'|--agent|'* | *'|--agent='*)
-    printf '%s\n' 'OpenCode V2 TUI wrapper passed the unsupported --agent flag' >&2
+  *'|--agent|'* | *'|--agent='* | *'|--model|'* | *'|--model='*)
+    printf '%s\n' 'OpenCode V2 full-TUI wrapper passed an unsupported agent or model flag' >&2
     printf '%s\n' "$opencode_output" >&2
     exit 1
     ;;
 esac
+
+opencode_output=$(
+  env \
+    PATH="$FAKE_BIN:$PATH" \
+    HOME="$FAKE_BIN/home" \
+    OPENCODE_PROFILE_CONFIG_HOME="$herdr_profile_config_home" \
+    HERDR_ENV=1 \
+    HERDR_AGENT_LAYOUT_WORKER=1 \
+    HERDR_OPENCODE_MODEL=openai/gpt-test \
+    "$DOTFILES_ROOT/bin/opencode-profile" herdr --prompt 'verify worker'
+)
+assert_opencode_output "xdg=$herdr_profile_config_home"
+assert_opencode_output '"default_agent":"herdr-worker"'
+assert_opencode_output '"model":"openai/gpt-test"'
+assert_opencode_output "marker=$herdr_profile_config_home/opencode"
+assert_opencode_output 'args|--standalone|--prompt|verify worker'
+
+if env \
+  PATH="$FAKE_BIN:$PATH" \
+  HOME="$FAKE_BIN/home" \
+  OPENCODE_PROFILE_CONFIG_HOME="$herdr_profile_config_home" \
+  HERDR_ENV=1 \
+  HERDR_AGENT_LAYOUT_WORKER=1 \
+  "$DOTFILES_ROOT/bin/opencode-profile" herdr >/dev/null 2>&1; then
+  printf '%s\n' 'OpenCode Herdr profile accepted a worker without a verified model' >&2
+  exit 1
+fi
+
+if env \
+  PATH="$FAKE_BIN:$PATH" \
+  HOME="$FAKE_BIN/home" \
+  OPENCODE_PROFILE_CONFIG_HOME="$herdr_profile_config_home" \
+  HERDR_ENV=1 \
+  HERDR_AGENT_LAYOUT_WORKER=0 \
+  "$DOTFILES_ROOT/bin/opencode-profile" herdr --server http://127.0.0.1:4096 >/dev/null 2>&1; then
+  printf '%s\n' 'OpenCode Herdr profile accepted a shared server' >&2
+  exit 1
+fi
 
 for profile in chat slim; do
   profile_config_home="$FAKE_BIN/profiles/$profile"
@@ -168,10 +327,12 @@ for profile in chat slim; do
       XDG_CONFIG_HOME="$FAKE_BIN/caller-config" \
       OPENCODE_PROFILE_CONFIG_HOME="$profile_config_home" \
       OPENCODE_CONFIG_CONTENT='{"model":"openai/gpt-test"}' \
+      DOTFILES_OPENCODE_HERDR_PRIVATE_CONFIG=/tmp/stale-herdr-profile \
       "$DOTFILES_ROOT/bin/opencode-profile" "$profile" --prompt "verify $profile"
   )
   assert_opencode_output "xdg=$profile_config_home"
   assert_opencode_output 'content=<unset>'
+  assert_opencode_output 'marker=<unset>'
   assert_opencode_output "args|--standalone|--prompt|verify $profile"
 done
 
@@ -197,72 +358,19 @@ esac
 
 printf '%s\n' 'OpenCode V2 profile tests: ok'
 
-FAKE_HOME="$FAKE_BIN/home"
-mkdir -p "$FAKE_HOME"
-cat >"$FAKE_BIN/happier" <<'EOF'
-#!/bin/sh
-
-printf 'backend=%s\n' "$HAPPIER_OPENCODE_BACKEND_MODE"
-printf 'worker=%s\n' "$HERDR_HAPPIER_WORKER"
-printf 'parent_session=%s\n' "${HAPPIER_SESSION_ID-<unset>}"
-printf 'state=%s\n' "${HAPPIER_OPENCODE_SERVER_STATE_PATH-<unset>}"
-printf 'server_url=%s\n' "${HAPPIER_OPENCODE_SERVER_URL-<unset>}"
-printf 'opencode_path=%s\n' "$HAPPIER_OPENCODE_PATH"
-printf 'config=%s\n' "$OPENCODE_CONFIG_CONTENT"
-printf 'args'
-for arg in "$@"; do
-  printf '|%s' "$arg"
-done
-printf '\n'
-EOF
-chmod +x "$FAKE_BIN/happier"
-
-worker_output=$(
-  env \
-    PATH="$FAKE_BIN:$PATH" \
-    HOME="$FAKE_HOME" \
-    HERDR_AGENT_LAYOUT_WORKER=1 \
-    HERDR_HAPPIER_PARENT_SESSION_ID=parent_123 \
-    HERDR_HAPPIER_WORKER_NAME=verify-worker \
-    HAPPIER_SESSION_ID=parent_should_not_leak \
-    HAPPIER_OPENCODE_SERVER_STATE_PATH=/tmp/parent-state.json \
-    HAPPIER_OPENCODE_SERVER_URL=http://127.0.0.1:1234 \
-    "$DOTFILES_ROOT/bin/happier-opencode-worker" \
-      --agent-mode 'Herdr Worker' \
-      --model openai/gpt-test
-)
-
-assert_worker_output() {
-  case "$worker_output" in
-    *"$1"*) return ;;
-    *)
-    printf '%s\n' 'Happier OpenCode worker wrapper test failed' >&2
-    printf 'missing: %s\n' "$1" >&2
-    printf '%s\n' "$worker_output" >&2
-    exit 1
-    ;;
-  esac
-}
-
-assert_worker_output 'backend=server'
-assert_worker_output 'worker=1'
-assert_worker_output 'parent_session=<unset>'
-assert_worker_output 'state=<unset>'
-assert_worker_output 'server_url=<unset>'
-assert_worker_output "opencode_path=$FAKE_BIN/opencode-v2"
-assert_worker_output "config={\"\$schema\":\"https://opencode.ai/config.json#herdr-parent_123-verify-worker\",\"default_agent\":\"herdr-worker\",\"model\":\"openai/gpt-test\"}"
-assert_worker_output 'args|opencode|--permission-mode|yolo|--agent-mode|herdr-worker|--model|openai/gpt-test'
-
-if env \
-  PATH="$FAKE_BIN:$PATH" \
-  HOME="$FAKE_HOME" \
+if happier_output=$(env \
   HERDR_AGENT_LAYOUT_WORKER=1 \
-  HERDR_HAPPIER_WORKER_NAME=verify-worker \
-  "$DOTFILES_ROOT/bin/happier-opencode-worker" \
-    --agent-mode 'Herdr Worker' \
-    --model openai/gpt-test >/dev/null 2>&1; then
-  printf '%s\n' 'Happier OpenCode worker wrapper accepted a missing parent session' >&2
+  "$DOTFILES_ROOT/bin/happier-opencode-worker" 2>&1); then
+  printf '%s\n' 'Happier OpenCode worker wrapper claimed unverified compatibility' >&2
   exit 1
 fi
+case "$happier_output" in
+  *'blocked until server-mode compatibility is live-verified'*) ;;
+  *)
+    printf '%s\n' 'Happier OpenCode worker wrapper returned an unexpected failure' >&2
+    printf '%s\n' "$happier_output" >&2
+    exit 1
+    ;;
+esac
 
-printf '%s\n' 'Happier OpenCode worker tests: ok'
+printf '%s\n' 'Happier OpenCode worker guard tests: ok'
