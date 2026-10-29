@@ -27,4 +27,11 @@ if [ "$major" -lt 2 ] \
     die "OpenCode 2.2.0 or newer is required (found: $version_output)"
 fi
 
+if [ "${HERDR_ENV:-}" = 1 ]; then
+    case "${1:-}" in
+        --version | -v | --help | -h) ;;
+        *) die 'Herdr pane sessions require session-bound shell attribution; OpenCode V2 does not expose it safely' ;;
+    esac
+fi
+
 exec "$opencode_bin" "$@"

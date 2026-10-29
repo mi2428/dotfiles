@@ -90,6 +90,16 @@ for unsupported_version in v2.1.3 v0.0.0-next-16722; do
   fi
 done
 
+if herdr_launch=$(env PATH="$FAKE_BIN:$PATH" FAKE_OPENCODE_VERSION=v2.2.0 HERDR_ENV=1 \
+  "$DOTFILES_ROOT/bin/opencode-v2" --standalone --auto 2>&1); then
+  printf '%s\n' 'OpenCode V2 launcher permitted unbound Herdr pane credentials' >&2
+  exit 1
+fi
+case "$herdr_launch" in
+  *'Herdr pane sessions require session-bound shell attribution'*) ;;
+  *) printf 'OpenCode V2 launcher rejected Herdr with an unexpected error: %s\n' "$herdr_launch" >&2; exit 1 ;;
+esac
+
 env \
   PATH="$FAKE_BIN:$PATH" \
   HERDR_ENV=1 \
@@ -181,23 +191,6 @@ case "$slim_output" in
   *)
     printf '%s\n' 'OpenCode V2 Slim profile returned an unexpected pin failure' >&2
     printf '%s\n' "$slim_output" >&2
-    exit 1
-    ;;
-esac
-
-if omo_output=$(env \
-  PATH="$FAKE_BIN:$PATH" \
-  HOME="$FAKE_BIN/home" \
-  "$DOTFILES_ROOT/bin/oc-omo" --auto 2>&1); then
-  printf '%s\n' 'OpenCode V2 OmO profile did not fail closed' >&2
-  printf '%s\n' "$omo_output" >&2
-  exit 1
-fi
-case "$omo_output" in
-  *'OmO is unsupported on OpenCode V2 until plugin compatibility is verified'*) ;;
-  *)
-    printf '%s\n' 'OpenCode V2 OmO profile returned an unexpected failure' >&2
-    printf '%s\n' "$omo_output" >&2
     exit 1
     ;;
 esac

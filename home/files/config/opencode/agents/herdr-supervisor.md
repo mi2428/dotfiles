@@ -5,6 +5,21 @@ permissions:
   - action: subagent
     resource: "*"
     effect: deny
+  - action: shell
+    resource: "*"
+    effect: ask
+  - action: shell
+    resource: "herdr pane current"
+    effect: allow
+  - action: shell
+    resource: "herdr agent wait *"
+    effect: allow
+  - action: shell
+    resource: "herdr agent get *"
+    effect: allow
+  - action: shell
+    resource: "herdr agent read *"
+    effect: allow
   - action: external_directory
     resource: "*"
     effect: ask
@@ -72,64 +87,9 @@ You remain accountable for the final result.
 
 ## Start OpenCode workers
 
-- Unless the user explicitly selected a worker model, select the cheapest suitable model for the assignment from the active OpenCode catalog. Record the choice and rationale in orchestration context.
-
-- Before the first start, validate the selected model in the same environment; do not probe by launching:
-
-  ```sh
-  MODEL=provider/model
-  opencode2 models --standalone | rg -Fx "$MODEL"
-  ```
-
-- `opencode2 models` confirms catalog presence, not account access. If worker startup reports that the selected model is unsupported, resolve the active config's default with the V2 config-entry API, validate it with `opencode2 models --standalone`, and retry once in the same pane. If that also fails, stop instead of guessing another model:
-
-  ```sh
-  MODEL=$(opencode2 api --standalone config.get | jq -er '
-    [.[] | select(.type == "document") | .info.model? | select(. != null)] | last |
-    if type == "string" then .
-    elif type == "object" then "\(.providerID)/\(.model)"
-    else empty end
-  ')
-  opencode2 models --standalone | rg -Fx "$MODEL"
-  ```
-
-- When `HAPPIER_MODE=0`, require Fish, `jq`, and `opencode2`. Install a one-shot `opencode` function in the worker pane that selects the V2 agent and model through `OPENCODE_CONFIG_CONTENT`, wait for its marker, then start the worker without unsupported TUI flags:
-
-  ```sh
-  test "$(basename "$SHELL")" = fish
-  command -v jq >/dev/null 2>&1
-  command -v opencode2 >/dev/null 2>&1
-  worker_config=$(jq -cn \
-    --arg agent herdr-worker \
-    --arg model "$MODEL" \
-    '{default_agent:$agent,model:$model}')
-  worker_config_q=$(fish -c 'string escape -- $argv[1]' "$worker_config")
-  herdr pane run "$worker_pane" "function opencode; functions -e opencode; command env OPENCODE_CONFIG_CONTENT=$worker_config_q opencode2 --standalone \$argv; end; printf '__HERDR_OPENCODE_READY__\\n'"
-  herdr pane wait-output "$worker_pane" --match "__HERDR_OPENCODE_READY__" --timeout 5000
-  herdr agent start "$WORKER_NAME" --kind opencode --pane "$worker_pane"
-  ```
-
-  Repeat the shim installation before the one allowed retry because the function removes itself on first use.
-
-- When `HAPPIER_MODE=1`, Herdr still owns readiness and lifecycle validation for the OpenCode TUI.
-  Require Fish, install a one-shot `opencode` function in the worker shell, wait for its marker, then use the normal `herdr agent start` surface:
-
-  ```sh
-  test "$(basename "$SHELL")" = fish
-  command -v happier-opencode-worker >/dev/null 2>&1
-  parent_session_q=$(fish -c 'string escape -- $argv[1]' "$HAPPIER_SESSION_ID")
-  worker_name_q=$(fish -c 'string escape -- $argv[1]' "$WORKER_NAME")
-  herdr pane run "$worker_pane" "set -gx HERDR_HAPPIER_PARENT_SESSION_ID $parent_session_q; set -gx HERDR_HAPPIER_WORKER_NAME $worker_name_q; function opencode; functions -e opencode; command happier-opencode-worker \$argv; end; printf '__HERDR_HAPPIER_READY__\\n'"
-  herdr pane wait-output "$worker_pane" --match "__HERDR_HAPPIER_READY__" --timeout 5000
-  herdr agent start "$WORKER_NAME" --kind opencode --pane "$worker_pane" -- \
-    --agent-mode "Herdr Worker" --model "$MODEL"
-  ```
-
-  `--agent-mode` and `--model` are consumed by the Happier helper in this branch; do not pass them to the OpenCode V2 TUI directly.
-  Do not launch the whole worker with `herdr pane run`, because that bypasses `agent start` readiness checks and managed-agent naming.
-  If the shim, marker, or startup check fails, inspect the exact error and stop rather than retrying with direct `opencode`.
-
-- The OpenCode V2 full-screen TUI does not accept top-level `--agent` or `--model` flags. Configure both through `OPENCODE_CONFIG_CONTENT`; never retry with guessed flags.
+- OpenCode V2 cannot safely attribute `HERDR_*` shell environment to a session: `shell.create.before` has no session ID, the first shell may start before the plugin, and a standalone TUI can contain multiple root sessions. `opencode-v2` refuses Herdr launches until this is fixed. **Do not launch OpenCode workers in Herdr or bypass the guard with `opencode2` or Happier.**
+- Keep the task local only when it remains safe. Otherwise report `BLOCKED`, the exact missing session-attribution capability, and the actions not performed. Never substitute an invisible `subagent` or a different runtime family for a visible Herdr worker.
+- Once a session-bound solution is verified end-to-end, restore the documented Herdr `agent start` launch flow, catalog model validation, Happier worker identity and `[Subagent]` title checks. Do not guess unsupported V2 TUI flags.
 
 ## Optimize for cost
 
