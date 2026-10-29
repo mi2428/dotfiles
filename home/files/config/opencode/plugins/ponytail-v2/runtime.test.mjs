@@ -73,3 +73,37 @@ test("registers V2 commands and session hooks", async () => {
   assert.equal(storage.get("mode"), "off");
   assert.deepEqual(offSystem, []);
 });
+
+test("migrates the legacy mode into plugin storage once", async () => {
+  const hooks = new Map();
+  const storage = new Map();
+  let legacyReads = 0;
+  const ctx = {
+    command: { transform: async () => {} },
+    session: { hook: async (name, hook) => hooks.set(name, hook) },
+    storage: {
+      get: async (key) => storage.get(key),
+      set: async (key, value) => storage.set(key, value),
+    },
+  };
+  const source = {
+    commands: [],
+    getDefaultMode: () => "full",
+    getPonytailInstructions: (mode) => `rules:${mode}`,
+    isDeactivationCommand: () => false,
+    normalizePersistedMode: normalize,
+  };
+
+  await registerPonytail(ctx, source, () => {
+    legacyReads += 1;
+    return "ultra";
+  });
+  assert.equal(storage.get("mode"), "ultra");
+  await hooks.get("context")({ system: [] });
+  await hooks.get("context")({ system: [] });
+  assert.equal(legacyReads, 1);
+
+  await registerPonytail(ctx, source, () => {
+    throw new Error("stored mode must skip legacy migration");
+  });
+});

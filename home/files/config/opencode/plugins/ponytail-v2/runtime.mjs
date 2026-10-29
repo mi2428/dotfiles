@@ -15,12 +15,15 @@ export function readStoredMode(value, normalize) {
 }
 
 export async function registerPonytail(ctx, source, readLegacyMode) {
-  const readMode = async () => {
-    const stored = readStoredMode(await ctx.storage.get("mode"), source.normalizePersistedMode);
-    return stored || readLegacyMode() || source.getDefaultMode();
-  };
+  const stored = readStoredMode(await ctx.storage.get("mode"), source.normalizePersistedMode);
+  if (stored === undefined) {
+    const legacy = readLegacyMode();
+    if (legacy) await ctx.storage.set("mode", legacy);
+  }
 
-  await readMode();
+  const readMode = async () => {
+    return readStoredMode(await ctx.storage.get("mode"), source.normalizePersistedMode) || source.getDefaultMode();
+  };
 
   await ctx.command.transform((editor) => {
     for (const command of source.commands) {
