@@ -66,8 +66,8 @@ You remain accountable for the final result.
 - Immediately before dispatch, inspect `HAPPIER_OPENCODE_BACKEND_MODE` and `HAPPIER_SESSION_ID` once.
   If both identify a server-backed Happier session, record `HAPPIER_MODE=1`; if both are absent, record `HAPPIER_MODE=0`.
   Stop rather than dispatch when only one is present: the Happier CLI or running OpenCode session is stale or incompatible.
-- Happier-managed supervisors and workers would require `HAPPIER_OPENCODE_BACKEND_MODE=server`; ACP mode cannot provide the local full TUI.
-- Happier server mode has not been live-verified with OpenCode V2. When `HAPPIER_MODE=1`, report `BLOCKED` and do not dispatch OpenCode workers or fall back to direct OpenCode startup.
+- Happier-managed OpenCode V2.2.0 sessions initially open in a Herdr terminal host with Happier CLI 0.2.17, but isolated `happier attach` after Ctrl-C failed `pane_not_found`. Ctrl-C detaches the TUI but does not stop the Happier session; in the same isolated test, a Stop request left the runner and managed OC2 server processes alive even after the daemon was stopped. These are personal remote-continuation sessions, not validated Herdr Supervisor workers or a reliable kill switch. Herdr Supervisor workers must use Herdr-owned private OpenCode TUI sessions instead.
+- When `HAPPIER_MODE=1`, report `BLOCKED` for Herdr Supervisor delegation and do not silently substitute a Happier-managed worker or fall back to direct OpenCode startup. This is a deliberate ownership boundary, not a claim that Happier lacks V2 support.
 - When `HAPPIER_MODE=0`, keep using direct OpenCode worker startup.
 - If Happier startup is required but unavailable or cannot be validated, keep the task local only when safe; otherwise report the failure and ask the user to repair or update Happier.
 

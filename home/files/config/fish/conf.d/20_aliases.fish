@@ -651,18 +651,6 @@ if command -sq opencode-v2
         __dotfiles_run_opencode opencode-v2 --auto $argv
     end
 
-    if command -sq happier
-        function oc+++ --wraps opencode-v2
-            if set -q HERDR_ENV; and test "$HERDR_ENV" = 1
-                printf '%s\n' 'oc+++: Happier OpenCode V2 is blocked until server-mode compatibility is live-verified' >&2
-                return 69
-            end
-
-            set -l opencode_path (command -s opencode-v2)
-            command env HAPPIER_OPENCODE_PATH="$opencode_path" HAPPIER_OPENCODE_BACKEND_MODE=server happier opencode --permission-mode yolo $argv
-        end
-    end
-
     if command -sq oc-slim
         function ocslim --wraps oc-slim
             __dotfiles_run_opencode oc-slim $argv

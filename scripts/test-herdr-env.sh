@@ -358,19 +358,6 @@ esac
 
 printf '%s\n' 'OpenCode V2 profile tests: ok'
 
-if happier_output=$(env \
-  HERDR_AGENT_LAYOUT_WORKER=1 \
-  "$DOTFILES_ROOT/bin/happier-opencode-worker" 2>&1); then
-  printf '%s\n' 'Happier OpenCode worker wrapper claimed unverified compatibility' >&2
-  exit 1
-fi
-case "$happier_output" in
-  *'blocked until server-mode compatibility is live-verified'*) ;;
-  *)
-    printf '%s\n' 'Happier OpenCode worker wrapper returned an unexpected failure' >&2
-    printf '%s\n' "$happier_output" >&2
-    exit 1
-    ;;
-esac
-
-printf '%s\n' 'Happier OpenCode worker guard tests: ok'
+env PATH="$FAKE_BIN:$PATH" "$FISH" --no-config -c \
+  "source '$DOTFILES_ROOT/home/files/config/fish/conf.d/20_aliases.fish'; not functions -q 'oc+++'"
+printf '%s\n' 'Happier personal-mode alias isolation: ok'
