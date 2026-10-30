@@ -24,6 +24,7 @@ in
 
   config = lib.mkIf (platformName != "docker") {
     home.packages = [ config.dotfiles.herdr.package ];
+    home.sessionVariables.HERDR_BIN_PATH = "${config.dotfiles.herdr.package}/bin/herdr";
     home.file.".local/bin/herdr" = {
       source = "${config.dotfiles.herdr.package}/bin/herdr";
     };

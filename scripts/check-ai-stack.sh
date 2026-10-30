@@ -391,12 +391,9 @@ warn 'Herdr targeted prompt, route isolation, recovery, and scoped Ctrl-C passed
 
 if command -v happier >/dev/null 2>&1; then
     happier_version=$(happier --version 2>/dev/null || true)
-    case "$happier_version" in
-        *0.2.12*) fail "Happier $happier_version cannot start OpenCode V2 sessions" ;;
-        *) warn 'Happier V2 server compatibility was not live-tested; use a V2-compatible Happier CLI build' ;;
-    esac
+    warn "Happier personal OC2 sessions are optional (installed: ${happier_version:-unknown}); isolated CLI 0.2.17 could host a V2.2.0 TUI, but reattach failed pane_not_found and Stop did not terminate the test runner/managed server"
 else
-    warn 'Happier is not installed; Happier worker startup was not tested'
+    warn 'Happier is not installed; Herdr workers do not depend on it'
 fi
 
 if command -v herdr >/dev/null 2>&1; then
