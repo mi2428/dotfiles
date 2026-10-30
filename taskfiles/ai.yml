@@ -5,6 +5,7 @@ tasks:
     desc: Check AI harness versions, V2 OpenCode profiles, Herdr integrations, and pinned plugins
     cmds:
       - '{{.REPO_ROOT}}/scripts/test-herdr-env.sh'
+      - 'node {{.REPO_ROOT}}/scripts/test-oc2-herdr-fixture.mjs'
       - '{{.REPO_ROOT}}/scripts/check-ai-stack.sh'
 
   ai.upgrade:

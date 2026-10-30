@@ -1,17 +1,23 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 const action = process.argv[2];
 const parse = (root) => readFile(path.join(root, "registration.json"), "utf8").then(JSON.parse);
-function stopOwner(state) {
-  const command = spawnSync("ps", ["-o", "command=", "-p", String(state.owner)], { encoding: "utf8" });
-  if (command.status !== 0 || !command.stdout.includes("experiment-oc2-herdr-pane.mjs --serve"))
+async function stopOwner(state, root) {
+  if (state.root !== path.resolve(root))
     throw new Error("Experiment owner no longer matches registration");
-  process.kill(state.owner, "SIGTERM");
+  const providerURL = new URL(JSON.parse(state.config).providers.probe.settings.baseURL);
+  if (providerURL.hostname !== "127.0.0.1") throw new Error("Experiment provider must be local");
+  const url = new URL("/__experiment_owner/stop", providerURL);
+  url.searchParams.set("root", state.root);
+  const response = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${state.password}` },
+    signal: AbortSignal.timeout(2000) });
+  if (response.status !== 202) throw new Error("Experiment owner refused stop request");
 }
 if (action === "--launch") {
   const state = await parse(process.argv[3]);
@@ -22,11 +28,15 @@ if (action === "--launch") {
       OPENCODE_PASSWORD: state.password, OPENCODE_CONFIG_CONTENT: state.config },
     stdio: "inherit",
   });
-  client.once("exit", (code) => {
-    try { stopOwner(state); } catch (error) { console.error(error.message); process.exitCode = 1; }
+  let finished = false;
+  const finish = async (code) => {
+    if (finished) return;
+    finished = true;
+    try { await stopOwner(state, process.argv[3]); } catch (error) { console.error(error.message); process.exitCode = 1; }
     if (process.exitCode !== 1) process.exitCode = code ?? 1;
-  });
-  client.once("error", (error) => { console.error(error.message); process.exitCode = 1; });
+  };
+  client.once("exit", (code) => { void finish(code); });
+  client.once("error", (error) => { console.error(error.message); void finish(1); });
 } else if (action === "--api") {
   const state = await parse(process.argv[3]);
   const method = process.argv[4];
@@ -50,6 +60,12 @@ if (action === "--launch") {
   const state = await parse(process.argv[3]);
   const statistics = JSON.parse(await readFile(path.join(state.root, "stream-stats.json"), "utf8"));
   console.log(JSON.stringify(statistics));
+} else if (action === "--provider") {
+  const state = await parse(process.argv[3]);
+  const baseURL = JSON.parse(state.config).providers?.probe?.settings?.baseURL;
+  const url = new URL(baseURL);
+  assert.equal(url.hostname, "127.0.0.1");
+  console.log(JSON.stringify({ baseURL: url.href, model: "probe/mock" }));
 } else if (action === "--events") {
   const state = await parse(process.argv[3]);
   const sessionID = process.argv[4];
@@ -66,7 +82,7 @@ if (action === "--launch") {
   console.log(JSON.stringify({ status: response.status, events: types }));
 } else if (action === "--stop") {
   const state = await parse(process.argv[3]);
-  stopOwner(state);
+  await stopOwner(state, process.argv[3]);
   console.log("Experiment owner stop requested");
 } else if (action === "--serve") {
   const binary = process.env.OPENCODE_V2_BIN;
@@ -77,7 +93,18 @@ if (action === "--launch") {
   await Promise.all(["config/opencode", "data", "state", "cache"].map((name) => mkdir(path.join(root, name), { recursive: true })));
   let cancelled = 0;
   await writeFile(path.join(root, "stream-stats.json"), JSON.stringify({ cancelled }));
+  const password = randomBytes(32).toString("base64url");
+  let stop;
   const provider = createServer(async (request, response) => {
+    if (request.url?.startsWith("/__experiment_owner/stop?")) {
+      const requestedRoot = new URL(request.url, "http://127.0.0.1").searchParams.get("root");
+      if (request.method !== "POST" || request.headers.authorization !== `Bearer ${password}` || requestedRoot !== root || !stop) {
+        response.writeHead(403); response.end(); return;
+      }
+      response.writeHead(202); response.end();
+      void stop().catch((error) => { console.error(error); process.exitCode = 1; });
+      return;
+    }
     if (request.url !== "/v1/chat/completions") { response.writeHead(404); response.end(); return; }
     response.on("close", () => {
       if (!response.writableFinished) void writeFile(path.join(root, "stream-stats.json"), JSON.stringify({ cancelled: ++cancelled }));
@@ -103,11 +130,10 @@ if (action === "--launch") {
         capabilities: { tools: true, input: ["text"], output: ["text"] }, limit: { context: 16384, output: 1024 } } } } },
   });
   const tuiPlugin = process.env.OPENCODE_EXPERIMENT_HERDR_PLUGIN;
-  assert(tuiPlugin && path.isAbsolute(tuiPlugin));
+  assert(tuiPlugin === "none" || (tuiPlugin && path.isAbsolute(tuiPlugin)));
   await writeFile(path.join(root, "config", "opencode", "cli.json"), JSON.stringify({
-    plugins: [tuiPlugin],
+    plugins: tuiPlugin === "none" ? [] : [tuiPlugin],
   }));
-  const password = randomBytes(32).toString("base64url");
   const env = { PATH: process.env.PATH, HOME: root, SHELL: process.env.SHELL ?? "/bin/zsh", TERM: "xterm-256color",
     XDG_CONFIG_HOME: path.join(root, "config"), XDG_DATA_HOME: path.join(root, "data"),
     XDG_STATE_HOME: path.join(root, "state"), XDG_CACHE_HOME: path.join(root, "cache"),
@@ -117,32 +143,45 @@ if (action === "--launch") {
   const server = spawn(binary, ["serve", "--stdio", "--port", "0"], {
     cwd: worktree, env, stdio: ["pipe", "pipe", "ignore"],
   });
-  let ready = "";
-  const url = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("V2 server readiness timeout")), 10000);
-    server.stdout.on("data", (chunk) => {
-      ready += chunk.toString();
-      if (!ready.includes("\n")) return;
-      clearTimeout(timer);
-      try { resolve(new URL(JSON.parse(ready.slice(0, ready.indexOf("\n"))).url).href); }
-      catch (error) { reject(error); }
-      server.stdout.removeAllListeners("data");
-      server.stdout.resume();
-    });
-    server.once("error", reject);
-  });
-  await writeFile(path.join(root, "registration.json"), JSON.stringify({ owner: process.pid, root, worktree,
-    binary, url, password, config }), { flag: "wx", mode: 0o600 });
-  console.log(`EXPERIMENT_DIR=${root}`);
-  const stop = async () => {
-    server.stdin.end();
-    if (server.exitCode === null) server.kill("SIGTERM");
+  let closedServer = false;
+  const closed = new Promise((resolve) => server.once("close", () => { closedServer = true; resolve(); }));
+  let stopPromise;
+  stop = () => stopPromise ??= (async () => {
+    if (!server.stdin.destroyed) server.stdin.end();
+    if (!closedServer) server.kill("SIGTERM");
+    await Promise.race([closed, delay(2000, undefined, { ref: false })]);
+    if (!closedServer) {
+      server.kill("SIGKILL");
+      await Promise.race([closed, delay(2000, undefined, { ref: false })]);
+      if (!closedServer) throw new Error("V2 server did not exit; experiment root retained");
+    }
+    provider.closeAllConnections();
     await new Promise((resolve) => provider.close(resolve));
     await rm(root, { recursive: true, force: true });
-    process.exit(0);
-  };
-  process.on("SIGTERM", () => { void stop(); });
-  process.on("SIGINT", () => { void stop(); });
-  await new Promise((resolve) => server.once("exit", resolve));
-  await stop();
+  })();
+  process.on("SIGTERM", () => { void stop().catch((error) => { console.error(error); process.exitCode = 1; }); });
+  process.on("SIGINT", () => { void stop().catch((error) => { console.error(error); process.exitCode = 1; }); });
+  let ready = "";
+  try {
+    const url = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("V2 server readiness timeout")), 10000);
+      server.stdout.on("data", (chunk) => {
+        ready += chunk.toString();
+        if (!ready.includes("\n")) return;
+        clearTimeout(timer);
+        try { resolve(new URL(JSON.parse(ready.slice(0, ready.indexOf("\n"))).url).href); }
+        catch (error) { reject(error); }
+        server.stdout.removeAllListeners("data");
+        server.stdout.resume();
+      });
+      server.once("error", (error) => { clearTimeout(timer); reject(error); });
+      server.once("close", () => { clearTimeout(timer); reject(new Error("V2 server closed before ready")); });
+    });
+    await writeFile(path.join(root, "registration.json"), JSON.stringify({ root, worktree,
+      binary, url, password, config }), { flag: "wx", mode: 0o600 });
+    console.log(`EXPERIMENT_DIR=${root}`);
+    await closed;
+  } finally {
+    await stop();
+  }
 } else throw new Error("Use --serve, --launch, --api, or --stop");
