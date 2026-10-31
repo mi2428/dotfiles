@@ -194,10 +194,11 @@ let
   };
   todoCliConfig = commonCliConfig // {
     plugins = [ "./tui-plugins/todo" ];
+    session.sidebar = "hide";
   };
   herdrCliConfig = todoCliConfig // {
     plugins = todoCliConfig.plugins ++ [ "./herdr-opencode" ];
-    session = {
+    session = todoCliConfig.session // {
       thinking = "show";
       grouping = "none";
       tps = true;
