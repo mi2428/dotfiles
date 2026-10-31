@@ -9,7 +9,7 @@ die() {
 is_repo_root() {
     candidate=$1
     [ -n "$candidate" ] || return 1
-    [ -d "$candidate/.git" ] || return 1
+    [ -d "$candidate/.git" ] || [ -f "$candidate/.git" ] || return 1
     [ -d "$candidate/home/files/config" ] || return 1
     [ -d "$candidate/bin" ] || return 1
 }
