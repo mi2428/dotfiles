@@ -1,4 +1,4 @@
-FROM ghcr.io/open-webui/open-webui:v0.12.4@sha256:a5b9e403d19154796850679c8c5d1295301cee954be8b84ddd62af92426558f7
+FROM ghcr.io/open-webui/open-webui:v0.12.5@sha256:0caf3d68199bcd8b7051775778691dfa5f3c8a355d1d6484000171b2974f40f9
 
 LABEL org.opencontainers.image.source="https://github.com/mi2428/dotfiles"
 
