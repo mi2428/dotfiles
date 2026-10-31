@@ -199,6 +199,9 @@ run_xdg_app() {
 
     app_name=$1
     shift
+    if [ "$app_name" = opencode ] && [ "${HERDR_ENV:-}" = 1 ]; then
+        die 'OpenCode in Herdr requires the managed private profile'
+    fi
 
     set_xdg_env "$app_name"
     exec "$app_name" "$@"

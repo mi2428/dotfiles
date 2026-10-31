@@ -51,7 +51,7 @@ Tasks
   hm.gc              Delete old generations and collect Nix garbage (run without sudo)
   brew.check         Check the repo-managed Brewfile against the local Homebrew state
   brew.sync          Update and upgrade Homebrew, then apply the repo-managed Brewfile
-  ai.check           Check AI harness versions, OpenCode profiles, Herdr integrations, and pinned plugins
+  ai.check           Check AI executables and OpenCode/Herdr profiles
   ai.upgrade         Upgrade external AI harnesses and OpenCode, then refresh the exact Slim pin
   ai.webui.check     Run local Open WebUI tests and static configuration checks
   ai.webui.up        Start Open WebUI and its local AI services with Docker

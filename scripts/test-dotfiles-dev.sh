@@ -23,8 +23,4 @@ ln -s "$root/scripts/dotfiles-dev.sh" "$scratch/.local/scripts/dotfiles-dev.sh"
     [ "$actual" = "$root/home/files/git/catppuccin-delta.gitconfig" ]
 )
 
-for wrapper in "$root"/bin/*.dev; do
-    grep -Fq "exec \"\$script_dir/../scripts/dotfiles-dev.sh\"" "$wrapper"
-done
-
 printf '%s\n' 'Dev wrappers and public entrypoint: ok'

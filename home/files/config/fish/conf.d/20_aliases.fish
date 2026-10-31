@@ -620,13 +620,12 @@ if command -sq codex
     alias codex++='codex --dangerously-bypass-approvals-and-sandbox'
 end
 
-if command -sq opencode-v2
+if command -sq opencode
     # The default root stays framework-plugin-free. `oc-slim` selects its
-    # isolated V2 plugin root.
+    # isolated plugin root.
     function __dotfiles_run_opencode --argument-names executable
         set -e argv[1]
-        # Only the managed Herdr profile can authorize a private V2 TUI.
-        if test "$executable" = opencode-v2; and set -q HERDR_ENV; and test "$HERDR_ENV" = 1
+        if test "$executable" = opencode; and set -q HERDR_ENV; and test "$HERDR_ENV" = 1
             command opencode-profile herdr $argv
             return $status
         end
@@ -643,12 +642,12 @@ if command -sq opencode-v2
         command $executable $standalone_args $argv
     end
 
-    function oc --wraps opencode-v2
-        __dotfiles_run_opencode opencode-v2 $argv
+    function oc --wraps opencode
+        __dotfiles_run_opencode opencode $argv
     end
 
-    function oc++ --wraps opencode-v2
-        __dotfiles_run_opencode opencode-v2 --auto $argv
+    function oc++ --wraps opencode
+        __dotfiles_run_opencode opencode --auto $argv
     end
 
     if command -sq oc-slim

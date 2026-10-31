@@ -25,10 +25,18 @@ if [ ! -f "$profile_config/opencode.jsonc" ]; then
     printf '%s\n' 'run the Home Manager activation, then retry' >&2
     exit 78
 fi
+if [ "${HERDR_ENV:-}" = 1 ] && [ "$profile" != herdr ]; then
+    printf '%s\n' 'opencode-profile: Herdr sessions require the managed private profile' >&2
+    exit 69
+fi
 if [ "$profile" = herdr ]; then
     [ "${HERDR_ENV:-}" = 1 ] || {
         printf '%s\n' 'opencode-profile: the Herdr profile requires a Herdr pane' >&2
         exit 69
+    }
+    [ -f "$profile_config/cli.json" ] || {
+        printf 'opencode-profile: Herdr cli.json is missing: %s\n' "$profile_config" >&2
+        exit 78
     }
     command -v jq >/dev/null 2>&1 || {
         printf '%s\n' 'opencode-profile: jq is required to build the private Herdr config' >&2
@@ -103,12 +111,10 @@ export OPENCODE_CHILD_XDG_CONFIG_HOME="$caller_config_home"
 export XDG_CONFIG_HOME="$profile_config_home"
 # Do not let an externally supplied OpenCode config override the selected
 # profile (the profile switch itself is the source of truth).
-unset OPENCODE_CONFIG OPENCODE_CONFIG_CONTENT OPENCODE_CONFIG_DIR \
-    DOTFILES_OPENCODE_HERDR_PRIVATE_CONFIG
+unset OPENCODE_CONFIG OPENCODE_CONFIG_CONTENT OPENCODE_CONFIG_DIR
 if [ "$profile" = herdr ]; then
     unset OPENCODE_CLI_CONFIG_CONTENT
     export OPENCODE_CONFIG_CONTENT="$herdr_config"
-    export DOTFILES_OPENCODE_HERDR_PRIVATE_CONFIG="$profile_config"
 fi
 if [ "$profile" = slim ]; then
     # Slim's background orchestration is an OpenCode experimental feature.
@@ -129,6 +135,6 @@ for arg do
 done
 
 if [ "$use_standalone" = true ]; then
-    exec opencode-v2 --standalone "$@"
+    exec opencode --standalone "$@"
 fi
-exec opencode-v2 "$@"
+exec opencode "$@"

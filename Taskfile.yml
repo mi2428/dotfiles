@@ -69,7 +69,7 @@ tasks:
         printf "$task_fmt" "$green" 'hm.gc' "$reset" 'Delete old generations and collect Nix garbage (run without sudo)'
         printf "$task_fmt" "$green" 'brew.check' "$reset" 'Check the repo-managed Brewfile against the local Homebrew state'
         printf "$task_fmt" "$green" 'brew.sync' "$reset" 'Update Homebrew, then upgrade and apply the repo-managed Brewfile'
-        printf "$task_fmt" "$green" 'ai.check' "$reset" 'Check AI harness versions, OpenCode profiles, Herdr integrations, and pinned plugins'
+        printf "$task_fmt" "$green" 'ai.check' "$reset" 'Check AI executables and OpenCode/Herdr profiles'
         printf "$task_fmt" "$green" 'ai.upgrade' "$reset" 'Upgrade external AI harnesses and OpenCode, then refresh the exact Slim pin'
         printf "$task_fmt" "$green" 'ai.webui.up' "$reset" 'Start Open WebUI and its local AI services with Docker'
         printf "$task_fmt" "$green" 'ai.webui.down' "$reset" 'Stop Open WebUI and its local development services'

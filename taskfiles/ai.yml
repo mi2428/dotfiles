@@ -2,7 +2,7 @@ version: '3'
 
 tasks:
   ai.check:
-    desc: Check AI harness versions, OpenCode profiles, Herdr integrations, and pinned plugins
+    desc: Check AI executables and OpenCode/Herdr profiles
     cmds:
       - '{{.REPO_ROOT}}/scripts/test-herdr-env.sh'
       - 'node {{.REPO_ROOT}}/scripts/test-oc2-herdr-fixture.mjs'
