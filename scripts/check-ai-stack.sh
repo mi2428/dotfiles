@@ -380,7 +380,7 @@ else
     fail 'the default OpenCode profile exposes Chat through the V2 API'
 fi
 
-if grep -Fq 'DOTFILES_OPENCODE_HERDR_PRIVATE_CONFIG' "$repo_root/bin/opencode-profile" \
+if grep -Fq 'DOTFILES_OPENCODE_HERDR_PRIVATE_CONFIG' "$repo_root/scripts/opencode-profile.sh" \
     && grep -Fq 'Herdr OpenCode V2 must use the managed private profile' "$repo_root/bin/opencode-v2" \
     && grep -Fq 'Herdr OpenCode V2 cannot use a shared server' "$repo_root/bin/opencode-v2"; then
     ok 'OpenCode V2 Herdr startup is limited to the managed private standalone profile'

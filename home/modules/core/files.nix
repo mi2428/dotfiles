@@ -140,6 +140,8 @@ in {
   };
 
   home.file = binFiles // macCompatibilityFiles // {
+    ".local/scripts/dotfiles-dev.sh" = mkLink ../../../scripts/dotfiles-dev.sh;
+    ".local/scripts/opencode-profile.sh" = mkLink ../../../scripts/opencode-profile.sh;
     ".codex/dot-q.config.toml" = mkLink ../../files/codex-dot-q.config.toml;
     ".codex/en.config.toml" = mkLink ../../files/codex-en.config.toml;
     ".local/libexec/dotfiles/codex-nvim-edit-event" = mkLink codexNvimEditEvent;

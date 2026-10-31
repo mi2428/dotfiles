@@ -4,8 +4,10 @@ set -eu
 
 DOTFILES_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 FISH=$(command -v fish)
-FAKE_BIN=$(mktemp -d)
-trap 'rm -rf "$FAKE_BIN"' EXIT
+FAKE_ROOT=$(mktemp -d)
+FAKE_BIN=$FAKE_ROOT/bin
+mkdir -p "$FAKE_BIN" "$FAKE_ROOT/scripts"
+trap 'rm -rf "$FAKE_ROOT"' EXIT
 
 qa_remove_legacy_file() {
   path=$1
@@ -118,6 +120,7 @@ done
 printf '\n'
 EOF
 chmod +x "$FAKE_BIN/opencode-v2"
+ln -s "$DOTFILES_ROOT/scripts/opencode-profile.sh" "$FAKE_ROOT/scripts/opencode-profile.sh"
 ln -s "$DOTFILES_ROOT/bin/opencode-profile" "$FAKE_BIN/opencode-profile"
 
 cat >"$FAKE_BIN/opencode" <<'EOF'
@@ -146,7 +149,7 @@ case "$runtime_version" in
     ;;
 esac
 
-for unsupported_version in v2.1.3 v0.0.0-next-16722; do
+for unsupported_version in v1.19.3 v2.1.3 v0.0.0-next-16722; do
   if env PATH="$FAKE_BIN:$PATH" FAKE_OPENCODE_VERSION="$unsupported_version" \
     "$DOTFILES_ROOT/bin/opencode-v2" --version >/dev/null 2>&1; then
     printf 'OpenCode V2 launcher accepted an unsupported version: %s\n' "$unsupported_version" >&2
