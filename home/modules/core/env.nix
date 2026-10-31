@@ -1,4 +1,4 @@
-{ ... }: {
+_: {
   home.sessionPath = [
     "$HOME/.nix-profile/bin"
     "/run/current-system/sw/bin"

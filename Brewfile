@@ -125,7 +125,7 @@ brew "nmap"
 brew "node"
 brew "numbat"
 brew "ollama"
-brew "anomalyco/tap/opencode", trusted: true
+brew "anomalyco/tap/opencode-v2", trusted: true
 brew "pinentry-mac"
 brew "pipenv"
 brew "pipx"

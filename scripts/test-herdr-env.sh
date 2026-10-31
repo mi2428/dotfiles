@@ -1,126 +1,112 @@
 #!/bin/sh
-
 set -eu
 
-DOTFILES_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-FISH=$(command -v fish)
-FAKE_BIN=$(mktemp -d)
-trap 'rm -rf "$FAKE_BIN"' EXIT
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+fish=$(command -v fish)
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/herdr-env.XXXXXX")
+trap 'rm -rf -- "$scratch"' EXIT
+bin=$scratch/bin
+mkdir -p "$bin" "$scratch/scripts" "$scratch/profiles/herdr/opencode" "$scratch/profiles/chat/opencode"
 
-cat >"$FAKE_BIN/ps" <<'EOF'
+cat >"$bin/ps" <<'EOF'
 #!/bin/sh
-
 pid=
 field=
 while [ "$#" -gt 0 ]; do
-  case "$1" in
-    -p) pid=$2; shift 2 ;;
-    -o) field=$2; shift 2 ;;
-    *) shift ;;
-  esac
+    case "$1" in
+        -p) pid=$2; shift 2 ;;
+        -o) field=$2; shift 2 ;;
+        *) shift ;;
+    esac
 done
-
 case "$field" in
-  ppid=)
-    case "${FAKE_PS_MODE:-stale}:$pid" in
-      live:42 | stale:43) printf '%s\n' 1 ;;
-      stale:42) printf '%s\n' 43 ;;
-      *) printf '%s\n' 42 ;;
-    esac
-    ;;
-  comm=)
-    case "${FAKE_PS_MODE:-stale}:$pid" in
-      live:42 | stale:43) printf '%s\n' /opt/homebrew/bin/herdr ;;
-      *) printf '%s\n' /Applications/Ghostty.app/Contents/MacOS/ghostty ;;
-    esac
-    ;;
+    ppid=)
+        case "${FAKE_PS_MODE:-stale}:$pid" in
+            live:42 | stale:43) printf '%s\n' 1 ;;
+            stale:42) printf '%s\n' 43 ;;
+            *) printf '%s\n' 42 ;;
+        esac
+        ;;
+    comm=)
+        case "${FAKE_PS_MODE:-stale}:$pid" in
+            live:42 | stale:43) printf '%s\n' /opt/homebrew/bin/herdr ;;
+            *) printf '%s\n' /Applications/Ghostty.app/Contents/MacOS/ghostty ;;
+        esac
+        ;;
 esac
 EOF
-chmod +x "$FAKE_BIN/ps"
-
-env \
-  PATH="$FAKE_BIN:$PATH" \
-  HERDR_ENV=1 \
-  HERDR_SOCKET_PATH=/tmp/stale.sock \
-  HERDR_FUTURE_MARKER=stale \
-  "$FISH" --no-config -c \
-  "source '$DOTFILES_ROOT/home/files/config/fish/conf.d/10_general.fish'; not set -q HERDR_ENV; and not set -q HERDR_SOCKET_PATH; and not set -q HERDR_FUTURE_MARKER"
-
-env \
-  PATH="$FAKE_BIN:$PATH" \
-  FAKE_PS_MODE=live \
-  HERDR_ENV=1 \
-  HERDR_SOCKET_PATH=/tmp/live.sock \
-  HERDR_FUTURE_MARKER=live \
-  "$FISH" --no-config -c \
-  "source '$DOTFILES_ROOT/home/files/config/fish/conf.d/10_general.fish'; test \"\$HERDR_ENV\" = 1; and test \"\$HERDR_SOCKET_PATH\" = /tmp/live.sock; and test \"\$HERDR_FUTURE_MARKER\" = live"
-
-printf '%s\n' 'Herdr environment tests: ok'
-
-FAKE_HOME="$FAKE_BIN/home"
-mkdir -p "$FAKE_HOME"
-cat >"$FAKE_BIN/happier" <<'EOF'
+cat >"$bin/opencode" <<'EOF'
 #!/bin/sh
-
-printf 'backend=%s\n' "$HAPPIER_OPENCODE_BACKEND_MODE"
-printf 'worker=%s\n' "$HERDR_HAPPIER_WORKER"
-printf 'parent_session=%s\n' "${HAPPIER_SESSION_ID-<unset>}"
-printf 'state=%s\n' "${HAPPIER_OPENCODE_SERVER_STATE_PATH-<unset>}"
-printf 'server_url=%s\n' "${HAPPIER_OPENCODE_SERVER_URL-<unset>}"
-printf 'config=%s\n' "$OPENCODE_CONFIG_CONTENT"
+printf 'xdg=%s\n' "$XDG_CONFIG_HOME"
+printf 'content=%s\n' "${OPENCODE_CONFIG_CONTENT-<unset>}"
 printf 'args'
-for arg in "$@"; do
-  printf '|%s' "$arg"
-done
+for arg do printf '|%s' "$arg"; done
 printf '\n'
 EOF
-chmod +x "$FAKE_BIN/happier"
+chmod +x "$bin/ps" "$bin/opencode"
+ln -s "$root/bin/opencode-profile" "$bin/opencode-profile"
+ln -s "$root/scripts/opencode-profile.sh" "$scratch/scripts/opencode-profile.sh"
 
-worker_output=$(
-  env \
-    PATH="$FAKE_BIN:$PATH" \
-    HOME="$FAKE_HOME" \
-    HERDR_AGENT_LAYOUT_WORKER=1 \
-    HERDR_HAPPIER_PARENT_SESSION_ID=parent_123 \
-    HERDR_HAPPIER_WORKER_NAME=verify-worker \
-    HAPPIER_SESSION_ID=parent_should_not_leak \
-    HAPPIER_OPENCODE_SERVER_STATE_PATH=/tmp/parent-state.json \
-    HAPPIER_OPENCODE_SERVER_URL=http://127.0.0.1:1234 \
-    "$DOTFILES_ROOT/bin/happier-opencode-worker" \
-      --agent-mode 'Herdr Worker' \
-      --model openai/gpt-test
-)
+env PATH="$bin:$PATH" HERDR_ENV=1 HERDR_SOCKET_PATH=/tmp/stale.sock \
+    "$fish" --no-config -c \
+    "source '$root/home/files/config/fish/conf.d/10_general.fish'; not set -q HERDR_ENV; and not set -q HERDR_SOCKET_PATH"
+env PATH="$bin:$PATH" FAKE_PS_MODE=live HERDR_ENV=1 HERDR_SOCKET_PATH=/tmp/live.sock \
+    "$fish" --no-config -c \
+    "source '$root/home/files/config/fish/conf.d/10_general.fish'; test \"\$HERDR_ENV\" = 1; and test \"\$HERDR_SOCKET_PATH\" = /tmp/live.sock"
 
-assert_worker_output() {
-  case "$worker_output" in
-    *"$1"*) return ;;
+herdr_config=$scratch/profiles/herdr
+printf '%s\n' '{}' >"$herdr_config/opencode/opencode.jsonc"
+printf '%s\n' '{}' >"$herdr_config/opencode/cli.json"
+printf '%s\n' '{}' >"$scratch/profiles/chat/opencode/opencode.jsonc"
+
+output=$(env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$herdr_config" \
+    HERDR_ENV=1 "$fish" --no-config -c \
+    "source '$root/home/files/config/fish/conf.d/20_aliases.fish'; oc++ --prompt test")
+case "$output" in
+    *"xdg=$herdr_config"*'"default_agent":"herdr-supervisor"'*'args|--standalone|--auto|--prompt|test'*) ;;
     *)
-    printf '%s\n' 'Happier OpenCode worker wrapper test failed' >&2
-    printf 'missing: %s\n' "$1" >&2
-    printf '%s\n' "$worker_output" >&2
+        printf '%s\n' 'Herdr supervisor did not start a private profile' >&2
+        exit 1
+        ;;
+esac
+
+output=$(env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$herdr_config" \
+    HERDR_ENV=1 HERDR_AGENT_LAYOUT_WORKER=1 HERDR_OPENCODE_MODEL=openai/gpt-test \
+    "$bin/opencode-profile" herdr --prompt test)
+case "$output" in
+    *'"default_agent":"herdr-worker"'*'"model":"openai/gpt-test"'*'args|--standalone|--prompt|test'*) ;;
+    *)
+        printf '%s\n' 'Herdr worker did not start a private profile' >&2
+        exit 1
+        ;;
+esac
+
+if env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$herdr_config" \
+    HERDR_ENV=1 HERDR_AGENT_LAYOUT_WORKER=1 "$bin/opencode-profile" herdr >/dev/null 2>&1; then
+    printf '%s\n' 'Herdr worker started without a model' >&2
     exit 1
-    ;;
-  esac
-}
-
-assert_worker_output 'backend=server'
-assert_worker_output 'worker=1'
-assert_worker_output 'parent_session=<unset>'
-assert_worker_output 'state=<unset>'
-assert_worker_output 'server_url=<unset>'
-assert_worker_output "config={\"\$schema\":\"https://opencode.ai/config.json#herdr-parent_123-verify-worker\",\"default_agent\":\"Herdr Worker\",\"model\":\"openai/gpt-test\"}"
-assert_worker_output 'args|opencode|--permission-mode|yolo|--agent-mode|Herdr Worker|--model|openai/gpt-test'
-
-if env \
-  PATH="$FAKE_BIN:$PATH" \
-  HOME="$FAKE_HOME" \
-  HERDR_AGENT_LAYOUT_WORKER=1 \
-  HERDR_HAPPIER_WORKER_NAME=verify-worker \
-  "$DOTFILES_ROOT/bin/happier-opencode-worker" \
-    --agent-mode 'Herdr Worker' \
-    --model openai/gpt-test >/dev/null 2>&1; then
-  printf '%s\n' 'Happier OpenCode worker wrapper accepted a missing parent session' >&2
-  exit 1
+fi
+for arg in --server=http://127.0.0.1:4096 --attach=http://127.0.0.1:4096; do
+    if env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$herdr_config" \
+        HERDR_ENV=1 "$bin/opencode-profile" herdr "$arg" >/dev/null 2>&1; then
+        printf '%s\n' 'Herdr accepted a shared server' >&2
+        exit 1
+    fi
+done
+if env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$scratch/profiles/chat" \
+    HERDR_ENV=1 "$bin/opencode-profile" chat >/dev/null 2>&1; then
+    printf '%s\n' 'Herdr accepted a non-private profile' >&2
+    exit 1
+fi
+if env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$herdr_config" \
+    HERDR_ENV=0 "$bin/opencode-profile" herdr >/dev/null 2>&1; then
+    printf '%s\n' 'Herdr profile started outside Herdr' >&2
+    exit 1
+fi
+if env PATH="$bin:$PATH" HOME="$scratch/home" DOTFILES_REPO_ROOT="$root" HERDR_ENV=1 \
+    "$root/bin/opencode.dev" >/dev/null 2>&1; then
+    printf '%s\n' 'OpenCode dev launcher bypassed the Herdr profile' >&2
+    exit 1
 fi
 
-printf '%s\n' 'Happier OpenCode worker tests: ok'
+printf '%s\n' 'Herdr profile launch and isolation: ok'

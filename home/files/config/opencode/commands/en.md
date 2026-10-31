@@ -1,8 +1,7 @@
 ---
 description: Translate short Japanese text into Title, OSS, and Chat English
-model: openai/gpt-5.6-luna
-variant: low
-subtask: true
+model: openai/gpt-5.6-luna#low
+subagent: true
 ---
 
 Translate the following short Japanese text into three natural English versions:

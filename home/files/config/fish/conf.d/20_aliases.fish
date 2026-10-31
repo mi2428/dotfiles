@@ -621,19 +621,25 @@ if command -sq codex
 end
 
 if command -sq opencode
-    # The default XDG root stays framework-plugin-free. `oc-omo` and `oc-slim`
-    # select isolated framework roots while all three keep the shared Todo HUD.
+    # The default root stays framework-plugin-free. `oc-slim` selects its
+    # isolated plugin root.
     function __dotfiles_run_opencode --argument-names executable
         set -e argv[1]
-        set -l agent_args
+        if test "$executable" = opencode; and set -q HERDR_ENV; and test "$HERDR_ENV" = 1
+            command opencode-profile herdr $argv
+            return $status
+        end
 
-        if set -q HERDR_ENV; and test "$HERDR_ENV" = 1; and command -sq herdr
-            if not contains -- --agent $argv; and not string match -q -- '--agent=*' $argv
-                set agent_args --agent 'Herdr Supervisor'
+        set -l standalone_args --standalone
+
+        for arg in $argv
+            if test "$arg" = --server; or string match -q -- '--server=*' "$arg"
+                set standalone_args
+                break
             end
         end
 
-        command $executable $agent_args $argv
+        command $executable $standalone_args $argv
     end
 
     function oc --wraps opencode
@@ -644,31 +650,6 @@ if command -sq opencode
         __dotfiles_run_opencode opencode --auto $argv
     end
 
-    if command -sq happier
-        function oc+++ --wraps opencode
-            set -l agent_args
-            set -l config_content '{}'
-
-            if set -q HERDR_ENV; and test "$HERDR_ENV" = 1; and command -sq herdr
-                if not contains -- --agent-mode $argv; and not string match -q -- '--agent-mode=*' $argv
-                    set agent_args --agent-mode 'Herdr Supervisor'
-                end
-                set config_content '{"default_agent":"Herdr Supervisor"}'
-            end
-
-            command env HAPPIER_OPENCODE_BACKEND_MODE=server OPENCODE_CONFIG_CONTENT="$config_content" happier opencode --permission-mode yolo $agent_args $argv
-        end
-    end
-
-    if command -sq oc-omo
-        function ocomo --wraps oc-omo
-            __dotfiles_run_opencode oc-omo $argv
-        end
-
-        function ocomo++ --wraps oc-omo
-            __dotfiles_run_opencode oc-omo --auto $argv
-        end
-    end
     if command -sq oc-slim
         function ocslim --wraps oc-slim
             __dotfiles_run_opencode oc-slim $argv

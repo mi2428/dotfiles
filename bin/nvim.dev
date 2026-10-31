@@ -68,4 +68,4 @@ if ! command -v node >/dev/null 2>&1 ||
     export PATH MARKDOWN_PREVIEW_MERMAID_JS
 fi
 
-exec "$script_dir/dotfiles-dev" xdg nvim "$@"
+exec "$script_dir/../scripts/dotfiles-dev.sh" xdg nvim "$@"

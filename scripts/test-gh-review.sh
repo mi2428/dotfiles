@@ -42,7 +42,8 @@ exit 99
 EOF
 chmod +x "$TEST_ROOT/bin/gh" "$TEST_ROOT/bin/tmux" "$TEST_ROOT/bin/nvim"
 
-actual=$(HOME="$TEST_ROOT/home" \
+# shellcheck disable=SC2016 # Variables expand in fish, not this shell.
+actual=$(env HOME="$TEST_ROOT/home" \
     XDG_CACHE_HOME="$TEST_ROOT/cache" \
     PATH="$TEST_ROOT/bin:$DOTFILES_ROOT/bin:$PATH" \
     DOTFILES_ROOT="$DOTFILES_ROOT" \

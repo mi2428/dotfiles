@@ -1,4 +1,10 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  platformName,
+  ...
+}:
 let
   mkLink = source: {
     force = true;
@@ -26,30 +32,26 @@ let
     ln -s "${../../files/config/yazi/plugins/enter-cd-or-open.yazi}" "$out/plugins/enter-cd-or-open.yazi"
   '';
   binRoot = ../../../bin;
-  binFiles = lib.mapAttrs'
-    (name: _: lib.nameValuePair ".local/bin/${name}" (mkLink (binRoot + "/${name}")))
-    (lib.filterAttrs (_: type: type == "regular") (builtins.readDir binRoot));
+  binFiles = lib.mapAttrs' (
+    name: _: lib.nameValuePair ".local/bin/${name}" (mkLink (binRoot + "/${name}"))
+  ) (lib.filterAttrs (_: type: type == "regular") (builtins.readDir binRoot));
   codexNvimEditEvent = ../../files/libexec/dotfiles/codex-nvim-edit-event;
   ghReviewPreview = ../../files/libexec/dotfiles/gh-review-preview;
-  hermesConfig = config.lib.file.mkOutOfStoreSymlink
-    "${config.home.homeDirectory}/dotfiles/home/files/hermes/config.yaml";
+  hermesConfig = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/home/files/hermes/config.yaml";
   macCompatibilityFiles = lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
     "Library/Application Support/com.mitchellh.ghostty/themes" =
       mkLink ../../files/config/ghostty/themes;
-    "Library/Application Support/lazygit/config.yml" =
-      mkLink ../../files/config/lazygit/config.yml;
-    "Library/Application Support/lazygit/functions.sh" =
-      mkLink ../../files/config/lazygit/functions.sh;
+    "Library/Application Support/lazygit/config.yml" = mkLink ../../files/config/lazygit/config.yml;
+    "Library/Application Support/lazygit/functions.sh" = mkLink ../../files/config/lazygit/functions.sh;
     "Library/Application Support/lazygit/themes-mergable" =
       mkLink ../../files/config/lazygit/themes-mergable;
     "Library/Application Support/jesseduffield/lazydocker/config.yml" =
       mkLink ../../files/config/lazydocker/config.yml;
-    "Library/Application Support/k9s/config.yaml" =
-      mkLink ../../files/config/k9s/config.yaml;
-    "Library/Application Support/k9s/skins" =
-      mkLink ../../files/config/k9s/skins;
+    "Library/Application Support/k9s/config.yaml" = mkLink ../../files/config/k9s/config.yaml;
+    "Library/Application Support/k9s/skins" = mkLink ../../files/config/k9s/skins;
   };
-in {
+in
+{
   xdg.configFile = {
     "atuin/config.toml" = mkLink ../../files/config/atuin/config.toml;
     "bat" = mkLink ../../files/config/bat;
@@ -73,63 +75,62 @@ in {
     "yazi" = mkLink yaziConfig;
   };
 
-  home.file = binFiles // macCompatibilityFiles // {
-    ".codex/dot-q.config.toml" = mkLink ../../files/codex-dot-q.config.toml;
-    ".codex/en.config.toml" = mkLink ../../files/codex-en.config.toml;
-    ".local/libexec/dotfiles/codex-nvim-edit-event" = mkLink codexNvimEditEvent;
-    ".local/libexec/dotfiles/gh-review-preview" = mkLink ghReviewPreview;
-    ".gitignore" = mkLink ../../files/git/gitignore;
-    ".curlrc" = mkLink ../../files/curl/curlrc;
-    ".lesskey" = mkLink ../../files/less/lesskey;
-    ".screenrc" = mkLink ../../files/screen/screenrc;
-    ".wgetrc" = mkLink ../../files/wget/wgetrc;
-    ".hermes/config.yaml" = mkLink hermesConfig;
-  };
+  home = {
+    file =
+      binFiles
+      // macCompatibilityFiles
+      // {
+        ".local/scripts/dotfiles-dev.sh" = mkLink ../../../scripts/dotfiles-dev.sh;
+        ".local/scripts/opencode-profile.sh" = mkLink ../../../scripts/opencode-profile.sh;
+        ".codex/dot-q.config.toml" = mkLink ../../files/codex-dot-q.config.toml;
+        ".codex/en.config.toml" = mkLink ../../files/codex-en.config.toml;
+        ".local/libexec/dotfiles/codex-nvim-edit-event" = mkLink codexNvimEditEvent;
+        ".local/libexec/dotfiles/gh-review-preview" = mkLink ghReviewPreview;
+        ".gitignore" = mkLink ../../files/git/gitignore;
+        ".curlrc" = mkLink ../../files/curl/curlrc;
+        ".lesskey" = mkLink ../../files/less/lesskey;
+        ".screenrc" = mkLink ../../files/screen/screenrc;
+        ".wgetrc" = mkLink ../../files/wget/wgetrc;
+        ".hermes/config.yaml" = mkLink hermesConfig;
+      };
 
-  # Herdr's installers are idempotent and keep each harness hook at the
-  # integration version shipped by the installed Herdr binary. Run this after
-  # links exist so the generated OpenCode plugin can also feed isolated roots.
-  home.activation.installHerdrAgentIntegrations = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-    herdr_bin="$(command -v herdr || true)"
-    if [ -z "$herdr_bin" ]; then
-      for candidate in /opt/homebrew/bin/herdr /usr/local/bin/herdr /home/linuxbrew/.linuxbrew/bin/herdr; do
-        if [ -x "$candidate" ]; then
-          herdr_bin="$candidate"
-          break
-        fi
-      done
-    fi
-
-    if [ -n "$herdr_bin" ]; then
-      for target in claude codex opencode; do
-        if command -v "$target" >/dev/null 2>&1 \
-          || [ -x "/opt/homebrew/bin/$target" ] \
-          || [ -x "/usr/local/bin/$target" ] \
-          || [ -x "/home/linuxbrew/.linuxbrew/bin/$target" ]; then
-          if [ "$target" = opencode ]; then
-            tui_config="${config.home.homeDirectory}/.config/opencode/tui.json"
-            if [ -L "$tui_config" ]; then
-              writable_copy="$(mktemp "$tui_config.XXXXXX")"
-              cp "$tui_config" "$writable_copy"
-              chmod 0644 "$writable_copy"
-              mv -f "$writable_copy" "$tui_config"
-            fi
+    activation = {
+      installHerdrAgentIntegrations = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+        herdr_bin=
+        for candidate in /opt/homebrew/bin/herdr /usr/local/bin/herdr /home/linuxbrew/.linuxbrew/bin/herdr; do
+          if [ -x "$candidate" ]; then
+            herdr_bin=$candidate
+            break
           fi
-          "$herdr_bin" integration install "$target" >/dev/null
+        done
+        if [ -z "$herdr_bin" ]; then
+          if [ "${platformName}" = docker ]; then
+            exit 0
+          fi
+          echo 'Homebrew Herdr is missing' >&2
+          exit 1
         fi
-      done
-    fi
-  '';
 
-  # Herdr owns its SessionStart hook but preserves other entries in
-  # ~/.codex/hooks.json. Merge the private Neovim edit bridge from its
-  # immutable source; linkGeneration then projects the matching libexec path.
-  home.activation.installCodexNvimEditHooks = lib.hm.dag.entryAfter [ "installHerdrAgentIntegrations" ] ''
-    if [ -d "${config.home.homeDirectory}/.codex" ]; then
-      ${pkgs.python3}/bin/python3 \
-        "${codexNvimEditEvent}" \
-        install --quiet
-    fi
-  '';
+        for target in claude codex; do
+          if command -v "$target" >/dev/null 2>&1 \
+            || [ -x "/opt/homebrew/bin/$target" ] \
+            || [ -x "/usr/local/bin/$target" ] \
+            || [ -x "/home/linuxbrew/.linuxbrew/bin/$target" ]; then
+            "$herdr_bin" integration install "$target" >/dev/null
+          fi
+        done
+      '';
 
+      # Herdr owns its SessionStart hook but preserves other entries in
+      # ~/.codex/hooks.json. Merge the private Neovim edit bridge from its
+      # immutable source; linkGeneration then projects the matching libexec path.
+      installCodexNvimEditHooks = lib.hm.dag.entryAfter [ "installHerdrAgentIntegrations" ] ''
+        if [ -d "${config.home.homeDirectory}/.codex" ]; then
+          ${pkgs.python3}/bin/python3 \
+            "${codexNvimEditEvent}" \
+            install --quiet
+        fi
+      '';
+    };
+  };
 }

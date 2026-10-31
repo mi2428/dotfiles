@@ -5,4 +5,4 @@ script_dir=$(
     CDPATH='' cd -- "$(dirname -- "$0")" && pwd
 ) || exit 1
 
-exec "$script_dir/dotfiles-dev" curl "$@"
+exec "$script_dir/../scripts/dotfiles-dev.sh" curl "$@"

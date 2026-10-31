@@ -1,7 +1,6 @@
 ---
 description: Export the current conversation to an Obsidian note
-model: openai/gpt-5.6-luna
-variant: low
+model: openai/gpt-5.6-luna#low
 ---
 
 Use the `obsidian-export` skill to export this conversation.

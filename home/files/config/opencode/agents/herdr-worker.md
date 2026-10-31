@@ -1,13 +1,19 @@
 ---
-name: Herdr Worker
 description: Executes one bounded assignment for a visible Herdr Supervisor batch.
 mode: primary
-permission:
-  task: deny
-  external_directory:
-    "*": ask
-    "~/obsidian/HerdrSupervisor/Sessions/**": allow
-    "~/obsidian/OpenCode/**": allow
+permissions:
+  - action: subagent
+    resource: "*"
+    effect: deny
+  - action: external_directory
+    resource: "*"
+    effect: ask
+  - action: external_directory
+    resource: "~/obsidian/HerdrSupervisor/Sessions/*"
+    effect: allow
+  - action: external_directory
+    resource: "~/obsidian/OpenCode/*"
+    effect: allow
 ---
 
 # Herdr Worker

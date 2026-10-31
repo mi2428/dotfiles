@@ -1,110 +1,66 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "bun:test";
-import {
-  BoxRenderable,
-  DiffRenderable,
-  ScrollBoxRenderable,
-  SyntaxStyle,
-  TextAttributes,
-  TextRenderable,
-} from "./tui/node_modules/@opentui/core";
-import { createTestRenderer } from "./tui/node_modules/@opentui/core/testing";
 import { buildTodoView } from "./tui/lib/todo-overlay";
-import {
-  buildTodoOverlayNodes,
-  MAX_BODY_HEIGHT,
-  MAX_PANEL_WIDTH,
-  popupWidth,
-  registerMessageLabelColors,
-  registerTodoOverlay,
-  sessionIDFromRoute,
-} from "./tui/tui";
+import plugin, { bodyHeight, latestTodos, popupWidth, recoverTodos, MAX_BODY_HEIGHT, MAX_PANEL_WIDTH } from "./tui/tui";
+import theme from "../themes/catppuccin-mocha-mauve.json";
 
 const todos = [
   { content: "finish report", status: "completed" },
-  { content: "wire overlay", status: "pending" },
   { content: "run tests", status: "in_progress" },
+  { content: "wire overlay", status: "pending" },
   { content: "old task", status: "cancelled" },
 ];
 
-describe("runtime integration", () => {
-  it("loads Solid through the host runtime alias", async () => {
-    const source = await Bun.file(new URL("./tui/tui.ts", import.meta.url)).text();
-    assert.match(source, /import\("solid-js"\)/);
-    assert.doesNotMatch(source, /solid-js\/dist\//);
+describe("OpenCode v2 Todo HUD", () => {
+  it("registers a non-replacing app slot", () => {
+    let claim: { append?: string; render: () => unknown } | undefined;
+    const cleanup = () => {};
+    assert.equal(plugin.id, "opencode-todo-overlay.tui");
+    const result = plugin.setup({ ui: { slot: (value: typeof claim) => { claim = value; return cleanup; } } } as never);
+    assert.equal(result, cleanup);
+    assert.equal(claim?.append, "app");
+    assert.equal(typeof claim?.render, "function");
   });
-});
 
-describe("message label colors", () => {
-  it("recolors nested labels and coalesces message updates", async () => {
-    type Handler = (event: never) => void;
-    const handlers = new Map<string, Handler>();
-    const label = { children: [" File "], fg: "old-fg", bg: "old-bg" };
-    const nested = { children: [label], fg: "old-fg", bg: "old-bg" };
-    const directory = { children: [" Directory "], fg: "old-fg", bg: "old-bg" };
-    let renders = 0;
-    let scans = 0;
-    let unsubscribes = 0;
-    let dispose: (() => void) | undefined;
-    const api = {
-      event: {
-        on: (name: string, handler: Handler) => {
-          handlers.set(name, handler);
-          return () => {
-            handlers.delete(name);
-            unsubscribes += 1;
-          };
-        },
-      },
-      renderer: {
-        root: {
-          getTextChildren: () => {
-            scans += 1;
-            return [nested, directory];
-          },
-          getChildren: () => [],
-        },
-        requestRender: () => {
-          renders += 1;
-        },
-      },
-      route: { current: { name: "session", params: { sessionID: "ses_1" } } },
-      theme: { current: { selectedListItemText: "selected", primary: "primary" } },
-      lifecycle: { onDispose: (handler: () => void) => (dispose = handler) },
-    };
-
-    registerMessageLabelColors(api as never);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.equal(renders, 1);
-    assert.equal(scans, 1);
-    assert.deepEqual(
-      [label.fg, label.bg, nested.fg, nested.bg, directory.fg, directory.bg],
-      ["selected", "primary", "selected", "primary", "selected", "primary"],
-    );
-
-    renders = 0;
-    scans = 0;
-    handlers.get("message.part.updated")?.({
-      properties: { sessionID: "ses_1", part: { type: "tool" } },
-    } as never);
-    handlers.get("message.part.updated")?.({
-      properties: { sessionID: "ses_2", part: { type: "file" } },
-    } as never);
-    handlers.get("message.updated")?.({
-      properties: { sessionID: "ses_1", info: { role: "assistant" } },
-    } as never);
-    assert.equal(renders, 1);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.equal(scans, 1);
-
-    assert(dispose);
-    dispose();
-    assert.equal(unsubscribes, 2);
+  it("reads the latest successful todowrite input before a revert boundary", () => {
+    const message = (id: string, name: string, input: unknown, status = "completed") => ({
+      id, type: "assistant", content: [{ type: "tool", name, state: { status, input } }],
+    });
+    assert.deepEqual(latestTodos([
+      message("msg_01", "todowrite", { todos }),
+      { type: "user", text: "next request" },
+      message("msg_02", "bash", { todos: [{ content: "wrong", status: "pending" }] }),
+    ] as never), { messageID: "msg_01", todos });
+    assert.deepEqual(latestTodos([message("msg_01", "todowrite", { todos: [] })] as never), { messageID: "msg_01", todos: [] });
+    assert.equal(latestTodos([message("msg_01", "todowrite", { todos }, "running")] as never), undefined);
+    assert.equal(latestTodos([message("msg_01", "todowrite", { todos }, "error")] as never), undefined);
+    assert.throws(() => latestTodos([message("msg_01", "todowrite", { todos: [{ status: "pending" }] })] as never), /Malformed/);
+    assert.deepEqual(latestTodos([
+      message("msg_01", "todowrite", { todos }),
+      message("msg_02", "todowrite", { todos: [] }),
+    ] as never, "msg_02"), { messageID: "msg_01", todos });
   });
-});
 
-describe("todo overlay state", () => {
-  it("shows completed, current, and future items in timeline order", () => {
+  it("recovers the newest historical Todo across server pages and stops at an explicit clear", async () => {
+    const requests: string[] = [];
+    const message = (id: string, list: unknown) => ({ id, type: "assistant", content: [{
+      type: "tool", name: "todowrite", state: { status: "completed", input: { todos: list } },
+    }] });
+    const client = { message: { list: async (input: { sessionID: string; order?: string; type: string; cursor?: string }) => {
+      if (input.cursor && "order" in input) throw new Error("Cursor cannot be combined with order");
+      assert.deepEqual([input.sessionID, input.type], ["ses_1", "assistant"]);
+      if (!input.cursor) assert.equal(input.order, "desc");
+      else assert.equal("order" in input, false);
+      requests.push(input.cursor ?? "first");
+      if (!input.cursor) return { data: [{ id: "msg_03", type: "assistant", content: [] }], cursor: { next: "older" } };
+      return { data: [message("msg_02", []), message("msg_01", todos)], cursor: {} };
+    } } };
+    assert.deepEqual(await recoverTodos(client as never, "ses_1"), { messageID: "msg_02", todos: [] });
+    assert.deepEqual(requests, ["first", "older"]);
+    assert.deepEqual(await recoverTodos(client as never, "ses_1", "msg_02"), { messageID: "msg_01", todos });
+  });
+
+  it("keeps the original progress, ordering and scroll window", () => {
     const view = buildTodoView(todos);
     assert(view);
     assert.deepEqual(view.lines, [
@@ -112,771 +68,36 @@ describe("todo overlay state", () => {
       { kind: "in_progress", text: "▸ run tests" },
       { kind: "pending", text: "▸ wire overlay" },
     ]);
-    assert.equal(view.active, 2);
     assert.equal(view.total, 3);
     assert.equal(view.completed, 1);
-    assert.equal(view.cancelled, 1);
-    assert.equal(view.windowStart, 0);
-    assert.equal(view.windowEnd, 2);
-  });
-
-  it("returns no overlay data only when there are no displayable items", () => {
-    assert.equal(buildTodoView([]), null);
     assert.equal(buildTodoView([{ content: "cancelled", status: "cancelled" }]), null);
-
-    const completed = buildTodoView([{ content: "done", status: "completed" }]);
-    assert(completed);
-    assert.deepEqual(completed.lines, [{ kind: "completed", text: "▸ done" }]);
-    assert.equal(completed.active, 0);
-    assert.equal(completed.total, 1);
-    assert.equal(completed.windowStart, 0);
-    assert.equal(completed.windowEnd, 0);
-
-    const completedHistory = buildTodoView(
-      Array.from({ length: 6 }, (_, index) => ({ content: `done ${index}`, status: "completed" })),
-    );
-    assert(completedHistory);
-    assert.equal(completedHistory.windowStart, 1);
-    assert.equal(completedHistory.windowEnd, 5);
-  });
-
-  it("keeps the overlay session-only and styles it as a responsive top-right toast", () => {
-    assert.equal(sessionIDFromRoute({ name: "home" }), undefined);
-    assert.equal(sessionIDFromRoute({ name: "session", params: { sessionID: "ses_1" } }), "ses_1");
-    assert.equal(sessionIDFromRoute({ name: "session", params: {} }), undefined);
-    assert.equal(sessionIDFromRoute({ name: "session", params: { sessionID: 42 } } as never), undefined);
-    assert.equal(sessionIDFromRoute({ name: "other", params: { sessionID: "ses_1" } }), undefined);
-    assert.equal(buildTodoOverlayNodes([], {} as never), null);
-
-    const nodes = buildTodoOverlayNodes(
-      [{ content: "work", status: "pending" }],
-      {
-        backgroundPanel: "panel",
-        borderSubtle: "border",
-        info: "info",
-        success: "success",
-        warning: "warning",
-        text: "text",
-        textMuted: "muted",
-      },
-      240,
-    );
-    assert(nodes);
-    assert.equal(nodes.props.position, "absolute");
-    assert.equal(nodes.props.top, 0);
-    assert.equal(nodes.props.right, 2);
-    assert.equal(nodes.props.width, MAX_PANEL_WIDTH);
-    assert.deepEqual(nodes.props.border, ["left", "right"]);
-    assert.equal(nodes.props.borderStyle, undefined);
-    assert.equal(nodes.props.paddingTop, 0);
-    assert.equal("focusable" in nodes.props, false);
-    const header = nodes.children?.[0];
-    assert(header);
-    assert.equal(header.kind, "box");
-    assert.equal(header.props.alignSelf, "flex-start");
-    assert.equal(header.props.backgroundColor, "info");
-    assert.equal(header.children?.[0]?.props.fg, "panel");
-    assert.equal(header.children?.[0]?.props.attributes, undefined);
-    assert.equal(header.children?.[0]?.text, "Todo · 0 of 1");
-    assert.equal(nodes.children?.[1]?.kind, "scrollbox");
-    assert.equal(nodes.children?.[1]?.props.height, 1);
-    assert.deepEqual(nodes.children?.[1]?.props.verticalScrollbarOptions, { visible: false, showArrows: false, width: 0 });
-    assert.equal(nodes.children?.[1]?.children?.[0]?.props.fg, "warning");
-    assert.equal(nodes.children?.[1]?.children?.[0]?.props.wrapMode, "char");
-    assert.equal(nodes.children?.[1]?.children?.[0]?.text, "▸ work");
+    const many = buildTodoView([
+      ...Array.from({ length: 4 }, (_, index) => ({ content: `done ${index}`, status: "completed" })),
+      { content: "current", status: "in_progress" },
+      ...Array.from({ length: 6 }, (_, index) => ({ content: `next ${index}`, status: "pending" })),
+    ]);
+    assert(many);
+    assert.deepEqual([many.windowStart, many.windowEnd], [3, 7]);
+    assert.equal(many.lines.length, 11);
     assert.equal(popupWidth(80), 68);
     assert.equal(popupWidth(120), MAX_PANEL_WIDTH);
-    assert.equal(popupWidth(200), MAX_PANEL_WIDTH);
-    assert.equal(popupWidth(240), MAX_PANEL_WIDTH);
-    assert.equal(MAX_PANEL_WIDTH, 94);
+    assert.equal(popupWidth(30), 26);
+    assert.equal(popupWidth(NaN), 79);
     assert.equal(MAX_BODY_HEIGHT, 12);
+    assert.equal(bodyHeight([{ kind: "pending", text: `▸ ${"x".repeat(140)}` }], 0, 0, 68), 3);
+    assert.equal(bodyHeight([{ kind: "pending", text: `▸ ${"日本語".repeat(50)}` }], 0, 0, 68), 5);
+    assert.equal(bodyHeight(Array.from({ length: 20 }, () => ({ kind: "pending", text: "task" })), 0, 19, 68), 12);
   });
 
-  it("covers styled split-diff cells on the first app row", async () => {
-    const width = 80;
-    const syntax = SyntaxStyle.fromStyles({
-      "keyword.type": { bold: true, fg: "#ffffff" },
-      keyword: { bold: true, fg: "#ffffff" },
-      type: { bold: true, fg: "#ffffff" },
-      default: { fg: "#ffffff" },
-    });
-    const test = await createTestRenderer({ width, height: 8 });
-
-    try {
-      test.renderer.root.add(
-        new DiffRenderable(test.renderer, {
-          diff: [
-            "diff --git a/a.ts b/a.ts",
-            "--- a/a.ts",
-            "+++ b/a.ts",
-            "@@ -1,3 +1,3 @@",
-            "-const oldValue = true",
-            "+const newValue = false",
-            " type Old = string",
-            " type New = number",
-          ].join("\n"),
-          view: "split",
-          width: "100%",
-          wrapMode: "word",
-          filetype: "typescript",
-          syntaxStyle: syntax,
-          fg: "#ffffff",
-        }),
-      );
-      for (let pass = 0; pass < 6; pass += 1) {
-        await Bun.sleep(30);
-        await test.renderOnce();
-      }
-      const before = test.renderer.currentRenderBuffer.buffers.attributes.slice();
-      const nodes = buildTodoOverlayNodes(
-        [
-          { content: "done", status: "completed" },
-          { content: "current task", status: "in_progress" },
-          { content: "next", status: "pending" },
-        ],
-        {
-          backgroundPanel: "#181825",
-          borderSubtle: "#585b70",
-          info: "#94e2d5",
-          primary: "#cba6f7",
-          selectedListItemText: "#1e1e2e",
-          success: "#a6e3a1",
-          warning: "#f9e2af",
-          text: "#cdd6f4",
-          textMuted: "#bac2de",
-        },
-        width,
-      );
-      assert(nodes);
-
-      const materialize = (node: typeof nodes): any => {
-        const Constructor = node.kind === "box"
-          ? BoxRenderable
-          : node.kind === "scrollbox"
-            ? ScrollBoxRenderable
-            : TextRenderable;
-        const renderable = new Constructor(
-          test.renderer,
-          node.kind === "text" ? { ...node.props, content: node.text } : { ...node.props },
-        ) as any;
-        for (const child of node.children ?? []) renderable.add(materialize(child as typeof nodes));
-        return renderable;
-      };
-      const app = new BoxRenderable(test.renderer, {
-        position: "absolute",
-        top: 0,
-        right: 0,
-        bottom: 0,
-        left: 0,
-        zIndex: 900,
-      });
-      const panel = materialize(nodes) as BoxRenderable;
-      app.add(panel);
-      test.renderer.root.add(app);
-      await test.renderOnce();
-
-      const countBold = (attributes: Uint32Array, row: number, start: number, end: number): number => {
-        let count = 0;
-        for (let column = start; column < end; column += 1) {
-          if ((attributes[row * width + column]! & TextAttributes.BOLD) !== 0) count += 1;
-        }
-        return count;
-      };
-      const after = test.renderer.currentRenderBuffer.buffers.attributes;
-      const panelEnd = panel.x + panel.width;
-      assert(countBold(before, 0, panel.x, panelEnd) > 0, "split diff must exercise bold syntax cells");
-      assert.equal(countBold(after, 0, panel.x, panelEnd), 0);
-      assert.equal(panel.y, 0);
-      assert.match(test.captureCharFrame().split("\n")[0]!.slice(panel.x, panelEnd), /Todo · 2 of 3/);
-      assert.deepEqual(Array.from(after.slice(0, panel.x)), Array.from(before.slice(0, panel.x)));
-    } finally {
-      test.renderer.destroy();
-      syntax.destroy();
+  it("keeps the Mocha palette and transparent canvas in the v2 theme", () => {
+    assert.equal(theme.background, undefined);
+    assert.equal(theme.base.background.base, "transparent");
+    assert.equal(theme.base.background.raised.base, "#242436");
+    assert.equal(theme.base.text.feedback.success.base, "#a6e3a1");
+    assert.equal(theme.base.text.feedback.warning.base, "#f9e2af");
+    assert.equal(theme.dark.hue.purple[200], "#cba6f7");
+    for (const hue of ["gray", "red", "orange", "yellow", "green", "cyan", "blue", "purple"] as const) {
+      assert.equal(Object.keys(theme.dark.hue[hue]).length, 9);
     }
-  });
-
-  it("keeps every task scrollable and gives future tasks most of the initial window", () => {
-    const longContent = "x".repeat(140);
-    const manyTodos = [
-      { content: "oldest done", status: "completed" },
-      { content: "older done", status: "completed" },
-      { content: "recent done", status: "completed" },
-      { content: "latest done", status: "completed" },
-      { content: longContent, status: "in_progress" },
-      { content: "next", status: "pending" },
-      { content: "later", status: "pending" },
-      { content: "last visible", status: "pending" },
-      { content: "hidden future", status: "pending" },
-      { content: "cancelled", status: "cancelled" },
-    ];
-    const view = buildTodoView(manyTodos);
-
-    assert(view);
-    assert.deepEqual(view.lines, [
-      { kind: "completed", text: "▸ oldest done" },
-      { kind: "completed", text: "▸ older done" },
-      { kind: "completed", text: "▸ recent done" },
-      { kind: "completed", text: "▸ latest done" },
-      { kind: "in_progress", text: `▸ ${longContent}` },
-      { kind: "pending", text: "▸ next" },
-      { kind: "pending", text: "▸ later" },
-      { kind: "pending", text: "▸ last visible" },
-      { kind: "pending", text: "▸ hidden future" },
-    ]);
-    assert.equal(view.lines.every((line) => line.text.startsWith("▸ ")), true);
-    assert.equal(view.windowStart, 3);
-    assert.equal(view.windowEnd, 7);
-    assert.equal(view.total, 9);
-    assert.equal(view.active, 5);
-    assert.equal(view.completed, 4);
-    assert.equal(view.cancelled, 1);
-
-    const nodes = buildTodoOverlayNodes(manyTodos, {
-      backgroundPanel: "panel",
-      borderSubtle: "border",
-      info: "info",
-      success: "success",
-      warning: "warning",
-      text: "text",
-      textMuted: "muted",
-    });
-    const body = nodes?.children?.[1];
-    assert(body);
-    assert.equal(body.kind, "scrollbox");
-    assert.equal(body.props.height, 6);
-    assert.equal(body.children?.length, 9);
-    assert.deepEqual(body.scrollWindow, {
-      startID: "opencode-todo-line-3",
-      endID: "opencode-todo-line-7",
-      key: "4:5:opencode-todo-line-3:opencode-todo-line-7",
-    });
-    assert.deepEqual(body.children?.map((line) => line.props.fg), [
-      "muted",
-      "muted",
-      "muted",
-      "muted",
-      "success",
-      "warning",
-      "warning",
-      "warning",
-      "warning",
-    ]);
-    assert.equal(body.children?.every((line) => line.props.wrapMode === "char"), true);
-
-    const wrappedCurrent = buildTodoOverlayNodes(
-      [
-        { content: "done", status: "completed" },
-        { content: longContent, status: "in_progress" },
-        { content: "next", status: "pending" },
-      ],
-      {} as never,
-      80,
-    );
-    assert.equal(wrappedCurrent?.children?.[1]?.props.height, 5);
-
-    const wideCurrent = buildTodoOverlayNodes(
-      [{ content: "日本語".repeat(50), status: "in_progress" }],
-      {} as never,
-      80,
-    );
-    assert.equal(wideCurrent?.children?.[1]?.props.height, 5);
-
-    const many = buildTodoOverlayNodes(
-      Array.from({ length: 12 }, (_, index) => ({ content: `task ${index}`, status: "pending" })),
-      {} as never,
-    );
-    assert.equal(many?.children?.[1]?.children?.length, 12);
-    assert.equal(many?.children?.[1]?.scrollWindow?.startID, "opencode-todo-line-0");
-    assert.equal(many?.children?.[1]?.scrollWindow?.endID, "opencode-todo-line-4");
-  });
-
-  it("renders the current position with one previous todo and keeps chat scrolling reachable", async () => {
-    const test = await createTestRenderer({ width: 80, height: 20 });
-    let appSlot: (() => unknown) | undefined;
-    let dispose: (() => void) | undefined;
-    const chat = new ScrollBoxRenderable(test.renderer, {
-      width: "100%",
-      height: "100%",
-      scrollY: true,
-      contentOptions: { flexDirection: "column" },
-    });
-    for (let index = 0; index < 30; index += 1) {
-      chat.add(new TextRenderable(test.renderer, { content: `message ${index}`, width: "100%" }));
-    }
-    test.renderer.root.add(chat);
-
-    const api = {
-      state: {
-        session: {
-          todo: () => [
-            { content: "oldest done", status: "completed" },
-            { content: "older done", status: "completed" },
-            { content: "previous done", status: "completed" },
-            { content: "current work", status: "in_progress" },
-            { content: "next work", status: "pending" },
-          ],
-          messages: () => [{ id: "user-1", role: "user" }],
-        },
-      },
-      event: { on: () => () => {} },
-      renderer: test.renderer,
-      lifecycle: { onDispose: (handler: () => void) => (dispose = handler) },
-      slots: {
-        register: (registration: { slots: { app: () => unknown } }) => {
-          appSlot = registration.slots.app;
-        },
-      },
-      route: { current: { name: "session", params: { sessionID: "ses_1" } } },
-      theme: {
-        current: {
-          backgroundPanel: "#181825",
-          borderSubtle: "#585b70",
-          info: "#94e2d5",
-          success: "#a6e3a1",
-          warning: "#f9e2af",
-          text: "#cdd6f4",
-          textMuted: "#bac2de",
-        },
-      },
-    };
-    const solid = {
-      createSignal: <T>(initial: T) => {
-        let value = initial;
-        return [
-          () => value,
-          (next: T | ((previous: T) => T)) => {
-            value = typeof next === "function" ? (next as (previous: T) => T)(value) : next;
-          },
-        ] as const;
-      },
-      createElement: (kind: "box" | "scrollbox" | "text") => {
-        if (kind === "scrollbox") return new ScrollBoxRenderable(test.renderer, {});
-        if (kind === "text") return new TextRenderable(test.renderer, { content: "" });
-        return new BoxRenderable(test.renderer, {});
-      },
-      setProp: (node: Record<string, unknown>, name: string, value: unknown) => {
-        node[name] = value;
-      },
-      insert: (parent: BoxRenderable | ScrollBoxRenderable | TextRenderable, child: unknown) => {
-        const value = typeof child === "function" ? (child as () => unknown)() : child;
-        if (value !== null && value !== undefined) parent.add(value as never);
-      },
-    };
-
-    try {
-      registerTodoOverlay(api as never, solid as never);
-      assert(appSlot);
-      const overlayRoot = appSlot() as BoxRenderable;
-      test.renderer.root.add(overlayRoot);
-      await test.renderOnce();
-
-      assert.equal(overlayRoot.width, popupWidth(80) + 2);
-      assert.equal(overlayRoot.height, 6);
-      const panel = overlayRoot.getChildren()[0] as BoxRenderable;
-      const todoBody = panel.getChildren()[1] as ScrollBoxRenderable;
-      assert.equal(todoBody.scrollTop, 2);
-      await test.renderOnce();
-      const frame = test.captureCharFrame();
-      assert.match(frame, /Todo · 4 of 5/);
-      assert.match(frame, /previous done/);
-      assert.match(frame, /current work/);
-      assert.match(frame, /next work/);
-      assert.doesNotMatch(frame, /oldest done|older done/);
-
-      await test.mockMouse.scroll(5, 12, "down", { delayMs: 0 });
-      await test.renderOnce();
-      assert(chat.scrollTop > 0, "chat must receive wheel events outside the Todo panel");
-
-      const todoScrollTop = todoBody.scrollTop;
-      await test.mockMouse.scroll(todoBody.x + 1, todoBody.y + 1, "up", { delayMs: 0 });
-      await test.renderOnce();
-      assert(todoBody.scrollTop < todoScrollTop, "Todo panel must retain its own wheel scrolling");
-    } finally {
-      dispose?.();
-      test.renderer.destroy();
-    }
-  });
-
-  it("redraws progress without dropping the overlay when a new request starts", () => {
-    type TodoEvent = {
-      properties: { sessionID: string; todos: Array<{ content: string; status: string }> };
-    };
-    let todoEventHandler: ((event: TodoEvent) => void) | undefined;
-    let dispose: (() => void) | undefined;
-    let appSlot: (() => unknown) | undefined;
-    let reads = 0;
-    let renders = 0;
-    let unsubscribes = 0;
-    let liveTodos = [
-      { content: "first", status: "completed" },
-      { content: "second", status: "completed" },
-      { content: "third", status: "in_progress" },
-      { content: "fourth", status: "pending" },
-      { content: "fifth", status: "pending" },
-      { content: "sixth", status: "pending" },
-    ];
-    let liveMessages = [{ id: "old-user-message", role: "user" }];
-
-    const api = {
-      state: {
-        session: {
-          todo: (sessionID: string) => {
-            assert.equal(sessionID, "ses_1");
-            reads += 1;
-            return liveTodos;
-          },
-          messages: () => liveMessages,
-        },
-      },
-      event: {
-        on: (name: string, handler: (event: never) => void) => {
-          if (name === "todo.updated") {
-            todoEventHandler = handler as (event: TodoEvent) => void;
-          } else {
-            assert.fail(`unexpected event subscription: ${name}`);
-          }
-          return () => {
-            unsubscribes += 1;
-          };
-        },
-      },
-      renderer: {
-        width: 120,
-        requestRender: () => (renders += 1),
-        on: (name: string) => assert.equal(name, "resize"),
-        off: (name: string) => assert.equal(name, "resize"),
-      },
-      lifecycle: { onDispose: (handler: () => void) => (dispose = handler) },
-      slots: {
-        register: (registration: { slots: { app: () => unknown } }) => {
-          appSlot = registration.slots.app;
-        },
-      },
-      route: { current: { name: "session", params: { sessionID: "ses_1" } } },
-      theme: {
-        current: {
-          backgroundPanel: "panel",
-          borderSubtle: "border",
-          info: "info",
-          success: "success",
-          warning: "warning",
-          text: "text",
-          textMuted: "muted",
-        },
-      },
-    };
-    type FakeNode = {
-      kind: string;
-      props: Record<string, unknown>;
-      children: unknown[];
-      scrollTop: number;
-      isDestroyed: boolean;
-      y: number;
-      height: number;
-      [key: string]: unknown;
-    };
-    const solid = {
-      createSignal: <T>(initial: T) => {
-        let value = initial;
-        return [
-          () => value,
-          (next: T | ((previous: T) => T)) => {
-            value = typeof next === "function" ? (next as (previous: T) => T)(value) : next;
-          },
-        ] as const;
-      },
-      createElement: (kind: string): FakeNode => ({
-        kind,
-        props: {},
-        children: [],
-        scrollTop: 0,
-        isDestroyed: false,
-        y: 0,
-        height: 1,
-      }),
-      setProp: (node: FakeNode, name: string, value: unknown) => {
-        node.props[name] = value;
-        node[name] = value;
-      },
-      insert: (node: FakeNode, child: unknown) => {
-        const value = typeof child === "function" ? (child as () => unknown)() : child;
-        if (value !== null && value !== undefined) node.children.push(value);
-      },
-    };
-    const overlayFrom = (slot: FakeNode): FakeNode => {
-      const overlay = slot.children[0] as FakeNode | undefined;
-      assert(overlay);
-      return overlay;
-    };
-    const scrollBoxFrom = (root: FakeNode): FakeNode => {
-      const result = overlayFrom(root).children.find((child) => (child as FakeNode).kind === "scrollbox") as FakeNode;
-      assert(result);
-      return result;
-    };
-    const headerFrom = (root: FakeNode): FakeNode => {
-      const header = overlayFrom(root).children[0] as FakeNode;
-      const headerText = header.children[0] as FakeNode;
-      assert(headerText);
-      return headerText;
-    };
-    const lineNodesFrom = (scrollbox: FakeNode): FakeNode[] => scrollbox.children as FakeNode[];
-    const lineTextsFrom = (scrollbox: FakeNode): string[] =>
-      lineNodesFrom(scrollbox).map((line) => line.children[0] as string);
-    const applyLayout = (scrollbox: FakeNode) => {
-      const lines = lineNodesFrom(scrollbox);
-      lines.forEach((line, index) => {
-        line.y = index;
-        line.height = 1;
-      });
-      scrollbox.content = {
-        y: 0,
-        height: lines.length,
-        findDescendantById: (id: string) => lines.find((line) => line.props.id === id),
-      };
-      const renderBefore = scrollbox.props.renderBefore as ((this: FakeNode) => void) | undefined;
-      assert(renderBefore);
-      renderBefore.call(scrollbox);
-    };
-
-    registerTodoOverlay(api as never, solid);
-    assert(todoEventHandler);
-    assert(dispose);
-    assert(appSlot);
-    const first = appSlot() as FakeNode;
-    const firstScrollBox = scrollBoxFrom(first);
-    const initializeFirstScroll = firstScrollBox.props.renderBefore as ((this: FakeNode) => void) | undefined;
-    assert(initializeFirstScroll);
-    initializeFirstScroll.call(firstScrollBox);
-    assert.equal(firstScrollBox.scrollTop, 0);
-    applyLayout(firstScrollBox);
-    assert.equal(headerFrom(first).children[0], "Todo · 3 of 6");
-    assert.deepEqual(lineTextsFrom(firstScrollBox), [
-      "▸ first",
-      "▸ second",
-      "▸ third",
-      "▸ fourth",
-      "▸ fifth",
-      "▸ sixth",
-    ]);
-    assert.deepEqual(lineNodesFrom(firstScrollBox).map((line) => line.props.fg), [
-      "muted",
-      "muted",
-      "success",
-      "warning",
-      "warning",
-      "warning",
-    ]);
-    assert.equal(firstScrollBox.height, 5);
-    assert.equal(firstScrollBox.scrollTop, 1);
-    firstScrollBox.scrollTop = 3;
-
-    const second = appSlot() as FakeNode;
-    const secondScrollBox = scrollBoxFrom(second);
-    applyLayout(secondScrollBox);
-    assert.equal(reads, 2);
-    assert.equal(secondScrollBox.scrollTop, 3);
-
-    liveTodos = liveTodos.map((todo, index) => {
-      if (index === 2) return { ...todo, status: "completed" };
-      if (index === 3) return { ...todo, status: "in_progress" };
-      return todo;
-    });
-    todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
-    assert.equal(renders, 1);
-    const third = appSlot() as FakeNode;
-    const thirdScrollBox = scrollBoxFrom(third);
-    applyLayout(thirdScrollBox);
-    assert.equal(headerFrom(third).children[0], "Todo · 4 of 6");
-    assert.equal(thirdScrollBox.scrollTop, 2);
-    assert.equal(thirdScrollBox.height, 4);
-    assert.equal(lineNodesFrom(thirdScrollBox)[2]?.props.fg, "muted");
-    assert.equal(lineNodesFrom(thirdScrollBox)[3]?.props.fg, "success");
-
-    liveTodos = liveTodos.map((todo, index) => {
-      if (index === 3) return { ...todo, status: "completed" };
-      if (index === 4) return { ...todo, status: "in_progress" };
-      return todo;
-    });
-    todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
-    assert.equal(renders, 2);
-    const fourth = appSlot() as FakeNode;
-    const fourthScrollBox = scrollBoxFrom(fourth);
-    applyLayout(fourthScrollBox);
-    assert.equal(headerFrom(fourth).children[0], "Todo · 5 of 6");
-    assert.equal(fourthScrollBox.scrollTop, 3);
-    assert.equal(fourthScrollBox.height, 3);
-    assert.equal(lineNodesFrom(fourthScrollBox)[3]?.props.fg, "muted");
-    assert.equal(lineNodesFrom(fourthScrollBox)[4]?.props.fg, "success");
-    assert.equal(reads, 4);
-
-    assert.equal(renders, 2);
-    assert(appSlot());
-    assert.equal(reads, 5);
-
-    liveMessages = [...liveMessages, { id: "new-user-message", role: "user" }];
-    const updated = appSlot() as FakeNode;
-    assert.equal(updated.children.length, 1);
-    assert.equal(headerFrom(updated).children[0], "Todo · 5 of 6");
-    assert.equal(reads, 6);
-
-    todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
-    assert.equal(renders, 3);
-    assert.equal((appSlot() as FakeNode).children.length, 1);
-    assert.equal(headerFrom(appSlot() as FakeNode).children[0], "Todo · 5 of 6");
-
-    liveTodos = [
-      { content: "inspect new request", status: "in_progress" },
-      { content: "implement new request", status: "pending" },
-    ];
-    todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
-    assert.equal(renders, 4);
-    const next = appSlot() as FakeNode;
-    assert.equal(headerFrom(next).children[0], "Todo · 1 of 2");
-    assert.deepEqual(lineTextsFrom(scrollBoxFrom(next)), ["▸ inspect new request", "▸ implement new request"]);
-
-    dispose();
-    assert.equal(unsubscribes, 1);
-  });
-
-  it("reactively invalidates the mounted slot as todos and user requests change", () => {
-    type TodoEvent = {
-      properties: { sessionID: string; todos: Array<{ content: string; status: string }> };
-    };
-    type FakeNode = {
-      kind: string;
-      props: Record<string, unknown>;
-      children: unknown[];
-      scrollTop: number;
-      isDestroyed: boolean;
-    };
-
-    let todoEventHandler: ((event: TodoEvent) => void) | undefined;
-    let appSlot: (() => unknown) | undefined;
-    let activeObserver: (() => void) | undefined;
-    let resizeHandler: (() => void) | undefined;
-    let dispose: (() => void) | undefined;
-    let liveTodos = [{ content: "first request", status: "in_progress" }];
-    let liveMessages = [{ id: "first-request", role: "user" }];
-    const messageObservers = new Set<() => void>();
-
-    const api = {
-      state: {
-        session: {
-          todo: () => liveTodos,
-          messages: () => {
-            if (activeObserver) messageObservers.add(activeObserver);
-            return liveMessages;
-          },
-        },
-      },
-      event: {
-        on: (name: string, handler: (event: never) => void) => {
-          if (name === "todo.updated") todoEventHandler = handler as (event: TodoEvent) => void;
-          return () => {};
-        },
-      },
-      renderer: {
-        width: 120,
-        requestRender: () => {},
-        on: (name: string, handler: () => void) => {
-          assert.equal(name, "resize");
-          resizeHandler = handler;
-        },
-        off: (name: string, handler: () => void) => {
-          assert.equal(name, "resize");
-          assert.equal(handler, resizeHandler);
-          resizeHandler = undefined;
-        },
-      },
-      lifecycle: { onDispose: (handler: () => void) => (dispose = handler) },
-      slots: {
-        register: (registration: { slots: { app: () => unknown } }) => {
-          appSlot = registration.slots.app;
-        },
-      },
-      route: { current: { name: "session", params: { sessionID: "ses_1" } } },
-      theme: {
-        current: {
-          backgroundPanel: "panel",
-          borderSubtle: "border",
-          info: "info",
-          success: "success",
-          warning: "warning",
-          text: "text",
-          textMuted: "muted",
-        },
-      },
-    };
-    const solid = {
-      createSignal: <T>(initial: T) => {
-        let value = initial;
-        const observers = new Set<() => void>();
-        return [
-          () => {
-            if (activeObserver) observers.add(activeObserver);
-            return value;
-          },
-          (next: T | ((previous: T) => T)) => {
-            value = typeof next === "function" ? (next as (previous: T) => T)(value) : next;
-            for (const observer of observers) observer();
-          },
-        ] as const;
-      },
-      createElement: (kind: string): FakeNode => ({
-        kind,
-        props: {},
-        children: [],
-        scrollTop: 0,
-        isDestroyed: false,
-      }),
-      setProp: (node: FakeNode, name: string, value: unknown) => {
-        node.props[name] = value;
-      },
-      insert: (node: FakeNode, child: unknown) => {
-        if (typeof child === "function") {
-          const update = () => {
-            activeObserver = update;
-            const value = (child as () => unknown)();
-            activeObserver = undefined;
-            node.children = value === null || value === undefined ? [] : [value];
-          };
-          update();
-          return;
-        }
-        node.children.push(child);
-      },
-    };
-
-    registerTodoOverlay(api as never, solid);
-    assert(todoEventHandler);
-    assert(appSlot);
-
-    const rendered = appSlot() as FakeNode;
-    assert(rendered);
-    assert.equal(rendered.props.width, MAX_PANEL_WIDTH + 2);
-    assert.equal(rendered.props.height, 4);
-
-    api.renderer.width = 80;
-    assert(resizeHandler);
-    resizeHandler();
-    assert.equal(rendered.props.width, popupWidth(80) + 2);
-
-    liveTodos = [{ content: "first request", status: "completed" }];
-    todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
-    const completedOverlay = rendered.children[0] as FakeNode;
-    const completedHeader = (completedOverlay.children[0] as FakeNode).children[0] as FakeNode;
-    assert.equal(completedHeader.children[0], "Todo · 1 of 1");
-
-    liveMessages = [...liveMessages, { id: "next-request", role: "user" }];
-    for (const observer of messageObservers) observer();
-    assert.equal(rendered.children.length, 1);
-
-    liveTodos = [{ content: "second request", status: "in_progress" }];
-    todoEventHandler({ properties: { sessionID: "ses_1", todos: liveTodos } });
-    assert.equal(rendered.children.length, 1);
-
-    assert(dispose);
-    dispose();
-    assert.equal(resizeHandler, undefined);
   });
 });

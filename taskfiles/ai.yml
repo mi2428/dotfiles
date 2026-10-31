@@ -2,24 +2,35 @@ version: '3'
 
 tasks:
   ai.check:
-    desc: Check AI harness versions, Herdr integrations, and pinned OpenCode config
+    desc: Check AI executables and OpenCode/Herdr profiles
     cmds:
+      - '{{.REPO_ROOT}}/scripts/test-herdr-env.sh'
+      - 'node {{.REPO_ROOT}}/scripts/test-oc2-herdr-fixture.mjs'
       - '{{.REPO_ROOT}}/scripts/check-ai-stack.sh'
 
   ai.upgrade:
-    desc: Upgrade AI harnesses and refresh the exact OmO and Slim plugin pins
+    desc: Upgrade external AI harnesses and OpenCode, then refresh the exact Slim pin; apply Home Manager separately
     cmds:
       - |
         set -eu
         brew_bin="$(command -v brew)"
+        if ! installed_formulas=$("$brew_bin" list --formula --versions); then
+          printf '%s\n' 'AI stack upgrade: could not inspect installed Homebrew formulas' >&2
+          exit 1
+        fi
+        if printf '%s\n' "$installed_formulas" | grep -Eq '(^|/|[[:space:]])opencode([[:space:]]|$)'; then
+          printf '%s\n' 'AI stack upgrade: an opencode formula conflicts with anomalyco/tap/opencode-v2; remove the V1/core formula intentionally, then retry.' >&2
+          exit 1
+        fi
         "$brew_bin" update
-        "$brew_bin" upgrade herdr anomalyco/tap/opencode
+        if "$brew_bin" list --formula anomalyco/tap/opencode-v2 >/dev/null 2>&1; then
+          "$brew_bin" upgrade anomalyco/tap/opencode-v2
+        else
+          "$brew_bin" install anomalyco/tap/opencode-v2
+        fi
         "$brew_bin" upgrade --cask codex claude-code
-        for target in claude codex opencode; do
-          herdr integration install "$target" >/dev/null
-        done
-      - '{{.REPO_ROOT}}/scripts/update-ai-stack.sh ''{{default "" .OMO_VERSION}}'' ''{{default "" .SLIM_VERSION}}'''
-      - task: ai.check
+      - '{{.REPO_ROOT}}/scripts/update-ai-stack.sh ''{{default "" .SLIM_VERSION}}'''
+      - 'printf "%s\n" "AI plugin pins updated; run task hm.switch, then task ai.check."'
 
   ai.webui.check:
     desc: Run local Open WebUI tests and static configuration checks

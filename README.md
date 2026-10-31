@@ -51,8 +51,8 @@ Tasks
   hm.gc              Delete old generations and collect Nix garbage (run without sudo)
   brew.check         Check the repo-managed Brewfile against the local Homebrew state
   brew.sync          Update and upgrade Homebrew, then apply the repo-managed Brewfile
-  ai.check           Check AI harness versions, Herdr integrations, and pinned OpenCode config
-  ai.upgrade         Upgrade AI harnesses and refresh exact OmO and Slim plugin pins
+  ai.check           Check AI executables and OpenCode/Herdr profiles
+  ai.upgrade         Upgrade external AI harnesses and OpenCode, then refresh the exact Slim pin
   ai.webui.check     Run local Open WebUI tests and static configuration checks
   ai.webui.up        Start Open WebUI and its local AI services with Docker
   ai.webui.down      Stop Open WebUI services without deleting their data
@@ -157,10 +157,12 @@ Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `t
 > {
 >   "$schema": "https://opencode.ai/config.json",
 >   "mcp": {
->     "dotfiles": {
->       "type": "remote",
->       "url": "http://127.0.0.1:3000/mcp",
->       "enabled": true
+>     "servers": {
+>       "dotfiles": {
+>         "type": "remote",
+>         "url": "http://127.0.0.1:3000/mcp",
+>         "disabled": false
+>       }
 >     }
 >   }
 > }
