@@ -14,7 +14,6 @@ let
     builtins.readFile ../../files/config/opencode/plugin-versions.json
   );
   slimPlugin = "oh-my-opencode-slim@${pluginVersions.slim}";
-  herdrPackage = config.dotfiles.herdr.package;
 
   openAIModels = {
     "gpt-5.6-sol".settings.reasoningEffort = "xhigh";
@@ -317,13 +316,13 @@ in
     "opencode-profiles/herdr/opencode/opencode.jsonc" = mkLink generated.defaultConfig;
     "opencode-profiles/herdr/opencode/cli.json" = mkLink generated.herdrCli;
     "opencode-profiles/herdr/opencode/herdr-opencode/tui.js" = mkLink (
-      herdrPackage + "/share/herdr/opencode/tui.js"
+      config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/.config/opencode/herdr-opencode/tui.js"
     );
     "opencode-profiles/herdr/opencode/herdr-tui-session.js" = mkLink (
-      herdrPackage + "/share/herdr/herdr-tui-session.js"
+      config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/.config/opencode/herdr-tui-session.js"
     );
     "opencode-profiles/herdr/opencode/plugins/herdr-agent-state/index.js" = mkLink (
-      herdrPackage + "/share/herdr/opencode/herdr-agent-state.js"
+      config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/.config/opencode/plugins/herdr-agent-state.js"
     );
     "opencode-profiles/herdr/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;

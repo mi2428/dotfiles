@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, platformName, ... }:
 let
   mkLink = source: {
     force = true;
@@ -33,72 +33,6 @@ let
   ghReviewPreview = ../../files/libexec/dotfiles/gh-review-preview;
   hermesConfig = config.lib.file.mkOutOfStoreSymlink
     "${config.home.homeDirectory}/dotfiles/home/files/hermes/config.yaml";
-  herdrPackage = config.dotfiles.herdr.package;
-  removeHerdrFile = ''
-    remove_herdr_file() {
-      path=$1
-      expected_target=''${2:-}
-      expected_marker=''${3:-}
-      if [ -L "$path" ]; then
-        current_target=$(readlink "$path")
-        if [ -n "$expected_target" ] && [ "$current_target" = "$expected_target" ]; then
-          rm -f "$path"
-        else
-          echo "Refusing to remove unknown OpenCode symlink: $path -> $current_target" >&2
-          exit 1
-        fi
-      elif [ -f "$path" ]; then
-        first_line=
-        if [ -n "$expected_marker" ] \
-          && IFS= read -r first_line < "$path" \
-          && [ "$first_line" = '// installed by herdr' ] \
-          && ${pkgs.gnugrep}/bin/grep -Fxq "// HERDR_INTEGRATION_ID=$expected_marker" "$path"; then
-          rm -f "$path"
-        else
-          echo "Refusing to remove unmanaged OpenCode file: $path" >&2
-          exit 1
-        fi
-      elif [ -e "$path" ]; then
-        echo "Refusing to remove unmanaged OpenCode path: $path" >&2
-        exit 1
-      fi
-    }
-  '';
-  legacyCleanupCheck = pkgs.runCommand "check-legacy-opencode-herdr-cleanup" { } ''
-    ${removeHerdrFile}
-
-    printf '%s\n' \
-      '// installed by herdr' \
-      '// HERDR_INTEGRATION_ID=opencode' \
-      > "$TMPDIR/managed"
-    remove_herdr_file "$TMPDIR/managed" "" opencode
-    [ ! -e "$TMPDIR/managed" ]
-
-    printf '%s\n' \
-      '// installed by herdr' \
-      '// HERDR_INTEGRATION_ID=other' \
-      > "$TMPDIR/wrong-id"
-    ! (remove_herdr_file "$TMPDIR/wrong-id" "" opencode >/dev/null 2>&1)
-    [ -f "$TMPDIR/wrong-id" ]
-
-    printf '%s\n' \
-      'console.log("// installed by herdr")' \
-      '// installed by herdr' \
-      '// HERDR_INTEGRATION_ID=opencode' \
-      > "$TMPDIR/user-file"
-    ! (remove_herdr_file "$TMPDIR/user-file" "" opencode >/dev/null 2>&1)
-    [ -f "$TMPDIR/user-file" ]
-
-    ln -s /known/herdr/source "$TMPDIR/known-link"
-    remove_herdr_file "$TMPDIR/known-link" /known/herdr/source
-    [ ! -L "$TMPDIR/known-link" ]
-
-    ln -s /other/source "$TMPDIR/unknown-link"
-    ! (remove_herdr_file "$TMPDIR/unknown-link" /known/herdr/source >/dev/null 2>&1)
-    [ -L "$TMPDIR/unknown-link" ]
-
-    touch "$out"
-  '';
   macCompatibilityFiles = lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
     "Library/Application Support/com.mitchellh.ghostty/themes" =
       mkLink ../../files/config/ghostty/themes;
@@ -154,12 +88,19 @@ in {
     ".hermes/config.yaml" = mkLink hermesConfig;
   };
 
-  # OpenCode uses immutable package assets. Only harnesses that still require
-  # an installer are updated here, with the exact patched Herdr binary.
   home.activation.installHerdrAgentIntegrations = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-    herdr_bin="${herdrPackage}/bin/herdr"
-    if [ ! -x "$herdr_bin" ]; then
-      echo "Patched Herdr binary is missing: $herdr_bin" >&2
+    herdr_bin=
+    for candidate in /opt/homebrew/bin/herdr /usr/local/bin/herdr /home/linuxbrew/.linuxbrew/bin/herdr; do
+      if [ -x "$candidate" ]; then
+        herdr_bin=$candidate
+        break
+      fi
+    done
+    if [ -z "$herdr_bin" ]; then
+      if [ "${platformName}" = docker ]; then
+        exit 0
+      fi
+      echo 'Homebrew Herdr is missing' >&2
       exit 1
     fi
 
@@ -172,38 +113,6 @@ in {
       fi
     done
   '';
-
-  # Remove only files carrying Herdr's installer marker and links to those
-  # known paths. OpenCode now loads the patched dedicated Nix profile.
-  home.activation.removeLegacyOpenCodeHerdrIntegration =
-    lib.hm.dag.entryAfter [ "installHerdrAgentIntegrations" ] ''
-      test -e "${legacyCleanupCheck}"
-      ${removeHerdrFile}
-
-      opencode_root="${config.home.homeDirectory}/.config/opencode"
-      remove_herdr_file "$opencode_root/plugins/herdr-agent-state.js" "" opencode
-      remove_herdr_file "$opencode_root/herdr-tui-session.js" "" opencode-tui
-      if [ -L "$opencode_root/herdr-opencode" ]; then
-        echo "Refusing to traverse unknown OpenCode symlink: $opencode_root/herdr-opencode" >&2
-        exit 1
-      elif [ -d "$opencode_root/herdr-opencode" ]; then
-        remove_herdr_file "$opencode_root/herdr-opencode/tui.js" "" opencode-tui-v2
-        rmdir "$opencode_root/herdr-opencode" 2>/dev/null || true
-      elif [ -e "$opencode_root/herdr-opencode" ]; then
-        echo "Refusing to remove unmanaged OpenCode path: $opencode_root/herdr-opencode" >&2
-        exit 1
-      fi
-
-      for profile in chat slim; do
-        profile_root="${config.home.homeDirectory}/.config/opencode-profiles/$profile/opencode"
-        remove_herdr_file "$profile_root/herdr-opencode" "$opencode_root/herdr-opencode"
-        remove_herdr_file "$profile_root/herdr-tui-session.js" "$opencode_root/herdr-tui-session.js"
-        remove_herdr_file \
-          "$profile_root/plugins/herdr-agent-state/index.js" \
-          "$opencode_root/plugins/herdr-agent-state.js"
-        rmdir "$profile_root/plugins/herdr-agent-state" 2>/dev/null || true
-      done
-    '';
 
   # Herdr owns its SessionStart hook but preserves other entries in
   # ~/.codex/hooks.json. Merge the private Neovim edit bridge from its

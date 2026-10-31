@@ -86,9 +86,9 @@ You remain accountable for the final result.
 
 ## Start OpenCode workers
 
-- The patched Herdr/OpenCode V2 contract is verified for automatic root creation and registration, targeted prompt delivery, rejection while another root is selected, delivery after restoring the original root, and Ctrl-C cleanup limited to the target TUI and its private server.
+- Use one OpenCode session per Herdr worker pane. Do not switch sessions inside a worker TUI: stock Herdr can report the previous session while a new session is selected and deliver a prompt to the wrong one.
 - Use only the Agent Layout Skill's documented `herdr agent start` flow. Validate the model in the OpenCode catalog, pass it as `HERDR_OPENCODE_MODEL`, and launch `opencode-profile herdr`; the profile injects `model` and `default_agent` through `OPENCODE_CONFIG_CONTENT` and starts a private `--standalone` server.
-- Send work only with the documented `herdr agent prompt` command. A route mismatch is an explicit failed delivery, not permission to inject terminal text or target another root; retry only after the original root is visibly restored.
+- Send work only with the documented `herdr agent prompt` command. Submission success is not proof of delivery; confirm the worker response before continuing and never automatically retry an uncertain submission.
 - Never launch a Herdr worker through naked `opencode`, a shared server, or Happier. Permission-wait and reconnect behavior remain unverified; if either makes delivery or worker state uncertain, report `BLOCKED` and do not use a fallback runtime or infer success.
 
 ## Optimize for cost
