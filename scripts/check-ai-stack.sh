@@ -13,14 +13,14 @@ done
 
 if command -v opencode >/dev/null 2>&1; then
     version=$(opencode --version 2>/dev/null) || version=
-    printf '%s\n' "$version" | grep -Eq '(^|[[:space:]])v?2\.([2-9]|[1-9][0-9]+)\.[0-9]+$' \
-        || fail "OpenCode 2.2.0 or newer is required (found: ${version:-unknown})"
+    printf '%s\n' "$version" | grep -Eq '(^|[[:space:]])v?2\.([2-9]|[1-9][0-9]+)\.[0-9]+$' ||
+        fail "OpenCode 2.2.0 or newer is required (found: ${version:-unknown})"
 fi
 
 for profile in chat herdr slim; do
     config="$HOME/.config/opencode-profiles/$profile/opencode"
-    [ -f "$config/opencode.jsonc" ] && [ -f "$config/cli.json" ] \
-        || fail "OpenCode $profile profile is not installed"
+    [ -f "$config/opencode.jsonc" ] && [ -f "$config/cli.json" ] ||
+        fail "OpenCode $profile profile is not installed"
 done
 
 herdr_config="$HOME/.config/opencode-profiles/herdr/opencode"

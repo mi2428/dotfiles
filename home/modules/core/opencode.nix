@@ -363,62 +363,66 @@ in
     "opencode-profiles/slim/opencode/oh-my-opencode-slim.seed.jsonc" = mkLink slimOpenCodePluginConfig;
   };
 
-  home.file = {
-    ".agents/skills/herdr-agent-layout" = mkLink herdrAgentLayoutSkill;
-    ".agents/skills/obsidian-export" = mkLink obsidianExportSkill;
-    ".agents/skills/showme" = mkLink showmeSkill;
-    ".agents/skills/pr-review" = mkLink ../../files/agents/skills/pr-review;
-    ".agents/skills/repo-qa" = mkLink ../../files/agents/skills/repo-qa;
-    ".claude/skills/herdr-agent-layout" = mkLink herdrAgentLayoutSkill;
+  home = {
+    file = {
+      ".agents/skills/herdr-agent-layout" = mkLink herdrAgentLayoutSkill;
+      ".agents/skills/obsidian-export" = mkLink obsidianExportSkill;
+      ".agents/skills/showme" = mkLink showmeSkill;
+      ".agents/skills/pr-review" = mkLink ../../files/agents/skills/pr-review;
+      ".agents/skills/repo-qa" = mkLink ../../files/agents/skills/repo-qa;
+      ".claude/skills/herdr-agent-layout" = mkLink herdrAgentLayoutSkill;
+    };
+
+    # Install the shared Todo package once. Slim links to this package so it
+    # never creates an incompatible duplicate OpenTUI dependency tree.
+    activation = {
+      installOpenCodeTodoOverlayDeps = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+        todo_overlay_source="${todoOverlayPackageRoot}"
+        todo_overlay_package="${config.home.homeDirectory}/.config/opencode/tui-plugins/todo"
+        todo_overlay_files=(
+          package.json
+          bun.lock
+          tui.tsx
+          lib/todo-overlay.ts
+        )
+
+        for todo_overlay_file in "''${todo_overlay_files[@]}"; do
+          if [ ! -f "$todo_overlay_source/$todo_overlay_file" ]; then
+            echo "OpenCode Todo overlay source file is missing: $todo_overlay_source/$todo_overlay_file" >&2
+            exit 1
+          fi
+        done
+
+        mkdir -p "$todo_overlay_package/lib"
+        for todo_overlay_file in "''${todo_overlay_files[@]}"; do
+          todo_overlay_destination="$todo_overlay_package/$todo_overlay_file"
+          rm -f "$todo_overlay_destination"
+          mkdir -p "$(dirname "$todo_overlay_destination")"
+          cp "$todo_overlay_source/$todo_overlay_file" "$todo_overlay_destination"
+        done
+
+        (
+          cd "$todo_overlay_package"
+          ${pkgs.bun}/bin/bun install --frozen-lockfile --production
+        )
+      '';
+
+      # Slim's /preset command owns the writable runtime file. Keep a managed seed
+      # beside it, warn on drift, and require an explicit reset to overwrite it.
+      ensureOpenCodeSlimPluginConfig = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+        slim_seed="${config.home.homeDirectory}/.config/opencode-profiles/slim/opencode/oh-my-opencode-slim.seed.jsonc"
+        slim_config="${config.home.homeDirectory}/.config/opencode-profiles/slim/opencode/oh-my-opencode-slim.jsonc"
+        if [ -L "$slim_config" ]; then
+          rm -f "$slim_config"
+        fi
+        if [ ! -e "$slim_config" ]; then
+          cp "$slim_seed" "$slim_config"
+          chmod 0644 "$slim_config"
+        elif ! cmp -s "$slim_seed" "$slim_config"; then
+          echo "warning: OpenCode Slim runtime config differs from its managed seed" >&2
+          echo "warning: inspect with 'oc-slim-config status'; reset explicitly with 'oc-slim-config reset --force'" >&2
+        fi
+      '';
+    };
   };
-
-  # Install the shared Todo package once. Slim links to this package so it
-  # never creates an incompatible duplicate OpenTUI dependency tree.
-  home.activation.installOpenCodeTodoOverlayDeps = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-    todo_overlay_source="${todoOverlayPackageRoot}"
-    todo_overlay_package="${config.home.homeDirectory}/.config/opencode/tui-plugins/todo"
-    todo_overlay_files=(
-      package.json
-      bun.lock
-      tui.tsx
-      lib/todo-overlay.ts
-    )
-
-    for todo_overlay_file in "''${todo_overlay_files[@]}"; do
-      if [ ! -f "$todo_overlay_source/$todo_overlay_file" ]; then
-        echo "OpenCode Todo overlay source file is missing: $todo_overlay_source/$todo_overlay_file" >&2
-        exit 1
-      fi
-    done
-
-    mkdir -p "$todo_overlay_package/lib"
-    for todo_overlay_file in "''${todo_overlay_files[@]}"; do
-      todo_overlay_destination="$todo_overlay_package/$todo_overlay_file"
-      rm -f "$todo_overlay_destination"
-      mkdir -p "$(dirname "$todo_overlay_destination")"
-      cp "$todo_overlay_source/$todo_overlay_file" "$todo_overlay_destination"
-    done
-
-    (
-      cd "$todo_overlay_package"
-      ${pkgs.bun}/bin/bun install --frozen-lockfile --production
-    )
-  '';
-
-  # Slim's /preset command owns the writable runtime file. Keep a managed seed
-  # beside it, warn on drift, and require an explicit reset to overwrite it.
-  home.activation.ensureOpenCodeSlimPluginConfig = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-    slim_seed="${config.home.homeDirectory}/.config/opencode-profiles/slim/opencode/oh-my-opencode-slim.seed.jsonc"
-    slim_config="${config.home.homeDirectory}/.config/opencode-profiles/slim/opencode/oh-my-opencode-slim.jsonc"
-    if [ -L "$slim_config" ]; then
-      rm -f "$slim_config"
-    fi
-    if [ ! -e "$slim_config" ]; then
-      cp "$slim_seed" "$slim_config"
-      chmod 0644 "$slim_config"
-    elif ! cmp -s "$slim_seed" "$slim_config"; then
-      echo "warning: OpenCode Slim runtime config differs from its managed seed" >&2
-      echo "warning: inspect with 'oc-slim-config status'; reset explicitly with 'oc-slim-config reset --force'" >&2
-    fi
-  '';
 }

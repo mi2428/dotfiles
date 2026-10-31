@@ -9,7 +9,7 @@ fi
 shift
 
 case "$profile" in
-    chat|herdr|slim)
+    chat | herdr | slim)
         ;;
     *)
         printf 'opencode-profile: unknown profile: %s\n' "$profile" >&2
@@ -52,7 +52,7 @@ if [ "$profile" = herdr ]; then
                 exit 64
             }
             ;;
-        ''|0)
+        '' | 0)
             herdr_agent=herdr-supervisor
             herdr_model=${HERDR_OPENCODE_MODEL:-openai/gpt-6-sol}
             ;;
@@ -99,8 +99,8 @@ if [ "$profile" = slim ]; then
             exit 69
             ;;
     esac
-    if [ "$slim_major" -lt 3 ] \
-        || { [ "$slim_major" -eq 3 ] && [ "$slim_minor" -eq 0 ] && [ "$slim_patch" -lt 5 ]; }; then
+    if [ "$slim_major" -lt 3 ] ||
+        { [ "$slim_major" -eq 3 ] && [ "$slim_minor" -eq 0 ] && [ "$slim_patch" -lt 5 ]; }; then
         printf 'opencode-profile: oh-my-opencode-slim %s is V1-only; OpenCode V2 requires the verified 3.0.5+ line\n' "$slim_version" >&2
         printf '%s\n' 'update the pin, apply Home Manager, then retry' >&2
         exit 69
@@ -122,7 +122,7 @@ if [ "$profile" = slim ]; then
 fi
 
 use_standalone=true
-for arg do
+for arg; do
     case "$arg" in
         --server | --server=* | --attach | --attach=*)
             if [ "$profile" = herdr ]; then

@@ -64,7 +64,10 @@ output=$(env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME
     "source '$root/home/files/config/fish/conf.d/20_aliases.fish'; oc++ --prompt test")
 case "$output" in
     *"xdg=$herdr_config"*'"default_agent":"herdr-supervisor"'*'args|--standalone|--auto|--prompt|test'*) ;;
-    *) printf '%s\n' 'Herdr supervisor did not start a private profile' >&2; exit 1 ;;
+    *)
+        printf '%s\n' 'Herdr supervisor did not start a private profile' >&2
+        exit 1
+        ;;
 esac
 
 output=$(env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$herdr_config" \
@@ -72,30 +75,38 @@ output=$(env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME
     "$bin/opencode-profile" herdr --prompt test)
 case "$output" in
     *'"default_agent":"herdr-worker"'*'"model":"openai/gpt-test"'*'args|--standalone|--prompt|test'*) ;;
-    *) printf '%s\n' 'Herdr worker did not start a private profile' >&2; exit 1 ;;
+    *)
+        printf '%s\n' 'Herdr worker did not start a private profile' >&2
+        exit 1
+        ;;
 esac
 
 if env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$herdr_config" \
     HERDR_ENV=1 HERDR_AGENT_LAYOUT_WORKER=1 "$bin/opencode-profile" herdr >/dev/null 2>&1; then
-    printf '%s\n' 'Herdr worker started without a model' >&2; exit 1
+    printf '%s\n' 'Herdr worker started without a model' >&2
+    exit 1
 fi
 for arg in --server=http://127.0.0.1:4096 --attach=http://127.0.0.1:4096; do
     if env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$herdr_config" \
         HERDR_ENV=1 "$bin/opencode-profile" herdr "$arg" >/dev/null 2>&1; then
-        printf '%s\n' 'Herdr accepted a shared server' >&2; exit 1
+        printf '%s\n' 'Herdr accepted a shared server' >&2
+        exit 1
     fi
 done
 if env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$scratch/profiles/chat" \
     HERDR_ENV=1 "$bin/opencode-profile" chat >/dev/null 2>&1; then
-    printf '%s\n' 'Herdr accepted a non-private profile' >&2; exit 1
+    printf '%s\n' 'Herdr accepted a non-private profile' >&2
+    exit 1
 fi
 if env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$herdr_config" \
     HERDR_ENV=0 "$bin/opencode-profile" herdr >/dev/null 2>&1; then
-    printf '%s\n' 'Herdr profile started outside Herdr' >&2; exit 1
+    printf '%s\n' 'Herdr profile started outside Herdr' >&2
+    exit 1
 fi
 if env PATH="$bin:$PATH" HOME="$scratch/home" DOTFILES_REPO_ROOT="$root" HERDR_ENV=1 \
     "$root/bin/opencode.dev" >/dev/null 2>&1; then
-    printf '%s\n' 'OpenCode dev launcher bypassed the Herdr profile' >&2; exit 1
+    printf '%s\n' 'OpenCode dev launcher bypassed the Herdr profile' >&2
+    exit 1
 fi
 
 printf '%s\n' 'Herdr profile launch and isolation: ok'

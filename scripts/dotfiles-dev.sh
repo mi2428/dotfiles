@@ -43,8 +43,7 @@ resolve_repo_root() {
 
     for candidate in \
         "${DOTFILES_REAL_HOME:-${HOME:?}}/dotfiles" \
-        "${HOME:?}/dotfiles"
-    do
+        "${HOME:?}/dotfiles"; do
         if is_repo_root "$candidate"; then
             printf '%s\n' "$candidate"
             return 0
@@ -127,24 +126,24 @@ sync_projected_config_tree() {
             if [ -L "$target_path" ] || [ -f "$target_path" ]; then
                 rm -f -- "$target_path"
             fi
-        done < "$manifest"
+        done <"$manifest"
     fi
 
-    : > "$manifest"
+    : >"$manifest"
 
     find "$source_root" -mindepth 1 \( -type d -o -type f -o -type l \) | sort |
-    while IFS= read -r source_path; do
-        relative_path=${source_path#"$source_root"/}
-        target_path=$target_root/$relative_path
+        while IFS= read -r source_path; do
+            relative_path=${source_path#"$source_root"/}
+            target_path=$target_root/$relative_path
 
-        if [ -L "$source_path" ] || [ -f "$source_path" ]; then
-            ensure_link "$target_path" "$source_path"
-            printf '%s\n' "$relative_path" >> "$manifest"
-            continue
-        fi
+            if [ -L "$source_path" ] || [ -f "$source_path" ]; then
+                ensure_link "$target_path" "$source_path"
+                printf '%s\n' "$relative_path" >>"$manifest"
+                continue
+            fi
 
-        ensure_projection_dir "$target_path"
-    done
+            ensure_projection_dir "$target_path"
+        done
 }
 
 prepare_dev_home() {
@@ -328,7 +327,7 @@ main() {
         zsh)
             run_zsh "$@"
             ;;
-        --help|-h)
+        --help | -h)
             usage
             ;;
         *)

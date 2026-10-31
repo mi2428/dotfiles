@@ -5,7 +5,7 @@ set -eu
 DOTFILES_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-work-test.XXXXXX")
 TEST_ROOT=$(CDPATH='' cd -- "$TEST_ROOT" && pwd -P)
-TMUX_ROOT=$(mktemp -d "/tmp/dotfiles-work-tmux.XXXXXX")
+TMUX_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/w.XXXXXX")
 TMUX_ROOT=$(CDPATH='' cd -- "$TMUX_ROOT" && pwd -P)
 
 run_tmux() {
@@ -34,14 +34,20 @@ env -u TMUX -u TMUX_PANE -u WORK_WORKTREE_HOME \
 worktree=$(git -C "$TEST_ROOT/repo" for-each-ref --format='%(worktreepath)' refs/heads/feature/test)
 case "$worktree" in
     "$TEST_ROOT/home/io/worktrees/"*/feature-test) ;;
-    *) printf 'unexpected worktree path: %s\n' "$worktree" >&2; exit 1 ;;
+    *)
+        printf 'unexpected worktree path: %s\n' "$worktree" >&2
+        exit 1
+        ;;
 esac
 test "$(git -C "$worktree" branch --show-current)" = feature/test
 test "$(run_tmux list-windows -a -F '#{window_id}' | wc -l | tr -d ' ')" = 1
 preview=$(env -u TMUX -u TMUX_PANE TMUX_TMPDIR="$TMUX_ROOT" "$DOTFILES_ROOT/bin/work" --preview-worktree "$worktree")
 test -n "$preview"
 case "$preview" in
-    branch:*) printf '%s\n' 'worktree preview did not capture the tmux window' >&2; exit 1 ;;
+    branch:*)
+        printf '%s\n' 'worktree preview did not capture the tmux window' >&2
+        exit 1
+        ;;
 esac
 
 cd "$TEST_ROOT/outside"
@@ -56,6 +62,7 @@ env -u TMUX -u TMUX_PANE -u WORK_WORKTREE_HOME \
 test "$(run_tmux list-windows -a -F '#{window_id}' | wc -l | tr -d ' ')" = 1
 test "$(run_tmux list-panes -a -F '#{pane_current_path}')" = "$worktree"
 
+# shellcheck disable=SC2016 # Variables expand in fish, not this shell.
 cd_only_pwd=$(env -u TMUX -u TMUX_PANE -u WORK_WORKTREE_HOME \
     HOME="$TEST_ROOT/home" \
     PATH="$DOTFILES_ROOT/bin:$PATH" \
