@@ -1,0 +1,337 @@
+#!/bin/sh
+set -eu
+
+die() {
+    printf 'dotfiles-dev: %s\n' "$*" >&2
+    exit 1
+}
+
+is_repo_root() {
+    candidate=$1
+    [ -n "$candidate" ] || return 1
+    [ -d "$candidate/.git" ] || [ -f "$candidate/.git" ] || return 1
+    [ -d "$candidate/home/files/config" ] || return 1
+    [ -d "$candidate/bin" ] || return 1
+}
+
+resolve_repo_root() {
+    if [ "${DOTFILES_REPO_ROOT:-}" ]; then
+        if is_repo_root "$DOTFILES_REPO_ROOT"; then
+            printf '%s\n' "$DOTFILES_REPO_ROOT"
+            return 0
+        fi
+        die "DOTFILES_REPO_ROOT is not a valid dotfiles checkout: $DOTFILES_REPO_ROOT"
+    fi
+
+    if git_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+        if is_repo_root "$git_root"; then
+            printf '%s\n' "$git_root"
+            return 0
+        fi
+    fi
+
+    script_dir=$(
+        CDPATH='' cd -- "$(dirname -- "$0")" && pwd
+    ) || exit 1
+    script_root=$(
+        CDPATH='' cd -- "$script_dir/.." && pwd
+    ) || exit 1
+    if is_repo_root "$script_root"; then
+        printf '%s\n' "$script_root"
+        return 0
+    fi
+
+    for candidate in \
+        "${DOTFILES_REAL_HOME:-${HOME:?}}/dotfiles" \
+        "${HOME:?}/dotfiles"
+    do
+        if is_repo_root "$candidate"; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    die 'could not locate dotfiles checkout; run from the repo, set DOTFILES_REPO_ROOT, or keep the checkout at ~/dotfiles'
+}
+
+repo_root=$(resolve_repo_root)
+real_home=${DOTFILES_REAL_HOME:-${HOME:?}}
+
+usage() {
+    cat <<'EOF'
+Usage:
+  dotfiles-dev xdg <app> [args...]
+  dotfiles-dev curl [args...]
+  dotfiles-dev ghostty [args...]
+  dotfiles-dev git [args...]
+  dotfiles-dev tmux [args...]
+  dotfiles-dev wget [args...]
+  dotfiles-dev zsh [args...]
+
+Commands:
+  xdg    Run an XDG-aware app against a writable projection of the repo config tree.
+  curl   Run curl with the repo curlrc.
+  ghostty Run Ghostty against a writable projection of the repo config tree.
+  git    Run git with the repo gitconfig.
+  tmux   Run tmux with a dev home overlay.
+  wget   Run wget with the repo wgetrc.
+  zsh    Run zsh with a dev home overlay.
+EOF
+}
+
+ensure_dir() {
+    [ "$#" -gt 0 ] || return 0
+    mkdir -p -- "$@"
+}
+
+ensure_projection_dir() {
+    target=$1
+
+    if [ -L "$target" ] || { [ -e "$target" ] && [ ! -d "$target" ]; }; then
+        rm -rf -- "$target"
+    fi
+
+    mkdir -p -- "$target"
+}
+
+ensure_link() {
+    target=$1
+    source=$2
+
+    ensure_dir "$(dirname "$target")"
+
+    if [ -L "$target" ]; then
+        current_target=$(readlink "$target") || exit 1
+        [ "$current_target" = "$source" ] && return 0
+    fi
+
+    if [ -e "$target" ] || [ -L "$target" ]; then
+        rm -rf -- "$target"
+    fi
+
+    ln -s "$source" "$target"
+}
+
+sync_projected_config_tree() {
+    source_root=$1
+    target_root=$2
+    manifest=$target_root/.dotfiles-dev-projection-manifest
+
+    ensure_projection_dir "$target_root"
+
+    if [ -f "$manifest" ]; then
+        while IFS= read -r relative_path; do
+            [ -n "$relative_path" ] || continue
+
+            target_path=$target_root/$relative_path
+            if [ -L "$target_path" ] || [ -f "$target_path" ]; then
+                rm -f -- "$target_path"
+            fi
+        done < "$manifest"
+    fi
+
+    : > "$manifest"
+
+    find "$source_root" -mindepth 1 \( -type d -o -type f -o -type l \) | sort |
+    while IFS= read -r source_path; do
+        relative_path=${source_path#"$source_root"/}
+        target_path=$target_root/$relative_path
+
+        if [ -L "$source_path" ] || [ -f "$source_path" ]; then
+            ensure_link "$target_path" "$source_path"
+            printf '%s\n' "$relative_path" >> "$manifest"
+            continue
+        fi
+
+        ensure_projection_dir "$target_path"
+    done
+}
+
+prepare_dev_home() {
+    app_name=$1
+    dev_home=$real_home/.local/share/dotfiles-dev/home/$app_name
+
+    ensure_dir "$dev_home"
+    printf '%s\n' "$dev_home"
+}
+
+apply_xdg_host_overrides() {
+    target_root=$1
+
+    case "$(uname -s)" in
+        Darwin)
+            ensure_link \
+                "$target_root/fish/conf.d/12_general_path.fish" \
+                "$repo_root/home/files/config/fish/conf.d/12_general_path.macos.fish"
+            ensure_link \
+                "$target_root/fish/conf.d/22_aliases.fish" \
+                "$repo_root/home/files/config/fish/conf.d/22_aliases.fish"
+            ;;
+    esac
+}
+
+set_xdg_env() {
+    app_name=$1
+    projected_config_root=$real_home/.local/share/dotfiles-dev/config/$app_name
+
+    sync_projected_config_tree "$repo_root/home/files/config" "$projected_config_root"
+    apply_xdg_host_overrides "$projected_config_root"
+
+    XDG_CONFIG_HOME=$projected_config_root
+    XDG_STATE_HOME=$real_home/.local/state/dotfiles-dev/$app_name
+    XDG_CACHE_HOME=$real_home/.cache/dotfiles-dev/$app_name
+    XDG_DATA_HOME=$real_home/.local/share/dotfiles-dev/$app_name
+
+    export XDG_CONFIG_HOME
+    export XDG_STATE_HOME
+    export XDG_CACHE_HOME
+    export XDG_DATA_HOME
+
+    ensure_dir \
+        "$XDG_CONFIG_HOME" \
+        "$XDG_STATE_HOME" \
+        "$XDG_CACHE_HOME" \
+        "$XDG_DATA_HOME"
+}
+
+run_xdg_app() {
+    [ "$#" -gt 0 ] || die 'missing app name for xdg command'
+
+    app_name=$1
+    shift
+
+    set_xdg_env "$app_name"
+    exec "$app_name" "$@"
+}
+
+run_curl() {
+    curl_config=$repo_root/home/files/curl/curlrc
+    exec curl --config "$curl_config" "$@"
+}
+
+run_git() {
+    export GIT_CONFIG_GLOBAL="$repo_root"/home/files/git/gitconfig
+    export GIT_CONFIG_COUNT=1
+    export GIT_CONFIG_KEY_0=include.path
+    export GIT_CONFIG_VALUE_0="$repo_root"/home/files/git/catppuccin-delta.gitconfig
+
+    exec git "$@"
+}
+
+run_ghostty() {
+    set_xdg_env ghostty
+
+    ghostty_app=/Applications/Ghostty.app
+    ghostty_bin=$ghostty_app/Contents/MacOS/ghostty
+    [ -x "$ghostty_bin" ] || die "Ghostty binary not found at $ghostty_bin"
+
+    case "${1:-}" in
+        +*)
+            exec "$ghostty_bin" "$@"
+            ;;
+        *)
+            if [ "$#" -gt 0 ]; then
+                exec open -na "$ghostty_app" --args "$@"
+            fi
+            exec open -na "$ghostty_app"
+            ;;
+    esac
+}
+
+prepare_tmux_home() {
+    dev_home=$(prepare_dev_home tmux)
+
+    ensure_link "$dev_home/.tmux.conf" "$repo_root/home/files/tmux/tmux.conf"
+    ensure_link "$dev_home/.tmux" "$repo_root/home/files/tmux"
+
+    tmux_plugin_dir=$real_home/.config/tmux/plugins/catppuccin/tmux
+    if [ -d "$tmux_plugin_dir" ]; then
+        ensure_link \
+            "$dev_home/.config/tmux/plugins/catppuccin/tmux" \
+            "$tmux_plugin_dir"
+    fi
+
+    printf '%s\n' "$dev_home"
+}
+
+run_tmux() {
+    set_xdg_env tmux
+    dev_home=$(prepare_tmux_home)
+
+    export DOTFILES_REAL_HOME="$real_home"
+    export HOME="$dev_home"
+
+    exec tmux -L dotfiles-dev -f "$dev_home/.tmux.conf" "$@"
+}
+
+run_wget() {
+    wget_config=$repo_root/home/files/wget/wgetrc
+    export WGETRC="$wget_config"
+    exec wget "$@"
+}
+
+prepare_zsh_home() {
+    dev_home=$(prepare_dev_home zsh)
+    ensure_link "$dev_home/.zshenv" "$repo_root/home/files/zsh/zshenv"
+    ensure_link "$dev_home/.zshrc" "$repo_root/home/files/zsh/zshrc"
+
+    nix_profile_source=$real_home/.nix-profile
+    if [ -e "$nix_profile_source" ] || [ -L "$nix_profile_source" ]; then
+        ensure_link "$dev_home/.nix-profile" "$nix_profile_source"
+    fi
+
+    printf '%s\n' "$dev_home"
+}
+
+run_zsh() {
+    set_xdg_env zsh
+    dev_home=$(prepare_zsh_home)
+
+    export DOTFILES_REAL_HOME="$real_home"
+    export HOME="$dev_home"
+    export ZDOTDIR="$dev_home"
+
+    exec zsh "$@"
+}
+
+main() {
+    [ "$#" -gt 0 ] || {
+        usage >&2
+        exit 1
+    }
+
+    command_name=$1
+    shift
+
+    case "$command_name" in
+        xdg)
+            run_xdg_app "$@"
+            ;;
+        curl)
+            run_curl "$@"
+            ;;
+        ghostty)
+            run_ghostty "$@"
+            ;;
+        git)
+            run_git "$@"
+            ;;
+        tmux)
+            run_tmux "$@"
+            ;;
+        wget)
+            run_wget "$@"
+            ;;
+        zsh)
+            run_zsh "$@"
+            ;;
+        --help|-h)
+            usage
+            ;;
+        *)
+            die "unknown command: $command_name"
+            ;;
+    esac
+}
+
+main "$@"
