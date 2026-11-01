@@ -54,29 +54,31 @@ if [ "$profile" = herdr ]; then
             ;;
         '' | 0)
             herdr_agent=herdr-supervisor
-            herdr_model=${HERDR_OPENCODE_MODEL:-openai/gpt-6-sol}
+            herdr_model=${HERDR_OPENCODE_MODEL:-}
             ;;
         *)
             printf '%s\n' 'opencode-profile: invalid HERDR_AGENT_LAYOUT_WORKER value' >&2
             exit 64
             ;;
     esac
-    case "$herdr_model" in
-        */*)
-            [ -n "${herdr_model%%/*}" ] && [ -n "${herdr_model#*/}" ] || {
-                printf 'opencode-profile: invalid Herdr model: %s\n' "$herdr_model" >&2
+    if [ -n "$herdr_model" ]; then
+        case "$herdr_model" in
+            */*)
+                [ -n "${herdr_model%%/*}" ] && [ -n "${herdr_model#*/}" ] || {
+                    printf 'opencode-profile: invalid Herdr model: %s\n' "$herdr_model" >&2
+                    exit 64
+                }
+                ;;
+            *)
+                printf 'opencode-profile: expected HERDR_OPENCODE_MODEL=provider/model, got: %s\n' "$herdr_model" >&2
                 exit 64
-            }
-            ;;
-        *)
-            printf 'opencode-profile: expected HERDR_OPENCODE_MODEL=provider/model, got: %s\n' "$herdr_model" >&2
-            exit 64
-            ;;
-    esac
+                ;;
+        esac
+    fi
     herdr_config=$(jq -cn \
         --arg agent "$herdr_agent" \
         --arg model "$herdr_model" \
-        '{"$schema":"https://opencode.ai/config.json",default_agent:$agent,model:$model}')
+        '{"$schema":"https://opencode.ai/config.json",default_agent:$agent} + (if $model == "" then {} else {model:$model} end)')
 fi
 if [ "$profile" = slim ]; then
     if ! command -v jq >/dev/null 2>&1; then

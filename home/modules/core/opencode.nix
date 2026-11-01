@@ -123,7 +123,7 @@ let
       enabled = true;
       endpoint = "https://signoz.tailef845a.ts.net";
       protocol = "http/protobuf";
-      logsEnabled = false;
+      logsEnabled = true;
       disabledTraces = [ "all" ];
     };
   };
@@ -133,10 +133,7 @@ let
     plugins = [ opencodeOtelPlugin ];
     update = "disable";
     share = "disabled";
-    agents.title = {
-      model = "openai/gpt-6-luna";
-      disabled = true;
-    };
+    agents.title.disabled = true;
     lsp = false;
     compaction = {
       auto = true;
@@ -164,19 +161,16 @@ let
   };
   mkOpenCodeConfig =
     {
-      model,
       models ? openAIModels,
       plugins ? [ ],
     }:
     commonOpenCodeConfig
     // {
-      inherit model;
       plugins = commonOpenCodeConfig.plugins ++ plugins;
       providers = mkProviders models;
     };
 
   chatConfig = commonOpenCodeConfig // {
-    model = "openai/gpt-6-sol";
     providers = mkProviders openAIModels;
     default_agent = "chat";
     permissions = commonPermissions ++ [
@@ -195,7 +189,6 @@ let
   };
 
   happierConfig = (mkOpenCodeConfig {
-    model = "openai/gpt-6-sol";
     plugins = [ ponytailPlugin ];
   }) // {
     default_agent = "build";
@@ -256,7 +249,6 @@ let
   generated = {
     defaultConfig = json.generate "opencode-default.json" (
       (mkOpenCodeConfig {
-        model = "openai/gpt-6-sol";
         plugins = [ ponytailPlugin ];
       })
       // {
@@ -266,7 +258,6 @@ let
     );
     slimConfig = json.generate "opencode-slim.json" (
       (mkOpenCodeConfig {
-        model = "amazon-bedrock/global.anthropic.claude-opus-5";
         models = slimOpenAIModels;
         plugins = [ slimPlugin ];
       })

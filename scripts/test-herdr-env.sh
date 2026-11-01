@@ -112,6 +112,22 @@ if env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$her
     printf '%s\n' 'Herdr worker started without a model' >&2
     exit 1
 fi
+output=$(env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$herdr_config" \
+    HERDR_ENV=1 "$bin/opencode-profile" herdr --prompt test)
+case "$output" in
+    *'"default_agent":"herdr-supervisor"'*'args|--standalone|--prompt|test'*)
+        case "$output" in
+            *'"model":'*)
+                printf '%s\n' 'Herdr supervisor pinned a model without an override' >&2
+                exit 1
+                ;;
+        esac
+        ;;
+    *)
+        printf '%s\n' 'Herdr supervisor did not use the catalog default' >&2
+        exit 1
+        ;;
+esac
 for arg in --server=http://127.0.0.1:4096 --attach=http://127.0.0.1:4096; do
     if env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$herdr_config" \
         HERDR_ENV=1 "$bin/opencode-profile" herdr "$arg" >/dev/null 2>&1; then
