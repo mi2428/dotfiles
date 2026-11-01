@@ -117,8 +117,20 @@ let
     }
   ];
 
+  opencodeOtelPlugin = {
+    package = "@devtheops/opencode-plugin-otel";
+    options = {
+      enabled = true;
+      endpoint = "https://signoz.tailef845a.ts.net";
+      protocol = "http/protobuf";
+      logsEnabled = false;
+      disabledTraces = [ "all" ];
+    };
+  };
+
   commonOpenCodeConfig = {
     "$schema" = "https://opencode.ai/config.json";
+    plugins = [ opencodeOtelPlugin ];
     update = "disable";
     share = "disabled";
     agents.title = {
@@ -158,7 +170,8 @@ let
     }:
     commonOpenCodeConfig
     // {
-      inherit model plugins;
+      inherit model;
+      plugins = commonOpenCodeConfig.plugins ++ plugins;
       providers = mkProviders models;
     };
 
