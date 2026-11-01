@@ -286,9 +286,6 @@ in
     "opencode/commands/showme.md" = mkLink ../../files/config/opencode/commands/showme.md;
     "opencode/opencode.jsonc" = mkLink generated.defaultConfig;
     "opencode/cli.json" = mkLink generated.todoCli;
-    "opencode/plugins/herdr-shell-env/index.js" = mkLink herdrShellEnvPlugin;
-    "opencode/plugins/session-title/index.js" = mkLink sessionTitlePlugin;
-    "opencode/plugins/obsidian-export/index.js" = mkLink obsidianExportPlugin;
     "opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
 
@@ -296,8 +293,6 @@ in
       mkLink ../../files/config/opencode/agents/chat.md;
     "opencode-profiles/chat/opencode/opencode.jsonc" = mkLink generated.chatConfig;
     "opencode-profiles/chat/opencode/cli.json" = mkLink generated.chatCli;
-    "opencode-profiles/chat/opencode/plugins/profile-shell-env/index.js" = mkLink profileShellEnvPlugin;
-    "opencode-profiles/chat/opencode/plugins/session-title/index.js" = mkLink sessionTitlePlugin;
     "opencode-profiles/chat/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
 
@@ -322,19 +317,12 @@ in
     "opencode-profiles/herdr/opencode/herdr-tui-session.js" = mkLink (
       config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/.config/opencode/herdr-tui-session.js"
     );
-    "opencode-profiles/herdr/opencode/plugins/herdr-agent-state/index.js" = mkLink (
-      config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/.config/opencode/plugins/herdr-agent-state.js"
-    );
     "opencode-profiles/herdr/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode-profiles/herdr/opencode/tui-plugins/todo" = {
       force = true;
       source = todoOverlayOpenCodePackage;
     };
-    "opencode-profiles/herdr/opencode/plugins/profile-shell-env/index.js" =
-      mkLink profileShellEnvPlugin;
-    "opencode-profiles/herdr/opencode/plugins/session-title/index.js" = mkLink sessionTitlePlugin;
-    "opencode-profiles/herdr/opencode/plugins/obsidian-export/index.js" = mkLink obsidianExportPlugin;
 
     # These are config-only profiles: sessions, auth, cache, and state remain
     # shared, while framework plugin registries stay isolated.
@@ -357,10 +345,6 @@ in
       force = true;
       source = todoOverlayOpenCodePackage;
     };
-    "opencode-profiles/slim/opencode/plugins/profile-shell-env/index.js" = mkLink profileShellEnvPlugin;
-    "opencode-profiles/slim/opencode/plugins/herdr-shell-env/index.js" = mkLink herdrShellEnvPlugin;
-    "opencode-profiles/slim/opencode/plugins/session-title/index.js" = mkLink sessionTitlePlugin;
-    "opencode-profiles/slim/opencode/plugins/obsidian-export/index.js" = mkLink obsidianExportPlugin;
     "opencode-profiles/slim/opencode/oh-my-opencode-slim.seed.jsonc" = mkLink slimOpenCodePluginConfig;
   };
 
@@ -377,6 +361,36 @@ in
     # Install the shared Todo package once. Slim links to this package so it
     # never creates an incompatible duplicate OpenTUI dependency tree.
     activation = {
+      installOpenCodeServerPlugins = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+        install_plugin() {
+          local directory="$1" name="$2" source="$3"
+          mkdir -p "$directory/plugins"
+          if [ -d "$directory/plugins/$name" ]; then
+            rmdir "$directory/plugins/$name"
+          fi
+          if [ -L "$directory/plugins/$name.js" ]; then
+            rm "$directory/plugins/$name.js"
+          fi
+          install -m 0644 "$source" "$directory/plugins/$name.js"
+        }
+
+        default="${config.home.homeDirectory}/.config/opencode"
+        profiles="${config.home.homeDirectory}/.config/opencode-profiles"
+        install_plugin "$default" herdr-shell-env "${herdrShellEnvPlugin}"
+        install_plugin "$default" session-title "${sessionTitlePlugin}"
+        install_plugin "$default" obsidian-export "${obsidianExportPlugin}"
+        install_plugin "$profiles/chat/opencode" profile-shell-env "${profileShellEnvPlugin}"
+        install_plugin "$profiles/chat/opencode" session-title "${sessionTitlePlugin}"
+        install_plugin "$profiles/herdr/opencode" profile-shell-env "${profileShellEnvPlugin}"
+        install_plugin "$profiles/herdr/opencode" session-title "${sessionTitlePlugin}"
+        install_plugin "$profiles/herdr/opencode" obsidian-export "${obsidianExportPlugin}"
+        install_plugin "$profiles/herdr/opencode" herdr-agent-state "$default/plugins/herdr-agent-state.js"
+        install_plugin "$profiles/slim/opencode" profile-shell-env "${profileShellEnvPlugin}"
+        install_plugin "$profiles/slim/opencode" herdr-shell-env "${herdrShellEnvPlugin}"
+        install_plugin "$profiles/slim/opencode" session-title "${sessionTitlePlugin}"
+        install_plugin "$profiles/slim/opencode" obsidian-export "${obsidianExportPlugin}"
+      '';
+
       installOpenCodeTodoOverlayDeps = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
         todo_overlay_source="${todoOverlayPackageRoot}"
         todo_overlay_package="${config.home.homeDirectory}/.config/opencode/tui-plugins/todo"
