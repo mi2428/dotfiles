@@ -194,6 +194,26 @@ let
     };
   };
 
+  happierConfig = (mkOpenCodeConfig {
+    model = "openai/gpt-6-sol";
+    plugins = [ ponytailPlugin ];
+  }) // {
+    default_agent = "build";
+    agents = commonOpenCodeConfig.agents // {
+      general.disabled = true;
+      explore.disabled = true;
+    };
+    permissions = commonPermissions ++ [
+      {
+        action = "subagent";
+        resource = "*";
+        effect = "deny";
+      }
+    ];
+    skills = [ "${ponytail}/skills" ];
+    instructions = [ "${firstThingsFirstInstruction}" ];
+  };
+
   commonCliConfig = {
     "$schema" = "https://opencode.ai/v2/cli.json";
     theme.name = "catppuccin-mocha-mauve";
@@ -208,6 +228,9 @@ let
   todoCliConfig = commonCliConfig // {
     plugins = [ "./tui-plugins/todo" ];
     session.sidebar = "hide";
+  };
+  happierCliConfig = todoCliConfig // {
+    keybinds = todoCliConfig.keybinds // { "agent.cycle" = "shift+tab"; };
   };
   herdrCliConfig = todoCliConfig // {
     plugins = todoCliConfig.plugins ++ [ "./herdr-opencode" ];
@@ -252,7 +275,9 @@ let
       }
     );
     chatConfig = json.generate "opencode-chat.json" chatConfig;
+    happierConfig = json.generate "opencode-happier.json" happierConfig;
     todoCli = json.generate "opencode-cli.json" todoCliConfig;
+    happierCli = json.generate "opencode-happier-cli.json" happierCliConfig;
     herdrCli = json.generate "opencode-herdr-cli.json" herdrCliConfig;
     chatCli = json.generate "opencode-chat-cli.json" chatCliConfig;
   };
@@ -308,6 +333,14 @@ in
     "opencode-profiles/chat/opencode/cli.json" = mkLink generated.chatCli;
     "opencode-profiles/chat/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
+
+    "opencode-profiles/happier/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
+    "opencode-profiles/happier/opencode/opencode.jsonc" = mkLink generated.happierConfig;
+    "opencode-profiles/happier/opencode/cli.json" = mkLink generated.happierCli;
+    "opencode-profiles/happier/opencode/tui-plugins/todo" = {
+      force = true;
+      source = todoOverlayOpenCodePackage;
+    };
 
     # Herdr sessions use the normal server configuration plus a dedicated TUI
     # profile. The launcher injects the selected agent and model at runtime.
@@ -394,6 +427,7 @@ in
         install_plugin "$default" obsidian-export "${obsidianExportPlugin}"
         install_plugin "$profiles/chat/opencode" profile-shell-env "${profileShellEnvPlugin}"
         install_plugin "$profiles/chat/opencode" session-title "${sessionTitlePlugin}"
+        install_plugin "$profiles/happier/opencode" session-title "${sessionTitlePlugin}"
         install_plugin "$profiles/herdr/opencode" profile-shell-env "${profileShellEnvPlugin}"
         install_plugin "$profiles/herdr/opencode" session-title "${sessionTitlePlugin}"
         install_plugin "$profiles/herdr/opencode" obsidian-export "${obsidianExportPlugin}"

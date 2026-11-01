@@ -650,6 +650,14 @@ if command -sq opencode
         __dotfiles_run_opencode opencode --auto $argv
     end
 
+    if command -sq happier; and command -sq opencode-happier
+        function oc+++ --wraps opencode
+            set -l opencode_path (command -s opencode-happier)
+            command env HAPPIER_OPENCODE_PATH="$opencode_path" HAPPIER_OPENCODE_BACKEND_MODE=server \
+                happier opencode --permission-mode yolo --agent-mode build $argv
+        end
+    end
+
     if command -sq oc-slim
         function ocslim --wraps oc-slim
             __dotfiles_run_opencode oc-slim $argv

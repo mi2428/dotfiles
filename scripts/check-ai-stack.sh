@@ -7,7 +7,7 @@ fail() {
     errors=$((errors + 1))
 }
 
-for program in opencode opencode-profile herdr codex claude; do
+for program in opencode opencode-profile opencode-happier herdr codex claude; do
     command -v "$program" >/dev/null 2>&1 || fail "$program is not installed"
 done
 
@@ -17,7 +17,7 @@ if command -v opencode >/dev/null 2>&1; then
         fail "OpenCode 2.2.0 or newer is required (found: ${version:-unknown})"
 fi
 
-for profile in chat herdr slim; do
+for profile in chat happier herdr slim; do
     config="$HOME/.config/opencode-profiles/$profile/opencode"
     [ -f "$config/opencode.jsonc" ] && [ -f "$config/cli.json" ] ||
         fail "OpenCode $profile profile is not installed"

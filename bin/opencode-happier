@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+export XDG_CONFIG_HOME="${HOME:?}/.config/opencode-profiles/happier"
+exec opencode "$@"

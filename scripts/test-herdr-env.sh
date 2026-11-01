@@ -43,7 +43,15 @@ printf 'args'
 for arg do printf '|%s' "$arg"; done
 printf '\n'
 EOF
-chmod +x "$bin/ps" "$bin/opencode"
+cat >"$bin/happier" <<'EOF'
+#!/bin/sh
+printf 'xdg=%s path=%s backend=%s\n' "${XDG_CONFIG_HOME-}" "${HAPPIER_OPENCODE_PATH-}" "${HAPPIER_OPENCODE_BACKEND_MODE-}"
+printf 'args'
+for arg do printf '|%s' "$arg"; done
+printf '\n'
+EOF
+chmod +x "$bin/ps" "$bin/opencode" "$bin/happier"
+ln -s "$root/bin/opencode-happier" "$bin/opencode-happier"
 ln -s "$root/bin/opencode-profile" "$bin/opencode-profile"
 ln -s "$root/scripts/opencode-profile.sh" "$scratch/scripts/opencode-profile.sh"
 
@@ -66,6 +74,24 @@ case "$output" in
     *"xdg=$herdr_config"*'"default_agent":"herdr-supervisor"'*'args|--standalone|--auto|--prompt|test'*) ;;
     *)
         printf '%s\n' 'Herdr supervisor did not start a private profile' >&2
+        exit 1
+        ;;
+esac
+
+output=$(env PATH="$bin:$PATH" XDG_CONFIG_HOME="$scratch/ordinary-config" "$fish" --no-config -c \
+    "source '$root/home/files/config/fish/conf.d/20_aliases.fish'; oc+++ --model openai/gpt-test")
+case "$output" in
+    *"xdg=$scratch/ordinary-config path=$bin/opencode-happier backend=server"*'args|opencode|--permission-mode|yolo|--agent-mode|build|--model|openai/gpt-test'*) ;;
+    *)
+        printf '%s\n' 'Happier build did not start in its isolated server-backed yolo profile' >&2
+        exit 1
+        ;;
+esac
+output=$(env PATH="$bin:$PATH" HOME="$scratch/home" "$bin/opencode-happier" --version)
+case "$output" in
+    *"xdg=$scratch/home/.config/opencode-profiles/happier"*'args|--version'*) ;;
+    *)
+        printf '%s\n' 'Happier OpenCode launcher did not isolate the provider config' >&2
         exit 1
         ;;
 esac
