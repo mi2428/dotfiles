@@ -107,6 +107,35 @@ case "$output" in
         ;;
 esac
 
+output=$(env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$herdr_config" \
+    HERDR_ENV=1 HERDR_AGENT_LAYOUT_WORKER=1 HERDR_OPENCODE_MODEL=openai/gpt-test \
+    "$fish" --no-config -c \
+    "source '$root/home/files/config/fish/conf.d/20_aliases.fish'; opencode --prompt test")
+case "$output" in
+    *'"default_agent":"herdr-worker"'*'"model":"openai/gpt-test"'*'args|--standalone|--prompt|test'*) ;;
+    *)
+        printf '%s\n' 'Herdr canonical OpenCode launch did not select the worker profile' >&2
+        exit 1
+        ;;
+esac
+if env -u HERDR_OPENCODE_MODEL PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$herdr_config" \
+    HERDR_ENV=1 HERDR_AGENT_LAYOUT_WORKER=1 "$fish" --no-config -c \
+    "source '$root/home/files/config/fish/conf.d/20_aliases.fish'; opencode --prompt test" >/dev/null 2>&1; then
+    printf '%s\n' 'Herdr canonical OpenCode launch accepted a worker without a model' >&2
+    exit 1
+fi
+output=$(env -u HERDR_ENV -u HERDR_AGENT_LAYOUT_WORKER -u HERDR_OPENCODE_MODEL -u OPENCODE_CONFIG_CONTENT \
+    PATH="$bin:$PATH" HOME="$scratch/home" \
+    "$fish" --no-config -c \
+    "source '$root/home/files/config/fish/conf.d/20_aliases.fish'; opencode --prompt test")
+case "$output" in
+    *'content=<unset>'*'args|--prompt|test'*) ;;
+    *)
+        printf '%s\n' 'Ordinary OpenCode was redirected to the worker profile' >&2
+        exit 1
+        ;;
+esac
+
 if env PATH="$bin:$PATH" HOME="$scratch/home" OPENCODE_PROFILE_CONFIG_HOME="$herdr_config" \
     HERDR_ENV=1 HERDR_AGENT_LAYOUT_WORKER=1 "$bin/opencode-profile" herdr >/dev/null 2>&1; then
     printf '%s\n' 'Herdr worker started without a model' >&2

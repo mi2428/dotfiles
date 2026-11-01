@@ -621,6 +621,14 @@ if command -sq codex
 end
 
 if command -sq opencode
+    # Herdr starts its canonical `opencode` executable, not the `oc` function.
+    # Only layout-owned worker shells redirect that launch to the private profile.
+    if set -q HERDR_ENV HERDR_AGENT_LAYOUT_WORKER; and test "$HERDR_ENV" = 1; and test "$HERDR_AGENT_LAYOUT_WORKER" = 1
+        function opencode
+            command opencode-profile herdr $argv
+        end
+    end
+
     # The default root stays framework-plugin-free. `oc-slim` selects its
     # isolated plugin root.
     function __dotfiles_run_opencode --argument-names executable
