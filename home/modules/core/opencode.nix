@@ -124,7 +124,6 @@ let
       endpoint = "https://signoz.tailef845a.ts.net";
       protocol = "http/protobuf";
       logsEnabled = true;
-      disabledTraces = [ "all" ];
     };
   };
 
