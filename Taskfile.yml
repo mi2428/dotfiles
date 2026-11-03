@@ -71,17 +71,13 @@ tasks:
         printf "$task_fmt" "$green" 'brew.sync' "$reset" 'Update Homebrew, then upgrade and apply the repo-managed Brewfile'
         printf "$task_fmt" "$green" 'ai.check' "$reset" 'Check AI executables and OpenCode/Herdr profiles'
         printf "$task_fmt" "$green" 'ai.upgrade' "$reset" 'Upgrade external AI harnesses and OpenCode, then refresh the exact Slim pin'
-        printf "$task_fmt" "$green" 'ai.webui.up' "$reset" 'Start Open WebUI and its local AI services with Docker'
-        printf "$task_fmt" "$green" 'ai.webui.down' "$reset" 'Stop Open WebUI and its local development services'
-        printf "$task_fmt" "$green" 'ai.webui.logs' "$reset" 'Follow Open WebUI service logs'
         printf "$task_fmt" "$green" 'secrets.encrypt' "$reset" 'Encrypt ssh and/or gnupg into chezmoi source state'
         printf "$task_fmt" "$green" 'secrets.decrypt' "$reset" 'Decrypt ssh and/or gnupg into a target directory'
-        printf "$task_fmt" "$green" 'secrets.edit.webui' "$reset" 'Edit the age-encrypted Open WebUI environment'
         printf "$task_fmt" "$green" 'secrets.backup' "$reset" 'Backup ssh and gnupg into encrypted chezmoi source state'
         printf "$task_fmt" "$green" 'secrets.clear' "$reset" 'Remove local staging and decrypted secret work directories'
         printf "$task_fmt" "$green" 'docker.build' "$reset" 'Build Dockerfile locally as ghcr.io/OWNER/IMAGE:TAG'
         printf "$task_fmt" "$green" 'docker.login' "$reset" 'Login to ghcr.io with GHCR_TOKEN, GITHUB_TOKEN, or gh auth token'
-        printf "$task_fmt" "$green" 'docker.push' "$reset" 'Build and push dotfiles and Open WebUI images to ghcr.io'
+        printf "$task_fmt" "$green" 'docker.push' "$reset" 'Build and push the dotfiles image to ghcr.io'
         printf "$task_fmt" "$green" 'docker.run' "$reset" 'Run the MCP workspace container on 127.0.0.1:3000'
         printf '\n%bDefaults%b\n' "$bold$cyan" "$reset"
         printf "$default_fmt" "$yellow" 'GHCR_OWNER' "$reset" 'mi2428'
@@ -99,7 +95,6 @@ tasks:
         printf '  %btask hm.update HOST=macos%b\n' "$green" "$reset"
         printf '  %btask hm.switch HOST=docker%b\n' "$green" "$reset"
         printf '  %btask hm.gc%b\n' "$green" "$reset"
-        printf '  %btask ai.webui.up%b\n' "$green" "$reset"
         printf '  %btask secrets.encrypt%b\n' "$green" "$reset"
         printf '  %btask secrets.encrypt BUNDLE=ssh%b\n' "$green" "$reset"
         printf "  %btask secrets.encrypt BUNDLE=gnupg GPG_KEY_IDS='E8D3009C6341BDEAF038009685AB6867E2147DDA'%b\n" "$green" "$reset"

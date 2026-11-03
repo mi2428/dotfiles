@@ -2,7 +2,7 @@
 
 Shell environment since 2016. Currently:
 
-- Daily stack: [Ghostty](https://ghostty.org/), fish, [OpenCode](https://opencode.ai/), [Open WebUI](https://openwebui.com/), [herdr](https://herdr.dev/) (for AI agents), tmux (for humans), and Neovim.
+- Daily stack: [Ghostty](https://ghostty.org/), fish, [OpenCode](https://opencode.ai/), [herdr](https://herdr.dev/) (for AI agents), tmux (for humans), and Neovim.
 - Primary font: [Summer Ghost](https://github.com/mi2428/font-summer-ghost), a custom Japanese monospace font blend for Ghostty. Install it separately before applying these dotfiles; Nerd Font glyphs come from Ghostty's built-in fallback.
 - Terminal theme: [Catppuccin](https://github.com/catppuccin/catppuccin), usually [Mocha](https://catppuccin.com/palette/).
 - Managed state is split between [Nix](https://github.com/nix-community/home-manager) and [chezmoi](https://github.com/twpayne/chezmoi): `flake.nix` and `home/` define the steady state, while `chezmoi/` handles bootstrap and encrypted secrets.
@@ -53,18 +53,13 @@ Tasks
   brew.sync          Update and upgrade Homebrew, then apply the repo-managed Brewfile
   ai.check           Check AI executables and OpenCode/Herdr profiles
   ai.upgrade         Upgrade external AI harnesses and OpenCode, then refresh the exact Slim pin
-  ai.webui.check     Run local Open WebUI tests and static configuration checks
-  ai.webui.up        Start Open WebUI and its local AI services with Docker
-  ai.webui.down      Stop Open WebUI services without deleting their data
-  ai.webui.logs      Follow Open WebUI service logs
   secrets.encrypt    Encrypt ssh and/or gnupg into chezmoi source state
   secrets.decrypt    Decrypt ssh and/or gnupg into a target directory
-  secrets.edit.webui Edit the age-encrypted Open WebUI environment
   secrets.backup     Backup ssh and gnupg into encrypted chezmoi source state
   secrets.clear      Remove local staging and decrypted secret work directories
   docker.build       Build Dockerfile locally as ghcr.io/OWNER/IMAGE:TAG
   docker.login       Login to ghcr.io with GHCR_TOKEN, GITHUB_TOKEN, or gh auth token
-  docker.push        Build and push dotfiles and Open WebUI images to ghcr.io
+  docker.push        Build and push the dotfiles image to ghcr.io
   docker.run         Run the MCP workspace container on 127.0.0.1:3000
 
 Defaults
@@ -167,21 +162,6 @@ Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `t
 >   }
 > }
 > ```
-
-### Open WebUI
-
-[Open WebUI](https://openwebui.com/) and [Open WebUI Computer](https://openwebui.com/computer) run in Docker alongside [Sakura AI Engine Gateway](https://github.com/mi2428/sakura-ai-engine-gateway) and [Search Tool](https://github.com/mi2428/searchtool), which handles web search through an adapter.
-Keep API keys and the Search Tool token in the age-encrypted environment (`task secrets.edit.webui`). Mount only trusted workspaces as `CPTR_WORKSPACE_DIR`; Computer can write to them. Data persists in named volumes and `<workspace>/.cptr`.
-Before upgrading Open WebUI, test the UI shim and back up data for database migrations.
-
-```console
-$ task ai.webui.up
-$ task ai.webui.check
-$ task ai.webui.logs
-$ task ai.webui.down
-```
-
-`task ai.webui.up` enables private Tailscale Serve when available; Open WebUI remains bound to localhost.
 
 ## Random Notes
 
