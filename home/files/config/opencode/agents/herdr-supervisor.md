@@ -80,10 +80,22 @@ You are the user-facing supervisor and final quality gate. Delegate only when co
   escaped_model=$(fish --no-config -c 'string escape -- "$argv[1]"' -- "$MODEL")
   herdr pane run "$worker_pane" "set -gx HERDR_OPENCODE_MODEL $escaped_model; and test \"\$HERDR_AGENT_LAYOUT_WORKER\" = 1; and test \"\$HERDR_OPENCODE_MODEL\" = $escaped_model; and functions -q opencode; and printf '%s%s\\n' HERDR_WORKER_ MODEL_READY"
   herdr pane wait-output "$worker_pane" --match HERDR_WORKER_MODEL_READY --timeout 5000
+  ready=0
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if herdr pane process-info --pane "$worker_pane" | jq -e '
+      .error == null and (.result.process_info | .foreground_process_group_id == .shell_pid and
+        (.foreground_processes | length) == 1 and
+        .foreground_processes[0].pid == .shell_pid and
+        .foreground_processes[0].name == "fish")' >/dev/null; then
+      ready=1; break
+    fi
+    sleep 0.2
+  done
+  test "$ready" = 1 || exit 1
   herdr agent start "$WORKER_NAME" --kind opencode --pane "$worker_pane"
   ```
 
-  Stop if the marker is absent or `agent start` fails. The worker-only fish function routes Herdr's canonical `opencode` command through `opencode-profile herdr`, which injects the worker agent and model and starts a private `--standalone` server. Confirm the **current visible screen**, not old scrollback, shows `Herdr-Worker` (never `Build`) and the agent is ready; do not prompt through a splash or reconnect screen.
+  The marker alone does not prove the pane is available: fish initialization or command execution can leave other processes in its foreground group, which Herdr rejects with `agent_pane_busy`. Require both the marker and Herdr's foreground process group to contain only its original fish shell before starting. Poll status briefly, but never retry `agent start` after an error; inspect that pane and stop if the condition is not met. The worker-only fish function routes Herdr's canonical `opencode` command through `opencode-profile herdr`, which injects the worker agent and model and starts a private `--standalone` server. Confirm the **current visible screen**, not old scrollback, shows `Herdr-Worker` (never `Build`) and the agent is ready; do not prompt through a splash or reconnect screen.
 - A fresh TUI may not report a session ID until its first prompt. **Before assigning work**, use `herdr agent prompt` once for a self-contained, no-work startup check: ask for a fixed short reply, without tools or file changes. This is not a delegated assignment. Confirm an actual assistant response (not echoed input), a fresh official `herdr:opencode` session ID beginning with `ses_` in this exact pane, and the `Herdr-Worker` identity again. If any check is inconclusive, report `BLOCKED`, send no work, and clean up; never infer delivery or automatically retry.
 - Only then send the self-contained assignment with `herdr agent prompt`. Confirm its response before treating it as delivered. Use only `herdr agent prompt` for worker messages, never pane key injection. Permission waits and reconnects with uncertain state are `BLOCKED`, not a reason to silently switch launch paths.
 

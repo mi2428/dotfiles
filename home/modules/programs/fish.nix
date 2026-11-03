@@ -75,6 +75,9 @@ in
   };
 
   xdg.configFile = fishFiles // {
+    # Disable Kiro CLI's unused fish startup hooks without removing the CLI.
+    "fish/conf.d/00_fig_pre.fish".text = "";
+    "fish/conf.d/99_fig_post.fish".text = "";
     # Fish loads only the first conf.d file with a given basename. Keep this
     # empty user file to mask direnv's vendor hook, which embeds a
     # generation-specific Nix store path in long-lived shell functions.
