@@ -17,6 +17,8 @@
   home.username = userName;
   home.homeDirectory = homeDirectory;
   home.stateVersion = "25.05";
+  # Activation integrations use OS-managed Herdr and AI tools from the caller's PATH.
+  home.emptyActivationPath = false;
   # Install Brewfile counterparts with task pacman.sync before switching profiles.
   # Omarchy's existing mise policy is not changed by the package installation.
   # Ghostty, Herdr, and tmux honor SHELL. Changing passwd's login shell needs chsh.
