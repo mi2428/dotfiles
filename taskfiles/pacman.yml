@@ -16,7 +16,8 @@ tasks:
           set -- "$@" "$repo_root/packages/omarchy.txt"
         fi
         # No package removal, AUR builds, explicit service activation, or mise changes.
-        cat "$@" | sudo pacman -Syu --needed -
+        packages=$(cat "$@")
+        printf '%s\n' "$packages" | sudo pacman -Syu --needed -
 
   aur.sync:
     desc: Build and install the repo-managed AUR packages with interactive review
