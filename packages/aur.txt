@@ -1,4 +1,3 @@
-aider-chat
 ansible-language-server
 aws-cdk
 aws-sam-cli
