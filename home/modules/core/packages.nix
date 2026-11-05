@@ -1,4 +1,4 @@
-{ pkgs, platformName, ... }:
+{ lib, pkgs, platformName, ... }:
 let
   sharedPackages = with pkgs; [
     # Shell PTY e2e tests cannot find atuin inside the macOS Nix sandbox.
@@ -17,9 +17,7 @@ let
     fzf
     git
     gnupg
-    mise
     nixfmt
-    nodejs
     ripgrep
     shellcheck
     starship
@@ -27,6 +25,10 @@ let
     uv
     yazi
     zoxide
+  ] ++ lib.optionals (platformName != "omarchy") [
+    # Omarchy owns mise and Node through its system tool policy.
+    pkgs.mise
+    pkgs.nodejs
   ];
   neovimPackages = with pkgs; [
     actionlint

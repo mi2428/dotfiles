@@ -1103,7 +1103,7 @@ function paste-aws-session
     end
 
     if test "$argv[1]" = -e
-        printf '%s' "$session" | pbcopy 2>/dev/null
+        printf '%s' "$session" | Ic 2>/dev/null
         printf '%s' "$session"
     else
         printf '%s' "$session" | sed -e 's/ export //g' -e 's/=/\t/'

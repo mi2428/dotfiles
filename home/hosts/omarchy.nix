@@ -1,20 +1,26 @@
 {
+  config,
   lib,
-  pkgs,
   userName,
   homeDirectory,
   ...
 }:
 {
-  # Keep Omarchy's applications and shell defaults; add Nix and personal overrides.
+  imports = [
+    ../profiles/base.nix
+    ../profiles/os/linux.nix
+  ];
+
+  # Reuse the macOS shell stack while retaining Omarchy's session bootstrap.
   # First activation: HOME_MANAGER_BACKUP_EXT=before-dotfiles ./bootstrap/bootstrap.sh
   # Register another machine in host-map.sh and adjust its display/device profile first.
   home.username = userName;
   home.homeDirectory = homeDirectory;
   home.stateVersion = "25.05";
-  home.packages = [ pkgs.go-task ];
-  home.sessionPath = [ "$HOME/.nix-profile/bin" ];
-  programs.home-manager.enable = true;
+  # Install Brewfile counterparts with task pacman.sync before switching profiles.
+  # Omarchy's existing mise policy is not changed by the package installation.
+  # Ghostty, Herdr, and tmux honor SHELL. Changing passwd's login shell needs chsh.
+  home.sessionVariables.SHELL = "${config.home.profileDirectory}/bin/fish";
   programs.bash = {
     enable = true;
     # Omarchy needs its environment even in non-interactive SSH shells.
@@ -26,8 +32,6 @@
       source "$OMARCHY_PATH/default/bash/rc"
     '';
   };
-  xdg.enable = true;
-
   home.activation.checkOmarchyIdentity = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
     source ${../../bootstrap/host-map.sh}
     if [ "$(map_linux_machine_id_to_host "$(cat /etc/machine-id)")" != omarchy ]; then

@@ -96,29 +96,29 @@ in
 
     activation = {
       installHerdrAgentIntegrations = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-        herdr_bin=
-        for candidate in /opt/homebrew/bin/herdr /usr/local/bin/herdr /home/linuxbrew/.linuxbrew/bin/herdr; do
-          if [ -x "$candidate" ]; then
-            herdr_bin=$candidate
-            break
-          fi
-        done
+        herdr_bin=$(command -v herdr || true)
         if [ -z "$herdr_bin" ]; then
           if [ "${platformName}" = docker ]; then
             exit 0
           fi
-          echo 'Homebrew Herdr is missing' >&2
+          echo 'Herdr is missing from PATH' >&2
           exit 1
         fi
 
         for target in claude codex; do
-          if command -v "$target" >/dev/null 2>&1 \
-            || [ -x "/opt/homebrew/bin/$target" ] \
-            || [ -x "/usr/local/bin/$target" ] \
-            || [ -x "/home/linuxbrew/.linuxbrew/bin/$target" ]; then
+          if command -v "$target" >/dev/null 2>&1; then
             "$herdr_bin" integration install "$target" >/dev/null
           fi
         done
+        # The managed OpenCode profiles need these plugin files on first activation.
+        # Herdr updates cli.json atomically; never let it follow a Nix store link.
+        opencode_cli="${config.home.homeDirectory}/.config/opencode/cli.json"
+        if [ -L "$opencode_cli" ]; then
+          cli_copy=$(mktemp "$opencode_cli.XXXXXX")
+          install -m 0644 "$opencode_cli" "$cli_copy"
+          mv "$cli_copy" "$opencode_cli"
+        fi
+        "$herdr_bin" integration install opencode >/dev/null
       '';
 
       # Herdr owns its SessionStart hook but preserves other entries in

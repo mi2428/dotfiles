@@ -9,6 +9,12 @@ vars:
     sh: ./bootstrap/install-chezmoi.sh
 
 includes:
+  pacman:
+    taskfile: ./taskfiles/pacman.yml
+    flatten: true
+    vars:
+      REPO_ROOT:
+        ref: .REPO_ROOT
   brew:
     taskfile: ./taskfiles/brew.yml
     flatten: true
@@ -69,6 +75,8 @@ tasks:
         printf "$task_fmt" "$green" 'hm.gc' "$reset" 'Delete old generations and collect Nix garbage (run without sudo)'
         printf "$task_fmt" "$green" 'brew.check' "$reset" 'Check the repo-managed Brewfile against the local Homebrew state'
         printf "$task_fmt" "$green" 'brew.sync' "$reset" 'Update Homebrew, then upgrade and apply the repo-managed Brewfile'
+        printf "$task_fmt" "$green" 'pacman.sync' "$reset" 'Update Arch packages and install the repo-managed package lists'
+        printf "$task_fmt" "$green" 'aur.sync' "$reset" 'Review, build, and install the repo-managed AUR packages'
         printf "$task_fmt" "$green" 'ai.check' "$reset" 'Check AI executables and OpenCode/Herdr profiles'
         printf "$task_fmt" "$green" 'ai.upgrade' "$reset" 'Upgrade external AI harnesses and OpenCode, then refresh the exact Slim pin'
         printf "$task_fmt" "$green" 'secrets.encrypt' "$reset" 'Encrypt ssh and/or gnupg into chezmoi source state'

@@ -3,6 +3,8 @@ set -gx CARGO_HOME "$HOME/.cargo"
 set -gx VOLTA_HOME "$HOME/.volta"
 set -gx GOPATH "$HOME/io/gocode"
 
+__dotfiles_import_posix_exports "$HOME/.envs"
+
 __dotfiles_set_path \
     $HOME/bin \
     $HOME/.nix-profile/bin \

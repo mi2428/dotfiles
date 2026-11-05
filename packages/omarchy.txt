@@ -1,0 +1,7 @@
+herdr
+ollama
+1password-cli
+claude-code
+openai-codex-bin
+ghostty
+visual-studio-code-bin

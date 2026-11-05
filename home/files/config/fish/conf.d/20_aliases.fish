@@ -26,7 +26,7 @@ alias ..4='cd ../../../..'
 alias ..5='cd ../../../../..'
 
 alias b='bat'
-alias c='pbcopy'
+alias c='Ic'
 alias d='docker'
 alias ef='exec fish'
 alias k='kubectl'
@@ -458,7 +458,11 @@ function Iag
 end
 
 function Ic
-    pbcopy $argv
+    if test (uname -s) = Darwin
+        command pbcopy $argv
+    else
+        command wl-copy $argv
+    end
 end
 
 function Ieg

@@ -397,7 +397,7 @@ in
     # Install the shared Todo package once. Slim links to this package so it
     # never creates an incompatible duplicate OpenTUI dependency tree.
     activation = {
-      installOpenCodeServerPlugins = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+      installOpenCodeServerPlugins = lib.hm.dag.entryAfter [ "installHerdrAgentIntegrations" ] ''
         install_plugin() {
           local directory="$1" name="$2" source="$3"
           mkdir -p "$directory/plugins"
