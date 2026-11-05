@@ -1,10 +1,5 @@
-{{- if hasKey . "secrets" }}
-{{- with index . "secrets" }}
-{{- if .ageRecipient }}
+{{- $secrets := (include ".chezmoidata/secrets.yaml" | fromYaml).secrets }}
 encryption = "age"
 [age]
     identity = "{{ $.chezmoi.homeDir }}/.config/chezmoi/key.txt"
-    recipient = "{{ .ageRecipient }}"
-{{- end }}
-{{- end }}
-{{- end }}
+    recipient = "{{ $secrets.ageRecipient }}"

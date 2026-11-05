@@ -10,7 +10,7 @@
 # Linux:
 # - detect-host.sh reads /etc/machine-id for non-container systems
 # - add a case here when a specific machine-id should resolve to a dedicated host key
-# - leave the map empty when the generic base "linux" config is enough
+# - store only SHA-256 hashes of machine IDs in this public repository
 
 map_macos_serial_to_host() {
   case "${1:-}" in
@@ -25,14 +25,10 @@ map_macos_serial_to_host() {
 }
 
 map_linux_machine_id_to_host() {
-  case "${1:-}" in
-    # Example:
-    # 0123456789abcdef0123456789abcdef)
-    #   printf '%s\n' 'linux'
-    #   return 0
-    #   ;;
-    '')
-      return 1
+  case "$(printf '%s' "${1:-}" | sha256sum | cut -d ' ' -f 1)" in
+    fc17a89aa012b8f7294aa060bc16bc52f7a0a254d575c20ef67de2e1cbeb0cbb)
+      printf '%s\n' 'omarchy'
+      return 0
       ;;
     *)
       return 1

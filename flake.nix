@@ -122,6 +122,15 @@
     homeConfigurations = {
       "macos" = macosHomeConfig;
 
+      "omarchy" = mkHome {
+        system = "aarch64-linux";
+        hostModule = ./home/hosts/omarchy.nix;
+        platformName = "omarchy";
+        hostName = "omarchy";
+        userName = runtimeUser;
+        homeDirectory = runtimeHome "/home";
+      };
+
       "linux" =
         if runtimeLinuxSystem == "x86_64-linux" then
           linuxX86_64Config

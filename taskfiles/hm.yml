@@ -44,7 +44,7 @@ tasks:
           Darwin:macos)
             target="path:${stage_repo}#darwinConfigurations.${host}.system"
             ;;
-          Linux:linux|Linux:docker)
+          Linux:linux|Linux:docker|Linux:omarchy)
             target="path:${stage_repo}#homeConfigurations.${host}.activationPackage"
             ;;
           Darwin:*)
@@ -84,7 +84,7 @@ tasks:
           Darwin:macos)
             exec "$repo_root/bootstrap/apply-darwin.sh" --host "$host"
             ;;
-          Linux:linux|Linux:docker)
+          Linux:linux|Linux:docker|Linux:omarchy)
             exec "$repo_root/bootstrap/apply-home-manager.sh" --host "$host"
             ;;
           Darwin:*)

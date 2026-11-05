@@ -71,7 +71,7 @@ runtime_user="$(id -un)"
 runtime_home="${HOME:?bootstrap: HOME must be set}"
 
 case "$(uname -s):$host" in
-  Darwin:macos|Linux:linux|Linux:docker) ;;
+  Darwin:macos|Linux:linux|Linux:docker|Linux:omarchy) ;;
   Darwin:*)
     printf '%s\n' "bootstrap: unsupported macOS host: $host" >&2
     exit 1
@@ -110,7 +110,7 @@ case "$host" in
     DOTFILES_BOOTSTRAP_SKIP_NIX_INSTALL="$skip_nix_install" \
       "$repo_root/bootstrap/apply-darwin.sh" --host "$host"
     ;;
-  linux|docker)
+  linux|docker|omarchy)
     DOTFILES_BOOTSTRAP_SKIP_NIX_INSTALL="$skip_nix_install" \
       "$repo_root/bootstrap/apply-home-manager.sh" --host "$host"
     ;;

@@ -46,7 +46,7 @@ fi
 host="$("$repo_root/bootstrap/resolve-host.sh" "$host")"
 
 case "$host" in
-  linux|docker) ;;
+  linux|docker|omarchy) ;;
   *)
     printf '%s\n' "bootstrap: unsupported Linux host: $host" >&2
     exit 1

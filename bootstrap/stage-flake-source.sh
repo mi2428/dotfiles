@@ -12,7 +12,7 @@ stage_dir="$(mktemp -d "$cache_dir/flake-source.XXXXXX")"
   find . \
     -path './.git' -prune -o \
     \( -type d -o -type f -o -type l \) -print0 |
-    tar --null --files-from=- --create --file - --no-recursion
+    tar --null --no-recursion --files-from=- --create --file -
 ) | (
   cd "$stage_dir"
   tar --extract --file -

@@ -15,6 +15,15 @@ case "$platform" in
     printf '%s\n' "$requested_host"
     ;;
   Linux)
+    if [[ "$requested_host" == "omarchy" ]]; then
+      if [[ "$("$repo_root/bootstrap/detect-host.sh")" != omarchy ]]; then
+        printf '%s\n' 'bootstrap: omarchy is not registered for this machine' >&2
+        exit 1
+      fi
+      printf '%s\n' 'omarchy'
+      exit 0
+    fi
+
     if [[ -z "$requested_host" || "$requested_host" == "linux" ]]; then
       exec "$repo_root/bootstrap/detect-host.sh"
     fi
