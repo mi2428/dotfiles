@@ -11,7 +11,7 @@ ipinfo-cli
 magika
 rich-cli
 rtk
-s5cmd
+s5cmd-bin
 sq-bin
 terraform-docs
 terraform-ls
