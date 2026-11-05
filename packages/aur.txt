@@ -17,5 +17,5 @@ terraform-docs
 terraform-ls
 tmuxinator
 ttf-hackgen
-ttf-plemoljp
+ttf-plemoljp-bin
 viddy
