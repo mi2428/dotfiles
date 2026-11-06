@@ -1,3 +1,6 @@
+-- Use Omarchy's input-language switcher instead of its terminal-prefix pass-through.
+o.rebind("CTRL + SPACE", "Toggle Japanese input", "omarchy-input-method cycle")
+
 -- Use Omarchy's down/up pattern to avoid stuck synthetic keys.
 local function send_key(mods, key)
   hl.dispatch(hl.dsp.send_key_state({ mods = mods, key = key, state = "down" }))
