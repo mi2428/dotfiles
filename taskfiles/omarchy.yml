@@ -1,0 +1,13 @@
+version: '3'
+
+tasks:
+  omarchy.copy:
+    desc: Copy MBP and Ghostty presets into writable files, backing up existing settings
+    cmds:
+      - bash '{{.REPO_ROOT}}/scripts/copy-omarchy-presets.sh'
+
+  omarchy.test:
+    desc: Run offline checks for preset copying and font installation
+    cmds:
+      - bash '{{.REPO_ROOT}}/scripts/test-omarchy-presets.sh'
+      - python3 '{{.REPO_ROOT}}/scripts/test-fonts.py'

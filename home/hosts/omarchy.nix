@@ -47,10 +47,10 @@
     fi
     test -f /usr/share/omarchy/default/hypr/bootstrap.lua
   '';
-
-  xdg.configFile = {
-    "hypr/input.lua".source = ../files/config/hypr/omarchy/input.lua;
-    "hypr/monitors.lua".source = ../files/config/hypr/omarchy/monitors.lua;
-    "hypr/bindings.lua".source = ../files/config/hypr/omarchy/bindings.lua;
-  };
+  # Only our tool environment is continuously managed. Desktop preferences
+  # are writable copies installed explicitly by omarchy.copy, not by activation.
+  xdg.configFile."uwsm/env.d/90-dotfiles-nix".text = ''
+    . "$HOME/.nix-profile/etc/profile.d/nix.sh"
+    . "$HOME/.nix-profile/etc/profile.d/hm-session-vars.sh"
+  '';
 }

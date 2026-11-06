@@ -15,6 +15,12 @@ includes:
     vars:
       REPO_ROOT:
         ref: .REPO_ROOT
+  omarchy:
+    taskfile: ./taskfiles/omarchy.yml
+    flatten: true
+    vars:
+      REPO_ROOT:
+        ref: .REPO_ROOT
   pacman:
     taskfile: ./taskfiles/pacman.yml
     flatten: true
@@ -84,6 +90,8 @@ tasks:
         printf "$task_fmt" "$green" 'pacman.sync' "$reset" 'Update Arch packages and install the repo-managed package lists'
         printf "$task_fmt" "$green" 'aur.sync' "$reset" 'Review, build, and install the repo-managed AUR packages'
         printf "$task_fmt" "$green" 'fonts.install' "$reset" 'Build, check, and install the pinned Summer Ghost font'
+        printf "$task_fmt" "$green" 'omarchy.copy' "$reset" 'Copy MBP and Ghostty presets, backing up existing settings'
+        printf "$task_fmt" "$green" 'omarchy.test' "$reset" 'Run offline preset and font regression checks'
         printf "$task_fmt" "$green" 'ai.check' "$reset" 'Check AI executables and OpenCode/Herdr profiles'
         printf "$task_fmt" "$green" 'ai.upgrade' "$reset" 'Upgrade external AI harnesses and OpenCode, then refresh the exact Slim pin'
         printf "$task_fmt" "$green" 'secrets.encrypt' "$reset" 'Encrypt ssh and/or gnupg into chezmoi source state'
