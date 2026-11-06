@@ -7,7 +7,7 @@ trap 'rm -rf -- "$scratch"' EXIT
 mkdir -p "$scratch/bin" "$scratch/config/hypr"
 export XDG_CONFIG_HOME="$scratch/config" RESOLUTION_TEST_DIR="$scratch"
 cp "$root/home/files/config/hypr/omarchy/monitors.lua" "$XDG_CONFIG_HOME/hypr/monitors.lua"
-printf '2294\n' >"$scratch/width"
+printf '2704\n' >"$scratch/width"
 cat >"$scratch/bin/hyprctl" <<'EOF'
 #!/bin/sh
 set -eu
@@ -39,11 +39,11 @@ export PATH="$scratch/bin:$PATH"
 config="$XDG_CONFIG_HOME/hypr/monitors.lua"
 printf '\n-- Preserve local adjustments.\n' >>"$config"
 original=$(cat "$config")
-bash "$root/bin/omarchy-resolution-toggle" >/dev/null
-test "$(cat "$scratch/width")" = 2704
-grep -q '^local logical_width = 2704$' "$config"
-bash "$root/bin/omarchy-resolution-toggle" >/dev/null
-test "$(cat "$scratch/width")" = 2294
+for width in 3024 2294 2704; do
+  bash "$root/bin/omarchy-resolution-toggle" >/dev/null
+  test "$(cat "$scratch/width")" = "$width"
+  grep -qxF "local logical_width = $width" "$config"
+done
 test "$(cat "$config")" = "$original"
 if FAIL_RELOAD=1 bash "$root/bin/omarchy-resolution-toggle" >/dev/null 2>&1; then
   echo 'Failed reload was accepted' >&2
@@ -56,8 +56,8 @@ if bash "$root/bin/omarchy-resolution-toggle" >/dev/null 2>&1; then
   exit 1
 fi
 test "$(cat "$config")" = "$original"
-printf '2294\n' >"$scratch/width"
-sed 's/^local logical_width = .*/local another_setting = 2294/' "$config" >"$scratch/invalid.lua"
+printf '2704\n' >"$scratch/width"
+sed 's/^local logical_width = .*/local another_setting = 2704/' "$config" >"$scratch/invalid.lua"
 mv "$scratch/invalid.lua" "$config"
 invalid=$(cat "$config")
 if bash "$root/bin/omarchy-resolution-toggle" >/dev/null 2>&1; then
@@ -65,4 +65,4 @@ if bash "$root/bin/omarchy-resolution-toggle" >/dev/null 2>&1; then
   exit 1
 fi
 test "$(cat "$config")" = "$invalid"
-printf '%s\n' 'Persistent display toggle and rollback: ok'
+printf '%s\n' 'Persistent three-preset display cycle and rollback: ok'

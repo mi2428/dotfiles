@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Toggle this MBP's logical display size without changing its native 120 Hz mode.
+# Cycle this MBP's logical display sizes without changing its native 120 Hz mode.
 instance=$(hyprctl instances -j | jq -er '
   if length == 1 then .[0].instance else error("Expected one Hyprland session") end')
 
@@ -14,16 +14,20 @@ display_width() {
 }
 
 case "$(display_width)" in
-  2704)
-    width=2294
-    height=1490
-    ;;
   2294)
     width=2704
     height=1756
     ;;
+  2704)
+    width=3024
+    height=1964
+    ;;
+  3024)
+    width=2294
+    height=1490
+    ;;
   *)
-    echo 'Current display size is not one of the two MBP presets' >&2
+    echo 'Current display size is not one of the three MBP presets' >&2
     exit 1
     ;;
 esac
@@ -36,7 +40,7 @@ fi
 temporary=$(mktemp "$config.XXXXXX")
 trap 'rm -f -- "$temporary"' EXIT
 awk -v width="$width" '
-  /^local logical_width = (2294|2704)$/ { $0 = "local logical_width = " width; count++ }
+  /^local logical_width = (2294|2704|3024)$/ { $0 = "local logical_width = " width; count++ }
   { print }
   END { if (count != 1) { print "Expected one logical_width preset in monitors.lua" > "/dev/stderr"; exit 1 } }
 ' "$config" >"$temporary"
