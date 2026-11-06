@@ -39,6 +39,8 @@ let
   ghReviewPreview = ../../files/libexec/dotfiles/gh-review-preview;
   hermesConfig = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/home/files/hermes/config.yaml";
   macCompatibilityFiles = lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+    "Library/Application Support/com.mitchellh.ghostty/config" =
+      mkLink ../../files/config/ghostty/config.macos;
     "Library/Application Support/com.mitchellh.ghostty/themes" =
       mkLink ../../files/config/ghostty/themes;
     "Library/Application Support/lazygit/config.yml" = mkLink ../../files/config/lazygit/config.yml;
@@ -72,7 +74,8 @@ in
     "starship" = mkLink ../../files/config/starship;
     "tuicr/config.toml" = mkLink ../../files/config/tuicr/config.toml;
     "yazi" = mkLink yaziConfig;
-  } // lib.optionalAttrs (platformName != "omarchy") {
+  }
+  // lib.optionalAttrs (platformName != "omarchy") {
     "ghostty/config" = mkLink ../../files/config/ghostty/config.ghostty;
   };
 

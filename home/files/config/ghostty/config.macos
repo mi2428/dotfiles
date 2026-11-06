@@ -1,0 +1,2 @@
+# Omarchy reserves Super+Shift+Enter for its browser launcher.
+keybind = global:cmd+shift+enter=toggle_quick_terminal

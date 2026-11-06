@@ -11,7 +11,6 @@ macos-option-as-alt = left
 # References:
 # - https://github.com/atuinsh/atuin/blob/main/crates/atuin/src/shell/atuin.zsh
 # - https://github.com/atuinsh/atuin/blob/main/crates/atuin/src/shell/atuin.fish
-keybind = global:cmd+shift+enter=toggle_quick_terminal
 keybind = cmd+g>d=new_split:right
 keybind = cmd+g>shift+d=new_split:down
 keybind = cmd+g>minus=new_split:down
