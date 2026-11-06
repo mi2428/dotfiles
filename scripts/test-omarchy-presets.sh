@@ -13,7 +13,7 @@ EOF
 printf '#!/bin/sh\nprintf "Linux\\n"\n' >"$scratch/bin/uname"
 chmod +x "$scratch/repo/bootstrap/detect-host.sh" "$scratch/bin/uname"
 export PATH="$scratch/bin:$PATH" XDG_CONFIG_HOME="$scratch/config"
-for name in input bindings monitors; do
+for name in input bindings monitors looknfeel; do
   printf '%s preset\n' "$name" >"$scratch/repo/home/files/config/hypr/omarchy/$name.lua"
 done
 echo 'font-family = Summer Ghost' >"$scratch/repo/home/files/config/ghostty/config.ghostty"
@@ -46,6 +46,7 @@ test -w "$XDG_CONFIG_HOME/hypr/input.lua"
 test "$(cat "$scratch/immutable")" = 'immutable original'
 test "$(cat "$XDG_CONFIG_HOME"/hypr/input.lua.before-dotfiles.*)" = 'immutable original'
 cmp "$XDG_CONFIG_HOME/ghostty/config" "$scratch/repo/home/files/config/ghostty/config.ghostty"
+cmp "$XDG_CONFIG_HOME/hypr/looknfeel.lua" "$scratch/repo/home/files/config/hypr/omarchy/looknfeel.lua"
 test "$(cat "$XDG_CONFIG_HOME/omarchy/shell.json")" = 'world clock stays enabled'
 
 # Ordinary switches never call this explicit copier; local edits remain until

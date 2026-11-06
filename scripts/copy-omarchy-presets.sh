@@ -12,6 +12,7 @@ presets=(
   hypr/input.lua:hypr/omarchy/input.lua
   hypr/bindings.lua:hypr/omarchy/bindings.lua
   hypr/monitors.lua:hypr/omarchy/monitors.lua
+  hypr/looknfeel.lua:hypr/omarchy/looknfeel.lua
   ghostty/config:ghostty/config.ghostty
 )
 
