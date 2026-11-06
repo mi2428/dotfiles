@@ -12,6 +12,6 @@ hl.device({
   -- Tap-dragging bypasses libinput's typing suppression; physical dragging stays enabled.
   tap_and_drag = false,
   -- Pointer speed (-1.0 to 1.0); keep adaptive acceleration.
-  sensitivity = 0.7,
+  sensitivity = 0.6,
   accel_profile = "adaptive",
 })
