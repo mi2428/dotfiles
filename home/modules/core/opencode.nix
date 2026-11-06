@@ -223,6 +223,7 @@ let
   };
   happierCliConfig = todoCliConfig // {
     keybinds = todoCliConfig.keybinds // { "agent.cycle" = "shift+tab"; };
+    session = todoCliConfig.session // { permissions = "autoaccept"; };
   };
   herdrCliConfig = todoCliConfig // {
     plugins = todoCliConfig.plugins ++ [ "./herdr-opencode" ];
@@ -327,6 +328,8 @@ in
     "opencode-profiles/happier/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
     "opencode-profiles/happier/opencode/opencode.jsonc" = mkLink generated.happierConfig;
     "opencode-profiles/happier/opencode/cli.json" = mkLink generated.happierCli;
+    "opencode-profiles/happier/opencode/themes/catppuccin-mocha-mauve.json" =
+      mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode-profiles/happier/opencode/tui-plugins/todo" = {
       force = true;
       source = todoOverlayOpenCodePackage;

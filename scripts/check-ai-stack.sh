@@ -21,7 +21,13 @@ for profile in chat happier herdr slim; do
     config="$HOME/.config/opencode-profiles/$profile/opencode"
     [ -f "$config/opencode.jsonc" ] && [ -f "$config/cli.json" ] ||
         fail "OpenCode $profile profile is not installed"
+    [ -f "$config/themes/catppuccin-mocha-mauve.json" ] ||
+        fail "OpenCode $profile custom theme is missing"
 done
+
+happier_cli="$HOME/.config/opencode-profiles/happier/opencode/cli.json"
+jq -e '.session.permissions == "autoaccept"' "$happier_cli" >/dev/null ||
+    fail 'Happier OpenCode must auto-approve permissions'
 
 herdr_config="$HOME/.config/opencode-profiles/herdr/opencode"
 for plugin in \
