@@ -51,7 +51,6 @@ font-style-bold-italic = Bold Italic
 font-synthetic-style = false
 font-feature = -calt, -liga, -dlig
 font-size = 14
-alpha-blending = native
 font-thicken = true
 font-thicken-strength = 100
 cursor-style = block
