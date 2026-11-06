@@ -32,6 +32,7 @@ dust
 eksctl
 expect
 figlet
+fontconfig
 fq
 git-lfs
 gitleaks

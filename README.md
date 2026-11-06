@@ -3,7 +3,7 @@
 Shell environment since 2016. Currently:
 
 - Daily stack: [Ghostty](https://ghostty.org/), fish, [OpenCode](https://opencode.ai/), [herdr](https://herdr.dev/) (for AI agents), tmux (for humans), and Neovim.
-- Primary font: [Summer Ghost](https://github.com/mi2428/font-summer-ghost), a custom Japanese monospace font blend for Ghostty. Install it separately before applying these dotfiles; Nerd Font glyphs come from Ghostty's built-in fallback.
+- Primary font: [Summer Ghost](https://github.com/mi2428/font-summer-ghost), a custom Japanese monospace font blend for Ghostty. Run `task fonts.install` after activation to build, validate, and install it; Nerd Font glyphs come from Ghostty's built-in fallback.
 - Terminal theme: [Catppuccin](https://github.com/catppuccin/catppuccin), usually [Mocha](https://catppuccin.com/palette/).
 - Managed state is split between [Nix](https://github.com/nix-community/home-manager) and [chezmoi](https://github.com/twpayne/chezmoi): `flake.nix` and `home/` define the steady state, while `chezmoi/` handles bootstrap and encrypted secrets.
 

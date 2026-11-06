@@ -1,0 +1,7 @@
+version: '3'
+
+tasks:
+  fonts.install:
+    desc: Build, check, and install the pinned Summer Ghost font
+    cmds:
+      - bash '{{.REPO_ROOT}}/scripts/install-summer-ghost.sh'

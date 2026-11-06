@@ -17,6 +17,9 @@ let
     fzf
     git
     gnupg
+    # Build/task tooling; Summer Ghost's Python dependencies stay in upstream uv.lock.
+    gnumake
+    go-task
     nixfmt
     ripgrep
     shellcheck
