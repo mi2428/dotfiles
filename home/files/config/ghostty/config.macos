@@ -1,2 +1,5 @@
 # Omarchy reserves Super+Shift+Enter for its browser launcher.
 keybind = global:cmd+shift+enter=toggle_quick_terminal
+
+# Omarchy applies terminal transparency in the compositor instead.
+background-opacity = 0.92
