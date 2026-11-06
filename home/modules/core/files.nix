@@ -96,6 +96,7 @@ in
 
     activation = {
       installHerdrAgentIntegrations = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+        export PATH="${lib.concatStringsSep ":" config.home.sessionPath}:$PATH"
         herdr_bin=$(command -v herdr || true)
         if [ -z "$herdr_bin" ]; then
           if [ "${platformName}" = docker ]; then
