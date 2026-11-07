@@ -7,8 +7,9 @@ tasks:
       - bash '{{.REPO_ROOT}}/scripts/copy-omarchy-presets.sh'
 
   omarchy.test:
-    desc: Run offline checks for presets, display switching, and font installation
+    desc: Run offline checks for presets, display switching, awake mode, and font installation
     cmds:
       - bash '{{.REPO_ROOT}}/scripts/test-omarchy-presets.sh'
       - bash '{{.REPO_ROOT}}/scripts/test-omarchy-resolution.sh'
+      - bash '{{.REPO_ROOT}}/scripts/test-omarchy-awake.sh'
       - python3 '{{.REPO_ROOT}}/scripts/test-fonts.py'

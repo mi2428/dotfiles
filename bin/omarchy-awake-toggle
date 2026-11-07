@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# != 0 || $(uname -s) != Linux ]]; then
+  echo 'Usage: omarchy-awake-toggle (Linux only)' >&2
+  exit 2
+fi
+
+# A transient system service holds the inhibitor until toggled off or rebooted.
+# Screen locking and display power management remain independent.
+unit=omarchy-awake.service
+if systemctl is-active --quiet "$unit"; then
+  sudo systemctl stop "$unit"
+  echo 'Home awake mode: OFF'
+  exit 0
+fi
+
+sudo systemd-run --quiet --collect --unit="$unit" --service-type=exec \
+  /usr/bin/systemd-inhibit --no-ask-password --what=sleep:handle-lid-switch \
+  --mode=block --who=omarchy-awake --why='Home awake mode' /usr/bin/sleep infinity
+
+# Starting the process is not enough: confirm that logind granted its lock.
+for _ in {1..20}; do
+  pid=$(systemctl show "$unit" --property=MainPID --value)
+  if systemd-inhibit --list --json=short | jq -e --argjson pid "$pid" '
+    any(.[]; .pid == $pid and .who == "omarchy-awake" and .mode == "block"
+      and (.what | split(":") | sort) == ["handle-lid-switch", "sleep"])' >/dev/null; then
+    echo 'Home awake mode: ON'
+    exit 0
+  fi
+  sleep 0.05
+done
+sudo systemctl stop "$unit"
+echo 'Failed to acquire the sleep/lid inhibitor; awake mode was stopped.' >&2
+exit 1
