@@ -1,10 +1,14 @@
 {
   config,
   lib,
+  pkgs,
   userName,
   homeDirectory,
   ...
 }:
+let
+  androidHost = import pkgs.path { system = "x86_64-linux"; };
+in
 {
   imports = [
     ../profiles/base.nix
@@ -28,6 +32,18 @@
   # Omarchy's existing mise policy is not changed by the package installation.
   # Ghostty, Herdr, and tmux honor SHELL. Changing passwd's login shell needs chsh.
   home.sessionVariables.SHELL = "${config.home.profileDirectory}/bin/fish";
+  # Source through the project's local .envrc, not the global shell environment.
+  # Store references keep QEMU's guest libraries alive across Nix garbage collection.
+  xdg.dataFile."dropcheck-agent/env.sh".text = ''
+    export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+    export ANDROID_HOME="$HOME/Android/Sdk"
+    export ANDROID_USER_HOME="$HOME/.android"
+    export GOTOOLCHAIN=go1.26.8
+    export GOFLAGS=-p=1
+    export PATH="$HOME/.local/share/dropcheck-agent/bin:$HOME/io/dropcheck-agent/controller/dist:$PATH"
+    export QEMU_LD_PREFIX=${androidHost.glibc.out}
+    export QEMU_SET_ENV=LD_LIBRARY_PATH=${androidHost.glibc.out}/lib:${androidHost.stdenv.cc.cc.lib}/lib:${androidHost.zlib}/lib
+  '';
   programs.bash = {
     enable = true;
     # Omarchy needs its environment even in non-interactive SSH shells.

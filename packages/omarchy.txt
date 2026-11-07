@@ -1,3 +1,7 @@
+android-tools
+android-udev
+jdk17-openjdk
+qemu-user-static-binfmt
 herdr
 ollama
 1password
