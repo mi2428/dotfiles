@@ -1,6 +1,9 @@
 herdr
 ollama
+1password
 1password-cli
+tailscale
+google-chrome
 claude-code
 openai-codex-bin
 ghostty
