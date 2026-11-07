@@ -61,10 +61,6 @@ function run_nvim_pane --argument-names user_shell server root
 end
 
 function switch_or_attach --argument-names session
-    if set -q WORK_NO_ATTACH; and test "$WORK_NO_ATTACH" = 1
-        return
-    end
-
     if set -q TMUX
         tmux switch-client -t "$session"
     else
