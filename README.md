@@ -1,9 +1,11 @@
 # dotfiles
 
-Shell environment since 2016. Currently:
+Shell environment since 2016.
+Currently:
 
 - Daily stack: [Ghostty](https://ghostty.org/), fish, [OpenCode](https://opencode.ai/), [herdr](https://herdr.dev/) (for AI agents), tmux (for humans), and Neovim.
-- Primary font: [Summer Ghost](https://github.com/mi2428/font-summer-ghost), a custom Japanese monospace font blend for Ghostty. Run `task fonts.install` after activation to build, validate, and install it; Nerd Font glyphs come from Ghostty's built-in fallback.
+- Primary font: [Summer Ghost](https://github.com/mi2428/font-summer-ghost), a custom Japanese monospace font blend for Ghostty.
+  Run `task fonts.install` after activation to build, validate, and install it; Nerd Font glyphs come from Ghostty's built-in fallback.
 - Terminal theme: [Catppuccin](https://github.com/catppuccin/catppuccin), usually [Mocha](https://catppuccin.com/palette/).
 - Managed state is split between [Nix](https://github.com/nix-community/home-manager) and [chezmoi](https://github.com/twpayne/chezmoi): `flake.nix` and `home/` define the steady state, while `chezmoi/` handles bootstrap and encrypted secrets.
 
@@ -91,14 +93,8 @@ Examples
 On macOS, Homebrew is intentionally decoupled from `darwin-rebuild`.
 Use the repo-root `Brewfile` with `task brew.check` and `task brew.sync` for Homebrew state, then use `task hm.switch HOST=macos` for Nix-managed changes.
 
-On Omarchy, `task pacman.sync` also preinstalls Node and OpenCode through the
-existing system mise declarations, in that order. Their lazy shims must not be
-the first installer; the OS Node/npm packages remain in `packages/pacman.txt`.
-
-Run `task hm.gc` as the login user, never as `sudo task hm.gc`; it elevates only
-the system garbage-collection pass. macOS SIP protects `com.apple.macl`, so a
-path blocked by that attribute cannot be removed from a normally booted system;
-delete it only from macOS Recovery or a separately booted volume.
+Run `task hm.gc` as the login user, never as `sudo task hm.gc`; it elevates only the system garbage-collection pass.
+macOS SIP protects `com.apple.macl`, so a path blocked by that attribute cannot be removed from a normally booted system; delete it only from macOS Recovery or a separately booted volume.
 
 For quick config checks, you do not need to run `hm.switch` for every small change.
 Use [`bin/dotfiles-dev`](bin/dotfiles-dev), which builds a writable projected `XDG_CONFIG_HOME` per app from the repo tree:
@@ -145,7 +141,8 @@ Some commands also have `*.dev` wrappers under `/bin`, such as `fish.dev` and `t
 > $ docker stop dotfiles-mcp
 > ```
 > 
-> The Go server in [`mcp/`](mcp/) uses the official MCP Go SDK and exposes `read_path`, `search_files`, `apply_patch`, and `run_command`. File operations are confined to `/work`; commands start there and remain isolated inside the container.
+> The Go server in [`mcp/`](mcp/) uses the official MCP Go SDK and exposes `read_path`, `search_files`, `apply_patch`, and `run_command`.
+> File operations are confined to `/work`; commands start there and remain isolated inside the container.
 > 
 > If you already have `gh` auth on the host, `task docker.run` forwards `GH_TOKEN` automatically.
 > You can override the container name with `CONTAINER_NAME=`.

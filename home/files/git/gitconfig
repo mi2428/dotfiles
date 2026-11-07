@@ -35,6 +35,10 @@
 [push]
   default = current
 
+# Public bootstrap fetches stay on HTTPS; authenticated GitHub pushes use SSH.
+[url "git@github.com:"]
+  pushInsteadOf = https://github.com/
+
 [alias]
   ad      = add
   cancel  = reset --soft HEAD^

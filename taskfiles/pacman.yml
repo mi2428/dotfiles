@@ -2,10 +2,10 @@ version: '3'
 
 tasks:
   pacman.sync:
-    desc: Update Arch packages and install the repo-managed package lists
+    desc: Update and install repository and AUR packages with interactive review
     preconditions:
-      - sh: 'test "$(uname -s)" = Linux && command -v pacman >/dev/null && grep -Eq "^(ID|ID_LIKE)=.*arch" /etc/os-release'
-        msg: pacman.sync requires Arch Linux or an Arch-based distribution
+      - sh: 'test "$(uname -s)" = Linux && command -v pacman >/dev/null && command -v yay >/dev/null && grep -Eq "^(ID|ID_LIKE)=.*arch" /etc/os-release'
+        msg: pacman.sync requires Arch Linux or an Arch-based distribution and yay
     cmds:
       - |
         set -eu
@@ -15,23 +15,12 @@ tasks:
         if printf '%s\n' "$repos" | grep -qx omarchy; then
           set -- "$@" "$repo_root/packages/omarchy.txt"
         fi
-        # No package removal, AUR builds, service activation, or mise config changes.
-        packages=$(cat "$@")
-        printf '%s\n' "$packages" | sudo pacman -Syu --needed -
+        # Keep yay's PKGBUILD review and confirmation prompts on the terminal.
+        # Rust AUR builds require an initialized rustup toolchain.
+        packages=$(cat "$@" "$repo_root/packages/aur.txt")
+        printf '%s\n' "$packages" | sort -u | xargs -r -o yay -Syu --needed --
         # Prime Omarchy's lazy tools in dependency order instead of relying on shims.
         if printf '%s\n' "$repos" | grep -qx omarchy; then
           mise install node
           mise install opencode
         fi
-
-  aur.sync:
-    desc: Build and install the repo-managed AUR packages with interactive review
-    preconditions:
-      - sh: 'test "$(uname -s)" = Linux && command -v yay >/dev/null && grep -Eq "^(ID|ID_LIKE)=.*arch" /etc/os-release'
-        msg: aur.sync requires Arch Linux and yay; run pacman.sync first
-    cmds:
-      - |
-        set -eu
-        # Keep yay's PKGBUILD review and confirmation prompts enabled.
-        # Rust builds require an initialized rustup toolchain.
-        xargs -r -o yay -S --needed -- < '{{.REPO_ROOT}}/packages/aur.txt'

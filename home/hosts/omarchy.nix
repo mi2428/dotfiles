@@ -64,7 +64,7 @@ in
     test -f /usr/share/omarchy/default/hypr/bootstrap.lua
   '';
   # Only our tool environment is continuously managed. Desktop preferences
-  # are writable copies installed explicitly by omarchy.copy, not by activation.
+  # remain writable files owned by Omarchy, not Home Manager.
   xdg.configFile."uwsm/env.d/90-dotfiles-nix".text = ''
     . "$HOME/.nix-profile/etc/profile.d/nix.sh"
     . "$HOME/.nix-profile/etc/profile.d/hm-session-vars.sh"
