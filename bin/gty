@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""Open the platform's Ghostty workspace with Herdr and tmux."""
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import shlex
+import shutil
+import subprocess
+import sys
+import time
+
+
+HERDR_WIDTH = 700  # Logical pixels, matching ghostty.scpt.
+APP_PREFIX = "org.omarchy.gty."
+
+
+def output(*command):
+    return subprocess.run(command, check=True, capture_output=True, text=True, timeout=10).stdout
+
+
+def lua_string(value):
+    # Fixed-width byte escapes cannot turn paths or session names into Lua code.
+    return '"' + "".join(f"\\{byte:03d}" for byte in value.encode()) + '"'
+
+
+def omarchy(session):
+    instance = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
+    if not instance:
+        instances = json.loads(output("hyprctl", "instances", "-j"))
+        if len(instances) != 1:
+            raise RuntimeError("Expected exactly one Hyprland session")
+        instance = instances[0]["instance"]
+
+    def query(name):
+        return json.loads(output("hyprctl", "-i", instance, name, "-j"))
+
+    def dispatch(expression):
+        result = output("hyprctl", "-i", instance, "dispatch", expression).strip()
+        if result != "ok":
+            raise RuntimeError(result)
+
+    def wait_for(check, description):
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            result = check()
+            if result:
+                return result
+            time.sleep(0.05)
+        raise RuntimeError(f"Timed out waiting for {description}")
+
+    def pair(workspace, herdr_class):
+        windows = [window for window in query("clients") if window["workspace"]["name"] == workspace]
+        classes = [herdr_class, herdr_class.removesuffix(".herdr") + ".tmux"]
+        if any(window["class"] not in classes for window in windows):
+            raise RuntimeError(f"Workspace {workspace!r} contains other windows; leaving it unchanged")
+        if any(sum(window["class"] == app for window in windows) > 1 for app in classes):
+            raise RuntimeError(f"Workspace {workspace!r} contains duplicate gty windows")
+        return [next((window for window in windows if window["class"] == app), None) for app in classes]
+
+    def arrange(workspace, herdr_class):
+        left, right = pair(workspace, herdr_class)
+        if not left or not right or left["floating"] or right["floating"]:
+            raise RuntimeError(f"Workspace {workspace!r} must contain two tiled gty windows")
+        address = lua_string("address:" + left["address"])
+        dispatch(f"hl.dsp.focus({{ window = {address} }})")
+        if abs(left["at"][1] - right["at"][1]) > 1:
+            dispatch('hl.dsp.layout("togglesplit")')
+
+        def horizontal():
+            left, right = pair(workspace, herdr_class)
+            return (left, right) if left and right and left["at"][0] != right["at"][0] and abs(left["at"][1] - right["at"][1]) <= 1 else None
+
+        left, right = wait_for(horizontal, f"horizontal layout in {workspace!r}")
+        if left["at"][0] > right["at"][0]:
+            target = lua_string("address:" + right["address"])
+            dispatch(f"hl.dsp.window.swap({{ window = {address}, with = {target} }})")
+            def ordered():
+                current = horizontal()
+                return current if current and current[0]["at"][0] < current[1]["at"][0] else None
+
+            wait_for(ordered, "Herdr on the left")
+        left, right = pair(workspace, herdr_class)
+        if left["size"][0] != HERDR_WIDTH:
+            dispatch(f"hl.dsp.window.resize({{ window = {address}, x = {HERDR_WIDTH}, y = {left['size'][1]}, relative = false }})")
+
+        def sized():
+            left, right = pair(workspace, herdr_class)
+            return left and right and left["size"][0] == HERDR_WIDTH and left["at"][0] < right["at"][0]
+
+        wait_for(sized, f"Herdr width {HERDR_WIDTH} in {workspace!r}")
+
+    if session == "r":
+        original = query("activewindow")
+        targets = [(window["workspace"]["name"], window["class"]) for window in query("clients")
+                   if window["class"].startswith(APP_PREFIX) and window["class"].endswith(".herdr")]
+        if not targets:
+            raise RuntimeError("No gty workspaces found")
+        for workspace, app in targets:
+            arrange(workspace, app)
+        if original.get("address"):
+            dispatch(f"hl.dsp.focus({{ window = {lua_string('address:' + original['address'])} }})")
+        print(f"Herdr width: {HERDR_WIDTH} ({len(targets)} workspaces)")
+        return
+
+    for command in ("uwsm-app", "xdg-terminal-exec", "herdr", "tmux"):
+        if not shutil.which(command):
+            raise RuntimeError(f"Required command not found: {command}")
+    if session == "":
+        raise RuntimeError("Session name must not be empty")
+    workspace = "gty" if session is None else f"gty:{session}"
+    identity = "default" if session is None else "s" + hashlib.sha256(session.encode()).hexdigest()
+    app = APP_PREFIX + identity
+    left_class = app + ".herdr"
+    existing = pair(workspace, left_class)
+    if any(window["class"].startswith(app + ".") and window["workspace"]["name"] != workspace for window in query("clients")):
+        raise RuntimeError("This gty session has windows in another workspace; leaving them unchanged")
+    dispatch(f"hl.dsp.focus({{ workspace = {lua_string('name:' + workspace)} }})")
+    commands = [["herdr"], ["tmux"]] if session is None else [
+        ["herdr", "--session", session], ["tmux", "new-session", "-A", "-s", session],
+    ]
+    for index, (role, directory) in enumerate((("herdr", str(Path.cwd())), ("tmux", str(Path.home())))):
+        if existing[index]:
+            continue
+        command = ["setsid", "uwsm-app", "--", "xdg-terminal-exec", f"--app-id={app}.{role}", f"--dir={directory}", "-e", *commands[index]]
+        dispatch(f"hl.dsp.exec_cmd({lua_string(shlex.join(command))}, {{ workspace = {lua_string('name:' + workspace)} }})")
+        wait_for(lambda: pair(workspace, left_class)[index], f"{role} window")
+    arrange(workspace, left_class)
+    print(f"Workspace {workspace}: Herdr {HERDR_WIDTH} | tmux")
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog="gty", description="Open Herdr on the left and tmux on the right. Use r to restore Herdr widths.")
+    parser.add_argument("session", nargs="?", metavar="SESSION|r")
+    args = parser.parse_args(argv)
+    if sys.platform == "darwin":
+        command = ["ghostty-resize-herdr-pane.scpt"] if args.session == "r" else ["ghostty.scpt"] + ([] if args.session is None else [args.session])
+        os.execvp(command[0], command)
+    elif sys.platform == "linux":
+        omarchy(args.session)
+    else:
+        raise RuntimeError("Supported platforms: macOS and Omarchy/Hyprland")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, subprocess.SubprocessError, RuntimeError, ValueError) as error:
+        print(f"gty: {error}", file=sys.stderr)
+        sys.exit(1)

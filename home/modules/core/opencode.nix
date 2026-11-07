@@ -209,6 +209,7 @@ let
   commonCliConfig = {
     "$schema" = "https://opencode.ai/v2/cli.json";
     theme.name = "catppuccin-mocha-mauve";
+    tabs.mode = "off";
     diffs.view = "auto";
     scroll.acceleration = true;
     attention = {
@@ -231,10 +232,6 @@ let
       thinking = "show";
       grouping = "none";
       tps = true;
-    };
-    tabs = {
-      mode = "auto";
-      indicators = "status";
     };
   };
   chatCliConfig = commonCliConfig // {
