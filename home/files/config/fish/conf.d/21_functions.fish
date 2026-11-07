@@ -384,16 +384,16 @@ function p
 end
 
 function pp
+    if test (count $argv) -eq 0
+        set argv 2001:4860:4860::8888
+    end
+
     if command -sq clockping
-        if test (count $argv) -eq 0
-            clockping icmp --out.colored 2001:4860:4860::8888
-        else
-            clockping icmp --out.colored $argv
-        end
-    else if test (count $argv) -eq 0
-        ping6 2001:4860:4860::8888
-    else
+        clockping icmp --out.colored $argv
+    else if test (uname) = Darwin
         ping6 $argv
+    else
+        ping -6 $argv
     end
 end
 
@@ -405,7 +405,7 @@ function ppp
     else
         ping -c 4 -i 0.25 8.8.8.8
         echo
-        ping6 -c 4 -i 0.25 2001:4860:4860::8888
+        pp -c 4 -i 0.25 2001:4860:4860::8888
     end
 end
 
