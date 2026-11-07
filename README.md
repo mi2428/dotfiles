@@ -91,6 +91,10 @@ Examples
 On macOS, Homebrew is intentionally decoupled from `darwin-rebuild`.
 Use the repo-root `Brewfile` with `task brew.check` and `task brew.sync` for Homebrew state, then use `task hm.switch HOST=macos` for Nix-managed changes.
 
+On Omarchy, `task pacman.sync` also preinstalls Node and OpenCode through the
+existing system mise declarations, in that order. Their lazy shims must not be
+the first installer; the OS Node/npm packages remain in `packages/pacman.txt`.
+
 Run `task hm.gc` as the login user, never as `sudo task hm.gc`; it elevates only
 the system garbage-collection pass. macOS SIP protects `com.apple.macl`, so a
 path blocked by that attribute cannot be removed from a normally booted system;

@@ -15,9 +15,14 @@ tasks:
         if printf '%s\n' "$repos" | grep -qx omarchy; then
           set -- "$@" "$repo_root/packages/omarchy.txt"
         fi
-        # No package removal, AUR builds, explicit service activation, or mise changes.
+        # No package removal, AUR builds, service activation, or mise config changes.
         packages=$(cat "$@")
         printf '%s\n' "$packages" | sudo pacman -Syu --needed -
+        # Prime Omarchy's lazy tools in dependency order instead of relying on shims.
+        if printf '%s\n' "$repos" | grep -qx omarchy; then
+          mise install node
+          mise install opencode
+        fi
 
   aur.sync:
     desc: Build and install the repo-managed AUR packages with interactive review
