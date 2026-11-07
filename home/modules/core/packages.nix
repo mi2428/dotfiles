@@ -1,5 +1,29 @@
 { lib, pkgs, platformName, ... }:
 let
+  clockpingRelease = {
+    aarch64-linux = {
+      arch = "arm64";
+      hash = "sha256-xXxonfr4oiMBAdTimZlJ/V51KeDPFjggecISjTKDIQw=";
+    };
+    x86_64-linux = {
+      arch = "amd64";
+      hash = "sha256-L4qaZ4KE3KGT2WdyEABQfIDDFMRHbZaaw272BhP3riM=";
+    };
+  }.${pkgs.stdenv.hostPlatform.system};
+  clockping = pkgs.stdenv.mkDerivation rec {
+    pname = "clockping";
+    version = "1.0.3";
+    nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+    buildInputs = [ pkgs.stdenv.cc.cc.lib pkgs.glibc ];
+    src = pkgs.fetchurl {
+      url = "https://github.com/mi2428/clockping/releases/download/v${version}/clockping-v${version}-linux-${clockpingRelease.arch}";
+      inherit (clockpingRelease) hash;
+    };
+    dontUnpack = true;
+    installPhase = ''
+      install -Dm755 "$src" "$out/bin/clockping"
+    '';
+  };
   sharedPackages = with pkgs; [
     # Shell PTY e2e tests cannot find atuin inside the macOS Nix sandbox.
     (if stdenv.hostPlatform.isDarwin then
@@ -64,8 +88,8 @@ let
     yarn
     zsh
   ]);
-  dockerPackages = sharedPackages ++ containerDevPackages;
-  linuxPackages = sharedPackages ++ neovimPackages;
+  dockerPackages = sharedPackages ++ containerDevPackages ++ [ clockping ];
+  linuxPackages = sharedPackages ++ neovimPackages ++ [ clockping ];
 in {
   # NOTE: Keep Nix package management limited to cross-platform shell-stack
   # basics. macOS-specific CLI and GUI packages live in the repo-root Brewfile
