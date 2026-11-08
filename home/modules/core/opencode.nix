@@ -130,6 +130,14 @@ let
   commonOpenCodeConfig = {
     "$schema" = "https://opencode.ai/config.json";
     plugins = [ opencodeOtelPlugin ];
+    mcp.servers.browse = {
+      type = "local";
+      command = [
+        "${config.home.homeDirectory}/.local/bin/browse"
+        "mcp"
+      ];
+      environment.XDG_CONFIG_HOME = config.xdg.configHome;
+    };
     update = "disable";
     share = "disabled";
     agents.title.disabled = true;
