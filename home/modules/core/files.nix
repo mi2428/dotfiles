@@ -71,6 +71,7 @@ in
     "k9s" = mkLink ../../files/config/k9s;
     "lazydocker/config.yml" = mkLink ../../files/config/lazydocker/config.yml;
     "lazygit" = mkLink ../../files/config/lazygit;
+    "leaf" = mkLink ../../files/config/leaf;
     "starship" = mkLink ../../files/config/starship;
     "tuicr/config.toml" = mkLink ../../files/config/tuicr/config.toml;
     "yazi" = mkLink yaziConfig;
