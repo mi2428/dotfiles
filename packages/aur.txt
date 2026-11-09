@@ -8,6 +8,7 @@ granted
 grpcurl-bin
 hunk
 ipinfo-cli
+leaf-markdown-viewer-bin
 magika
 rich-cli
 rtk
