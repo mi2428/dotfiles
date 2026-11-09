@@ -111,7 +111,7 @@ in
           exit 1
         fi
 
-        for target in claude codex; do
+        for target in claude codex omp; do
           if command -v "$target" >/dev/null 2>&1; then
             "$herdr_bin" integration install "$target" >/dev/null
           fi

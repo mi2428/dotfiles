@@ -1,0 +1,21 @@
+providers:
+  sakura:
+    baseUrl: https://sakura-ai-engine-gateway.tailef845a.ts.net/v1
+    api: openai-completions
+    auth: none
+    models:
+      - id: preview/Kimi-K2.7-Code
+        name: Sakura Kimi K2.7 Code
+        reasoning: true
+        input: [text, image]
+        contextWindow: 262144
+        maxTokens: 32768
+        compat:
+          # The gateway supplies its default reasoning effort; OMP owns tools.
+          supportsReasoningParams: false
+          supportsSamplingParams: false
+          reasoningContentField: reasoning
+          requiresReasoningContentForToolCalls: true
+          maxTokensField: max_tokens
+          streamFirstEventTimeoutMs: 0
+          streamIdleTimeoutMs: 0

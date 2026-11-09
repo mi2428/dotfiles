@@ -1,0 +1,55 @@
+modelRoles:
+  default: sakura/preview/Kimi-K2.7-Code
+  smol: sakura/preview/Kimi-K2.7-Code
+  slow: sakura/preview/Kimi-K2.7-Code
+  plan: sakura/preview/Kimi-K2.7-Code
+  task: sakura/preview/Kimi-K2.7-Code
+  tiny: sakura/preview/Kimi-K2.7-Code
+  vision: sakura/preview/Kimi-K2.7-Code
+  commit: sakura/preview/Kimi-K2.7-Code
+  judge: sakura/preview/Kimi-K2.7-Code
+  widget: sakura/preview/Kimi-K2.7-Code
+enabledModels:
+  - sakura/preview/Kimi-K2.7-Code
+retry:
+  modelFallback: false
+  fallbackChains:
+    default: []
+    tiny: []
+    judge: []
+theme:
+  dark: catppuccin-mocha-mauve
+  light: catppuccin-mocha-mauve
+symbolPreset: nerd
+statusLine:
+  sessionAccent: false
+  transparent: true
+  separator: pipe
+  contextLine: percentage
+title:
+  icons: boring
+tui:
+  colorfulMarkdown: false
+startup:
+  quiet: true
+  setupWizard: false
+  checkUpdate: false
+update:
+  auto: false
+tools:
+  approvalMode: write
+task:
+  maxConcurrency: 2
+  maxRecursionDepth: 1
+  speculativeLaunch: false
+  isolation:
+    enabled: true
+    apply: false
+    merge: patch
+advisor:
+  enabled: false
+memory:
+  backend: off
+display:
+  pinnedAgents: full
+  subagentLivePreview: true

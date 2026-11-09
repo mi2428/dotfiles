@@ -7,6 +7,7 @@
 
 tap "anomalyco/tap"
 tap "aws/tap"
+tap "can1357/tap"
 tap "common-fate/granted"
 tap "fujiwara/tap"
 tap "hashicorp/tap"
@@ -127,6 +128,7 @@ brew "nmap"
 brew "node"
 brew "numbat"
 brew "ollama"
+brew "can1357/tap/omp", trusted: true
 brew "anomalyco/tap/opencode-v2", trusted: true
 brew "pinentry-mac"
 brew "pipenv"
