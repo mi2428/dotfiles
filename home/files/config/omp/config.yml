@@ -22,6 +22,13 @@ theme:
   light: catppuccin-mocha-mauve
 symbolPreset: nerd
 statusLine:
+  preset: custom
+  leftSegments: [pi, vim, model, mode, collab, stream, path, git, pr, context_pct]
+  rightSegments: [session_name]
+  segmentOptions:
+    model: { showThinkingLevel: true }
+    path: { abbreviate: true, maxLength: 40, stripWorkPrefix: true }
+    git: { showBranch: true, showStaged: true, showUnstaged: true, showUntracked: true }
   sessionAccent: false
   transparent: true
   separator: pipe
@@ -36,6 +43,8 @@ startup:
   checkUpdate: false
 update:
   auto: false
+telemetry:
+  otlpExportEnabled: true
 tools:
   approvalMode: write
 task:

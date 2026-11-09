@@ -11,7 +11,7 @@ for program in opencode opencode-profile opencode-happier herdr codex claude omp
     command -v "$program" >/dev/null 2>&1 || fail "$program is not installed"
 done
 
-for file in config.yml models.yml AGENTS.md RULES.md themes/catppuccin-mocha-mauve.json; do
+for file in .env config.yml models.yml AGENTS.md RULES.md themes/catppuccin-mocha-mauve.json; do
     [ -f "$HOME/.omp/agent/$file" ] || fail "OMP configuration is missing: $file"
 done
 [ ! -L "$HOME/.omp/agent/config.yml" ] || fail 'OMP config.yml must be a writable regular file'
