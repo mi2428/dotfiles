@@ -106,8 +106,20 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
       windowKey: "ses_1:4:3",
       scrollTop: savedScrollTop,
     });
+    for (const width of [45, 79, 80, 120, 45, 80]) {
+      test.resize(width, 40);
+      await test.renderOnce();
+      await test.renderer.idle();
+      await test.renderOnce();
+      assert.equal(panel.visible, width >= 80);
+      if (width < 80) assert.doesNotMatch(test.captureCharFrame(), /Todo ·|current work/);
+      else assert.match(test.captureCharFrame(), /Todo · 5 of 9/);
+      assert.equal(test.renderer.root.findDescendantById("todo-scroll"), todos, "resize retains the HUD instance");
+    }
     assert(handlers.has("session.tool.input.started"));
     assert(handlers.has("session.tool.success"));
+    test.resize(45, 40);
+    await test.renderOnce();
     handlers.get("session.tool.input.started")?.({ data: {
       sessionID: "ses_1", assistantMessageID: "msg_updated", id: "tool_updated", name: "todowrite",
     } });
@@ -117,6 +129,11 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
       { content: "now active", status: "in_progress" },
       { content: "later", status: "pending" },
     ] } } });
+    await test.renderOnce();
+    await test.renderer.idle();
+    await test.renderOnce();
+    assert.doesNotMatch(test.captureCharFrame(), /Todo ·|now active/);
+    test.resize(80, 40);
     await test.renderOnce();
     await test.renderer.idle();
     await test.renderOnce();
@@ -164,8 +181,8 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
   }
 });
 
-it("restores an old Todo on cold start when the TUI message cache has no Todo", async () => {
-  const test = await createTestRenderer({ width: 80, height: 20 });
+it("restores an old Todo on a narrow cold start and reveals it after widening", async () => {
+  const test = await createTestRenderer({ width: 45, height: 40 });
   let slot: (() => unknown) | undefined;
   const requests: string[] = [];
   plugin.setup({
@@ -199,6 +216,11 @@ it("restores an old Todo on cold start when the TUI message cache has no Todo", 
     await Bun.sleep(0);
     await test.renderOnce();
     assert.deepEqual(requests, ["first", "older"]);
+    assert.doesNotMatch(test.captureCharFrame(), /Todo ·|old task still visible/);
+    test.resize(80, 40);
+    await test.renderOnce();
+    await test.renderer.idle();
+    await test.renderOnce();
     assert.match(test.captureCharFrame(), /Todo · 1 of 1/);
     assert.match(test.captureCharFrame(), /old task still visible/);
   } finally {

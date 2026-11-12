@@ -191,7 +191,9 @@ function TodoOverlay(props: { context: Context }) {
     return buildTodoView(live ?? latestTodos(context.data.session.message.list(id), boundary)?.todos);
   });
   const width = createMemo(() => popupWidth(columns()));
+  const visible = createMemo(() => columns() >= 80);
   createEffect(() => {
+    if (!visible()) return;
     const id = sessionID();
     const current = view();
     const key = `${id}:${current?.completed}:${current?.windowStart}`;
@@ -212,7 +214,7 @@ function TodoOverlay(props: { context: Context }) {
   return (
     <Show when={view()}>
       {(current) => (
-        <box id="todo-panel" position="absolute" top={0} right={PANEL_MARGIN} width={width()} zIndex={900}
+        <box id="todo-panel" visible={visible()} position="absolute" top={0} right={PANEL_MARGIN} width={width()} zIndex={900}
           flexDirection="column" backgroundColor={context.theme.background.raised.base}
           border={["left", "right"]} borderColor={context.theme.text.feedback.info.base}
           customBorderChars={BORDER_CHARS} paddingLeft={2} paddingRight={2} paddingBottom={1}>
