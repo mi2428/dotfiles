@@ -1,0 +1,747 @@
+#!/usr/bin/env bash
+# Network configuration for macOS and NetworkManager-managed Linux.
+# Replaces the deprecated wifi-switch.
+
+set -euo pipefail
+
+BASENAME="$(basename "$0")"
+readonly BASENAME
+readonly VERSION="0.1.0"
+export LC_ALL=C
+
+# ---------- globals ----------
+DRY_RUN=0
+CONFIG="${NETCFG_CONFIG:-$HOME/.config/netcfg.yaml}"
+
+# ---------- helpers ----------
+die() { echo "[E] $*" >&2; exit 1; }
+log() { echo "[I] $*"; }
+need_command() { command -v "$1" >/dev/null 2>&1 || die "command not found: $1"; }
+need_value() { [[ $# -ge 2 && -n "$2" ]] || die "value required for $1"; }
+platform() { uname -s; }
+is_darwin() { [[ "$(platform)" == "Darwin" ]]; }
+need_backend() {
+  case "$(platform)" in
+    Darwin) need_command networksetup ;;
+    Linux) need_command nmcli ;;
+    *) die "unsupported platform: $(platform)" ;;
+  esac
+}
+
+# Print a command quoted for dry-run, or execute it.
+run() {
+  if ((DRY_RUN)); then
+    for arg in "$@"; do
+      printf '%q ' "$arg"
+    done
+    printf '\n'
+  else
+    if [[ "$1" == "networksetup" && "$2" == -set* ]]; then
+      # networksetup can print a failure but still return exit status zero.
+      local output
+      output="$("$@" 2>&1)" || die "$output"
+      [[ -z "$output" ]] || die "$output"
+    else
+      "$@"
+    fi
+  fi
+}
+
+# ---------- YAML / profile ----------
+config_json() {
+  need_command ruby
+  need_command jq
+  [[ -f "$CONFIG" ]] || die "config not found: $CONFIG"
+  ruby -ryaml -rjson -e '
+begin
+  puts JSON.generate(YAML.safe_load(File.read(ARGV.fetch(0))))
+rescue Psych::Exception, SystemCallError, EncodingError => e
+  warn "Invalid config: #{e.message}"
+  exit 1
+end
+' "$CONFIG" | jq -e '
+  if type == "object" and (.profiles | type == "object") then .
+  else error("config must contain a profiles mapping") end
+'
+}
+
+list_profiles_raw() {
+  config_json | jq -r '.profiles | keys[]'
+}
+
+profile_json() {
+  config_json | jq -e --arg name "$1" '
+    .profiles | if has($name) then .[$name] else error("profile not found: " + $name) end
+  '
+}
+
+validate_profile() {
+  jq -e '
+    def nonempty: type == "string" and length > 0;
+    def fields($allowed): (keys - $allowed | length) == 0;
+    type == "object" and fields(["wifi", "ip"]) and
+    (has("wifi") or has("ip")) and
+    (if has("wifi") then .wifi |
+      type == "object" and fields(["ssid", "password", "device"]) and
+      (.ssid | nonempty) and
+      (if has("password") then .password | type == "string" else true end) and
+      (if has("device") then .device | nonempty else true end)
+    else true end) and
+    (if has("ip") then .ip |
+      type == "object" and fields(["device", "address", "gateway", "dns", "dhcp"]) and
+      (.device | nonempty) and
+      (if has("dhcp") then .dhcp | type == "boolean" else true end) and
+      (if .dhcp == true then (has("address") or has("gateway") or has("dns") | not)
+       else (.address | nonempty) end) and
+      (if has("gateway") then .gateway | nonempty else true end) and
+      (if has("dns") then .dns |
+        if type == "array" then length > 0 and all(.[]; nonempty) else nonempty end
+       else true end)
+    else true end)
+  ' >/dev/null || die "invalid profile: check wifi/ip fields and DHCP/static settings"
+}
+
+# ---------- device helpers ----------
+detect_wifi_device() {
+  if is_darwin; then
+    networksetup -listallhardwareports | awk '
+      /^Hardware Port: (Wi-Fi|AirPort)$/ { found = 1; next }
+      found && /^Device: / { print $2; exit }
+    '
+  else
+    nmcli -t -f DEVICE,TYPE device status | awk -F: '$2 == "wifi" { print $1; exit }'
+  fi
+}
+
+resolve_device() {
+  local dev="${1:-}"
+  if [[ -n "$dev" ]]; then
+    echo "$dev"
+  else
+    detect_wifi_device
+  fi
+}
+
+macos_services() {
+  networksetup -listnetworkserviceorder | awk '
+    /^\([0-9*]+\) / { service = $0; sub(/^\([0-9*]+\) /, "", service) }
+    /^\(Hardware Port: / {
+      device = $0; sub(/^.*Device: /, "", device); sub(/\)$/, "", device)
+      if (device != "") printf "%s\t%s\n", device, service
+    }
+  '
+}
+
+macos_service_for_device() {
+  macos_services | awk -F '\t' -v dev="$1" '$1 == dev { print $2; exit }'
+}
+
+check_device() {
+  [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$ ]] || die "invalid device: $1"
+  if is_darwin; then
+    ifconfig "$1" >/dev/null 2>&1 || die "device not found: $1"
+  else
+    nmcli -g GENERAL.TYPE device show "$1" >/dev/null
+  fi
+}
+
+check_wifi_device() {
+  check_device "$1"
+  if is_darwin; then
+    [[ "$1" == "$(detect_wifi_device)" ]] || die "not a Wi-Fi device: $1"
+  else
+    [[ "$(nmcli -g GENERAL.TYPE device show "$1")" == "wifi" ]] || die "not a Wi-Fi device: $1"
+  fi
+}
+
+ip_target() {
+  check_device "$1"
+  local target
+  if is_darwin; then
+    target="$(macos_service_for_device "$1")"
+  else
+    target="$(nmcli -g GENERAL.CON-UUID device show "$1")"
+  fi
+  [[ -n "$target" && "$target" != "--" ]] || die "no network service/active connection for device: $1"
+  printf '%s\n' "$target"
+}
+
+# ---------- device commands ----------
+cmd_device_list() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help) usage_device; exit 0 ;;
+      *) die "unknown option: $1" ;;
+    esac
+  done
+  if is_darwin; then
+    run networksetup -listallhardwareports
+  else
+    run nmcli device status
+  fi
+}
+
+cmd_device_show() {
+  local device=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help) usage_device; exit 0 ;;
+      *) [[ -z "$device" ]] || die "unexpected argument: $1"; device="$1"; shift ;;
+    esac
+  done
+  if [[ -z "$device" ]]; then
+    if is_darwin; then die "device required on macOS"; fi
+    run nmcli device show
+  elif is_darwin; then
+    local service
+    service="$(ip_target "$device")"
+    run networksetup -getinfo "$service"
+  else
+    check_device "$device"
+    run nmcli device show "$device"
+  fi
+}
+
+# ---------- wifi commands ----------
+cmd_wifi_connect() {
+  local ssid="" password="" device=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --ssid) need_value "$@"; ssid="$2"; shift 2 ;;
+      --password) need_value "$@"; password="$2"; shift 2 ;;
+      --device) need_value "$@"; device="$2"; shift 2 ;;
+      -h|--help) usage_wifi; exit 0 ;;
+      *) die "unknown option: $1" ;;
+    esac
+  done
+
+  # Interactive fallback if no SSID and fzf + config are available.
+  if [[ -z "$ssid" ]]; then
+    if [[ -t 0 ]] && command -v fzf >/dev/null 2>&1 && [[ -f "$CONFIG" ]]; then
+      local name json
+      name="$(list_profiles_raw | fzf --prompt="Wi-Fi profile> " --height=40% --reverse)" || exit 130
+      json="$(profile_json "$name")"
+      validate_profile <<< "$json"
+      ssid="$(jq -r '.wifi.ssid // empty' <<< "$json")"
+      [[ -n "$ssid" ]] || die "selected profile has no Wi-Fi configuration"
+      [[ -n "$password" ]] || password="$(jq -r '.wifi.password // empty' <<< "$json")"
+      [[ -n "$device" ]] || device="$(jq -r '.wifi.device // empty' <<< "$json")"
+    else
+      usage_wifi; exit 2
+    fi
+  fi
+
+  device="$(resolve_device "$device")"
+  [[ -n "$device" ]] || die "Wi-Fi device not found; specify --device"
+  check_wifi_device "$device"
+  log "connecting to Wi-Fi: $ssid on $device"
+
+  if is_darwin; then
+    run networksetup -setairportpower "$device" on
+    if [[ -n "$password" ]]; then
+      run networksetup -setairportnetwork "$device" "$ssid" "$password"
+    else
+      run networksetup -setairportnetwork "$device" "$ssid"
+    fi
+  else
+    local args=(--wait 30 device wifi connect "$ssid" ifname "$device")
+    if [[ -n "$password" ]]; then
+      args+=(password "$password")
+    fi
+    run nmcli "${args[@]}"
+  fi
+}
+
+cmd_wifi_disconnect() {
+  local device=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --device) need_value "$@"; device="$2"; shift 2 ;;
+      -h|--help) usage_wifi; exit 0 ;;
+      *) die "unknown option: $1" ;;
+    esac
+  done
+  device="$(resolve_device "$device")"
+  [[ -n "$device" ]] || die "Wi-Fi device not found; specify --device"
+  check_wifi_device "$device"
+  log "disconnecting Wi-Fi on $device"
+  if is_darwin; then
+    run networksetup -setairportpower "$device" off
+  else
+    run nmcli --wait 30 device disconnect "$device"
+  fi
+}
+
+cmd_wifi_list() {
+  local device=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --device) need_value "$@"; device="$2"; shift 2 ;;
+      -h|--help) usage_wifi; exit 0 ;;
+      *) die "unknown option: $1" ;;
+    esac
+  done
+  device="$(resolve_device "$device")"
+  [[ -n "$device" ]] || die "Wi-Fi device not found; specify --device"
+  check_wifi_device "$device"
+  if is_darwin; then
+    run networksetup -listpreferredwirelessnetworks "$device"
+  else
+    run nmcli device wifi list ifname "$device" --rescan no
+  fi
+}
+
+# ---------- ip commands ----------
+validate_ip() {
+  need_command python3
+  python3 -c '
+import sys, ipaddress
+try:
+    address, gateway, *dns = sys.argv[1:]
+    if address:
+        if "/" not in address:
+            raise ValueError("address must include a CIDR prefix")
+        iface = ipaddress.IPv4Interface(address)
+        print(iface.ip)
+        print(iface.netmask)
+    if gateway:
+        ipaddress.IPv4Address(gateway)
+    for server in dns:
+        ipaddress.ip_address(server)
+except ValueError as error:
+    sys.exit("Invalid IP configuration: " + str(error))
+' "$@"
+}
+
+cmd_ip_set() {
+  local device="" address="" gateway=""
+  local dns=() servers=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --device) need_value "$@"; device="$2"; shift 2 ;;
+      --address) need_value "$@"; address="$2"; shift 2 ;;
+      --gateway) need_value "$@"; gateway="$2"; shift 2 ;;
+      --dns) need_value "$@"; read -r -a servers <<< "$2"; dns+=("${servers[@]}"); shift 2 ;;
+      -h|--help) usage_ip; exit 0 ;;
+      *) die "unknown option: $1" ;;
+    esac
+  done
+  [[ -n "$device" ]] || die "--device required"
+  [[ -n "$address" ]] || die "--address required"
+  local parsed target
+  parsed="$(validate_ip "$address" "$gateway" ${dns[@]+"${dns[@]}"})"
+  target="$(ip_target "$device")"
+  log "setting IP on $device: $address"
+  if is_darwin; then
+    local ip mask
+    {
+      read -r ip
+      read -r mask
+    } <<< "$parsed"
+    run networksetup -setmanual "$target" "$ip" "$mask" "${gateway:-0.0.0.0}"
+    if [[ ${#dns[@]} -gt 0 ]]; then
+      run networksetup -setdnsservers "$target" "${dns[@]}"
+    fi
+  else
+    run nmcli connection modify uuid "$target" ipv4.method manual ipv4.addresses "$address" \
+      ipv4.gateway "$gateway" ipv4.dns "${dns[*]-}" ipv4.ignore-auto-dns yes
+    run nmcli --wait 30 connection up uuid "$target" ifname "$device"
+  fi
+}
+
+cmd_ip_dhcp() {
+  local device=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --device) need_value "$@"; device="$2"; shift 2 ;;
+      -h|--help) usage_ip; exit 0 ;;
+      *) die "unknown option: $1" ;;
+    esac
+  done
+  [[ -n "$device" ]] || die "--device required"
+  local target
+  target="$(ip_target "$device")"
+  log "enabling DHCP on $device"
+  if is_darwin; then
+    run networksetup -setdhcp "$target"
+    run networksetup -setdnsservers "$target" Empty
+  else
+    run nmcli connection modify uuid "$target" ipv4.method auto ipv4.addresses "" \
+      ipv4.gateway "" ipv4.dns "" ipv4.ignore-auto-dns no
+    run nmcli --wait 30 connection up uuid "$target" ifname "$device"
+  fi
+}
+
+cmd_ip_show() {
+  local device=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --device) need_value "$@"; device="$2"; shift 2 ;;
+      -h|--help) usage_ip; exit 0 ;;
+      *) die "unknown option: $1" ;;
+    esac
+  done
+  local devices services=""
+  if [[ -n "$device" ]]; then
+    check_device "$device"
+    devices="$device"
+  elif is_darwin; then
+    devices="$(ifconfig -lu | tr ' ' '\n')"
+  else
+    need_command ip
+    devices="$(ip -o link show up | awk -F ': ' '{ sub(/@.*/, "", $2); print $2 }')"
+  fi
+  if is_darwin; then
+    services="$(macos_services)"
+  fi
+  [[ -n "$devices" ]] || { log "no UP interfaces"; return; }
+
+  local output="" block service info
+  while IFS= read -r device; do
+    [[ -n "$device" ]] || continue
+    if is_darwin; then
+      service="$(awk -F '\t' -v dev="$device" '$1 == dev { print $2; exit }' <<< "$services")"
+      if ((DRY_RUN)); then
+        if [[ -n "$service" ]]; then run networksetup -getinfo "$service"
+        else run ifconfig "$device"; fi
+        continue
+      fi
+      info="$(ifconfig "$device")"
+      block="$(awk '
+        NR == 1 {
+          print "State: " ($0 ~ /<UP[,>]/ ? "UP" : "DOWN")
+          print "MTU: " $NF
+        }
+        $1 == "status:" { print "Link: " $2 }
+        $1 == "inet" { print "IPv4: " $2 " (netmask " $4 ")" }
+        $1 == "inet6" { print "IPv6: " $2 "/" $4 }
+        $1 == "ether" { print "MAC: " $2 }
+      ' <<< "$info")"
+      if [[ -n "$service" ]]; then
+        info="$(networksetup -getinfo "$service")"
+        info="$(awk '
+          / Configuration$/ { nested = 1; print; next }
+          { print (nested ? "  " : "") $0 }
+        ' <<< "$info")"
+        block="$block"$'\n'"Service: $service"$'\n\n'"$info"
+      fi
+    else
+      if ((DRY_RUN)); then
+        run nmcli -f GENERAL,IP4,IP6 device show "$device"
+        continue
+      fi
+      block="$(nmcli -f GENERAL,IP4,IP6 device show "$device")"
+      block="$(awk '
+        /^(GENERAL|IP4|IP6)\./ {
+          dot = index($0, ".")
+          section = substr($0, 1, dot - 1)
+          if (section != previous) {
+            if (previous != "") print ""
+            print (section == "GENERAL" ? "General" : section == "IP4" ? "IPv4" : "IPv6")
+            previous = section
+          }
+          print "  " substr($0, dot + 1)
+          next
+        }
+        { print }
+      ' <<< "$block")"
+    fi
+    output="${output}${output:+$'\n\n'}[$device]"$'\n'"$block"
+  done <<< "$devices"
+  if ((DRY_RUN)); then return; fi
+  printf '%s\n' "$output" | awk '
+    {
+      count++
+      text = $0
+      match(text, /^ */)
+      indent[count] = substr(text, 1, RLENGTH)
+      sub(/^ */, "", text)
+      colon = index(text, ":")
+      if (colon && text !~ /^\[.*\]$/) {
+        key[count] = substr(text, 1, colon)
+        value[count] = substr(text, colon + 1)
+        sub(/^[[:space:]]+/, "", value[count])
+        depth = length(indent[count])
+        if (length(key[count]) > width[depth]) width[depth] = length(key[count])
+      } else line[count] = $0
+    }
+    END {
+      for (i = 1; i <= count; i++) {
+        if (key[i] != "") {
+          if (value[i] == "") printf "  %s%s\n", indent[i], key[i]
+          else printf "  %s%-*s %s\n", indent[i], width[length(indent[i])], key[i], value[i]
+        }
+        else if (line[i] ~ /^\[/ || line[i] == "") print line[i]
+        else print "  " line[i]
+      }
+    }
+  '
+}
+
+# ---------- profile commands ----------
+cmd_profile_list() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help) usage_profile; exit 0 ;;
+      *) die "unknown option: $1" ;;
+    esac
+  done
+  list_profiles_raw
+}
+
+cmd_profile_show() {
+  local name=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help) usage_profile; exit 0 ;;
+      *) [[ -z "$name" ]] || die "unexpected argument: $1"; name="$1"; shift ;;
+    esac
+  done
+  [[ -n "$name" ]] || die "profile name required"
+  profile_json "$name" | jq .
+}
+
+cmd_profile_apply() {
+  local name=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help) usage_profile; exit 0 ;;
+      *) [[ -z "$name" ]] || die "unexpected argument: $1"; name="$1"; shift ;;
+    esac
+  done
+
+  # Interactive fallback if no name and fzf + config are available.
+  if [[ -z "$name" ]]; then
+    if [[ -t 0 ]] && command -v fzf >/dev/null 2>&1 && [[ -f "$CONFIG" ]]; then
+      name="$(list_profiles_raw | fzf --prompt="netcfg profile> " --height=40% --reverse)" || exit 130
+    else
+      usage_profile; exit 2
+    fi
+  fi
+
+  [[ -n "$name" ]] || die "profile name required"
+
+  local json
+  json="$(profile_json "$name")"
+  validate_profile <<< "$json"
+
+  local wifi_ssid wifi_password wifi_device
+  wifi_ssid="$(echo "$json" | jq -r '.wifi.ssid // empty')"
+  wifi_password="$(echo "$json" | jq -r '.wifi.password // empty')"
+  wifi_device="$(echo "$json" | jq -r '.wifi.device // empty')"
+
+  local ip_device ip_address ip_gateway ip_dns ip_dhcp
+  ip_device="$(echo "$json" | jq -r '.ip.device // empty')"
+  ip_address="$(echo "$json" | jq -r '.ip.address // empty')"
+  ip_gateway="$(echo "$json" | jq -r '.ip.gateway // empty')"
+  ip_dns="$(echo "$json" | jq -r '.ip.dns | if type == "array" then join(" ") elif . == null then "" else . end')"
+  ip_dhcp="$(echo "$json" | jq -r '.ip.dhcp // false')"
+
+  # Validate the whole profile before changing either Wi-Fi or IP settings.
+  if [[ -n "$wifi_ssid" ]]; then
+    wifi_device="$(resolve_device "$wifi_device")"
+    [[ -n "$wifi_device" ]] || die "Wi-Fi device not found; specify wifi.device"
+    check_wifi_device "$wifi_device"
+  fi
+  if [[ -n "$ip_device" ]]; then
+    check_device "$ip_device"
+    if is_darwin || [[ -z "$wifi_ssid" || "$ip_device" != "$wifi_device" ]]; then
+      ip_target "$ip_device" >/dev/null
+    fi
+    if [[ "$ip_dhcp" != "true" ]]; then
+      local dns_values=()
+      read -r -a dns_values <<< "$ip_dns"
+      validate_ip "$ip_address" "$ip_gateway" ${dns_values[@]+"${dns_values[@]}"} >/dev/null
+    fi
+  fi
+
+  log "applying profile: $name"
+  if [[ -n "$wifi_ssid" ]]; then
+    local wifi_args=(--ssid "$wifi_ssid" --device "$wifi_device")
+    [[ -n "$wifi_password" ]] && wifi_args+=(--password "$wifi_password")
+    cmd_wifi_connect "${wifi_args[@]}"
+  fi
+
+  if [[ -n "$ip_device" ]]; then
+    if [[ "$ip_dhcp" == "true" ]]; then
+      cmd_ip_dhcp --device "$ip_device"
+    elif [[ -n "$ip_address" ]]; then
+      local ip_args=(--device "$ip_device" --address "$ip_address")
+      [[ -n "$ip_gateway" ]] && ip_args+=(--gateway "$ip_gateway")
+      [[ -n "$ip_dns" ]] && ip_args+=(--dns "$ip_dns")
+      cmd_ip_set "${ip_args[@]}"
+    fi
+  fi
+
+  log "profile applied: $name"
+}
+
+# ---------- usage ----------
+usage() {
+  cat <<EOF
+Usage: $BASENAME <command> [options]
+
+Commands:
+  device list                 list network interfaces
+  device show [IF]            show interface details
+  wifi connect [options]      connect to Wi-Fi
+  wifi disconnect [options]   disconnect Wi-Fi
+  wifi list [options]         list saved (macOS) or cached (Linux) Wi-Fi networks
+  ip set [options]            set static IPv4 on an interface
+  ip dhcp [options]           enable DHCP on an interface
+  ip show [options]           show IP configuration (all UP interfaces by default)
+  profile list                list profiles from config
+  profile show <name>         show profile details
+  apply [name]                apply a profile (interactive if fzf available)
+
+Global options:
+  -n, --dry-run               print commands instead of executing
+  -c, --config PATH           config path (default: \$NETCFG_CONFIG or ~/.config/netcfg.yaml)
+  -h, --help                  show this help
+  -v, --version               show version
+
+Requirements:
+  macOS: networksetup; Linux: a running NetworkManager and nmcli.
+  Profiles: Ruby (YAML) and jq. Static IP: Python 3 (standard library only).
+  Linux changes require NetworkManager permission (or run with sudo).
+  --dry-run performs read-only validation and prints changes without applying them.
+
+Config schema example (~/.config/netcfg.yaml):
+
+  profiles:
+    home-office:
+      wifi:
+        ssid: MyHome-5G
+        password: "secret"
+        device: wlan0          # optional; auto-detected if omitted
+      ip:
+        device: eth0           # required for IP config
+        address: 192.168.10.5/24
+        gateway: 192.168.10.1
+        dns: [192.168.10.1, 8.8.8.8]
+    cafe:
+      wifi:
+        ssid: FreeWiFi
+      ip:
+        device: eth0
+        dhcp: true
+
+Run '$BASENAME <command> --help' for command-specific help.
+EOF
+}
+
+usage_device() {
+  cat <<EOF
+Usage: $BASENAME device {list|show}
+
+  list                 list network interfaces
+  show [IF]            show interface details (macOS requires IF)
+EOF
+}
+
+usage_wifi() {
+  cat <<EOF
+Usage: $BASENAME wifi {connect|disconnect|list} [options]
+
+  connect [--ssid SSID] [--password PSK] [--device IF]
+                       connect to a Wi-Fi network
+  disconnect [--device IF]
+                       disconnect Wi-Fi (macOS turns Wi-Fi power off)
+  list [--device IF]   list saved (macOS) or cached (Linux) Wi-Fi networks
+
+If --ssid is omitted and fzf is available, select a Wi-Fi profile including its credentials.
+EOF
+}
+
+usage_ip() {
+  cat <<EOF
+Usage: $BASENAME ip {set|dhcp|show} [options]
+
+  set --device IF --address CIDR [--gateway GW] [--dns DNS]
+                       set a static IPv4 address (repeat --dns for multiple)
+  dhcp --device IF     enable DHCP on the interface
+  show [--device IF]   show one interface, or all interfaces with the UP flag
+EOF
+}
+
+usage_profile() {
+  cat <<EOF
+Usage: $BASENAME profile {list|show <name>}
+       $BASENAME apply [name]
+
+  list                 list profiles from \$NETCFG_CONFIG
+  show <name>          show a profile as JSON
+  apply [name]         apply a profile (interactive with fzf if name omitted)
+EOF
+}
+
+# ---------- main ----------
+main() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -n|--dry-run) DRY_RUN=1; shift ;;
+      -c|--config) need_value "$@"; CONFIG="$2"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      -v|--version) echo "$VERSION"; exit 0 ;;
+      *) break ;;
+    esac
+  done
+
+  local cmd="${1:-}"
+  [[ -n "$cmd" ]] || { usage; exit 2; }
+  shift || true
+
+  case "$cmd" in
+    device|wifi|ip|apply) need_backend ;;
+  esac
+
+  case "$cmd" in
+    device)
+      local sub="${1:-}"
+      [[ -n "$sub" ]] || { usage_device; exit 2; }
+      shift
+      case "$sub" in
+        list) cmd_device_list "$@" ;;
+        show) cmd_device_show "$@" ;;
+        *) usage_device; exit 2 ;;
+      esac
+      ;;
+    wifi)
+      local sub="${1:-}"
+      [[ -n "$sub" ]] || { usage_wifi; exit 2; }
+      shift
+      case "$sub" in
+        connect) cmd_wifi_connect "$@" ;;
+        disconnect) cmd_wifi_disconnect "$@" ;;
+        list) cmd_wifi_list "$@" ;;
+        *) usage_wifi; exit 2 ;;
+      esac
+      ;;
+    ip)
+      local sub="${1:-}"
+      [[ -n "$sub" ]] || { usage_ip; exit 2; }
+      shift
+      case "$sub" in
+        set) cmd_ip_set "$@" ;;
+        dhcp) cmd_ip_dhcp "$@" ;;
+        show) cmd_ip_show "$@" ;;
+        *) usage_ip; exit 2 ;;
+      esac
+      ;;
+    profile)
+      local sub="${1:-}"
+      [[ -n "$sub" ]] || { usage_profile; exit 2; }
+      shift
+      case "$sub" in
+        list) cmd_profile_list "$@" ;;
+        show) cmd_profile_show "$@" ;;
+        *) usage_profile; exit 2 ;;
+      esac
+      ;;
+    apply) cmd_profile_apply "$@" ;;
+    help|--help|-h) usage; exit 0 ;;
+    *) usage; exit 2 ;;
+  esac
+}
+
+main "$@"
