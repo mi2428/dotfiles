@@ -166,6 +166,8 @@ let
     package = "${ponytailV2}";
     options.sourceRoot = "${ponytail}";
   };
+  advisorPlugin.package = "${../../files/config/opencode/plugins/advisor}";
+  advisorPlugin.options.aliases.sol = "openai/gpt-6.1-sol#xhigh";
   mkOpenCodeConfig =
     {
       models ? openAIModels,
@@ -173,7 +175,7 @@ let
     }:
     commonOpenCodeConfig
     // {
-      plugins = commonOpenCodeConfig.plugins ++ plugins;
+      plugins = commonOpenCodeConfig.plugins ++ [ advisorPlugin ] ++ plugins;
       providers = mkProviders models;
     };
 
