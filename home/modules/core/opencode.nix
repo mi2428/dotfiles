@@ -27,6 +27,7 @@ let
 
   mkSakuraModel = name: {
     inherit name;
+    body.reasoning_effort = "max";
     capabilities = {
       tools = true;
       input = [
@@ -53,9 +54,8 @@ let
       chunkTimeout = false;
     };
     models = {
-      # The Gateway supplies max reasoning when omitted; the client owns tools.
-      # Its 256K context and 32K output limits are set by mkSakuraModel.
-      "preview/Kimi-K2.7-Code" = mkSakuraModel "Sakura Kimi K2.7 Code";
+      "preview/GLM-5.3-Flash" = mkSakuraModel "Sakura GLM 5.3 Flash";
+      "preview/DeepSeek-V4.1-Flash-1017" = mkSakuraModel "Sakura DeepSeek V4.1 Flash 1017";
     };
   };
 
