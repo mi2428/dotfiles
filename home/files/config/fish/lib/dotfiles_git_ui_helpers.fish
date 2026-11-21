@@ -127,6 +127,7 @@ function __dotfiles_git_ui_delta_lazygit
     set -l delta_args \
         --features=catppuccin-mocha \
         --dark \
+        --true-color=always \
         "--file-added-label=$added_label" \
         "--file-copied-label=$copied_label" \
         "--file-modified-label=$modified_label" \
