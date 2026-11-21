@@ -55,6 +55,10 @@ in
       source "$OMARCHY_PATH/default/bash/rc"
     '';
   };
+  # Fish does not read Omarchy's POSIX shell bootstrap from /etc/profile.d.
+  xdg.configFile."fish/conf.d/02_omarchy.fish".text = ''
+    set -gx OMARCHY_PATH (bash -c '. /usr/share/omarchy/default/bash/env-bootstrap; printf %s "$OMARCHY_PATH"')
+  '';
   home.activation.checkOmarchyIdentity = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
     source ${../../bootstrap/host-map.sh}
     if [ "$(map_linux_machine_id_to_host "$(cat /etc/machine-id)")" != omarchy ]; then
