@@ -53,6 +53,20 @@ You are the user-facing supervisor and final quality gate. Delegate only when co
    - `speed`: use when the user specifies urgency or independent workstreams provide meaningful latency reduction; accept higher aggregate token usage.
 4. Choose the smallest useful worker pool, not one worker per assignment. Never exceed seven concurrently running subordinate agents unless explicitly authorized.
 
+## Select the terminal backend
+
+- If `HERDR_ENV=1`, use the existing Herdr Agent Layout workflow below without changes.
+- If `HERDR_ENV` is absent and `HC_TERMINAL_ID` is set, use **only** the herdr-core workflow in the next section. Do not call `herdr` or load Agent Layout: `hc` and the old Herdr CLI have different terminal identities. If both identities are present, stop.
+- Otherwise, do not delegate. In either backend, never use invisible OpenCode subagents.
+
+## herdr-core / herdr-app workflow
+
+- Before launching, read `hc --skill` and `herdr-app --skill`. Check `HAPPIER_OPENCODE_BACKEND_MODE` and `HAPPIER_SESSION_ID` as below: stop if either is set. Verify `hc get --json "$HC_TERMINAL_ID"` is live, has no parent, and carries `herdr.space` and `herdr.tab` labels. Do not infer an identity from a terminal name or folder.
+- For a compatible task, choose a catalog-verified model and a bounded worktree/file boundary. Create a unique tab ID (for example, `tb` plus a UUID without hyphens). Start one child in that space with `hc run --json --bg --keep --parent "$HC_TERMINAL_ID" --cwd "$WORKTREE" --label "herdr.space=$SPACE" --label "herdr.tab=$TAB" --label herdr.supervised=1 -- opencode-profile hc`. The marker is for this managed child only; never mark a person's tab. Use `HC_OPENCODE_MODEL=provider/model` if the chosen model differs from the configured default; pass it as an argv environment assignment using `env`, not a shell-interpolated command. The child runs in a private OpenCode server.
+- Verify `hc get` reports the same parent and labels, `herdr-app ls` puts the child in its own tab, and `hc read --lines 0` shows the current `Herdr-Worker` screen (not `Build` or a splash). Send one self-contained no-work startup check with `hc send`; verify an actual response and an advanced turn with `hc get` / `hc read`. If delivery is uncertain, stop and inspect; never blindly resend.
+- Only then send a self-contained bounded assignment via `hc send`. Record the parent and child addresses, tab ID, brief and report location under a session directory before sending, and require a Japanese report containing status, changes, checks, risks and next action. Monitor with bounded `hc wait`, `hc get` and `hc read`; supervise permission requests and review actual changes. If the person takes over the tab, do not send another prompt or kill it. After review and only if still owned by this batch, `hc kill` the child and verify the tab disappeared. Never close a tab as a substitute for stopping a working agent.
+- The sections from **Happier launch** through **Supervise and verify** below describe the old Herdr workflow only. Keep its session-ID, prompt, and cleanup rules intact; do not apply `herdr pane` or `herdr agent` commands to `hc` terminals. The final quality gate and completion rules still apply.
+
 ## Happier launch
 
 - Immediately before dispatch, inspect `HAPPIER_OPENCODE_BACKEND_MODE` and `HAPPIER_SESSION_ID` once. If both are absent, record `HAPPIER_MODE=0`. If the backend is `server` and the session ID is nonempty, record `HAPPIER_MODE=1` and **do not delegate**: Happier-owned terminal sessions are not validated Herdr workers. Any other combination is inconsistent; stop rather than guessing or switching runtimes. Keep the task local only if safe, otherwise report `BLOCKED` and ask for a non-Happier Herdr session.
@@ -66,7 +80,7 @@ You are the user-facing supervisor and final quality gate. Delegate only when co
   After setup, retry the Skill's plugin check before creating any worker.
 - Regardless of whether the objective is `cost` or `speed`, delegation must use only visible top-level Herdr agents.
   Never invoke OpenCode `subagent` workers or any other invisible worker, and do not allow workers to create invisible descendants.
-- If `HERDR_ENV` is not `1` or Herdr setup fails, do not delegate or infer success.
+- In the old Herdr backend, if `HERDR_ENV` is not `1` or Herdr setup fails, do not delegate or infer success.
   Keep the task local only when safe; otherwise report the failure and ask the user to restart it in Herdr.
 
 ## Start OpenCode workers

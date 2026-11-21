@@ -3,13 +3,13 @@ set -eu
 
 profile=${1:-}
 if [ -z "$profile" ]; then
-    printf '%s\n' 'usage: opencode-profile {chat|herdr|slim} [opencode options...]' >&2
+    printf '%s\n' 'usage: opencode-profile {chat|hc|herdr|slim} [opencode options...]' >&2
     exit 64
 fi
 shift
 
 case "$profile" in
-    chat | herdr | slim)
+    chat | hc | herdr | slim)
         ;;
     *)
         printf 'opencode-profile: unknown profile: %s\n' "$profile" >&2
@@ -18,7 +18,11 @@ case "$profile" in
 esac
 
 caller_config_home=${XDG_CONFIG_HOME:-"${HOME:?}/.config"}
-profile_config_home=${OPENCODE_PROFILE_CONFIG_HOME:-"${HOME:?}/.config/opencode-profiles/$profile"}
+if [ "$profile" = hc ]; then
+    profile_config_home=${OPENCODE_PROFILE_CONFIG_HOME:-"$caller_config_home"}
+else
+    profile_config_home=${OPENCODE_PROFILE_CONFIG_HOME:-"${HOME:?}/.config/opencode-profiles/$profile"}
+fi
 profile_config="$profile_config_home/opencode"
 if [ ! -f "$profile_config/opencode.jsonc" ]; then
     printf 'opencode-profile: profile is not installed: %s\n' "$profile_config_home" >&2
@@ -28,6 +32,31 @@ fi
 if [ "${HERDR_ENV:-}" = 1 ] && [ "$profile" != herdr ]; then
     printf '%s\n' 'opencode-profile: Herdr sessions require the managed private profile' >&2
     exit 69
+fi
+if [ "${HERDR_ENV:-}" = 1 ] && [ -n "${HC_TERMINAL_ID:-}" ]; then
+    printf '%s\n' 'opencode-profile: Herdr and hc terminal identities cannot be combined' >&2
+    exit 69
+fi
+if [ "$profile" = hc ]; then
+    [ "${HERDR_ENV:-}" != 1 ] && [ -n "${HC_TERMINAL_ID:-}" ] && command -v hc >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || {
+        printf '%s\n' 'opencode-profile: hc requires a live herdr-core terminal, not a Herdr pane' >&2
+        exit 69
+    }
+    terminal=$(hc get --json "$HC_TERMINAL_ID") || exit 69
+    hc_agent=$(printf '%s\n' "$terminal" | jq -er '
+        select(.state == "live" and .labels["herdr.space"] != null and .labels["herdr.tab"] != null)
+        | if .parent == null then "herdr-supervisor"
+          elif .labels["herdr.supervised"] == "1" then "herdr-worker"
+          else empty end') || {
+        printf '%s\n' 'opencode-profile: hc terminal is not an app supervisor or marked worker' >&2
+        exit 69
+    }
+    case "${HC_OPENCODE_MODEL:-}" in
+        '' | */*) ;;
+        *) printf '%s\n' 'opencode-profile: HC_OPENCODE_MODEL must be provider/model' >&2; exit 64 ;;
+    esac
+    hc_config=$(jq -cn --arg agent "$hc_agent" --arg model "${HC_OPENCODE_MODEL:-}" \
+        '{"$schema":"https://opencode.ai/config.json",default_agent:$agent} + (if $model == "" then {} else {model:$model} end)')
 fi
 if [ "$profile" = herdr ]; then
     [ "${HERDR_ENV:-}" = 1 ] || {
@@ -114,9 +143,13 @@ export XDG_CONFIG_HOME="$profile_config_home"
 # Do not let an externally supplied OpenCode config override the selected
 # profile (the profile switch itself is the source of truth).
 unset OPENCODE_CONFIG OPENCODE_CONFIG_CONTENT OPENCODE_CONFIG_DIR
-if [ "$profile" = herdr ]; then
+if [ "$profile" = herdr ] || [ "$profile" = hc ]; then
     unset OPENCODE_CLI_CONFIG_CONTENT
-    export OPENCODE_CONFIG_CONTENT="$herdr_config"
+    if [ "$profile" = hc ]; then
+        export OPENCODE_CONFIG_CONTENT="$hc_config"
+    else
+        export OPENCODE_CONFIG_CONTENT="$herdr_config"
+    fi
 fi
 if [ "$profile" = slim ]; then
     # Slim's background orchestration is an OpenCode experimental feature.
@@ -127,8 +160,8 @@ use_standalone=true
 for arg; do
     case "$arg" in
         --server | --server=* | --attach | --attach=*)
-            if [ "$profile" = herdr ]; then
-                printf '%s\n' 'opencode-profile: Herdr sessions cannot attach to a shared server' >&2
+            if [ "$profile" = herdr ] || [ "$profile" = hc ]; then
+                printf '%s\n' 'opencode-profile: supervised sessions cannot attach to a shared server' >&2
                 exit 64
             fi
             use_standalone=false

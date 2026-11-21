@@ -641,6 +641,10 @@ if command -sq opencode
             command opencode-profile herdr $argv
             return $status
         end
+        if test "$executable" = opencode; and set -q HC_TERMINAL_ID; and test -n "$HC_TERMINAL_ID"
+            command opencode-profile hc $argv
+            return $status
+        end
 
         set -l standalone_args --standalone
 
