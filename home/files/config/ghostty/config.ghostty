@@ -69,6 +69,7 @@ quick-terminal-space-behavior = move
 # theme = catppuccin-macchiato.conf
 theme = catppuccin-mocha.conf
 
+background-opacity = 0.92
 background-opacity-cells = true
 background-blur = 10
 unfocused-split-opacity = 1

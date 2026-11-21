@@ -8,6 +8,10 @@
 }:
 let
   androidHost = import pkgs.path { system = "x86_64-linux"; };
+  herdrAppInstaller = pkgs.fetchurl {
+    url = "https://releases.herdr.dev/app/install.sh";
+    hash = "sha256-tjbWbPVOtC4W5H+yvkGan/Le0NwezD20b7LMGT3aksI=";
+  };
 in
 {
   imports = [
@@ -66,6 +70,15 @@ in
       exit 1
     fi
     test -f /usr/share/omarchy/default/hypr/bootstrap.lua
+  '';
+  home.activation.installHerdrApp = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+    if [ ! -x "$HOME/.local/bin/herdr-app" ]; then
+      HERDR_RELEASES_URL=https://releases.herdr.dev sh ${herdrAppInstaller}
+    fi
+    test -x "$HOME/.local/bin/hc" || {
+      echo 'Herdr app needs herdr-core (hc)' >&2
+      exit 1
+    }
   '';
   # Only our tool environment is continuously managed. Desktop preferences
   # remain writable files owned by Omarchy, not Home Manager.
