@@ -148,7 +148,7 @@ function __dotfiles_git_ui_delta_lazygit
         end
     end
 
-    if not set -q TMUX
+    if not set -q TMUX; and test (uname) = Darwin
         set -a delta_args --hyperlinks '--hyperlinks-file-link-format=lazygit-edit://{path}:{line}'
     end
 
