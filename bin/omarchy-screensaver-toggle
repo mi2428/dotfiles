@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# != 0 || $(uname -s) != Linux ]]; then
+  echo 'Usage: omarchy-screensaver-toggle (Linux only)' >&2
+  exit 2
+fi
+
+omarchy-toggle-screensaver
+if omarchy-toggle-enabled screensaver-off; then
+  echo 'Screensaver: OFF'
+else
+  echo 'Screensaver: ON'
+fi
