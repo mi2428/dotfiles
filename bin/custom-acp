@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+
+if [ -n "${OMP_BIN:-}" ]; then
+    omp_bin=$OMP_BIN
+else
+    omp_bin=$(command -v omp 2>/dev/null || true)
+fi
+
+if [ -z "${omp_bin:-}" ]; then
+    for candidate in \
+        "${HOME:?}/.local/share/mise/installs/oh-my-pi/latest/omp" \
+        "${HOME}/.local/share/mise/shims/omp" \
+        /opt/homebrew/bin/omp \
+        /home/linuxbrew/.linuxbrew/bin/omp \
+        /usr/local/bin/omp \
+        /usr/bin/omp; do
+        if [ -x "$candidate" ]; then
+            omp_bin=$candidate
+            break
+        fi
+    done
+fi
+
+if [ -z "${omp_bin:-}" ]; then
+    printf '%s\n' 'custom-acp: omp is not available' >&2
+    exit 127
+fi
+
+exec "$omp_bin" acp "$@"
