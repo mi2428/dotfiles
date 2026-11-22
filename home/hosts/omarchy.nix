@@ -25,6 +25,7 @@ in
   home.username = userName;
   home.homeDirectory = homeDirectory;
   home.stateVersion = "25.05";
+  xdg.configFile."ghostty/config".text = lib.mkAfter "\nfont-size = 14\n";
   # Activation integrations use OS-managed Herdr and AI tools from the caller's PATH.
   home.emptyActivationPath = false;
   # Secret archives may contain a macOS-only pinentry path.

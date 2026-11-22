@@ -61,7 +61,10 @@ in
     "e1s/config.yml" = mkLink ../../files/config/e1s/config.yml;
     "eza" = mkLink ../../files/config/eza;
     "fzf" = mkLink ../../files/config/fzf;
-    "ghostty/config" = mkLink ../../files/config/ghostty/config.ghostty;
+    "ghostty/config" = {
+      force = true;
+      text = builtins.readFile ../../files/config/ghostty/config.ghostty;
+    };
     "ghostty/themes" = mkLink ../../files/config/ghostty/themes;
     "ghostty/shaders" = mkLink ../../files/config/ghostty/shaders;
     "glow" = mkLink ../../files/config/glow;
