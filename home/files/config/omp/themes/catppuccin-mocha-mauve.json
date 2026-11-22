@@ -83,6 +83,7 @@
     "thinkingMax": "overlay0",
     "bashMode": "teal",
     "pythonMode": "yellow",
+    "btwMode": "mauve",
     "statusLineBg": "base",
     "statusLineSep": "overlay0",
     "statusLineModel": "subtext1",
