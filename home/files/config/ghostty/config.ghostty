@@ -55,6 +55,10 @@ font-thicken = true
 font-thicken-strength = 100
 cursor-style = block
 cursor-style-blink = false
+# Match Chromium's 120 logical px per wheel notch. Touchpad scrolling is
+# pixel-for-pixel once Hyprland's terminal rule (hypr/omarchy/input.lua)
+# cancels Ghostty's internal 10x precision-scroll boost.
+mouse-scroll-multiplier = precision:1,discrete:7.5
 shell-integration-features = no-cursor,no-sudo,title,no-ssh-env,no-ssh-terminfo,path
 quick-terminal-position = top
 quick-terminal-size = 50%
