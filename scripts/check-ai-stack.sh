@@ -7,7 +7,7 @@ fail() {
     errors=$((errors + 1))
 }
 
-for program in opencode opencode-profile opencode-happier herdr codex claude omp; do
+for program in opencode opencode-profile opencode-happier happier custom-acp herdr codex claude omp; do
     command -v "$program" >/dev/null 2>&1 || fail "$program is not installed"
 done
 
