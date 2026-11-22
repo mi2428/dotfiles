@@ -6,11 +6,11 @@ hl.unbind("SUPER + SHIFT + C")
 hl.unbind("SUPER + SHIFT + E")
 hl.unbind("SUPER + SHIFT + ALT + E")
 
--- Match macOS screenshots; replace Omarchy's move-to-workspace 3/4 shortcuts.
-o.rebind("SUPER + SHIFT + code:12", "Save full-screen screenshot", "omarchy-capture-screenshot fullscreen save")
-o.rebind("SUPER + SHIFT + code:13", "Save region screenshot", "omarchy-capture-screenshot region save")
-o.bind("SUPER + CTRL + SHIFT + code:12", "Copy full-screen screenshot", "omarchy-capture-screenshot fullscreen copy")
-o.bind("SUPER + CTRL + SHIFT + code:13", "Copy region screenshot", "omarchy-capture-screenshot region copy")
+-- Keep screenshot shortcuts away from the number keys used for workspaces.
+o.bind("SUPER + SHIFT + code:34", "Save full-screen screenshot", "omarchy-capture-screenshot fullscreen save")
+o.bind("SUPER + SHIFT + code:35", "Save region screenshot", "omarchy-capture-screenshot region save")
+o.bind("SUPER + CTRL + SHIFT + code:34", "Copy full-screen screenshot", "omarchy-capture-screenshot fullscreen copy")
+o.bind("SUPER + CTRL + SHIFT + code:35", "Copy region screenshot", "omarchy-capture-screenshot region copy")
 
 -- Use Omarchy's down/up pattern to avoid stuck synthetic keys.
 local function send_key(mods, key)
