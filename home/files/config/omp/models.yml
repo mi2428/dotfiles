@@ -8,7 +8,7 @@ providers:
         name: Sakura DeepSeek V4.1 Flash 1017
         reasoning: true
         input: [text, image]
-        contextWindow: 262144
+        contextWindow: 1048576
         maxTokens: 32768
         compat:
           # The gateway supplies its default reasoning effort; OMP owns tools.
