@@ -1,6 +1,17 @@
 -- Use Omarchy's input-language switcher instead of its terminal-prefix pass-through.
 o.rebind("CTRL + SPACE", "Toggle Japanese input", "omarchy-input-method cycle")
 
+-- Disable launch shortcuts for the removed HEY web app.
+hl.unbind("SUPER + SHIFT + C")
+hl.unbind("SUPER + SHIFT + E")
+hl.unbind("SUPER + SHIFT + ALT + E")
+
+-- Match macOS screenshots; replace Omarchy's move-to-workspace 3/4 shortcuts.
+o.rebind("SUPER + SHIFT + code:12", "Save full-screen screenshot", "omarchy-capture-screenshot fullscreen save")
+o.rebind("SUPER + SHIFT + code:13", "Save region screenshot", "omarchy-capture-screenshot region save")
+o.bind("SUPER + CTRL + SHIFT + code:12", "Copy full-screen screenshot", "omarchy-capture-screenshot fullscreen copy")
+o.bind("SUPER + CTRL + SHIFT + code:13", "Copy region screenshot", "omarchy-capture-screenshot region copy")
+
 -- Use Omarchy's down/up pattern to avoid stuck synthetic keys.
 local function send_key(mods, key)
   hl.dispatch(hl.dsp.send_key_state({ mods = mods, key = key, state = "down" }))

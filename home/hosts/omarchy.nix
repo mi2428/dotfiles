@@ -36,6 +36,11 @@ in
   # Omarchy's existing mise policy is not changed by the package installation.
   # Ghostty, Herdr, and tmux honor SHELL. Changing passwd's login shell needs chsh.
   home.sessionVariables.SHELL = "${config.home.profileDirectory}/bin/fish";
+  # Keep keybindings in dotfiles while leaving other Omarchy preferences writable.
+  xdg.configFile."hypr/bindings.lua" = {
+    source = ../files/config/hypr/omarchy/bindings.lua;
+    force = true;
+  };
   # Source through the project's local .envrc, not the global shell environment.
   # Store references keep QEMU's guest libraries alive across Nix garbage collection.
   xdg.dataFile."dropcheck-agent/env.sh".text = ''
@@ -88,8 +93,7 @@ in
     };
     Install.WantedBy = [ "default.target" ];
   };
-  # Only our tool environment is continuously managed. Desktop preferences
-  # remain writable files owned by Omarchy, not Home Manager.
+  # Other desktop preferences remain writable files owned by Omarchy.
   xdg.configFile."uwsm/env.d/90-dotfiles-nix".text = ''
     . "$HOME/.nix-profile/etc/profile.d/nix.sh"
     . "$HOME/.nix-profile/etc/profile.d/hm-session-vars.sh"
