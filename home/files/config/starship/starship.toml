@@ -38,7 +38,7 @@ read_only = ""
 [git_branch]
 format = "[ $symbol$branch]($style)"
 style = "bold mauve"
-symbol = " "
+symbol = " "
 
 [git_status]
 disabled = true

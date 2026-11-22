@@ -23,20 +23,24 @@ theme:
 symbolPreset: nerd
 statusLine:
   preset: custom
-  leftSegments: [pi, vim, model, mode, collab, stream, path, git, pr, context_pct]
+  leftSegments: [path, git, status, model, vim, mode, collab, stream, pr, context_pct]
   rightSegments: [session_name]
   segmentOptions:
     model: { showThinkingLevel: true }
     path: { abbreviate: true, maxLength: 40, stripWorkPrefix: true }
-    git: { showBranch: true, showStaged: true, showUnstaged: true, showUntracked: true }
+    git: { showBranch: true, showStaged: false, showUnstaged: false, showUntracked: false }
+  showHookStatus: false
+  compactThinkingLevel: false
   sessionAccent: false
   transparent: true
-  separator: pipe
+  separator: none
   contextLine: percentage
 title:
   icons: boring
+composer:
+  shape: dotfiles-bold-status
 tui:
-  colorfulMarkdown: false
+  colorfulMarkdown: true
 startup:
   quiet: true
   setupWizard: false

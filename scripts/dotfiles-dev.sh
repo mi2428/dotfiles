@@ -62,6 +62,7 @@ Usage:
   dotfiles-dev xdg <app> [args...]
   dotfiles-dev curl [args...]
   dotfiles-dev ghostty [args...]
+  dotfiles-dev omp [args...]
   dotfiles-dev git [args...]
   dotfiles-dev tmux [args...]
   dotfiles-dev wget [args...]
@@ -206,6 +207,23 @@ run_xdg_app() {
     exec "$app_name" "$@"
 }
 
+run_omp() {
+    agent_dir=$real_home/.local/share/dotfiles-dev/omp/agent
+    source_dir=$repo_root/home/files/config/omp
+    ensure_dir "$agent_dir/themes" "$agent_dir/extensions"
+    config_tmp=$(mktemp "$agent_dir/config.yml.XXXXXX")
+    install -m 0600 "$source_dir/config.yml" "$config_tmp"
+    mv -f "$config_tmp" "$agent_dir/config.yml"
+    ensure_link "$agent_dir/.env" "$source_dir/telemetry.env"
+    for file in models.yml AGENTS.md RULES.md; do
+        ensure_link "$agent_dir/$file" "$source_dir/$file"
+    done
+    ensure_link "$agent_dir/themes/catppuccin-mocha-mauve.json" "$source_dir/themes/catppuccin-mocha-mauve.json"
+    ensure_link "$agent_dir/extensions/dotfiles-bold-status.ts" "$source_dir/extensions/dotfiles-bold-status.ts"
+    export PI_CODING_AGENT_DIR="$agent_dir"
+    exec omp "$@"
+}
+
 run_curl() {
     curl_config=$repo_root/home/files/curl/curlrc
     exec curl --config "$curl_config" "$@"
@@ -314,6 +332,9 @@ main() {
             ;;
         ghostty)
             run_ghostty "$@"
+            ;;
+        omp)
+            run_omp "$@"
             ;;
         git)
             run_git "$@"

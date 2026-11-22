@@ -8,6 +8,7 @@ in
     ".omp/agent/models.yml".source = source + /models.yml;
     ".omp/agent/AGENTS.md".source = source + /AGENTS.md;
     ".omp/agent/RULES.md".source = source + /RULES.md;
+    ".omp/agent/extensions/dotfiles-bold-status.ts".source = source + /extensions/dotfiles-bold-status.ts;
     ".omp/agent/themes/catppuccin-mocha-mauve.json".source =
       source + /themes/catppuccin-mocha-mauve.json;
   };
