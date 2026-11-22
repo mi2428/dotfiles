@@ -685,6 +685,19 @@ if command -sq opencode
     end
 end
 
+if command -sq omp
+    function omp++ --wraps omp
+        command omp --approval-mode yolo $argv
+    end
+
+    if command -sq happier
+        function omp+++ --wraps omp
+            set -lx PATH "$HOME/.local/bin" $PATH
+            command happier customAcp --permission-mode yolo $argv
+        end
+    end
+end
+
 if command -sq iperf3-rs
     alias iperf3='iperf3-rs'
 end
