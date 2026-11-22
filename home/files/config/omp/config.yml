@@ -1,16 +1,16 @@
 modelRoles:
-  default: sakura/preview/Kimi-K2.7-Code
-  smol: sakura/preview/Kimi-K2.7-Code
-  slow: sakura/preview/Kimi-K2.7-Code
-  plan: sakura/preview/Kimi-K2.7-Code
-  task: sakura/preview/Kimi-K2.7-Code
-  tiny: sakura/preview/Kimi-K2.7-Code
-  vision: sakura/preview/Kimi-K2.7-Code
-  commit: sakura/preview/Kimi-K2.7-Code
-  judge: sakura/preview/Kimi-K2.7-Code
-  widget: sakura/preview/Kimi-K2.7-Code
+  default: sakura/preview/DeepSeek-V4.1-Flash-1017
+  smol: sakura/preview/DeepSeek-V4.1-Flash-1017
+  slow: sakura/preview/DeepSeek-V4.1-Flash-1017
+  plan: sakura/preview/DeepSeek-V4.1-Flash-1017
+  task: sakura/preview/DeepSeek-V4.1-Flash-1017
+  tiny: sakura/preview/DeepSeek-V4.1-Flash-1017
+  vision: sakura/preview/DeepSeek-V4.1-Flash-1017
+  commit: sakura/preview/DeepSeek-V4.1-Flash-1017
+  judge: sakura/preview/DeepSeek-V4.1-Flash-1017
+  widget: sakura/preview/DeepSeek-V4.1-Flash-1017
 enabledModels:
-  - sakura/preview/Kimi-K2.7-Code
+  - sakura/preview/DeepSeek-V4.1-Flash-1017
 retry:
   modelFallback: false
   fallbackChains:

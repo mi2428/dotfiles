@@ -4,8 +4,8 @@ providers:
     api: openai-completions
     auth: none
     models:
-      - id: preview/Kimi-K2.7-Code
-        name: Sakura Kimi K2.7 Code
+      - id: preview/DeepSeek-V4.1-Flash-1017
+        name: Sakura DeepSeek V4.1 Flash 1017
         reasoning: true
         input: [text, image]
         contextWindow: 262144
