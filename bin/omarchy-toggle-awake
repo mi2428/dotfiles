@@ -1,21 +1,41 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# != 0 || $(uname -s) != Linux ]]; then
-  echo 'Usage: omarchy-toggle-awake (Linux only)' >&2
+if [[ $# -gt 1 || ( $# == 1 && $1 != --reconcile ) || $(uname -s) != Linux ]]; then
+  echo 'Usage: omarchy-toggle-awake [--reconcile] (Linux only)' >&2
   exit 2
 fi
 
 # A transient system service holds the inhibitor until toggled off or rebooted.
-# Screen locking and display power management remain independent.
 unit=omarchy-awake.service
+idle_file="$HOME/.local/state/omarchy/indicators/stay-awake"
+owner_file="$HOME/.local/state/omarchy/awake-idle-owner"
+boot_id=$(cat /proc/sys/kernel/random/boot_id)
+
+release_idle() {
+  [[ -f $owner_file ]] || return 0
+  read -r owned_boot owned_inode < "$owner_file"
+  if [[ $owned_boot == "$boot_id" || ${1:-} == --reconcile ]] &&
+    [[ -f $idle_file ]] && [[ $(stat -Lc %i "$idle_file") == "$owned_inode" ]]; then
+    omarchy-toggle-idle allow-idle >/dev/null
+  fi
+  rm -f -- "$owner_file"
+}
+
+if [[ ${1:-} == --reconcile ]]; then
+  if ! systemctl is-active --quiet "$unit"; then release_idle --reconcile; fi
+  exit 0
+fi
+
 if systemctl is-active --quiet "$unit"; then
   sudo systemctl stop "$unit"
+  release_idle
   omarchy-notification-send -g 󰒲 'Home awake mode' 'OFF'
   echo 'Home awake mode: OFF'
   exit 0
 fi
 
+release_idle --reconcile
 sudo systemd-run --quiet --collect --unit="$unit" --service-type=exec \
   /usr/bin/systemd-inhibit --no-ask-password --what=sleep:handle-lid-switch \
   --mode=block --who=omarchy-awake --why='Home awake mode' /usr/bin/sleep infinity
@@ -26,6 +46,19 @@ for _ in {1..20}; do
   if systemd-inhibit --list --json=short | jq -e --argjson pid "$pid" '
     any(.[]; .pid == $pid and .who == "omarchy-awake" and .mode == "block"
       and (.what | split(":") | sort) == ["handle-lid-switch", "sleep"])' >/dev/null; then
+    # Omarchy Shell controls its own idle screensaver and lock, separately from logind.
+    if [[ ! -f $idle_file ]]; then
+      if ! mkdir -p -- "${owner_file%/*}" ||
+        ! omarchy-toggle-idle stay-awake >/dev/null ||
+        ! inode=$(stat -Lc %i "$idle_file") ||
+        ! printf '%s %s\n' "$boot_id" "$inode" > "$owner_file"; then
+        rm -f -- "$owner_file"
+        omarchy-toggle-idle allow-idle >/dev/null || true
+        sudo systemctl stop "$unit"
+        echo 'Failed to disable Omarchy idle; awake mode was stopped.' >&2
+        exit 1
+      fi
+    fi
     omarchy-notification-send -g 󰒲 'Home awake mode' 'ON'
     echo 'Home awake mode: ON'
     exit 0

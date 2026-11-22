@@ -80,6 +80,14 @@ in
       exit 1
     }
   '';
+  systemd.user.services.omarchy-awake-reset-idle = {
+    Unit.Description = "Restore Omarchy idle after awake mode ends on reboot";
+    Service = {
+      Type = "oneshot";
+      ExecStart = "${homeDirectory}/.local/bin/omarchy-toggle-awake --reconcile";
+    };
+    Install.WantedBy = [ "default.target" ];
+  };
   # Only our tool environment is continuously managed. Desktop preferences
   # remain writable files owned by Omarchy, not Home Manager.
   xdg.configFile."uwsm/env.d/90-dotfiles-nix".text = ''
