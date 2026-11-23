@@ -54,7 +54,7 @@ Tasks
   hm.gc              Delete old generations and collect Nix garbage (run without sudo)
   brew.check         Check the repo-managed Brewfile against the local Homebrew state
   brew.sync          Update and upgrade Homebrew, then apply the repo-managed Brewfile
-  ai.check           Check AI executables and OpenCode/Herdr profiles
+  ai.check           Check AI executables, OMO config, and OpenCode/Herdr profiles
   ai.upgrade         Upgrade external AI harnesses and OpenCode, then refresh the exact Slim pin
   secrets.encrypt    Encrypt ssh and/or gnupg into chezmoi source state
   secrets.decrypt    Decrypt ssh and/or gnupg into a target directory
