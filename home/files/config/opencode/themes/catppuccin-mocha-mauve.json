@@ -21,10 +21,10 @@
     },
     "background": {
       "base": "transparent",
-      "raised": { "base": "#242436", "high": "#313244", "max": "#45475a" },
+      "raised": { "base": "#313244", "high": "#45475a", "max": "#585b70" },
       "action": {
-        "primary": { "base": "transparent", "$hovered": "#242436", "$focused": "#cba6f7" },
-        "secondary": { "base": "transparent", "$hovered": "#242436" },
+        "primary": { "base": "transparent", "$hovered": "$background.raised.base", "$focused": "#cba6f7" },
+        "secondary": { "base": "transparent", "$hovered": "$background.raised.base" },
         "destructive": { "base": "#f38ba8" }
       },
       "formfield": { "base": "transparent" },
@@ -35,7 +35,7 @@
         "info": { "base": "transparent" }
       }
     },
-    "border": { "base": "#313244" },
+    "border": { "base": "#45475a" },
     "scrollbar": { "base": "#45475a" },
     "diff": {
       "text": { "added": "#a6e3a1", "removed": "#f38ba8", "context": "#9399b2", "hunkHeader": "#fab387" },
