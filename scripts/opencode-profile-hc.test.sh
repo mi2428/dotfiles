@@ -12,7 +12,7 @@ printf '{"state":"live","parent":%s,"labels":{"herdr.space":"sp1","herdr.tab":"t
 EOF
 cat > "$tmp/bin/opencode" <<'EOF'
 #!/bin/sh
-printf '%s\n' "$OPENCODE_CONFIG_CONTENT" > "$HC_TEST_OUTPUT"
+printf '%s\n' "${OPENCODE_CONFIG_CONTENT:-null}" > "$HC_TEST_OUTPUT"
 printf '%s\n' "$*" >> "$HC_TEST_OUTPUT"
 EOF
 chmod +x "$tmp/bin/hc" "$tmp/bin/opencode"
@@ -20,13 +20,6 @@ export PATH="$tmp/bin:$PATH" OPENCODE_PROFILE_CONFIG_HOME="$tmp/config" HC_TERMI
 unset HERDR_ENV
 
 HC_TEST_PARENT=null "$root/scripts/opencode-profile.sh" hc
-head -1 "$tmp/result" | jq -e '.default_agent == "herdr-supervisor"' >/dev/null
-HC_TEST_PARENT='"t1"' HC_TEST_MARKER=1 "$root/scripts/opencode-profile.sh" hc
-head -1 "$tmp/result" | jq -e '.default_agent == "herdr-worker"' >/dev/null
-tail -1 "$tmp/result" | grep -qx -- '--standalone'
-if HC_TEST_PARENT='"t1"' HC_TEST_MARKER=0 "$root/scripts/opencode-profile.sh" hc > /dev/null 2>&1; then
-    echo 'unmarked worker was accepted' >&2; exit 1
-fi
 if HERDR_ENV=1 "$root/scripts/opencode-profile.sh" hc > /dev/null 2>&1; then
     echo 'mixed Herdr/hc identity was accepted' >&2; exit 1
 fi

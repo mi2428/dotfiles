@@ -24,13 +24,14 @@ it("scrubs pane credentials and unknown future Herdr keys", async () => {
   const before = await hook();
   const shell = { env: {
     HERDR_ENV: "1", HERDR_PANE_ID: "wrong:pane", HERDR_SOCKET_PATH: "wrong.sock",
-    HERDR_FUTURE_MARKER: "wrong", HERDR_HAPPIER_WORKER: "1", PATH: "/bin",
+    HERDR_FUTURE_MARKER: "wrong", HERDR_HAPPIER_WORKER: "1", HC_TERMINAL_ID: "wrong",
+    OPENCODE_HERDR_VIEWER: "1", OPENCODE_HERDR_SESSION: "wrong", PATH: "/bin",
   } };
   before(shell);
   assert.deepEqual(shell.env, { PATH: "/bin" });
 });
 
-it("preserves only matching noncredential worker identity booleans", async () => {
+it("also removes obsolete worker markers from native child shells", async () => {
   process.env.HERDR_AGENT_LAYOUT_WORKER = "1";
   process.env.HERDR_HAPPIER_WORKER = "1";
   const before = await hook();
@@ -39,7 +40,7 @@ it("preserves only matching noncredential worker identity booleans", async () =>
     HERDR_PANE_ID: "worker:pane", HERDR_SOCKET_PATH: "worker.sock", PATH: "/bin",
   } };
   before(shell);
-  assert.deepEqual(shell.env, { HERDR_AGENT_LAYOUT_WORKER: "1", HERDR_HAPPIER_WORKER: "1", PATH: "/bin" });
+  assert.deepEqual(shell.env, { PATH: "/bin" });
   const unrelated = { env: { HERDR_AGENT_LAYOUT_WORKER: "0", HERDR_HAPPIER_WORKER: "other", PATH: "/bin" } };
   before(unrelated);
   assert.deepEqual(unrelated.env, { PATH: "/bin" });

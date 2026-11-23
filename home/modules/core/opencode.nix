@@ -293,7 +293,35 @@ let
       })
       // {
         skills = [ "${ponytail}/skills" ];
-        instructions = [ "${firstThingsFirstInstruction}" ];
+        default_agent = "build";
+        agents = commonOpenCodeConfig.agents // {
+          general.permissions = [
+            {
+              action = "subagent";
+              resource = "*";
+              effect = "allow";
+            }
+          ];
+          plan.permissions = [
+            {
+              action = "subagent";
+              resource = "*";
+              effect = "deny";
+            }
+            {
+              action = "subagent";
+              resource = "explore";
+              effect = "allow";
+            }
+          ];
+        };
+        experimental = commonOpenCodeConfig.experimental // {
+          subagent_depth = 2;
+        };
+        instructions = [
+          "${firstThingsFirstInstruction}"
+          "${delegationInstruction}"
+        ];
       }
     );
     slimConfig = json.generate "opencode-slim.json" (
@@ -317,6 +345,7 @@ let
   todoOverlayOpenCodePackage = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/.config/opencode/tui-plugins/todo";
   ponytailV2 = ../../files/config/opencode/plugins/ponytail-v2;
   firstThingsFirstInstruction = ../../files/config/opencode/policies/first-things-first.md;
+  delegationInstruction = ../../files/config/opencode/policies/delegation.md;
   herdrShellEnvPlugin = ../../files/config/opencode/plugins/herdr-shell-env.js;
   sessionTitlePlugin = ../../files/config/opencode/plugins/session-title.js;
   profileShellEnvPlugin = ../../files/config/opencode/plugins/profile-shell-env.js;
@@ -348,9 +377,6 @@ in
 {
   xdg.configFile = {
     "opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
-    "opencode/agents/herdr-supervisor.md" =
-      mkLink ../../files/config/opencode/agents/herdr-supervisor.md;
-    "opencode/agents/herdr-worker.md" = mkLink ../../files/config/opencode/agents/herdr-worker.md;
     "opencode/commands/en.md" = mkLink ../../files/config/opencode/commands/en.md;
     "opencode/commands/obsidian.md" = mkLink ../../files/config/opencode/commands/obsidian.md;
     "opencode/commands/showme.md" = mkLink ../../files/config/opencode/commands/showme.md;
@@ -376,13 +402,8 @@ in
       source = todoOverlayOpenCodePackage;
     };
 
-    # Herdr sessions use the normal server configuration plus a dedicated TUI
-    # profile. The launcher injects the selected agent and model at runtime.
+    # Herdr sessions use Build/Plan and a profile-local shared service for child views.
     "opencode-profiles/herdr/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
-    "opencode-profiles/herdr/opencode/agents/herdr-supervisor.md" =
-      mkLink ../../files/config/opencode/agents/herdr-supervisor.md;
-    "opencode-profiles/herdr/opencode/agents/herdr-worker.md" =
-      mkLink ../../files/config/opencode/agents/herdr-worker.md;
     "opencode-profiles/herdr/opencode/commands/en.md" =
       mkLink ../../files/config/opencode/commands/en.md;
     "opencode-profiles/herdr/opencode/commands/obsidian.md" =
@@ -407,10 +428,6 @@ in
     # These are config-only profiles: sessions, auth, cache, and state remain
     # shared, while framework plugin registries stay isolated.
     "opencode-profiles/slim/opencode/AGENTS.md" = mkLink ../../files/config/opencode/AGENTS.md;
-    "opencode-profiles/slim/opencode/agents/herdr-supervisor.md" =
-      mkLink ../../files/config/opencode/agents/herdr-supervisor.md;
-    "opencode-profiles/slim/opencode/agents/herdr-worker.md" =
-      mkLink ../../files/config/opencode/agents/herdr-worker.md;
     "opencode-profiles/slim/opencode/commands/en.md" =
       mkLink ../../files/config/opencode/commands/en.md;
     "opencode-profiles/slim/opencode/commands/obsidian.md" =
@@ -468,7 +485,9 @@ in
         install_plugin "$profiles/herdr/opencode" profile-shell-env "${profileShellEnvPlugin}"
         install_plugin "$profiles/herdr/opencode" session-title "${sessionTitlePlugin}"
         install_plugin "$profiles/herdr/opencode" obsidian-export "${obsidianExportPlugin}"
-        install_plugin "$profiles/herdr/opencode" herdr-agent-state "$default/plugins/herdr-agent-state.js"
+        install_plugin "$profiles/herdr/opencode" herdr-shell-env "${herdrShellEnvPlugin}"
+        # OC2 state belongs to the visible client, never a shared server's launch pane.
+        rm -f "$default/plugins/herdr-agent-state.js" "$profiles/herdr/opencode/plugins/herdr-agent-state.js"
         install_plugin "$profiles/slim/opencode" profile-shell-env "${profileShellEnvPlugin}"
         install_plugin "$profiles/slim/opencode" herdr-shell-env "${herdrShellEnvPlugin}"
         install_plugin "$profiles/slim/opencode" session-title "${sessionTitlePlugin}"
