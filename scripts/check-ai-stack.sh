@@ -7,7 +7,7 @@ fail() {
     errors=$((errors + 1))
 }
 
-for program in opencode opencode-profile opencode-happier happier custom-acp herdr codex claude omp; do
+for program in opencode opencode-profile opencode-happier happier custom-acp herdr codex claude omp omo oc-slim-service; do
     command -v "$program" >/dev/null 2>&1 || fail "$program is not installed"
 done
 
@@ -18,10 +18,24 @@ done
 [ -w "$HOME/.omp/agent/config.yml" ] || fail 'OMP config.yml is not writable'
 [ -f "$HOME/.omp/agent/extensions/herdr-omp-agent-state.ts" ] || fail 'Herdr OMP integration is missing'
 
+for file in "$HOME/.omo/omo.jsonc" "$HOME/.omo/agent/models.json" "$HOME/.omo/agent/settings.json"; do
+    [ -f "$file" ] || fail "OMO configuration is missing: $file"
+    [ ! -L "$file" ] || fail "OMO configuration must be a writable regular file: $file"
+    [ -w "$file" ] || fail "OMO configuration is not writable: $file"
+done
+[ -f "$HOME/.config/mise/conf.d/50-dotfiles-ai.toml" ] || fail 'mise omo-ai declaration is missing'
+
+if command -v omo >/dev/null 2>&1; then
+    for model in preview/GLM-5.3-Flash preview/DeepSeek-V4.1-Flash-1017; do
+        omo auth check --provider sakura --model "$model" >/dev/null 2>&1 ||
+            fail "OMO Sakura model is not ready: $model"
+    done
+fi
+
 if command -v opencode >/dev/null 2>&1; then
     version=$(opencode --version 2>/dev/null) || version=
-    printf '%s\n' "$version" | grep -Eq '(^|[[:space:]])v?2\.([2-9]|[1-9][0-9]+)\.[0-9]+$' ||
-        fail "OpenCode 2.2.0 or newer is required (found: ${version:-unknown})"
+    printf '%s\n' "$version" | grep -Eq '(^|[[:space:]])v?2\.(3|[4-9]|[1-9][0-9]+)\.[0-9]+$' ||
+        fail "OpenCode 2.3.0 or newer is required (found: ${version:-unknown})"
 fi
 
 for profile in chat happier herdr slim; do
@@ -31,6 +45,11 @@ for profile in chat happier herdr slim; do
     [ -f "$config/themes/catppuccin-mocha-mauve.json" ] ||
         fail "OpenCode $profile custom theme is missing"
 done
+
+slim_service="$HOME/.config/opencode-profiles/slim/opencode/service.json"
+[ -f "$slim_service" ] || fail 'Slim service config is missing'
+jq -e '.port == 4099' "$slim_service" >/dev/null ||
+    fail 'Slim service port is not 4099'
 
 happier_cli="$HOME/.config/opencode-profiles/happier/opencode/cli.json"
 jq -e '.session.permissions == "autoaccept"' "$happier_cli" >/dev/null ||

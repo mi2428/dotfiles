@@ -2,7 +2,7 @@ version: '3'
 
 tasks:
   ai.check:
-    desc: Check AI executables and OpenCode/Herdr profiles
+    desc: Check AI executables, OMO config, and OpenCode/Herdr profiles
     cmds:
       - '{{.REPO_ROOT}}/scripts/check-ai-stack.sh'
 
