@@ -9,6 +9,44 @@ import { parseThemeDocument, resolveThemeDocument } from "@opencode/theme/tui";
 import plugin from "./tui";
 import theme from "../../themes/catppuccin-mocha-mauve.json";
 
+it("never suppresses the host's editor context and interrupt confirmation", () => {
+  const keys = ["HERDR_ENV", "HERDR_PANE_ID", "HC_TERMINAL_ID", "OPENCODE_HERDR_VIEWER"];
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) delete process.env[key];
+  process.env.HERDR_ENV = "1";
+  const claims: Array<{ append?: string; replace?: string }> = [];
+  let disposed = 0;
+  const ui = { slot: (claim: typeof claims[number]) => { claims.push(claim); return () => { disposed++; }; } };
+  try {
+    const cleanup = plugin.setup({
+      options: {},
+      ui,
+    } as never);
+    assert(claims.some((claim) => claim.append === "prompt.footer.status"));
+    assert(!claims.some((claim) => claim.replace === "prompt.footer" || claim.replace?.startsWith("prompt.footer.")));
+    cleanup();
+    assert.equal(disposed, claims.length, "unloading must remove every registered slot");
+    claims.length = 0;
+    disposed = 0;
+    delete process.env.HERDR_ENV;
+    process.env.HC_TERMINAL_ID = "slim-test";
+    const cleanupSlim = plugin.setup({
+      options: { herdrViews: false }, ui,
+      storage: { memory: () => assert.fail("Slim must not start a second pane manager") },
+      data: { on: () => assert.fail("Slim must not register native child-view handlers") },
+    } as never);
+    assert(claims.some((claim) => claim.append === "prompt.footer.status"));
+    assert(!claims.some((claim) => claim.replace === "prompt.footer" || claim.replace?.startsWith("prompt.footer.")));
+    cleanupSlim();
+    assert.equal(disposed, claims.length, "Slim must remove every registered slot too");
+  } finally {
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+});
+
 it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
   const test = await createTestRenderer({ width: 80, height: 20 });
   const resolved = resolveThemeDocument(parseThemeDocument(theme), "dark");
@@ -30,7 +68,7 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
     storage: { memory: () => [scrollMemory, (mutate: (draft: typeof scrollMemory) => void) => mutate(scrollMemory)] },
     ui: {
       router: { current: () => ({ type: "session", sessionID: route() }) },
-      slot: (claim: { render: () => unknown }) => { slot = claim.render; return () => {}; },
+      slot: (claim: { append?: string; render: () => unknown }) => { if (claim.append === "app") slot = claim.render; return () => {}; },
     },
     data: {
       on: (name: string, handler: (event: any) => void) => {
@@ -193,7 +231,7 @@ it("restores an old Todo on a narrow cold start and reveals it after widening", 
     storage: { memory: (_key: string, options: { initial: object }) => [options.initial, () => {}] },
     ui: {
       router: { current: () => ({ type: "session", sessionID: "ses_old" }) },
-      slot: (claim: { render: () => unknown }) => { slot = claim.render; return () => {}; },
+      slot: (claim: { append?: string; render: () => unknown }) => { if (claim.append === "app") slot = claim.render; return () => {}; },
     },
     data: { on: () => () => {}, session: { get: () => undefined, message: {
       sync: async () => {}, list: () => [],

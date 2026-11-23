@@ -244,14 +244,18 @@ export default Plugin.define({
   setup(context) {
     const cleanups = [context.ui.slot({ append: "app", render: () => <TodoOverlay context={context} /> })];
     const inHerdr = process.env.HERDR_ENV === "1" || !!process.env.HC_TERMINAL_ID;
+    const viewer = process.env.OPENCODE_HERDR_VIEWER === "1";
+    // Labels are presentation only: Slim owns its pane manager but shares this footer.
+    // Keep the host's editor context and interrupt confirmation intact.
+    if (inHerdr && !viewer) {
+      for (const slot of ["prompt.footer.status", "home.footer.status"] as const) {
+        cleanups.push(context.ui.slot({ append: slot, render: () => (
+          <text fg={context.theme.hue.accent[200]} wrapMode="none" flexShrink={0}><b>Main</b></text>
+        ) }));
+      }
+    }
     if (inHerdr && context.options?.herdrViews !== false) {
-      const viewer = process.env.OPENCODE_HERDR_VIEWER === "1";
       if (!viewer) {
-        for (const slot of ["prompt.footer.status", "home.footer.status"] as const) {
-          cleanups.push(context.ui.slot({ append: slot, render: () => (
-            <text fg={context.theme.text.feedback.info.base} wrapMode="none" flexShrink={0}>Main</text>
-          ) }));
-        }
         // Browsing a native child hides the prompt/footer, but this remains the human-facing window.
         cleanups.push(context.ui.slot({ append: "app", render: () => {
           const child = createMemo(() => {
@@ -261,7 +265,7 @@ export default Plugin.define({
           return <Show when={child()}>
             <box position="absolute" bottom={0} right={2} zIndex={901}
               backgroundColor={context.theme.background.raised.base} paddingLeft={1} paddingRight={1}>
-              <text fg={context.theme.text.feedback.info.base}>Main</text>
+              <text fg={context.theme.hue.accent[200]}><b>Main</b></text>
             </box>
           </Show>;
         } }));
@@ -282,11 +286,12 @@ export default Plugin.define({
                 "--source", "dotfiles.oc2-views", "--clear-token", "oc2_view"]);
             void release.catch(() => console.error("Could not release Herdr viewer ownership"));
           });
-          // Native child-session screens have no prompt footer, so mark their full view globally.
-          return <box position="absolute" bottom={0} right={2} zIndex={901}
-            backgroundColor={context.theme.background.raised.base} paddingLeft={1} paddingRight={1}>
-            <text fg={context.theme.text.feedback.info.base}>{released() ? "Viewer" : "Subagent"}</text>
-          </box>;
+          return <Show when={released()}>
+            <box position="absolute" bottom={0} right={2} zIndex={901}
+              backgroundColor={context.theme.background.raised.base} paddingLeft={1} paddingRight={1}>
+              <text fg={context.theme.text.feedback.info.base}>Viewer</text>
+            </box>
+          </Show>;
         } }));
       }
       if (!viewer) {
