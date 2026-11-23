@@ -1,0 +1,22 @@
+{
+  "$schema": "https://pi.dev/schemas/settings.schema.json",
+  "theme": "system",
+  "defaultProvider": "sakura",
+  "defaultModel": "preview/GLM-5.3-Flash",
+  "defaultThinkingLevel": "max",
+  "modelThinkingLevels": {
+    "sakura/preview/DeepSeek-V4.1-Flash-1017": "high"
+  },
+  "enabledModels": [
+    "sakura/preview/GLM-5.3-Flash",
+    "sakura/preview/DeepSeek-V4.1-Flash-1017"
+  ],
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 32768,
+    "keepRecentTokens": 20000
+  },
+  "retry": {
+    "modelFallback": false
+  }
+}

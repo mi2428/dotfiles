@@ -1,0 +1,5 @@
+# OmO Native is installed through mise on every host (Omarchy and macOS).
+# Omarchy owns mise itself and locks the project/global scopes, but user
+# conf.d files still contribute tools. macOS gets mise from home-manager.
+[tools]
+"npm:omo-ai" = { version = "latest", lazy = true, auto_update = "4h", lazy_bins = ["omo"], minimum_release_age = "0s" }

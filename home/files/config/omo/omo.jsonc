@@ -1,0 +1,122 @@
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/omo.schema.json",
+  "models": {
+    "glm": { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "max" },
+    "deepseek": { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "high" }
+  },
+  "model_profiles": {
+    "sakura": {
+      "display_name": "Sakura GLM-5.3 max",
+      "models": [
+        { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "max" },
+        { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "max" }
+      ]
+    }
+  },
+  "model_profile": "sakura",
+  "agents": {
+    "explore": {
+      "models": [
+        { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "low" },
+        { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "medium" }
+      ]
+    },
+    "librarian": {
+      "models": [
+        { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "high" },
+        { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "medium" }
+      ]
+    },
+    "plan-consultant": {
+      "models": [
+        { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "max" },
+        { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "max" }
+      ]
+    },
+    "plan-reviewer": {
+      "models": [
+        { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "max" },
+        { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "max" }
+      ]
+    }
+  },
+  "categories": {
+    "architect": {
+      "models": [
+        { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "max" },
+        { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "max" }
+      ]
+    },
+    "visual-engineering": {
+      "models": [
+        { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "max" },
+        { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "high" }
+      ]
+    },
+    "ultrabrain": {
+      "models": [
+        { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "max" },
+        { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "max" }
+      ]
+    },
+    "deep-high": {
+      "models": [
+        { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "max" },
+        { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "max" }
+      ]
+    },
+    "deep-low": {
+      "models": [
+        { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "high" },
+        { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "medium" }
+      ]
+    },
+    "artistry": {
+      "models": [
+        { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "max" },
+        { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "max" }
+      ]
+    },
+    "quick": {
+      "models": [
+        { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "low" },
+        { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "low" }
+      ]
+    },
+    "unspecified-low": {
+      "models": [
+        { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "high" },
+        { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "medium" }
+      ]
+    },
+    "unspecified-high": {
+      "models": [
+        { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "high" },
+        { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "max" }
+      ]
+    },
+    "writing": {
+      "models": [
+        { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "medium" },
+        { "model": "sakura/preview/DeepSeek-V4.1-Flash-1017", "reasoning": "high" }
+      ]
+    }
+  },
+  "task": {
+    "default_concurrency": 8,
+    "max_depth": 1,
+    "wait": {
+      "default_ms": 120000,
+      "max_ms": 600000
+    }
+  },
+  "telemetry": {
+    "enabled": false
+  },
+  "device_service": {
+    "enabled": false
+  },
+  "git_master": {
+    "include_co_authored_by": false
+  }
+}
