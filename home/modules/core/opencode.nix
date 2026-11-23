@@ -260,6 +260,7 @@ let
   todoCliConfig = commonCliConfig // {
     plugins = [ "./tui-plugins/todo" ];
     session.sidebar = "hide";
+    session.verbosity = "high";
   };
   happierCliConfig = todoCliConfig // {
     keybinds = todoCliConfig.keybinds // {
@@ -440,6 +441,7 @@ in
       json.generate "opencode-slim-cli.json" (
         todoCliConfig
         // {
+          inherit (herdrCliConfig) session;
           plugins = [
             {
               package = "./tui-plugins/todo";
