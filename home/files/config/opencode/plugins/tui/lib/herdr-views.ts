@@ -1,6 +1,10 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { Database } from "bun:sqlite";
 
 type Env = Record<string, string | undefined>;
 export type Run = (command: string, args: string[]) => Promise<any>;
@@ -25,6 +29,63 @@ export const run: Run = (command, args) => new Promise((resolve, reject) => {
 
 export function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+export const ANIMALS = (
+  "Ant Bat Bear Bee Beetle Boar Buffalo Camel Cat Chicken Cobra Cow Crab Crow Deer Dog " +
+  "Dolphin Duck Eagle Fish Fly Fox Frog Giraffe Goat Goose Gorilla Hamster Hippo Horse Koala Lion " +
+  "Lizard Lobster Monkey Mouse Octopus Otter Owl Panda Parrot Peacock Penguin Pig Pigeon Rabbit Raccoon Rat " +
+  "Seal Shark Sheep Shrimp Snail Snake Sparrow Spider Squid Swan Tiger Turtle Walrus Whale Wolf Zebra"
+).split(" ");
+
+export function animalName(env: Env, sessionID: string): string {
+  const directory = join(env.XDG_STATE_HOME || join(env.HOME || homedir(), ".local", "state"), "opencode-herdr");
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const db = new Database(join(directory, "animal-names.sqlite"));
+  try {
+    db.exec("PRAGMA busy_timeout = 2000");
+    db.exec("CREATE TABLE IF NOT EXISTS names (session_id TEXT PRIMARY KEY, animal TEXT NOT NULL UNIQUE)");
+    // The unique ledger serializes other parent TUIs too. Names belong to sessions,
+    // not panes, task titles, or plugin generations; closing a tab does not free one.
+    return db.transaction(() => {
+      const saved = db.query<{ animal: string }, [string]>("SELECT animal FROM names WHERE session_id = ?").get(sessionID);
+      if (saved) return saved.animal;
+      const used = new Set(db.query<{ animal: string }, []>("SELECT animal FROM names").all().map((row) => row.animal));
+      for (let round = 1; ; round++) {
+        // A finite vocabulary must eventually repeat; a short suffix keeps names unique.
+        const available = ANIMALS.map((name) => round === 1 ? name : `${name}${round}`).filter((name) => !used.has(name));
+        if (!available.length) continue;
+        const name = available[randomInt(available.length)];
+        db.query("INSERT INTO names (session_id, animal) VALUES (?, ?)").run(sessionID, name);
+        return name;
+      }
+    }).immediate();
+  } finally {
+    db.close();
+  }
+}
+
+export async function nameTabs(env: Env, execute: Run = run): Promise<void> {
+  if (env.HERDR_ENV !== "1" || !env.HERDR_PANE_ID || env.OPENCODE_HERDR_VIEWER === "1") return;
+  if (env.HC_TERMINAL_ID) throw new Error("Conflicting Herdr terminal identities");
+  const parent = (await execute("herdr", ["pane", "get", env.HERDR_PANE_ID])).result?.pane;
+  if (!parent?.tab_id || !parent.workspace_id) throw new Error("Herdr parent is unavailable");
+  if (parent.tokens?.oc2_view) return;
+  await execute("herdr", ["tab", "rename", parent.tab_id, "Main"]);
+  const panes = (await execute("herdr", ["pane", "list", "--workspace", parent.workspace_id])).result?.panes;
+  if (!Array.isArray(panes)) throw new Error("Herdr returned an invalid pane list");
+  for (const pane of panes) {
+    if (pane.tokens?.oc2_parent !== env.HERDR_PANE_ID || !pane.tokens?.oc2_view || !pane.tokens?.oc2_session) continue;
+    if (typeof pane.tab_id !== "string" || typeof pane.pane_id !== "string") throw new Error("Herdr returned an invalid viewer pane");
+    if (pane.tab_id === parent.tab_id) continue;
+    // Earlier asynchronous renames may leave this list stale after a tab is released or moved.
+    const current = (await execute("herdr", ["pane", "get", pane.pane_id])).result?.pane;
+    if (!current) throw new Error("Herdr viewer is unavailable");
+    if (current.tab_id !== pane.tab_id || current.tokens?.oc2_parent !== pane.tokens.oc2_parent
+      || current.tokens?.oc2_session !== pane.tokens.oc2_session || current.tokens?.oc2_view !== pane.tokens.oc2_view) continue;
+    const name = animalName(env, pane.tokens.oc2_session);
+    await execute("herdr", ["tab", "rename", pane.tab_id, `󰚩  ${name}`]);
+  }
 }
 
 // A viewer joins the same service/config namespace; it never starts work or chooses an agent.
@@ -89,7 +150,7 @@ export function createAdapter(env: Env, execute: Run = run): Adapter | undefined
           return { id: existing.pane_id, sessionID: session.id, owner: existing.tokens.oc2_view };
         }
         const result = await execute("herdr", ["tab", "create", "--workspace", anchor.workspace_id, "--no-focus",
-          "--label", `OC2 ${session.id.slice(-8)}`, "--cwd", session.location.directory]);
+          "--label", `󰚩  ${animalName(env, session.id)}`, "--cwd", session.location.directory]);
         const id = result.result?.root_pane?.pane_id;
         if (typeof id !== "string" || !id) throw new Error("Herdr returned an unverified pane; inspect panes before retrying");
         const view = { id, sessionID: session.id, owner };

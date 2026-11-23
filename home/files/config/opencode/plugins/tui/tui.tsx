@@ -4,7 +4,7 @@ import type { Context } from "@opencode/plugin/tui/context";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { buildTodoView, type TodoItem, type TodoLine } from "./lib/todo-overlay";
-import { createAdapter, createViews, run, type View } from "./lib/herdr-views";
+import { createAdapter, createViews, nameTabs, run, type View } from "./lib/herdr-views";
 
 export const MAX_PANEL_WIDTH = 94;
 export const MAX_BODY_HEIGHT = 12;
@@ -301,6 +301,7 @@ export default Plugin.define({
           if (!warned) context.ui.toast.show({ message, variant: "warning" });
           warned = true;
         };
+        void nameTabs(process.env).catch(() => warn("Herdr のタブ名を更新できませんでした。子の実行は継続します。"));
         if (process.argv.some((arg) => arg === "--standalone" || arg === "--server" || arg.startsWith("--server="))) {
           warn("子の可視画面は共有サービス起動時に利用できます。子の実行は継続します。");
         } else {

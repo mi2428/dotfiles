@@ -1,8 +1,68 @@
 import { strict as assert } from "node:assert";
-import { it } from "bun:test";
-import { createAdapter, createViews, shellQuote, viewerArgs, type Run, type Session, type View } from "./herdr-views";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, it } from "bun:test";
+import { ANIMALS, animalName, createAdapter, createViews, nameTabs, shellQuote, viewerArgs, type Run, type Session, type View } from "./herdr-views";
 
 const session = (id: string, parentID?: string): Session => ({ id, parentID, location: { directory: "/repo with 'quote" } });
+mkdirSync(join(tmpdir(), "opencode"), { recursive: true });
+const testState = mkdtempSync(join(tmpdir(), "opencode", "herdr-names-"));
+afterAll(() => rmSync(testState, { recursive: true, force: true }));
+
+it("keeps random names unique and durable, including exhaustion and competing parent processes", async () => {
+  const env = { XDG_STATE_HOME: join(testState, "allocation") };
+  assert.equal(new Set(ANIMALS).size, ANIMALS.length);
+  const names = Array.from({ length: ANIMALS.length + 1 }, (_, index) => animalName(env, `session-${index}`));
+  assert.equal(new Set(names).size, names.length);
+  assert(names.slice(0, ANIMALS.length).every((name) => ANIMALS.includes(name)));
+  assert.match(names.at(-1)!, /2$/);
+  assert.equal(animalName(env, "session-0"), names[0], "reopening the ledger must not rename a reused session");
+  const [a, b] = await Promise.all(["a", "b"].map(async (tag) => {
+    const code = `import { animalName } from ${JSON.stringify(new URL("./herdr-views.ts", import.meta.url).href)};
+      console.log(JSON.stringify(Array.from({length:5}, (_, i) =>
+        animalName(${JSON.stringify(env)}, i === 0 ? "shared" : ${JSON.stringify(tag)} + i))));`;
+    const worker = Bun.spawn([process.execPath, "--eval", code], { stdout: "pipe", stderr: "pipe" });
+    const [stdout, stderr, exit] = await Promise.all([
+      new Response(worker.stdout).text(), new Response(worker.stderr).text(), worker.exited,
+    ]);
+    assert.equal(exit, 0, stderr);
+    return JSON.parse(stdout) as string[];
+  }));
+  assert.equal(a[0], b[0], "two parents must agree on the same child's name");
+  assert.equal(new Set([a[0], ...a.slice(1), ...b.slice(1)]).size, 9);
+});
+
+it("names Main and owned child tabs only, keeping aliases across reconnects", async () => {
+  const env = { HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1", XDG_STATE_HOME: join(testState, "migration") };
+  const renamed: string[][] = [];
+  const panes = [
+    { pane_id: "w1:p2", tab_id: "w1:t2", tokens: { oc2_parent: "w1:p1", oc2_session: "child", oc2_view: "owned" } },
+    { pane_id: "w1:p3", tab_id: "w1:t3", tokens: { oc2_parent: "someone-else", oc2_session: "foreign", oc2_view: "foreign" } },
+    { pane_id: "w1:p4", tab_id: "w1:t4", tokens: { oc2_parent: "w1:p1", oc2_session: "released" } },
+    { pane_id: "w1:p5", tab_id: "w1:t1", tokens: { oc2_parent: "w1:p1", oc2_session: "same-tab", oc2_view: "owned" } },
+    { pane_id: "w1:p6", tab_id: "w1:t6", tokens: { oc2_parent: "w1:p1", oc2_session: "stale", oc2_view: "owned" } },
+  ];
+  const execute: Run = async (_command, args) => {
+    if (args[0] === "tab") {
+      renamed.push(args.slice(2));
+      if (args[2] === "w1:t2") delete panes[4]!.tokens.oc2_view;
+      return {};
+    }
+    if (args[1] === "get") return { result: { pane: args[2] === env.HERDR_PANE_ID
+      ? { tab_id: "w1:t1", workspace_id: "w1" }
+      : panes.find((pane) => pane.pane_id === args[2]) } };
+    return { result: { panes: structuredClone(panes) } };
+  };
+  await nameTabs(env, execute);
+  const first = renamed.map((row) => [...row]);
+  assert.deepEqual(first, [["w1:t1", "Main"], ["w1:t2", `󰚩  ${animalName(env, "child")}`]],
+    "never rename Main through a child pane or a tab released since listing");
+  await nameTabs(env, execute);
+  assert.deepEqual(renamed.slice(2), first);
+  await nameTabs({ ...env, OPENCODE_HERDR_VIEWER: "1" }, execute);
+  assert.equal(renamed.length, 4, "a child TUI must not rename its own tab Main");
+});
 
 it("opens each native descendant once without dispatching any work", async () => {
   const sessions = new Map([session("root"), session("child", "root"), session("grandchild", "child"),
@@ -121,8 +181,11 @@ it("runs a legacy viewer only after its shell is ready, never sends an agent pro
     if (args[1] === "list") return { result: { panes: [] } };
     return {};
   };
-  const adapter = createAdapter({ HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1" }, execute)!;
+  const env = { HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1", XDG_STATE_HOME: join(testState, "adapter") };
+  const adapter = createAdapter(env, execute)!;
   await adapter.open(session("child", "root"));
+  const create = calls.find(([, args]) => args[0] === "tab")![1];
+  assert.equal(create[create.indexOf("--label") + 1], `󰚩  ${animalName(env, "child")}`);
   const launch = calls.find(([, args]) => args[1] === "run");
   assert(launch?.[1].at(-1)!.includes("'--session' 'child'"));
   assert(calls.every(([, args]) => !args.includes("close") && !args.includes("agent") && !args.includes("prompt")));
