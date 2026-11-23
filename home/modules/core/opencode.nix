@@ -435,7 +435,20 @@ in
     "opencode-profiles/slim/opencode/commands/showme.md" =
       mkLink ../../files/config/opencode/commands/showme.md;
     "opencode-profiles/slim/opencode/opencode.jsonc" = mkLink generated.slimConfig;
-    "opencode-profiles/slim/opencode/cli.json" = mkLink generated.todoCli;
+    # Slim owns its full-TUI pane manager; never run a second one from this plugin.
+    "opencode-profiles/slim/opencode/cli.json" = mkLink (
+      json.generate "opencode-slim-cli.json" (
+        todoCliConfig
+        // {
+          plugins = [
+            {
+              package = "./tui-plugins/todo";
+              options.herdrViews = false;
+            }
+          ];
+        }
+      )
+    );
     "opencode-profiles/slim/opencode/themes/catppuccin-mocha-mauve.json" =
       mkLink ../../files/config/opencode/themes/catppuccin-mocha-mauve.json;
     "opencode-profiles/slim/opencode/tui-plugins/todo" = {
@@ -509,6 +522,7 @@ in
           bun.lock
           tui.tsx
           lib/todo-overlay.ts
+          lib/herdr-views.ts
         )
 
         for todo_overlay_file in "''${todo_overlay_files[@]}"; do

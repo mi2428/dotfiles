@@ -24,6 +24,7 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
   const handlers = new Map<string, (event: any) => void>();
   let invalidations = 0;
   const cleanup = plugin.setup({
+    options: { herdrViews: false },
     renderer: test.renderer,
     theme: resolved,
     storage: { memory: () => [scrollMemory, (mutate: (draft: typeof scrollMemory) => void) => mutate(scrollMemory)] },
@@ -186,6 +187,7 @@ it("restores an old Todo on a narrow cold start and reveals it after widening", 
   let slot: (() => unknown) | undefined;
   const requests: string[] = [];
   plugin.setup({
+    options: { herdrViews: false },
     renderer: test.renderer,
     theme: resolveThemeDocument(parseThemeDocument(theme), "dark"),
     storage: { memory: (_key: string, options: { initial: object }) => [options.initial, () => {}] },

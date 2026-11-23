@@ -9,7 +9,8 @@
   "multiplexer": {
     // Only activate panes inside Herdr. Outside Herdr the adapter is a no-op,
     // so normal oc-slim runs keep their single-pane layout.
-    "type": "herdr"
+    "type": "herdr",
+    "viewer": "tui"
   },
   "fallback": {
     "enabled": true,

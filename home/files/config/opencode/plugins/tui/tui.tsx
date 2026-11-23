@@ -4,6 +4,7 @@ import type { Context } from "@opencode/plugin/tui/context";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { buildTodoView, type TodoItem, type TodoLine } from "./lib/todo-overlay";
+import { createAdapter, createViews, run, type View } from "./lib/herdr-views";
 
 export const MAX_PANEL_WIDTH = 94;
 export const MAX_BODY_HEIGHT = 12;
@@ -241,6 +242,101 @@ function TodoOverlay(props: { context: Context }) {
 export default Plugin.define({
   id: "opencode-todo-overlay.tui",
   setup(context) {
-    return context.ui.slot({ append: "app", render: () => <TodoOverlay context={context} /> });
+    const cleanups = [context.ui.slot({ append: "app", render: () => <TodoOverlay context={context} /> })];
+    const inHerdr = process.env.HERDR_ENV === "1" || !!process.env.HC_TERMINAL_ID;
+    if (inHerdr && context.options?.herdrViews !== false) {
+      const viewer = process.env.OPENCODE_HERDR_VIEWER === "1";
+      if (!viewer) {
+        for (const slot of ["prompt.footer.status", "home.footer.status"] as const) {
+          cleanups.push(context.ui.slot({ append: slot, render: () => (
+            <text fg={context.theme.text.feedback.info.base} wrapMode="none" flexShrink={0}>Main</text>
+          ) }));
+        }
+        // Browsing a native child hides the prompt/footer, but this remains the human-facing window.
+        cleanups.push(context.ui.slot({ append: "app", render: () => {
+          const child = createMemo(() => {
+            const route = context.ui.router.current();
+            return route.type === "session" && context.data.session.get(route.sessionID)?.parentID;
+          });
+          return <Show when={child()}>
+            <box position="absolute" bottom={0} right={2} zIndex={901}
+              backgroundColor={context.theme.background.raised.base} paddingLeft={1} paddingRight={1}>
+              <text fg={context.theme.text.feedback.info.base}>Main</text>
+            </box>
+          </Show>;
+        } }));
+      }
+      if (viewer) {
+        // Navigating away releases the view so reconnecting parents do not reuse a person's tab.
+        cleanups.push(context.ui.slot({ append: "app", render: () => {
+          const [released, setReleased] = createSignal(false);
+          let selected = false;
+          createEffect(() => {
+            const route = context.ui.router.current();
+            if (route.type === "session" && route.sessionID === process.env.OPENCODE_HERDR_SESSION) { selected = true; return; }
+            if (released() || !selected) return;
+            setReleased(true);
+            const release = process.env.HC_TERMINAL_ID
+              ? run("hc", ["label", process.env.HC_TERMINAL_ID, "oc2.view="])
+              : run("herdr", ["pane", "report-metadata", process.env.HERDR_PANE_ID!,
+                "--source", "dotfiles.oc2-views", "--clear-token", "oc2_view"]);
+            void release.catch(() => console.error("Could not release Herdr viewer ownership"));
+          });
+          // Native child-session screens have no prompt footer, so mark their full view globally.
+          return <box position="absolute" bottom={0} right={2} zIndex={901}
+            backgroundColor={context.theme.background.raised.base} paddingLeft={1} paddingRight={1}>
+            <text fg={context.theme.text.feedback.info.base}>{released() ? "Viewer" : "Subagent"}</text>
+          </box>;
+        } }));
+      }
+      if (!viewer) {
+        let warned = false;
+        const warn = (message: string) => {
+          console.error(message);
+          if (!warned) context.ui.toast.show({ message, variant: "warning" });
+          warned = true;
+        };
+        if (process.argv.some((arg) => arg === "--standalone" || arg === "--server" || arg.startsWith("--server="))) {
+          warn("子の可視画面は共有サービス起動時に利用できます。子の実行は継続します。");
+        } else {
+          try {
+            const adapter = createAdapter(process.env);
+            if (adapter) {
+              const [registry, updateRegistry] = context.storage.memory<{ views: Record<string, View | null> }>("herdr-views", {
+                initial: { views: {} },
+              });
+              const views = createViews({ adapter, warn,
+                registry: {
+                  has: (id) => Object.hasOwn(registry.views, id),
+                  set: (id, view) => updateRegistry((draft) => { draft.views[id] = view; }),
+                },
+                current: () => {
+                  const route = context.ui.router.current();
+                  return route.type === "session" ? route.sessionID : undefined;
+                },
+                get: (sessionID) => context.client.session.get({ sessionID }),
+              });
+              for (const type of ["session.created", "session.execution.started"] as const) {
+                cleanups.push(context.data.on(type, (event) => { void views.show(event.data.sessionID); }));
+              }
+              cleanups.push(context.data.on("session.deleted", (event) => { void views.remove(event.data.sessionID); }));
+              // Reattach running descendants after opening an existing parent or reconnecting.
+              cleanups.push(context.ui.slot({ append: "app", render: () => {
+                createEffect(() => {
+                  const route = context.ui.router.current();
+                  if (route.type !== "session") return;
+                  for (const session of context.data.session.list()) {
+                    if (session.parentID && context.data.session.status(session.id) === "running") void views.show(session.id);
+                  }
+                });
+                return null;
+              } }));
+              cleanups.push(() => { void views.dispose(); });
+            }
+          } catch { warn("Herdr の端末識別を確認できません。子の実行は継続します。"); }
+        }
+      }
+    }
+    return () => { for (const cleanup of cleanups.toReversed()) cleanup(); };
   },
 });
