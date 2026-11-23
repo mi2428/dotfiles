@@ -65,7 +65,7 @@ let
   };
   sakuraProvider = {
     package = "@opencode/ai/providers/openai-compatible";
-    name = "Sakura AI";
+    name = "Sakura";
     settings = {
       baseURL = "https://sakura-ai-engine-gateway.tailef845a.ts.net/v1";
       timeout = false;
@@ -73,8 +73,8 @@ let
       chunkTimeout = false;
     };
     models = {
-      "preview/GLM-5.3-Flash" = mkSakuraModel "Sakura GLM 5.3 Flash" (map glmVariant sakuraEfforts);
-      "preview/DeepSeek-V4.1-Flash-1017" = mkSakuraModel "Sakura DeepSeek V4.1 Flash 1017" [
+      "preview/GLM-5.3-Flash" = mkSakuraModel "GLM 5.3 Flash" (map glmVariant sakuraEfforts);
+      "preview/DeepSeek-V4.1-Flash-1017" = mkSakuraModel "DeepSeek V4.1 Flash 1017" [
         (deepseekVariant "none" "none")
         (deepseekVariant "minimal" "low")
         (deepseekVariant "low" "low")
