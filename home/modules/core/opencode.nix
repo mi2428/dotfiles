@@ -324,6 +324,7 @@ let
   obsidianExportSkill = ../../files/agents/skills/obsidian-export;
   showmeSkill = ../../files/agents/skills/showme;
   slimOpenCodePluginConfig = ../../files/config/opencode/profiles/slim/oh-my-opencode-slim.jsonc;
+  ensureOpenCodeServices = ../../../scripts/ensure-opencode-services.sh;
 
   ponytail = pkgs.applyPatches {
     name = "ponytail-no-comment-prefix";
@@ -444,6 +445,9 @@ in
         install_plugin() {
           local directory="$1" name="$2" source="$3"
           mkdir -p "$directory/plugins"
+          if [ ! -L "$directory/plugins/$name.js" ] && cmp -s "$source" "$directory/plugins/$name.js"; then
+            return
+          fi
           if [ -d "$directory/plugins/$name" ]; then
             rmdir "$directory/plugins/$name"
           fi
@@ -471,14 +475,11 @@ in
         install_plugin "$profiles/slim/opencode" obsidian-export "${obsidianExportPlugin}"
       '';
 
-      # Herdr Desktop only spawns Slim panes for the v2 shared service. Keep
-      # Slim on a profile-local port so it does not share the default profile's
-      # service. The wrapper isolates its state registration with XDG_STATE_HOME.
-      ensureOpenCodeSlimServicePort = lib.hm.dag.entryAfter [ "installOpenCodeServerPlugins" ] ''
-        slim_config="${config.home.homeDirectory}/.config/opencode-profiles/slim"
-        if [ -f "$slim_config/opencode/opencode.jsonc" ] && command -v opencode >/dev/null 2>&1; then
-          XDG_CONFIG_HOME="$slim_config" opencode service set port 4099 >/dev/null 2>&1 || true
-        fi
+      # Service settings are writable: OpenCode stores generated credentials here.
+      # Initialize only missing files, without contacting or restarting any service.
+      ensureOpenCodeServiceConfigs = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+        PATH="${lib.makeBinPath [ pkgs.jq ]}:$PATH" sh "${ensureOpenCodeServices}" \
+          "${config.home.homeDirectory}/.config/opencode-profiles"
       '';
 
       installOpenCodeTodoOverlayDeps = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
