@@ -32,6 +32,7 @@ if command -v omo >/dev/null 2>&1; then
     done
 fi
 
+# oh-my-opencode-slim 3.0.8 requires OpenCode 2.3 or newer.
 if command -v opencode >/dev/null 2>&1; then
     version=$(opencode --version 2>/dev/null) || version=
     printf '%s\n' "$version" | grep -Eq '(^|[[:space:]])v?2\.(3|[4-9]|[1-9][0-9]+)\.[0-9]+$' ||
@@ -46,6 +47,7 @@ for profile in chat happier herdr slim; do
         fail "OpenCode $profile custom theme is missing"
 done
 
+# Slim uses a profile-local shared service for Herdr App panes.
 slim_service="$HOME/.config/opencode-profiles/slim/opencode/service.json"
 [ -f "$slim_service" ] || fail 'Slim service config is missing'
 jq -e '.port == 4099' "$slim_service" >/dev/null ||

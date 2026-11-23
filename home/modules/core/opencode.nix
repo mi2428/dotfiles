@@ -25,6 +25,8 @@ let
     "gpt-5.6-terra".settings.reasoningEffort = "xhigh";
   };
 
+  # OpenCode variants must match the gateway's accepted reasoning_effort
+  # values. DeepSeek rejects minimal and medium, so alias them to low and high.
   sakuraEfforts = [
     "none"
     "minimal"
@@ -463,6 +465,9 @@ in
         install_plugin "$profiles/slim/opencode" obsidian-export "${obsidianExportPlugin}"
       '';
 
+      # Herdr Desktop only spawns Slim panes for the v2 shared service. Keep
+      # Slim on a profile-local port so it does not share the default profile's
+      # service. The wrapper isolates its state registration with XDG_STATE_HOME.
       ensureOpenCodeSlimServicePort = lib.hm.dag.entryAfter [ "installOpenCodeServerPlugins" ] ''
         slim_config="${config.home.homeDirectory}/.config/opencode-profiles/slim"
         if [ -f "$slim_config/opencode/opencode.jsonc" ] && command -v opencode >/dev/null 2>&1; then

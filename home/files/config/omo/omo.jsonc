@@ -1,4 +1,10 @@
 {
+  // Sakura-only routing. GLM handles orchestration and high-judgement work;
+  // DeepSeek handles search and quick lanes. DeepSeek rejects minimal/medium
+  // reasoning, so models.json aliases those levels to low/high. settings.json
+  // starts on GLM max, disables cross-model fallback, telemetry, and the
+  // device service. The main session needs settings.json because OmO's
+  // interactive TUI ignores model_profile.
   "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/omo.schema.json",
   "models": {
     "glm": { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "max" },

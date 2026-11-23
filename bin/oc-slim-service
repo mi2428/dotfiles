@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 
+# Manage the profile-local OpenCode service used by oc-slim inside Herdr App.
 profile_config_home=${OPENCODE_PROFILE_CONFIG_HOME:-${HOME:?}/.config/opencode-profiles/slim}
 state_home=${OPENCODE_SLIM_STATE_HOME:-${HOME:?}/.local/state/opencode-profiles/slim}
 
