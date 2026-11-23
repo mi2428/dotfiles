@@ -1,6 +1,6 @@
 {
   "$schema": "https://pi.dev/schemas/settings.schema.json",
-  "theme": "system",
+  "theme": "catppuccin-mocha",
   "defaultProvider": "sakura",
   "defaultModel": "preview/GLM-5.3-Flash",
   "defaultThinkingLevel": "max",

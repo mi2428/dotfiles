@@ -7,6 +7,9 @@ in
   xdg.configFile."mise/conf.d/50-dotfiles-ai.toml".source =
     ../../files/config/mise/conf.d/50-dotfiles-ai.toml;
 
+  home.file.".omo/agent/themes/catppuccin-mocha.json".source =
+    source + /themes/catppuccin-mocha.json;
+
   # OmO rewrites settings.json and models.json (model discovery, /model), and
   # the migration engine can touch omo.jsonc. Keep them writable and atomically
   # replace the declared defaults on each activation, like OMP config.yml.

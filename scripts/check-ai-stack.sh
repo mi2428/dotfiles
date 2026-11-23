@@ -23,6 +23,9 @@ for file in "$HOME/.omo/omo.jsonc" "$HOME/.omo/agent/models.json" "$HOME/.omo/ag
     [ ! -L "$file" ] || fail "OMO configuration must be a writable regular file: $file"
     [ -w "$file" ] || fail "OMO configuration is not writable: $file"
 done
+[ -f "$HOME/.omo/agent/themes/catppuccin-mocha.json" ] || fail 'OMO Catppuccin theme is missing'
+jq -e '.theme == "catppuccin-mocha"' "$HOME/.omo/agent/settings.json" >/dev/null ||
+    fail 'OMO theme is not catppuccin-mocha'
 [ -f "$HOME/.config/mise/conf.d/50-dotfiles-ai.toml" ] || fail 'mise omo-ai declaration is missing'
 
 if command -v omo >/dev/null 2>&1; then
