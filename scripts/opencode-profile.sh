@@ -157,6 +157,8 @@ if [ "$profile" = slim ]; then
 fi
 
 use_standalone=true
+explicit_server=false
+explicit_standalone=false
 for arg; do
     case "$arg" in
         --server | --server=* | --attach | --attach=*)
@@ -165,9 +167,32 @@ for arg; do
                 exit 64
             fi
             use_standalone=false
+            explicit_server=true
+            ;;
+        --standalone)
+            explicit_standalone=true
             ;;
     esac
 done
+
+if [ "$profile" = slim ]; then
+    # Keep the Slim background service registration separate from the default
+    # profile. The matching port lives in the profile's opencode/service.json.
+    export XDG_STATE_HOME="${OPENCODE_SLIM_STATE_HOME:-"${HOME:?}/.local/state/opencode-profiles/slim"}"
+    if [ "$explicit_standalone" = false ] && [ "$explicit_server" = false ] &&
+        [ -n "${HC_TERMINAL_ID:-}" ] && [ ! -f "$profile_config/service.json" ]; then
+        printf 'opencode-profile: Slim service config is missing; run Home Manager activation\n' >&2
+        exit 78
+    fi
+fi
+
+# Herdr Desktop spawns child panes only for the v2 shared service, not for
+# --server. Running without --standalone uses the profile-local service, while
+# HERDR_APP_HOME keeps herdr-app on the app's own config after the XDG override.
+if [ "$profile" = slim ] && [ -n "${HC_TERMINAL_ID:-}" ] && [ "$explicit_standalone" = false ]; then
+    export HERDR_APP_HOME="${HERDR_APP_HOME:-"$caller_config_home/herdr-app"}"
+    use_standalone=false
+fi
 
 if [ "$use_standalone" = true ]; then
     exec opencode --standalone "$@"

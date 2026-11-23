@@ -1,23 +1,64 @@
 {
-  // The performance profile is active on first launch. `/preset openai`
-  // switches to the all-OpenAI mapping below and persists after reload.
-  "preset": "performance",
+  // The Sakura preset is active by default. /preset performance and
+  // /preset openai keep the previous Bedrock/OpenAI lineups available.
+  "preset": "sakura",
   "autoUpdate": false,
   "compactSidebar": true,
   "disabled_agents": ["observer"],
   "image_routing": "direct",
   "multiplexer": {
-    "type": "none"
+    // Only activate panes inside Herdr. Outside Herdr the adapter is a no-op,
+    // so normal oc-slim runs keep their single-pane layout.
+    "type": "herdr"
   },
   "fallback": {
     "enabled": true,
-    "timeoutMs": 15000,
     "retryDelayMs": 500,
-    "maxRetries": 3,
-    "retry_on_empty": true
+    "maxRetries": 3
   },
 
   "presets": {
+    // GLM owns orchestration and high-judgement work; DeepSeek owns the
+    // latency-sensitive search lanes. Both run against the Sakura gateway.
+    "sakura": {
+      "orchestrator": {
+        "model": "sakura/preview/GLM-5.3-Flash",
+        "variant": "max",
+        "skills": ["*"],
+        "mcps": []
+      },
+      "oracle": {
+        "model": "sakura/preview/GLM-5.3-Flash",
+        "variant": "max",
+        "skills": ["simplify"],
+        "mcps": []
+      },
+      "designer": {
+        "model": "sakura/preview/GLM-5.3-Flash",
+        "variant": "max",
+        "skills": [],
+        "mcps": []
+      },
+      "fixer": {
+        "model": "sakura/preview/GLM-5.3-Flash",
+        "variant": "max",
+        "skills": [],
+        "mcps": []
+      },
+      "librarian": {
+        "model": "sakura/preview/DeepSeek-V4.1-Flash-1017",
+        "variant": "high",
+        "skills": [],
+        "mcps": []
+      },
+      "explorer": {
+        "model": "sakura/preview/DeepSeek-V4.1-Flash-1017",
+        "variant": "low",
+        "skills": [],
+        "mcps": []
+      }
+    },
+
     "performance": {
       // Opus 5 is used where planning quality and long-running context have
       // the largest effect. OpenAI remains the code-specialist backend.

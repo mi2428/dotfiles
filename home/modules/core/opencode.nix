@@ -463,6 +463,13 @@ in
         install_plugin "$profiles/slim/opencode" obsidian-export "${obsidianExportPlugin}"
       '';
 
+      ensureOpenCodeSlimServicePort = lib.hm.dag.entryAfter [ "installOpenCodeServerPlugins" ] ''
+        slim_config="${config.home.homeDirectory}/.config/opencode-profiles/slim"
+        if [ -f "$slim_config/opencode/opencode.jsonc" ] && command -v opencode >/dev/null 2>&1; then
+          XDG_CONFIG_HOME="$slim_config" opencode service set port 4099 >/dev/null 2>&1 || true
+        fi
+      '';
+
       installOpenCodeTodoOverlayDeps = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
         todo_overlay_source="${todoOverlayPackageRoot}"
         todo_overlay_package="${config.home.homeDirectory}/.config/opencode/tui-plugins/todo"

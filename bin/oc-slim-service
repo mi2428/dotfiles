@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+profile_config_home=${OPENCODE_PROFILE_CONFIG_HOME:-${HOME:?}/.config/opencode-profiles/slim}
+state_home=${OPENCODE_SLIM_STATE_HOME:-${HOME:?}/.local/state/opencode-profiles/slim}
+
+exec env \
+    XDG_CONFIG_HOME="$profile_config_home" \
+    XDG_STATE_HOME="$state_home" \
+    opencode service "$@"
