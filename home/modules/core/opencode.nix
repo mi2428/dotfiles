@@ -25,8 +25,25 @@ let
     "gpt-5.6-terra".settings.reasoningEffort = "xhigh";
   };
 
-  mkSakuraModel = name: {
-    inherit name;
+  sakuraEfforts = [
+    "none"
+    "minimal"
+    "low"
+    "medium"
+    "high"
+    "xhigh"
+    "max"
+  ];
+  glmVariant = id: {
+    inherit id;
+    body.reasoning_effort = id;
+  };
+  deepseekVariant = id: effort: {
+    inherit id;
+    body.reasoning_effort = effort;
+  };
+  mkSakuraModel = name: variants: {
+    inherit name variants;
     body.reasoning_effort = "max";
     capabilities = {
       tools = true;
@@ -40,7 +57,7 @@ let
     };
     compatibility.reasoningField = "reasoning";
     limit = {
-      context = 262144;
+      context = 1048575;
       output = 32768;
     };
   };
@@ -54,8 +71,16 @@ let
       chunkTimeout = false;
     };
     models = {
-      "preview/GLM-5.3-Flash" = mkSakuraModel "Sakura GLM 5.3 Flash";
-      "preview/DeepSeek-V4.1-Flash-1017" = mkSakuraModel "Sakura DeepSeek V4.1 Flash 1017";
+      "preview/GLM-5.3-Flash" = mkSakuraModel "Sakura GLM 5.3 Flash" (map glmVariant sakuraEfforts);
+      "preview/DeepSeek-V4.1-Flash-1017" = mkSakuraModel "Sakura DeepSeek V4.1 Flash 1017" [
+        (deepseekVariant "none" "none")
+        (deepseekVariant "minimal" "low")
+        (deepseekVariant "low" "low")
+        (deepseekVariant "medium" "high")
+        (deepseekVariant "high" "high")
+        (deepseekVariant "xhigh" "xhigh")
+        (deepseekVariant "max" "max")
+      ];
     };
   };
 
