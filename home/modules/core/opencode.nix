@@ -224,24 +224,26 @@ let
     };
   };
 
-  happierConfig = (mkOpenCodeConfig {
-    plugins = [ ponytailPlugin ];
-  }) // {
-    default_agent = "build";
-    agents = commonOpenCodeConfig.agents // {
-      general.disabled = true;
-      explore.disabled = true;
+  happierConfig =
+    (mkOpenCodeConfig {
+      plugins = [ ponytailPlugin ];
+    })
+    // {
+      default_agent = "build";
+      agents = commonOpenCodeConfig.agents // {
+        general.disabled = true;
+        explore.disabled = true;
+      };
+      permissions = commonPermissions ++ [
+        {
+          action = "subagent";
+          resource = "*";
+          effect = "deny";
+        }
+      ];
+      skills = [ "${ponytail}/skills" ];
+      instructions = [ "${firstThingsFirstInstruction}" ];
     };
-    permissions = commonPermissions ++ [
-      {
-        action = "subagent";
-        resource = "*";
-        effect = "deny";
-      }
-    ];
-    skills = [ "${ponytail}/skills" ];
-    instructions = [ "${firstThingsFirstInstruction}" ];
-  };
 
   commonCliConfig = {
     "$schema" = "https://opencode.ai/v2/cli.json";
@@ -260,8 +262,12 @@ let
     session.sidebar = "hide";
   };
   happierCliConfig = todoCliConfig // {
-    keybinds = todoCliConfig.keybinds // { "agent.cycle" = "shift+tab"; };
-    session = todoCliConfig.session // { permissions = "autoaccept"; };
+    keybinds = todoCliConfig.keybinds // {
+      "agent.cycle" = "shift+tab";
+    };
+    session = todoCliConfig.session // {
+      permissions = "autoaccept";
+    };
   };
   herdrCliConfig = todoCliConfig // {
     plugins = todoCliConfig.plugins ++ [ "./herdr-opencode" ];
