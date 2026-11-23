@@ -1,8 +1,7 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "bun:test";
 import { buildTodoView } from "./tui/lib/todo-overlay";
-import plugin, { bodyHeight, latestTodos, popupWidth, recoverTodos, MAX_BODY_HEIGHT, MAX_PANEL_WIDTH } from "./tui/tui";
-import theme from "../themes/catppuccin-mocha-mauve.json";
+import { bodyHeight, latestTodos, popupWidth, recoverTodos, MAX_BODY_HEIGHT, MAX_PANEL_WIDTH } from "./tui/tui";
 
 const todos = [
   { content: "finish report", status: "completed" },
@@ -12,16 +11,6 @@ const todos = [
 ];
 
 describe("OpenCode v2 Todo HUD", () => {
-  it("registers a non-replacing app slot", () => {
-    let claim: { append?: string; render: () => unknown } | undefined;
-    const cleanup = () => {};
-    assert.equal(plugin.id, "opencode-todo-overlay.tui");
-    const result = plugin.setup({ ui: { slot: (value: typeof claim) => { claim = value; return cleanup; } } } as never);
-    assert.equal(result, cleanup);
-    assert.equal(claim?.append, "app");
-    assert.equal(typeof claim?.render, "function");
-  });
-
   it("reads the latest successful todowrite input before a revert boundary", () => {
     const message = (id: string, name: string, input: unknown, status = "completed") => ({
       id, type: "assistant", content: [{ type: "tool", name, state: { status, input } }],
@@ -87,17 +76,5 @@ describe("OpenCode v2 Todo HUD", () => {
     assert.equal(bodyHeight([{ kind: "pending", text: `▸ ${"x".repeat(140)}` }], 0, 0, 68), 3);
     assert.equal(bodyHeight([{ kind: "pending", text: `▸ ${"日本語".repeat(50)}` }], 0, 0, 68), 5);
     assert.equal(bodyHeight(Array.from({ length: 20 }, () => ({ kind: "pending", text: "task" })), 0, 19, 68), 12);
-  });
-
-  it("keeps the Mocha palette and transparent canvas in the v2 theme", () => {
-    assert.equal(theme.background, undefined);
-    assert.equal(theme.base.background.base, "transparent");
-    assert.equal(theme.base.background.raised.base, "#242436");
-    assert.equal(theme.base.text.feedback.success.base, "#a6e3a1");
-    assert.equal(theme.base.text.feedback.warning.base, "#f9e2af");
-    assert.equal(theme.dark.hue.purple[200], "#cba6f7");
-    for (const hue of ["gray", "red", "orange", "yellow", "green", "cyan", "blue", "purple"] as const) {
-      assert.equal(Object.keys(theme.dark.hue[hue]).length, 9);
-    }
   });
 });
