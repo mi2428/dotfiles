@@ -139,7 +139,7 @@ export default Plugin.define({
   id: "opencode-todo-overlay.tui",
   setup(context) {
     const cleanups = [context.ui.slot({ append: "app", render: () => (
-      <HudStack context={context}>{(layout) => <TodoHud context={context} layout={layout} />}</HudStack>
+      <HudStack context={context}>{(layout) => <TodoHud context={context} />}</HudStack>
     ) })];
     const inHerdr = process.env.HERDR_ENV === "1" || !!process.env.HC_TERMINAL_ID;
     const viewer = process.env.OPENCODE_HERDR_VIEWER === "1";

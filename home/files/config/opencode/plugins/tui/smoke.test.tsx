@@ -4,8 +4,8 @@ import { it, mock, spyOn } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
 import { BoxRenderable, ScrollBoxRenderable, TextRenderable } from "@opentui/core";
 import { render } from "@opentui/solid";
-import { Show, createSignal } from "solid-js";
-import { HudCard, HudStack } from "./hud/layout";
+import { For, Show, createSignal } from "solid-js";
+import { HUD_MAX_ROWS, MIN_HUD_HEIGHT, HudCard, HudStack } from "./hud/layout";
 import { parseThemeDocument, resolveThemeDocument } from "@opencode/theme/tui";
 import type { KeymapLayer } from "@opencode/plugin/tui/context";
 import { registerEnabledFields } from "@opentui/keymap/addons";
@@ -392,8 +392,9 @@ it("shows current execution telemetry without stale tools, fabricated activity, 
 });
 
 it("stacks independent HUD cards and closes empty gaps without remounting on resize", async () => {
-  const test = await createTestRenderer({ width: 80, height: 20 });
-  const context = { renderer: test.renderer, theme: resolveThemeDocument(parseThemeDocument(theme), "dark") } as never;
+  const test = await createTestRenderer({ width: 80, height: MIN_HUD_HEIGHT });
+  const resolved = resolveThemeDocument(parseThemeDocument(theme), "dark");
+  const context = { renderer: test.renderer, theme: resolved } as never;
   const [mounted, setMounted] = createSignal(true);
   const [first, setFirst] = createSignal(true);
   const [second, setSecond] = createSignal(true);
@@ -401,8 +402,8 @@ it("stacks independent HUD cards and closes empty gaps without remounting on res
   try {
     await render(() => <Show when={mounted()}>
       <HudStack context={context}>{() => <>
-        <Show when={first()}><HudCard context={context} id="first-card" title="First"><text>first body</text></HudCard></Show>
-        <Show when={second()}><HudCard context={context} id="second-card" title="Second"><text>second body</text></HudCard></Show>
+        <Show when={first()}><HudCard context={context} id="first-card" accent={resolved.syntax.function}><text>first body</text></HudCard></Show>
+        <Show when={second()}><HudCard context={context} id="second-card" accent={resolved.text.feedback.warning.base}><text>second body</text></HudCard></Show>
       </>}</HudStack>
     </Show>, test.renderer);
     await test.renderOnce();
@@ -411,21 +412,25 @@ it("stacks independent HUD cards and closes empty gaps without remounting on res
     const b = test.renderer.root.findDescendantById("second-card") as BoxRenderable;
     assert.equal(a.x, b.x);
     assert.equal(a.width, b.width);
+    assert(a.borderColor.equals(resolved.syntax.function));
+    assert(b.borderColor.equals(resolved.text.feedback.warning.base));
+    assert(!a.borderColor.equals(b.borderColor), "each card must use its own accent");
     assert(b.y >= a.y + a.height, "cards must not overlap");
     const top = a.y;
     setFirst(false);
     await test.renderOnce();
     assert.equal(b.y, top, "remaining cards must move up when the first card disappears");
-    assert.equal(test.renderer.listenerCount("resize"), listeners + 1, "cards share one width observer");
+    assert.equal(test.renderer.listenerCount("resize"), listeners + 1, "cards share one size observer");
     setFirst(false);
     await test.renderOnce();
     assert.equal(b.y, stack.y, "the remaining card moves up without a placeholder");
-    for (const width of [60, 120, 80]) {
-      test.resize(width, 20);
+    for (const [width, height] of [[60, 60], [120, MIN_HUD_HEIGHT - 1], [120, MIN_HUD_HEIGHT], [80, 20], [80, MIN_HUD_HEIGHT]]) {
+      test.resize(width, height);
       await test.renderOnce();
-      assert.equal(stack.visible, width >= 80);
+      const visible = width >= 80 && height >= MIN_HUD_HEIGHT;
+      assert.equal(stack.visible, visible);
       assert.equal(test.renderer.root.findDescendantById("second-card"), b);
-      if (width < 80) assert.doesNotMatch(test.captureCharFrame(), /second body/);
+      if (!visible) assert.doesNotMatch(test.captureCharFrame(), /second body/);
       else assert.match(test.captureCharFrame(), /second body/);
     }
     setSecond(false);
@@ -439,25 +444,51 @@ it("stacks independent HUD cards and closes empty gaps without remounting on res
   }
 });
 
-it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
-  const test = await createTestRenderer({ width: 80, height: 20 });
+it("fits four full HUD cards above the prompt at the minimum viewport height", async () => {
+  const test = await createTestRenderer({ width: 80, height: MIN_HUD_HEIGHT });
+  const resolved = resolveThemeDocument(parseThemeDocument(theme), "dark");
+  const context = { renderer: test.renderer, theme: resolved } as never;
+  try {
+    await render(() => <HudStack context={context}>{() =>
+      <For each={[0, 1, 2, 3]}>{(card) =>
+        <HudCard context={context} id={`full-card-${card}`} accent={resolved.hue.accent[200]}>
+          <For each={Array.from({ length: HUD_MAX_ROWS }, (_, index) => index)}>{(row) =>
+            <text height={1} wrapMode="none">row {row}</text>
+          }</For>
+        </HudCard>
+      }</For>
+    }</HudStack>, test.renderer);
+    await test.renderOnce();
+    const stack = test.renderer.root.findDescendantById("hud-stack") as BoxRenderable;
+    const last = test.renderer.root.findDescendantById("full-card-3") as BoxRenderable;
+    assert.equal(stack.visible, true);
+    assert(last.y + last.height <= test.renderer.height - 8, "reserve eight rows below all four full cards");
+    test.resize(80, MIN_HUD_HEIGHT - 1);
+    await test.renderOnce();
+    assert.equal(stack.visible, false);
+  } finally {
+    test.renderer.destroy();
+  }
+});
+
+it("renders a fixed-height Todo window with progress instead of scrollback", async () => {
+  const test = await createTestRenderer({ width: 80, height: MIN_HUD_HEIGHT });
   const resolved = resolveThemeDocument(parseThemeDocument(theme), "dark");
   assert.equal(resolved.background.base.a, 0);
   const chat = new ScrollBoxRenderable(test.renderer, { width: "100%", height: "100%", scrollY: true });
-  for (let index = 0; index < 30; index++) {
+  for (let index = 0; index < 80; index++) {
     chat.add(new TextRenderable(test.renderer, { content: `message ${index}`, width: "100%" }));
   }
   test.renderer.root.add(chat);
   let slot: (() => unknown) | undefined;
   const [route, setRoute] = createSignal("ses_1");
-  const scrollMemory = { offsets: {} as Record<string, { windowKey: string; scrollTop: number }> };
   const handlers = new Map<string, (event: any) => void>();
   let invalidations = 0;
   const cleanup = plugin.setup({
     options: { herdrViews: false },
     renderer: test.renderer,
     theme: resolved,
-    storage: { memory: () => [scrollMemory, (mutate: (draft: typeof scrollMemory) => void) => mutate(scrollMemory)] },
+    storage: { memory: () => assert.fail("Todo must not retain scroll state") },
     ui: {
       router: { current: () => ({ type: "session", sessionID: route() }) },
       slot: (claim: { append?: string; render: () => unknown }) => { if (claim.append === "app") slot = claim.render; return () => {}; },
@@ -475,12 +506,14 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
           type: "tool", name: "todowrite", state: { status: "completed", input: { todos: [
             { content: "oldest", status: "completed" },
             { content: "older", status: "completed" },
+            ...Array.from({ length: 4 }, (_, index) => ({ content: `recent ${index}`, status: "completed" })),
             { content: "recent", status: "completed" },
             { content: "previous", status: "completed" },
             { content: "current work", status: "in_progress" },
             { content: "next", status: "pending" },
             { content: "later", status: "pending" },
-            { content: "last visible", status: "pending" },
+             { content: "last visible", status: "pending" },
+             ...Array.from({ length: 3 }, (_, index) => ({ content: `future ${index}`, status: "pending" })),
             { content: "hidden future", status: "pending" },
           ] } },
         }] }],
@@ -493,7 +526,7 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
       }] };
       assert.equal(messageID, "msg_fallback");
       return { type: "assistant", content: [{ type: "tool", id: "tool_fallback", name: "todowrite",
-        state: { status: "completed", input: { todos: [{ content: "restored progress", status: "completed" }] } } }] };
+        state: { status: "completed", input: { todos: [{ content: "restored progress", status: "in_progress" }] } } }] };
     } } } },
   } as never);
   assert(slot);
@@ -503,54 +536,55 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
     await test.renderer.idle();
     await test.renderOnce();
     const frame = test.captureCharFrame();
-    assert.match(frame, /Todo · 5 of 9/);
-    assert.match(frame, /previous/);
-    assert.match(frame, /current work/);
-    assert.match(frame, /next/);
-    assert.doesNotMatch(frame, /oldest|older/);
+    assert.match(frame, /▶ current work/);
+    assert.doesNotMatch(frame, /Todo ·/);
+    assert.match(frame, /○ next/);
+    assert.doesNotMatch(frame, /oldest|older|previous|hidden future/);
+    assert.match(frame, /\+8 left \(8 done, 50%\)/);
     const panel = test.renderer.root.findDescendantById("todo-panel") as BoxRenderable;
     const stack = test.renderer.root.findDescendantById("hud-stack") as BoxRenderable;
     assert(panel);
     assert.equal(panel.width, 68);
-    assert(panel.backgroundColor.equals(resolved.background.raised.base));
+    assert.equal(panel.height, 10, "eight body rows plus top/bottom padding");
+    assert(panel.backgroundColor.equals(resolved.background.raised.high));
+    assert(!panel.backgroundColor.equals(resolved.background.raised.base), "HUD must stand apart from code block backgrounds");
     assert.equal(panel.backgroundColor.a, 1);
-    assert((test.renderer.root.findDescendantById("todo-line-0") as TextRenderable).fg.equals(resolved.text.muted));
-    assert((test.renderer.root.findDescendantById("todo-line-4") as TextRenderable).fg.equals(resolved.text.feedback.success.base));
-    assert((test.renderer.root.findDescendantById("todo-line-5") as TextRenderable).fg.equals(resolved.text.feedback.warning.base));
-    const todos = test.renderer.root.findDescendantById("todo-scroll") as ScrollBoxRenderable;
-    assert(todos);
-    assert.equal(todos.scrollTop, 3);
+    assert((test.renderer.root.findDescendantById("todo-line-0") as TextRenderable).fg.equals(resolved.text.feedback.success.base));
+    assert((test.renderer.root.findDescendantById("todo-line-1") as TextRenderable).fg.equals(resolved.text.base));
+    const summary = test.renderer.root.findDescendantById("todo-summary") as TextRenderable;
+    assert.equal(summary.y + summary.height, panel.y + panel.height - 1, "progress must always be the final body row");
+    assert(!test.renderer.root.findDescendantById("todo-scroll"));
     await test.mockMouse.scroll(5, 12, "down", { delayMs: 0 });
     await test.renderOnce();
     assert(chat.scrollTop > 0, "chat receives wheel events outside the HUD");
-    await test.mockMouse.scroll(todos.x + 1, todos.y + 1, "up", { delayMs: 0 });
-    await test.renderOnce();
-    assert(todos.scrollTop < 3, "HUD retains its own scrollback");
-    const savedScrollTop = todos.scrollTop;
     setRoute("ses_2");
     await test.renderOnce();
     await test.renderer.idle();
     setRoute("ses_1");
     await test.renderOnce();
     await test.renderer.idle();
-    assert.equal(todos.scrollTop, savedScrollTop, "HUD restores manual scroll after a session switch");
-    assert.deepEqual(scrollMemory.offsets.ses_1, {
-      windowKey: "ses_1:4:3",
-      scrollTop: savedScrollTop,
-    });
+    assert.match(test.captureCharFrame(), /\+8 left \(8 done, 50%\)/);
+    test.resize(80, MIN_HUD_HEIGHT - 1);
+    await test.renderOnce();
+    assert.equal(stack.visible, false, "height alone must hide all cards");
+    assert.doesNotMatch(test.captureCharFrame(), /▶|○|current work/);
+    test.resize(80, MIN_HUD_HEIGHT);
+    await test.renderOnce();
+    await test.renderer.idle();
+    assert.match(test.captureCharFrame(), /\+8 left \(8 done, 50%\)/);
     for (const width of [45, 79, 80, 120, 45, 80]) {
-      test.resize(width, 40);
+      test.resize(width, MIN_HUD_HEIGHT);
       await test.renderOnce();
       await test.renderer.idle();
       await test.renderOnce();
       assert.equal(stack.visible, width >= 80);
-      if (width < 80) assert.doesNotMatch(test.captureCharFrame(), /Todo ·|current work/);
-      else assert.match(test.captureCharFrame(), /Todo · 5 of 9/);
-      assert.equal(test.renderer.root.findDescendantById("todo-scroll"), todos, "resize retains the HUD instance");
+      if (width < 80) assert.doesNotMatch(test.captureCharFrame(), /▶|○|current work/);
+      else assert.match(test.captureCharFrame(), /▶ current work/);
+      assert.equal(test.renderer.root.findDescendantById("todo-panel"), panel, "resize retains the HUD instance");
     }
     assert(handlers.has("session.tool.input.started"));
     assert(handlers.has("session.tool.success"));
-    test.resize(45, 40);
+    test.resize(80, MIN_HUD_HEIGHT - 1);
     await test.renderOnce();
     handlers.get("session.tool.input.started")?.({ data: {
       sessionID: "ses_1", assistantMessageID: "msg_updated", id: "tool_updated", name: "todowrite",
@@ -564,13 +598,18 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
     await test.renderOnce();
     await test.renderer.idle();
     await test.renderOnce();
-    assert.doesNotMatch(test.captureCharFrame(), /Todo ·|now active/);
-    test.resize(80, 40);
+    assert.doesNotMatch(test.captureCharFrame(), /▶|○|now active/);
+    test.resize(80, MIN_HUD_HEIGHT);
     await test.renderOnce();
     await test.renderer.idle();
     await test.renderOnce();
-    assert.match(test.captureCharFrame(), /Todo · 6 of 7/);
-    assert.match(test.captureCharFrame(), /now active/);
+    assert.match(test.captureCharFrame(), /▶ now active/);
+    assert.match(test.captureCharFrame(), /✓ done 0/);
+    assert.match(test.captureCharFrame(), /✓ done 4/);
+    assert.match(test.captureCharFrame(), /○ later/);
+    assert(!test.renderer.root.findDescendantById("todo-summary"), "all seven tasks fit, including completed ones");
+    assert((test.renderer.root.findDescendantById("todo-line-0") as TextRenderable).fg.equals(resolved.text.base));
+    assert((test.renderer.root.findDescendantById("todo-line-5") as TextRenderable).fg.equals(resolved.text.feedback.success.base));
     handlers.get("session.tool.input.started")?.({ data: {
       sessionID: "ses_1", assistantMessageID: "msg_fallback", id: "tool_fallback", name: "todowrite",
     } });
@@ -582,8 +621,8 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
     await test.renderer.idle();
     await test.renderOnce();
     assert.equal(invalidations, 1);
-    assert.match(test.captureCharFrame(), /Todo · 1 of 1/);
-    assert.match(test.captureCharFrame(), /restored progress/);
+    assert.match(test.captureCharFrame(), /▶ restored progress/);
+    assert(!test.renderer.root.findDescendantById("todo-summary"), "no summary when every task fits");
     handlers.get("session.tool.input.started")?.({ data: {
       sessionID: "ses_1", assistantMessageID: "msg_other", id: "tool_other", name: "other",
     } });
@@ -600,28 +639,74 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
     await test.renderOnce();
     assert.doesNotMatch(test.captureCharFrame(), /spoofed/);
     handlers.get("session.tool.input.started")?.({ data: {
+      sessionID: "ses_1", assistantMessageID: "msg_done", id: "tool_done", name: "todowrite",
+    } });
+    handlers.get("session.tool.success")?.({ data: {
+      sessionID: "ses_1", assistantMessageID: "msg_done", id: "tool_done",
+      metadata: { todos: [
+        { content: "finished", status: "completed" }, { content: "cancelled", status: "cancelled" },
+      ] },
+    } });
+    await test.renderOnce();
+    assert(!test.renderer.root.findDescendantById("todo-panel"), "no unfinished Todo means no card");
+    handlers.get("session.tool.input.started")?.({ data: {
+      sessionID: "ses_1", assistantMessageID: "msg_more", id: "tool_more", name: "todowrite",
+    } });
+    handlers.get("session.tool.success")?.({ data: {
+      sessionID: "ses_1", assistantMessageID: "msg_more", id: "tool_more",
+      metadata: { todos: [{ content: "new work", status: "pending" }] },
+    } });
+    await test.renderOnce();
+    assert(test.renderer.root.findDescendantById("todo-panel"), "new unfinished work must reopen the card");
+    assert((test.renderer.root.findDescendantById("todo-line-0") as TextRenderable).fg.equals(resolved.text.base));
+    assert(!test.renderer.root.findDescendantById("todo-summary"));
+    handlers.get("session.tool.input.started")?.({ data: {
+      sessionID: "ses_1", assistantMessageID: "msg_eight", id: "tool_eight", name: "todowrite",
+    } });
+    handlers.get("session.tool.success")?.({ data: {
+      sessionID: "ses_1", assistantMessageID: "msg_eight", id: "tool_eight", metadata: { todos:
+        Array.from({ length: 8 }, (_, index) => ({ content: `upcoming ${index}`, status: "pending" })),
+      },
+    } });
+    await test.renderOnce();
+    assert.match(test.captureCharFrame(), /○ upcoming 7/);
+    assert(!test.renderer.root.findDescendantById("todo-summary"), "eight tasks fit without a summary row");
+    handlers.get("session.tool.input.started")?.({ data: {
+      sessionID: "ses_1", assistantMessageID: "msg_long", id: "tool_long", name: "todowrite",
+    } });
+    handlers.get("session.tool.success")?.({ data: {
+      sessionID: "ses_1", assistantMessageID: "msg_long", id: "tool_long", metadata: { todos: [
+        ...Array.from({ length: 12 }, (_, index) => ({ content: `done ${index} ${"日本語".repeat(50)}`, status: "completed" })),
+        { content: "long task " + "x".repeat(200), status: "in_progress" },
+        ...Array.from({ length: 8 }, (_, index) => ({ content: `future ${index} ${"日本語".repeat(50)}`, status: "pending" })),
+      ] },
+    } });
+    await test.renderOnce();
+    const longPanel = test.renderer.root.findDescendantById("todo-panel") as BoxRenderable;
+    assert.equal(longPanel.height, 10, "long task names must truncate, not add wrapped rows");
+    assert.match(test.captureCharFrame(), /\+9 left \(12 done, 57%\)/);
+    handlers.get("session.tool.input.started")?.({ data: {
       sessionID: "ses_1", assistantMessageID: "msg_clear", id: "tool_clear", name: "todowrite",
     } });
     handlers.get("session.tool.success")?.({ data: {
       sessionID: "ses_1", assistantMessageID: "msg_clear", id: "tool_clear", metadata: { todos: [] },
     } });
     await test.renderOnce();
-    assert.doesNotMatch(test.captureCharFrame(), /Todo ·/);
+    assert(!test.renderer.root.findDescendantById("todo-panel"));
   } finally {
     if (typeof cleanup === "function") await cleanup();
     test.renderer.destroy();
   }
 });
 
-it("restores an old Todo on a narrow cold start and reveals it after widening", async () => {
-  const test = await createTestRenderer({ width: 45, height: 40 });
+it("restores an old Todo on a short cold start and reveals it after increasing height", async () => {
+  const test = await createTestRenderer({ width: 80, height: MIN_HUD_HEIGHT - 1 });
   let slot: (() => unknown) | undefined;
   const requests: string[] = [];
   plugin.setup({
     options: { herdrViews: false },
     renderer: test.renderer,
     theme: resolveThemeDocument(parseThemeDocument(theme), "dark"),
-    storage: { memory: (_key: string, options: { initial: object }) => [options.initial, () => {}] },
     ui: {
       router: { current: () => ({ type: "session", sessionID: "ses_old" }) },
       slot: (claim: { append?: string; render: () => unknown }) => { if (claim.append === "app") slot = claim.render; return () => {}; },
@@ -649,13 +734,12 @@ it("restores an old Todo on a narrow cold start and reveals it after widening", 
     await Bun.sleep(0);
     await test.renderOnce();
     assert.deepEqual(requests, ["first", "older"]);
-    assert.doesNotMatch(test.captureCharFrame(), /Todo ·|old task still visible/);
-    test.resize(80, 40);
+    assert.doesNotMatch(test.captureCharFrame(), /▶|○|old task still visible/);
+    test.resize(80, MIN_HUD_HEIGHT);
     await test.renderOnce();
     await test.renderer.idle();
     await test.renderOnce();
-    assert.match(test.captureCharFrame(), /Todo · 1 of 1/);
-    assert.match(test.captureCharFrame(), /old task still visible/);
+    assert.match(test.captureCharFrame(), /▶ old task still visible/);
   } finally {
     test.renderer.destroy();
   }

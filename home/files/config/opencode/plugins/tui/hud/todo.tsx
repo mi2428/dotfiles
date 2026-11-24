@@ -1,14 +1,11 @@
 /** @jsxImportSource @opentui/solid */
 import type { Context } from "@opencode/plugin/tui/context";
-import type { ScrollBoxRenderable } from "@opentui/core";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { buildTodoView, type TodoItem, type TodoLine } from "../lib/todo-overlay";
-import { CARD_INSET, HudCard, type HudLayout } from "./layout";
+import { HUD_MAX_ROWS, HudCard } from "./layout";
 
-export const MAX_BODY_HEIGHT = 12;
 type Messages = ReturnType<Context["data"]["session"]["message"]["list"]>;
 type TodoSnapshot = { messageID: string; todos: TodoItem[] };
-type ScrollMemory = { offsets: Record<string, { windowKey: string; scrollTop: number }> };
 
 function parseTodos(input: unknown): TodoItem[] | undefined {
   if (!Array.isArray(input)) return;
@@ -46,49 +43,17 @@ export async function recoverTodos(client: Context["client"], sessionID: string,
 
 function lineColor(line: TodoLine, context: Context) {
   if (line.kind === "in_progress") return context.theme.text.feedback.success.base;
-  if (line.kind === "pending") return context.theme.text.feedback.warning.base;
-  return context.theme.text.muted;
+  return context.theme.text.base;
 }
 
-export function bodyHeight(lines: readonly TodoLine[], start: number, end: number, width: number): number {
-  let rows = 0;
-  const available = Math.max(1, width - CARD_INSET);
-  for (const line of lines.slice(start, end + 1)) {
-    let columns = 0;
-    rows++;
-    for (const { segment } of new Intl.Segmenter().segment(line.text)) {
-      const size = Bun.stringWidth(segment);
-      if (columns > 0 && columns + size > available) {
-        rows++;
-        columns = 0;
-      }
-      columns += size;
-    }
-    if (rows >= MAX_BODY_HEIGHT) return MAX_BODY_HEIGHT;
-  }
-  return Math.max(1, rows);
-}
-
-export function TodoHud(props: { context: Context; layout: HudLayout }) {
+export function TodoHud(props: { context: Context }) {
   const context = props.context;
   const [recent, setRecent] = createSignal<{ sessionID: string; messageID?: string; todos: TodoItem[] }>();
-  const [scrollMemory, updateScrollMemory] = context.storage.memory<ScrollMemory>("scroll-offsets", {
-    initial: { offsets: {} },
-  });
   const started = new Map<string, string>();
-  let scrollbox: ScrollBoxRenderable | undefined;
-  let scrolled = "";
   let generation = 0;
-  const rememberScroll = (id: string | undefined) => {
-    if (!id || !scrolled || !scrollbox || scrollbox.isDestroyed) return;
-    const value = { windowKey: scrolled, scrollTop: scrollbox.scrollTop };
-    updateScrollMemory((draft) => { draft.offsets[id] = value; });
-  };
-  const sessionID = createMemo<string | undefined>((previous) => {
+  const sessionID = createMemo(() => {
     const route = context.ui.router.current();
-    const id = route.type === "session" ? route.sessionID : undefined;
-    if (previous !== id) rememberScroll(previous);
-    return id;
+    return route.type === "session" ? route.sessionID : undefined;
   });
   const restore = (id: string) => {
     const current = ++generation;
@@ -152,7 +117,6 @@ export function TodoHud(props: { context: Context; layout: HudLayout }) {
     restore(event.data.sessionID);
   });
   onCleanup(() => {
-    rememberScroll(sessionID());
     generation++;
     stopStarted();
     stopSuccess();
@@ -172,40 +136,20 @@ export function TodoHud(props: { context: Context; layout: HudLayout }) {
     const snapshot = recent();
     const live = snapshot?.sessionID === id && (!boundary || !snapshot.messageID || snapshot.messageID < boundary)
       ? snapshot.todos : undefined;
-    return buildTodoView(live ?? latestTodos(context.data.session.message.list(id), boundary)?.todos);
-  });
-  createEffect(() => {
-    if (!props.layout.visible) return;
-    const id = sessionID();
-    const current = view();
-    const key = `${id}:${current?.completed}:${current?.windowStart}`;
-    if (!current) { scrolled = ""; return; }
-    if (key === scrolled) return;
-    scrolled = key;
-    void context.renderer.idle().then(() => {
-      if (!id || !scrollbox || scrollbox.isDestroyed || sessionID() !== id) return;
-      const remembered = scrollMemory.offsets[id];
-      if (remembered?.windowKey === key) {
-        scrollbox.scrollTop = remembered.scrollTop;
-        return;
-      }
-      const start = scrollbox.content?.findDescendantById(`todo-line-${current.windowStart}`);
-      if (start && scrollbox.content) scrollbox.scrollTop = Math.max(0, start.y - scrollbox.content.y);
-    });
+    return buildTodoView(live ?? latestTodos(context.data.session.message.list(id), boundary)?.todos, HUD_MAX_ROWS);
   });
   return (
     <Show when={view()}>
       {(current) => (
-        <HudCard context={context} id="todo-panel"
-          title={`Todo · ${current().completed + Number(current().lines.some((line) => line.kind === "in_progress"))} of ${current().total}`}>
-          <scrollbox id="todo-scroll" ref={(node) => { scrollbox = node; }} width="100%" height={bodyHeight(current().lines, current().windowStart, current().windowEnd, props.layout.width)}
-            scrollX={false} scrollY={true} viewportCulling={true}
-            verticalScrollbarOptions={{ visible: false, showArrows: false, width: 0 }}
-            contentOptions={{ flexDirection: "column" }}>
-            <For each={current().lines}>{(line, index) =>
-              <text id={`todo-line-${index()}`} fg={lineColor(line, context)} width="100%" wrapMode="char">{line.text}</text>
-            }</For>
-          </scrollbox>
+        <HudCard context={context} id="todo-panel" accent={context.theme.hue.accent[200]}>
+          <For each={current().lines}>{(line, index) =>
+            <text id={`todo-line-${index()}`} fg={lineColor(line, context)} height={1} width="100%" wrapMode="none" truncate>{line.text}</text>
+          }</For>
+          <Show when={current().summary}>
+            <text id="todo-summary" fg={context.theme.text.muted} height={1} wrapMode="none" truncate>
+              {`+${current().active} left (${current().completed} done, ${Math.round(current().completed / current().total * 100)}%)`}
+            </text>
+          </Show>
         </HudCard>
       )}
     </Show>
