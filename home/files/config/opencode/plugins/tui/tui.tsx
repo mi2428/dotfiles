@@ -4,6 +4,7 @@ import type { Context } from "@opencode/plugin/tui/context";
 import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { HudStack } from "./hud/layout";
 import { TodoHud } from "./hud/todo";
+import { executionElapsed, executionState, executionTools, syncExecution } from "./lib/execution";
 import { closeViewer, createAdapter, createViews, nameTabs, run, type View } from "./lib/herdr-views";
 
 function GitStatus(props: { context: Context }) {
@@ -68,36 +69,19 @@ function ViewerStatus(props: { context: Context; sessionID: string }) {
   const stop = context.data.listen(({ details }) => {
     if (/^session\.(execution|step|text|reasoning|tool|retry|compaction)\./.test(details.type)
       && "sessionID" in details.data && details.data.sessionID === props.sessionID) setReceived(Date.now());
+    if (details.type === "session.execution.started" && details.data.sessionID === props.sessionID) {
+      void syncExecution(context, props.sessionID).catch((error) => {
+        context.ui.toast.show({ message: `Could not refresh subagent execution: ${String(error)}`, variant: "error" });
+      });
+    }
   });
   onCleanup(() => { clearInterval(timer); stop(); });
   const session = createMemo(() => context.data.session.get(props.sessionID));
-  const running = createMemo(() => context.data.session.status(props.sessionID) === "running");
-  const started = createMemo(() => {
-    const time = session()?.time;
-    // The server publishes this field, but the generated client types omit it.
-    if (!time || !("busy" in time)) return undefined;
-    if (typeof time.busy !== "number" || !Number.isFinite(time.busy)) throw new Error("Invalid session execution timestamp");
-    return time.busy;
-  });
-  const state = createMemo(() => {
-    if (running()) {
-      if (context.data.session.permission.list(props.sessionID)?.length) return "WAITING FOR APPROVAL";
-      if (context.data.session.form.list(props.sessionID)?.length) return "WAITING FOR ANSWER";
-      return "RUNNING";
-    }
-    const outcome = session()?.outcome;
-    return outcome ? { succeeded: "DONE", failed: "FAILED", interrupted: "INTERRUPTED" }[outcome] : "IDLE";
-  });
+  const state = createMemo(() => executionState(context, props.sessionID));
   const color = () => state() === "FAILED" ? context.theme.text.feedback.error.base
     : state().startsWith("WAITING") || state() === "INTERRUPTED" ? context.theme.text.feedback.warning.base
     : state() === "IDLE" ? context.theme.text.muted : context.theme.text.feedback.success.base;
-  const tools = createMemo(() => {
-    const start = started();
-    if (!running() || start === undefined) return [];
-    return context.data.session.message.list(props.sessionID).flatMap((message) => message.type === "assistant"
-      ? message.content.filter((part) => part.type === "tool") : [])
-      .filter((part) => part.time.created >= start && (part.state.status === "running" || part.state.status === "streaming"));
-  });
+  const tools = createMemo(() => executionTools(context, props.sessionID));
   const model = () => {
     const current = session();
     const ref = current?.model;
@@ -110,13 +94,7 @@ function ViewerStatus(props: { context: Context; sessionID: string }) {
     return ref ? context.data.location.provider.list(current!.location)
       ?.find((item) => item.id === ref.providerID)?.name ?? ref.providerID : "--";
   };
-  const elapsed = () => {
-    const start = started();
-    const end = running() ? now() : session()?.time.idle;
-    if (start === undefined || end === undefined || end < start) return "--";
-    const seconds = Math.floor((end - start) / 1000);
-    return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-  };
+  const elapsed = () => executionElapsed(context, props.sessionID, now());
   const activity = () => received() === undefined ? "-" : `${Math.max(0, Math.floor((now() - received()!) / 1000))}s ago`;
   return <Show when={session()?.parentID}>
     {/* Use the session's bottom padding for this row, keeping the normal footer gap below it. */}
