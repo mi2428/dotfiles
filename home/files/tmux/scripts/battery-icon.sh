@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 
 battery_tier_icon() {
   local percent="$1"

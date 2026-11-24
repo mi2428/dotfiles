@@ -40,6 +40,10 @@ in {
   };
 
   xdg.configFile = {
+    "tmux/tmux.conf" = {
+      force = true;
+      source = ../../../home/files/tmux/tmux.conf;
+    };
     "tmux/plugins/catppuccin/tmux" = {
       recursive = true;
       source = catppuccinTmux;
