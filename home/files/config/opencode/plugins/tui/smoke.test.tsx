@@ -163,6 +163,7 @@ it("shows all four HUDs in child viewers without adding a Main footer", async ()
   const names = spyOn(herdrViews, "animalName").mockReturnValue("Fox");
   const read = mock(async () => ({ data: [
     { file: "child-change.ts", additions: 1, deletions: 0, status: "modified" },
+    { file: "parent-change.ts", additions: 99, deletions: 99, status: "modified" },
   ] }));
   const cleanup = plugin.setup({
     options: {}, renderer: test.renderer, theme: resolveThemeDocument(parseThemeDocument(theme), "dark"),
@@ -215,6 +216,7 @@ it("shows all four HUDs in child viewers without adding a Main footer", async ()
     assert.match(frame, /  child-shell/);
     assert.match(frame, /child-change.ts/);
     assert.doesNotMatch(frame, /parent-shell/);
+    assert.doesNotMatch(frame, /parent-change.ts/);
     assert.equal(names.mock.calls.length, 1, "Agents excludes the current child and the root");
     assert.deepEqual(read.mock.calls, [[{ location: { directory: "/child-repo" } }]]);
     test.resize(79, MIN_HUD_HEIGHT);

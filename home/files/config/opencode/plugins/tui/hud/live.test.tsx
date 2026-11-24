@@ -216,3 +216,119 @@ it("shares one Git reader, clears both views after commit and rejects stale or f
     errors.mockRestore();
   }
 });
+
+it("limits child Changes to successful own writes, restores old edits and never falls back to shared snapshots", async () => {
+  const test = await createTestRenderer({ width: 120, height: MIN_HUD_HEIGHT });
+  const [sessionID, setSessionID] = createSignal("main");
+  const [boundary, setBoundary] = createSignal<string>();
+  const handlers = new Map<string, (event: any) => void>();
+  const invalidate = () => handlers.get("session.execution.succeeded")?.({ data: { sessionID: sessionID() } });
+  const [git, setGit] = createSignal<GitSnapshot>({ files: [], failed: false });
+  const files = ["own.ts", "renamed.ts", "other.ts", "read-only.ts"].map((file) => ({
+    file, additions: 1, deletions: 0, status: "modified" as const,
+  }));
+  const read = mock(async () => ({ data: files }));
+  const message = (id: string, file: string, name = "patch", status = "completed") => ({
+    id, type: "assistant", snapshot: { files: ["other.ts"] }, content: [
+      { type: "tool", name, state: { status, metadata: { files: [{ file }] } } },
+    ],
+  });
+  type Page = { data: ReturnType<typeof message>[]; cursor: { next?: string } };
+  const history = mock(async (input: { sessionID: string; cursor?: string }): Promise<Page> => input.cursor
+    ? { data: [
+      message("msg_02", "/repo/renamed.ts"), message("msg_01", "src/../own.ts"),
+      { id: "msg_00", type: "location-switched", location: { directory: "/repo" },
+        previous: { location: { directory: "/old-repo" } } },
+      message("msg_old", "other.ts"),
+    ] as never, cursor: {} }
+    : { data: [
+      message("msg_05", "read-only.ts", "read"), message("msg_04", "other.ts", "patch", "error"),
+      message("msg_03", "other.ts", "patch", "running"),
+    ], cursor: { next: "older" } });
+  let refresh: () => Promise<void>;
+  const interval = globalThis.setInterval;
+  const timers = spyOn(globalThis, "setInterval").mockImplementation((...args) => {
+    if (args[1] === 3000) refresh = args[0] as typeof refresh;
+    return interval(...args);
+  });
+  const errors = spyOn(console, "error").mockImplementation(() => {});
+  const context = {
+    renderer: test.renderer, theme: resolveThemeDocument(parseThemeDocument(theme), "dark"),
+    ui: { router: { current: () => ({ type: "session", sessionID: sessionID() }) } },
+    data: {
+      on: (type: string, handler: (event: any) => void) => {
+        handlers.set(type, handler);
+        return () => { handlers.delete(type); };
+      },
+      session: { get: (id: string) => ({
+        parentID: id === "main" ? undefined : "main", location: { directory: "/repo" },
+        get revert() { return boundary() ? { messageID: boundary() } : undefined; },
+      }) },
+      location: { vcs: { info: () => ({ provider: "git" }) } },
+    },
+    client: { vcs: { status: read }, message: { list: history } },
+  } as never;
+  try {
+    await render(() => {
+      watchGit(context, setGit);
+      return <HudStack context={context}>{(layout) =>
+        <ChangesHud context={context} snapshot={git()} />
+      }</HudStack>;
+    }, test.renderer);
+    await Bun.sleep(0);
+    assert.equal(git().files.length, 4, "Main keeps the complete working tree");
+    assert.equal(history.mock.calls.length, 0, "Main must not scan tool history");
+    setSessionID("child-a");
+    await Bun.sleep(0);
+    await test.renderOnce();
+    assert.deepEqual(git().files.map((file) => file.file), ["own.ts", "renamed.ts"]);
+    assert.equal(history.mock.calls.length, 2, "restore edits beyond the first history page");
+    assert.deepEqual(history.mock.calls[1]![0], { sessionID: "child-a", limit: 100, cursor: "older" });
+    assert.doesNotMatch(test.captureCharFrame(), /other.ts|read-only.ts/);
+    history.mockResolvedValue({ data: [message("msg_10", "other.ts", "read")], cursor: {} });
+    invalidate();
+    await refresh!();
+    await test.renderOnce();
+    assert(!test.renderer.root.findDescendantById("changes-panel"), "a read-only child has no Changes even with dirty snapshots");
+    history.mockRejectedValueOnce(new Error("offline"));
+    invalidate();
+    await refresh!();
+    assert.deepEqual(git(), { files: [], failed: true }, "failed attribution must not expose all repository changes");
+    history.mockResolvedValueOnce({ data: [
+      { ...message("msg_10", "own.ts"), content: [{ type: "tool", name: "patch", state: { status: "completed" } }] },
+    ] as never, cursor: {} });
+    await refresh!();
+    assert.deepEqual(git(), { files: [], failed: true }, "missing write metadata must fail visibly");
+    history.mockResolvedValue({ data: [message("msg_10", "own.ts"), message("msg_01", "renamed.ts")], cursor: {} });
+    setBoundary("msg_05");
+    await Bun.sleep(0);
+    assert.deepEqual(git().files.map((file) => file.file), ["renamed.ts"], "reverted writes must be excluded");
+    const old = Promise.withResolvers<Page>();
+    history.mockReturnValueOnce(old.promise);
+    invalidate();
+    const pending = refresh!();
+    history.mockResolvedValue({ data: [message("msg_01", "other.ts")], cursor: {} });
+    setSessionID("child-b");
+    await Bun.sleep(0);
+    old.resolve({ data: [message("msg_01", "own.ts")], cursor: {} });
+    await pending;
+    assert.deepEqual(git().files.map((file) => file.file), ["other.ts"], "a stale child result must not leak across the same directory");
+    read.mockResolvedValue({ data: [] });
+    await refresh!();
+    await test.renderOnce();
+    assert(!test.renderer.root.findDescendantById("changes-panel"), "committed or restored files no longer have a remaining diff");
+    read.mockResolvedValue({ data: files });
+    const calls = history.mock.calls.length;
+    setSessionID("main");
+    await Bun.sleep(0);
+    assert.equal(git().files.length, 4);
+    assert.equal(history.mock.calls.length, calls);
+    assert.equal(errors.mock.calls.length, 2);
+  } finally {
+    const destroyed = new Promise<void>((resolve) => test.renderer.once("destroy", resolve));
+    test.renderer.destroy();
+    await destroyed;
+    timers.mockRestore();
+    errors.mockRestore();
+  }
+});
