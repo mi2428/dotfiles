@@ -259,8 +259,13 @@ let
   };
   todoCliConfig = commonCliConfig // {
     plugins = [ "./tui-plugins/todo" ];
-    session.sidebar = "hide";
-    session.verbosity = "high";
+    session = {
+      sidebar = "hide";
+      verbosity = "high";
+      thinking = "show";
+      grouping = "none";
+      tps = true;
+    };
   };
   happierCliConfig = todoCliConfig // {
     keybinds = todoCliConfig.keybinds // {
@@ -272,11 +277,6 @@ let
   };
   herdrCliConfig = todoCliConfig // {
     plugins = todoCliConfig.plugins ++ [ "./herdr-opencode" ];
-    session = todoCliConfig.session // {
-      thinking = "show";
-      grouping = "none";
-      tps = true;
-    };
   };
   chatCliConfig = commonCliConfig // {
     keybinds = commonCliConfig.keybinds // {
@@ -441,7 +441,6 @@ in
       json.generate "opencode-slim-cli.json" (
         todoCliConfig
         // {
-          inherit (herdrCliConfig) session;
           plugins = [
             {
               package = "./tui-plugins/todo";
