@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# != 0 || $(uname -s) != Linux ]]; then
+  echo 'Usage: omarchy-sleep-display (Linux only)' >&2
+  exit 2
+fi
+
+for command in omarchy-system-lock omarchy-shell omarchy-brightness-display hyprctl jq; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    echo "omarchy-sleep-display: $command is required" >&2
+    exit 1
+  fi
+done
+
+# Lock through Omarchy's own path first: PAM-backed lock screen (password or
+# fingerprint), 1Password lock, layout reset, screensaver stopped. The display
+# is blanked only once that lock is secure, so it never goes dark over an
+# unlocked session. Toggle-awake state is deliberately untouched: it governs
+# sleep and lid handling, not the display.
+if ! omarchy-system-lock; then
+  echo 'Failed to request the session lock; the display was left on.' >&2
+  exit 1
+fi
+
+lock_status() {
+  timeout --kill-after=0.1s 1s omarchy-shell lock status 2>/dev/null
+}
+
+if [[ $(lock_status | jq -r '.passwordPam // false' 2>/dev/null) != true ]]; then
+  echo 'No password lock screen is configured; the display was left on.' >&2
+  exit 1
+fi
+
+deadline=$((SECONDS + 5))
+until [[ $(lock_status | jq -r '.secure // false' 2>/dev/null) == true ]]; do
+  if (( SECONDS >= deadline )); then
+    echo 'The session lock did not become secure; the display was left on.' >&2
+    exit 1
+  fi
+  sleep 0.05
+done
+
+# The same blanking the lock screen runs after its idle delay, just at once.
+# Any key or mouse move wakes it again through the lock screen, which restores
+# brightness and keeps the session locked until PAM authentication succeeds.
+omarchy-brightness-keyboard off >/dev/null 2>&1 || true
+omarchy-brightness-display off
+
+# The dispatch above swallows its errors, so confirm the outputs blanked.
+for _ in {1..20}; do
+  if hyprctl monitors -j | jq -e 'all(.[]; .dpmsStatus == false)' >/dev/null 2>&1; then
+    exit 0
+  fi
+  sleep 0.05
+done
+
+echo 'The session is locked, but the display stayed on.' >&2
+exit 1
