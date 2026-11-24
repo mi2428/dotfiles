@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { strict as assert } from "node:assert";
-import { it, spyOn } from "bun:test";
+import { it, mock, spyOn } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
 import { BoxRenderable, ScrollBoxRenderable, TextRenderable } from "@opentui/core";
 import { render } from "@opentui/solid";
@@ -46,6 +46,98 @@ it("never suppresses the host's editor context and interrupt confirmation", () =
     cleanupSlim();
     assert.equal(disposed, claims.length, "Slim must remove every registered slot too");
   } finally {
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+});
+
+it("adds Git line counts to Main without replacing native status, or leaking stale repository results", async () => {
+  const keys = ["HERDR_ENV", "HC_TERMINAL_ID", "OPENCODE_HERDR_VIEWER"];
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  process.env.HERDR_ENV = "1";
+  delete process.env.HC_TERMINAL_ID;
+  delete process.env.OPENCODE_HERDR_VIEWER;
+  const test = await createTestRenderer({ width: 120, height: 3 });
+  const resolved = resolveThemeDocument(parseThemeDocument(theme), "dark");
+  const [sessionID, setSessionID] = createSignal("first");
+  const [repository, setRepository] = createSignal(true);
+  let slot: (() => unknown) | undefined;
+  let refresh: () => Promise<void>;
+  const interval = globalThis.setInterval;
+  const timers = spyOn(globalThis, "setInterval").mockImplementation((...args) => {
+    if (args[1] === 3000) refresh = args[0] as typeof refresh;
+    return interval(...args);
+  });
+  type Result = { data: Array<{ additions: number; deletions: number }> };
+  const initial = Promise.withResolvers<Result>();
+  const read = mock((_input: { location: { directory: string } }) => initial.promise);
+  const errors = spyOn(console, "error").mockImplementation(() => {});
+  const cleanup = plugin.setup({
+    options: { herdrViews: false }, theme: resolved,
+    ui: {
+      slot: (claim: { append?: string; render: typeof slot }) => {
+        if (claim.append === "prompt.footer.status") slot = claim.render;
+        return () => {};
+      },
+      router: { current: () => ({ type: "session", sessionID: sessionID() }) },
+    },
+    data: {
+      session: { get: (id: string) => ({ location: { directory: `/${id}` } }) },
+      location: { vcs: { info: () => ({ provider: repository() ? "git" : undefined }) } },
+    },
+    client: { vcs: { status: read } },
+  } as never);
+  try {
+    assert(slot);
+    await render(() => <box width="100%" height={1} flexDirection="row" gap={2}>
+      <text flexGrow={1} flexShrink={1} minWidth={0} truncate wrapMode="none">Path branch esc interrupt</text>
+      {slot!() as never}
+      <text flexShrink={0}>ctrl+p commands</text>
+    </box>, test.renderer);
+    await test.renderOnce();
+    await refresh!();
+    assert.equal(read.mock.calls.length, 1, "polling must skip a read still in flight");
+    initial.resolve({ data: [{ additions: 12, deletions: 3 }, { additions: 5, deletions: 2 }] });
+    await Bun.sleep(0);
+    await test.renderOnce();
+    assert.match(test.captureCharFrame(), /Path branch esc interrupt.*Main.*\+17 -5.*ctrl\+p commands/);
+    assert.doesNotMatch(test.captureCharFrame(), /|±|\?/);
+    const old = Promise.withResolvers<Result>();
+    read.mockReturnValueOnce(old.promise);
+    const pending = refresh!();
+    read.mockResolvedValue({ data: [{ additions: 0, deletions: 4 }] });
+    setSessionID("second");
+    await Bun.sleep(0);
+    old.resolve({ data: [{ additions: 99, deletions: 99 }] });
+    await pending;
+    await test.renderOnce();
+    assert.deepEqual(read.mock.calls.at(-1)![0], { location: { directory: "/second" } });
+    assert.match(test.captureCharFrame(), /\+0 -4/);
+    assert.doesNotMatch(test.captureCharFrame(), /99/);
+    test.resize(60, 3);
+    await test.renderOnce();
+    assert.match(test.captureCharFrame(), /Main.*\+0 -4.*ctrl\+p commands/);
+    read.mockRejectedValueOnce(new Error("Git failed"));
+    await refresh!();
+    await test.renderOnce();
+    assert.match(test.captureCharFrame(), /Git !/);
+    assert.doesNotMatch(test.captureCharFrame(), /-4/);
+    assert.equal(errors.mock.calls.length, 1);
+    read.mockResolvedValue({ data: [] });
+    await refresh!();
+    await test.renderOnce();
+    assert.doesNotMatch(test.captureCharFrame(), /Git !|\+0/);
+    setRepository(false);
+    await test.renderOnce();
+    assert.match(test.captureCharFrame(), /Main.*ctrl\+p commands/);
+    assert.doesNotMatch(test.captureCharFrame(), /|Git !/);
+  } finally {
+    cleanup();
+    test.renderer.destroy();
+    timers.mockRestore();
+    errors.mockRestore();
     for (const key of keys) {
       if (saved[key] === undefined) delete process.env[key];
       else process.env[key] = saved[key];

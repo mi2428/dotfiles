@@ -82,6 +82,60 @@ export function bodyHeight(lines: readonly TodoLine[], start: number, end: numbe
   return Math.max(1, rows);
 }
 
+function GitStatus(props: { context: Context }) {
+  const context = props.context;
+  const [counts, setCounts] = createSignal<{ additions: number; deletions: number }>();
+  const [failed, setFailed] = createSignal(false);
+  const directory = createMemo(() => {
+    const route = context.ui.router.current();
+    const location = route.type === "session" ? context.data.session.get(route.sessionID)?.location
+      : context.location ?? context.data.location.default();
+    return location && context.data.location.vcs.info(location)?.provider === "git" ? location.directory : undefined;
+  });
+  createEffect(() => {
+    const cwd = directory();
+    setCounts(undefined);
+    setFailed(false);
+    if (!cwd) return;
+    let disposed = false;
+    let reading = false;
+    const refresh = async () => {
+      if (reading) return;
+      reading = true;
+      try {
+        const { data } = await context.client.vcs.status({ location: { directory: cwd } });
+        const next = data.reduce((total, file) => ({
+          additions: total.additions + file.additions, deletions: total.deletions + file.deletions,
+        }), { additions: 0, deletions: 0 });
+        if (!disposed) { setCounts(next); setFailed(false); }
+      } catch (error) {
+        if (!disposed) {
+          console.error("Could not read Git status", error);
+          setCounts(undefined);
+          setFailed(true);
+        }
+      } finally { reading = false; }
+    };
+    void refresh();
+    const timer = setInterval(refresh, 3000);
+    onCleanup(() => { disposed = true; clearInterval(timer); });
+  });
+  const dirty = () => {
+    const current = counts();
+    return current && (current.additions > 0 || current.deletions > 0);
+  };
+  return <>
+    <Show when={failed()}><text fg={context.theme.text.feedback.error.base}>Git !</text></Show>
+    <Show when={dirty()}>
+      <text id="git-status" wrapMode="none" flexShrink={0} fg={context.theme.text.muted}>
+        <span style={{ fg: context.theme.diff.text.added }}>{`+${counts()!.additions}`}</span>
+        {" "}
+        <span style={{ fg: context.theme.diff.text.removed }}>{`-${counts()!.deletions}`}</span>
+      </text>
+    </Show>
+  </>;
+}
+
 function ViewerStatus(props: { context: Context; sessionID: string }) {
   const context = props.context;
   const [now, setNow] = createSignal(Date.now());
@@ -325,7 +379,10 @@ export default Plugin.define({
     if (inHerdr && !viewer) {
       for (const slot of ["prompt.footer.status", "home.footer.status"] as const) {
         cleanups.push(context.ui.slot({ append: slot, render: () => (
-          <text fg={context.theme.hue.accent[200]} wrapMode="none" flexShrink={0}><b>Main</b></text>
+          <box flexDirection="row" gap={2} flexShrink={0}>
+            <text fg={context.theme.hue.accent[200]} wrapMode="none" flexShrink={0}><b>Main</b></text>
+            <GitStatus context={context} />
+          </box>
         ) }));
       }
     }
