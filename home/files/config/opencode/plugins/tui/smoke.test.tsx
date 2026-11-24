@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { strict as assert } from "node:assert";
-import { it } from "bun:test";
+import { it, spyOn } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
 import { BoxRenderable, ScrollBoxRenderable, TextRenderable } from "@opentui/core";
 import { render } from "@opentui/solid";
@@ -10,6 +10,7 @@ import type { KeymapLayer } from "@opencode/plugin/tui/context";
 import { registerEnabledFields } from "@opentui/keymap/addons";
 import { createTestKeymap } from "@opentui/keymap/testing";
 import plugin from "./tui";
+import * as herdrViews from "./lib/herdr-views";
 import theme from "../../themes/catppuccin-mocha-mauve.json";
 
 it("never suppresses the host's editor context and interrupt confirmation", () => {
@@ -67,6 +68,13 @@ it("keeps emergency controls in every input mode and blocks the parent command",
   let dialogsClosed = 0;
   let listMoves = 0;
   let fail = false;
+  let running = true;
+  let finishInterrupt: (() => void) | undefined;
+  const closed: string[] = [];
+  const close = spyOn(herdrViews, "closeViewer").mockImplementation(async (_env, canClose) => {
+    assert(canClose());
+    closed.push(sessionID);
+  });
   const interrupted: string[] = [];
   const errors: unknown[] = [];
   const leave = () => { hostCalls++; sessionID = "parent"; };
@@ -85,10 +93,14 @@ it("keeps emergency controls in every input mode and blocks the parent command",
       ui: { slot: () => () => {}, router: { current: () => ({ type: "session", sessionID }) },
         dialog: { clear: () => { dialogsClosed++; mode = "composer"; } },
         toast: { show: (error: unknown) => errors.push(error) } },
-      data: { session: { get: (id: string) => id === "child" ? { parentID: "parent" } : {} } },
+      data: { session: {
+        get: (id: string) => id === "child" ? { parentID: "parent" } : {},
+        status: () => running ? "running" : "idle",
+      } },
       client: { session: { interrupt: async (input: { sessionID: string }) => {
         interrupted.push(input.sessionID);
         if (fail) throw new Error("offline");
+        if (interrupted.length === 1) await new Promise<void>((resolve) => { finishInterrupt = resolve; });
       } } },
       keymap: { layer: (factory: () => KeymapLayer) => {
         const layer = factory();
@@ -111,6 +123,15 @@ it("keeps emergency controls in every input mode and blocks the parent command",
     test.host.press("up");
     assert.equal(sessionID, "child");
     assert.deepEqual(interrupted, ["child"]);
+    test.host.press("c", { ctrl: true });
+    assert.deepEqual(interrupted, ["child"], "repeated keys must not duplicate the pending stop");
+    running = false;
+    test.host.press("c", { ctrl: true });
+    assert.deepEqual(closed, [], "an idle event must not close the viewer while the stop request is pending");
+    finishInterrupt!();
+    await Bun.sleep(0);
+    assert.deepEqual(closed, [], "stopping must never automatically close the viewer");
+    running = true;
     assert.equal(listMoves, 1, "composer list navigation must remain usable");
     mode = "base";
     test.host.press("up");
@@ -120,6 +141,7 @@ it("keeps emergency controls in every input mode and blocks the parent command",
     assert.equal(dialogsClosed, 0, "Escape must be disabled inside dialogs too");
     test.host.press("c", { ctrl: true });
     assert.deepEqual(interrupted, ["child", "child"], "dialogs must not hide emergency stop");
+    await Bun.sleep(0);
     test.host.press("g", { ctrl: true });
     assert.equal(dialogsClosed, 1);
     mode = "permission";
@@ -127,17 +149,31 @@ it("keeps emergency controls in every input mode and blocks the parent command",
     test.host.press("c", { ctrl: true });
     assert.equal(hostCalls, 0, "permission prompts must not bypass child controls");
     assert.deepEqual(interrupted, ["child", "child", "child"]);
+    await Bun.sleep(0);
     mode = "composer";
     fail = true;
     test.host.press("c", { ctrl: true });
     await Bun.sleep(0);
     assert.equal(errors.length, 1, "a rejected interrupt must be visible");
+    running = false;
+    test.host.press("c", { ctrl: true });
+    test.host.press("c", { ctrl: true });
+    assert.deepEqual(closed, ["child"], "idle viewers close once, without interrupting or deleting the session");
+    await Bun.sleep(0);
+    close.mockRejectedValueOnce(new Error("viewer close failed"));
+    test.host.press("c", { ctrl: true });
+    await Bun.sleep(0);
+    assert.equal(errors.length, 2, "a rejected close must be visible and allow retry");
+    test.host.press("c", { ctrl: true });
+    await Bun.sleep(0);
+    assert.deepEqual(closed, ["child", "child"]);
     sessionID = "parent"; // A manual session change must not leave child controls active.
     test.host.press("c", { ctrl: true });
     assert.equal(hostCalls, 1);
     assert.deepEqual(interrupted, ["child", "child", "child", "child"], "never interrupt the parent from a stale child view");
     assert.deepEqual(test.diagnostics.errors, []);
   } finally {
+    close.mockRestore();
     test.cleanup();
     for (const key of keys) {
       if (saved[key] === undefined) delete process.env[key];

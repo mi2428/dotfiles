@@ -4,7 +4,7 @@ import type { Context } from "@opencode/plugin/tui/context";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { buildTodoView, type TodoItem, type TodoLine } from "./lib/todo-overlay";
-import { createAdapter, createViews, nameTabs, run, type View } from "./lib/herdr-views";
+import { closeViewer, createAdapter, createViews, nameTabs, run, type View } from "./lib/herdr-views";
 
 export const MAX_PANEL_WIDTH = 94;
 export const MAX_BODY_HEIGHT = 12;
@@ -353,15 +353,23 @@ export default Plugin.define({
           return route.type === "session" && route.sessionID === sessionID
             && !!context.data.session.get(sessionID)?.parentID;
         };
-        // Emergency stop and disabled Escape apply even when a dialog or form owns input.
+        let pending = false;
+        // Stop or close this viewer even when a dialog or form owns input.
         context.keymap.layer(() => ({
           mode: "global", priority: 10, enabled: active,
           commands: [
-            { bind: "ctrl+c", title: "Interrupt this subagent", run: async () => {
-              try { await context.client.session.interrupt({ sessionID }); }
-              catch (error) {
-                context.ui.toast.show({ message: `Could not interrupt subagent: ${String(error)}`, variant: "error" });
+            { bind: "ctrl+c", title: "Stop subagent or close viewer", run: async () => {
+              if (pending || !active()) return;
+              pending = true;
+              const running = context.data.session.status(sessionID) === "running";
+              try {
+                if (running) await context.client.session.interrupt({ sessionID });
+                else await closeViewer(process.env, () => active() && context.data.session.status(sessionID) === "idle");
               }
+              catch (error) {
+                context.ui.toast.show({ message: `Could not ${running ? "interrupt subagent" : "close viewer"}: ${String(error)}`, variant: "error" });
+              }
+              finally { pending = false; }
             } },
             { bind: "escape", run: () => {} },
           ],

@@ -89,8 +89,9 @@ export async function nameTabs(env: Env, execute: Run = run): Promise<void> {
 }
 
 // A viewer joins the same service/config namespace; it never starts work or chooses an agent.
-export function viewerArgs(session: Session, env: Env): string[] {
+export function viewerArgs(session: Session, env: Env, owner: string): string[] {
   const args = ["OPENCODE_HERDR_VIEWER=1", `OPENCODE_HERDR_SESSION=${session.id}`,
+    `OPENCODE_HERDR_OWNER=${owner}`, `OPENCODE_HERDR_PARENT=${env.HC_TERMINAL_ID || env.HERDR_PANE_ID}`,
     'OPENCODE_CLI_CONFIG_CONTENT={"session":{"thinking":"show","grouping":"none","tps":true},"attention":{"sound":false,"notifications":false}}'];
   for (const key of ["HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "HERDR_APP_HOME"]) {
     if (env[key]) args.push(`${key}=${env[key]}`);
@@ -121,7 +122,7 @@ export function createAdapter(env: Env, execute: Run = run): Adapter | undefined
         const result = await execute("hc", ["run", "--json", "--bg", "--no-notify", "--parent", parent,
           "--cwd", session.location.directory, "--label", `herdr.space=${space}`, "--label", `herdr.tab=${tab}`,
           "--label", `oc2.view=${owner}`, "--label", `oc2.session=${session.id}`,
-          "--", "env", ...viewerArgs(session, env)]);
+          "--", "env", ...viewerArgs(session, env, owner)]);
         if (typeof result.address !== "string" || !result.address || result.parent !== parent || result.labels?.["oc2.view"] !== owner)
           throw new Error("Herdr App returned an unverified viewer; inspect terminals before retrying");
         const view = { id: result.address, sessionID: session.id, owner };
@@ -164,11 +165,52 @@ export function createAdapter(env: Env, execute: Run = run): Adapter | undefined
           await delay(100);
         }
         if (!ready) throw new Error("Herdr viewer shell is not ready; inspect panes");
-        await execute("herdr", ["pane", "run", id, ["exec", "env", ...viewerArgs(session, env)].map(shellQuote).join(" ")]);
+        await execute("herdr", ["pane", "run", id, ["exec", "env", ...viewerArgs(session, env, owner)].map(shellQuote).join(" ")]);
         return view;
       },
     };
   }
+}
+
+// Only an explicit action inside the owned viewer may close it; never close an entire tab.
+export async function closeViewer(env: Env, canClose: () => boolean, execute: Run = run): Promise<void> {
+  const sessionID = env.OPENCODE_HERDR_SESSION;
+  const owner = env.OPENCODE_HERDR_OWNER;
+  const parent = env.OPENCODE_HERDR_PARENT;
+  if (env.OPENCODE_HERDR_VIEWER !== "1" || !sessionID || !owner || !parent)
+    throw new Error("Herdr viewer identity is missing");
+  if (env.HERDR_ENV === "1" && env.HC_TERMINAL_ID) throw new Error("Conflicting Herdr terminal identities");
+  let command: string;
+  let args: string[];
+  if (env.HC_TERMINAL_ID) {
+    const id = env.HC_TERMINAL_ID;
+    const terminal = await execute("hc", ["get", "--json", id]);
+    if (id === parent || terminal.address !== id || terminal.parent !== parent || terminal.state !== "live"
+      || terminal.labels?.["oc2.view"] !== owner || terminal.labels?.["oc2.session"] !== sessionID)
+      throw new Error("Herdr App viewer ownership changed");
+    const panes: string[] = [];
+    const collect = (value: unknown): void => {
+      if (!value || typeof value !== "object") return;
+      const item = value as Record<string, unknown>;
+      if (item.terminal === id && typeof item.pane === "string") panes.push(item.pane);
+      for (const child of Object.values(value)) collect(child);
+    };
+    collect(await execute("herdr-app", ["ls"]));
+    if (panes.length !== 1) throw new Error("Herdr App viewer pane is not unique");
+    command = "herdr-app";
+    args = ["do", "pane.close", "--pane", panes[0]!];
+  } else {
+    const id = env.HERDR_PANE_ID;
+    if (env.HERDR_ENV !== "1" || !id || id === parent) throw new Error("Herdr viewer pane is missing");
+    const pane = (await execute("herdr", ["pane", "get", id])).result?.pane;
+    if (pane?.pane_id !== id || pane.tokens?.oc2_view !== owner
+      || pane.tokens?.oc2_session !== sessionID || pane.tokens?.oc2_parent !== parent)
+      throw new Error("Herdr viewer ownership changed");
+    command = "herdr";
+    args = ["pane", "close", id];
+  }
+  if (!canClose()) throw new Error("Viewer is no longer idle or selected");
+  await execute(command, args);
 }
 
 function containsTerminal(value: unknown, id: string): boolean {
