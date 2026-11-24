@@ -82,6 +82,81 @@ export function bodyHeight(lines: readonly TodoLine[], start: number, end: numbe
   return Math.max(1, rows);
 }
 
+function ViewerStatus(props: { context: Context; sessionID: string }) {
+  const context = props.context;
+  const [now, setNow] = createSignal(Date.now());
+  const [received, setReceived] = createSignal<number>();
+  const timer = setInterval(() => setNow(Date.now()), 1000);
+  const stop = context.data.listen(({ details }) => {
+    if (/^session\.(execution|step|text|reasoning|tool|retry|compaction)\./.test(details.type)
+      && "sessionID" in details.data && details.data.sessionID === props.sessionID) setReceived(Date.now());
+  });
+  onCleanup(() => { clearInterval(timer); stop(); });
+  const session = createMemo(() => context.data.session.get(props.sessionID));
+  const running = createMemo(() => context.data.session.status(props.sessionID) === "running");
+  const started = createMemo(() => {
+    const time = session()?.time;
+    // The server publishes this field, but the generated client types omit it.
+    if (!time || !("busy" in time)) return undefined;
+    if (typeof time.busy !== "number" || !Number.isFinite(time.busy)) throw new Error("Invalid session execution timestamp");
+    return time.busy;
+  });
+  const state = createMemo(() => {
+    if (running()) {
+      if (context.data.session.permission.list(props.sessionID)?.length) return "WAITING FOR APPROVAL";
+      if (context.data.session.form.list(props.sessionID)?.length) return "WAITING FOR ANSWER";
+      return "RUNNING";
+    }
+    const outcome = session()?.outcome;
+    return outcome ? { succeeded: "DONE", failed: "FAILED", interrupted: "INTERRUPTED" }[outcome] : "IDLE";
+  });
+  const color = () => state() === "FAILED" ? context.theme.text.feedback.error.base
+    : state().startsWith("WAITING") || state() === "INTERRUPTED" ? context.theme.text.feedback.warning.base
+    : state() === "IDLE" ? context.theme.text.muted : context.theme.text.feedback.success.base;
+  const tools = createMemo(() => {
+    const start = started();
+    if (!running() || start === undefined) return [];
+    return context.data.session.message.list(props.sessionID).flatMap((message) => message.type === "assistant"
+      ? message.content.filter((part) => part.type === "tool") : [])
+      .filter((part) => part.time.created >= start && (part.state.status === "running" || part.state.status === "streaming"));
+  });
+  const model = () => {
+    const current = session();
+    const ref = current?.model;
+    return ref ? context.data.location.model.list(current!.location)
+      ?.find((item) => item.providerID === ref.providerID && item.id === ref.id)?.name ?? ref.id : "--";
+  };
+  const provider = () => {
+    const current = session();
+    const ref = current?.model;
+    return ref ? context.data.location.provider.list(current!.location)
+      ?.find((item) => item.id === ref.providerID)?.name ?? ref.providerID : "--";
+  };
+  const elapsed = () => {
+    const start = started();
+    const end = running() ? now() : session()?.time.idle;
+    if (start === undefined || end === undefined || end < start) return "--";
+    const seconds = Math.floor((end - start) / 1000);
+    return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  };
+  const activity = () => received() === undefined ? "-" : `${Math.max(0, Math.floor((now() - received()!) / 1000))}s ago`;
+  return <Show when={session()?.parentID}>
+    {/* Use the session's bottom padding for this row, keeping the normal footer gap below it. */}
+    <box id="viewer-status" height={1} flexShrink={0} paddingLeft={2} paddingRight={2}
+      marginTop={-1} marginBottom={1} flexDirection="row" justifyContent="space-between" gap={2}
+      backgroundColor={context.theme.background.base}>
+      <text id="viewer-identity" flexShrink={1} minWidth={0} wrapMode="none" truncate fg={context.theme.text.base}>
+        {`${model()} ${provider()}  Elapsed ${elapsed()}`}
+      </text>
+      <text id="viewer-metrics" flexShrink={0} minWidth={0} maxWidth="65%" wrapMode="none" truncate fg={context.theme.text.muted}>
+        <span style={{ fg: color() }}><b>{state()}</b></span>
+        <span style={{ fg: context.theme.hue.accent[200] }}>{`  ${session()?.agent ?? "--"}`}</span>
+        {`  Tool ${tools().at(-1)?.name ?? "-"}${tools().length > 1 ? ` (+${tools().length - 1})` : ""}  Last activity ${activity()}`}
+      </text>
+    </box>
+  </Show>;
+}
+
 function TodoOverlay(props: { context: Context }) {
   const context = props.context;
   const [columns, setColumns] = createSignal(context.renderer.width);
@@ -271,6 +346,37 @@ export default Plugin.define({
         } }));
       }
       if (viewer) {
+        const sessionID = process.env.OPENCODE_HERDR_SESSION;
+        if (!sessionID) throw new Error("Herdr viewer session is missing");
+        const active = () => {
+          const route = context.ui.router.current();
+          return route.type === "session" && route.sessionID === sessionID
+            && !!context.data.session.get(sessionID)?.parentID;
+        };
+        // Emergency stop and disabled Escape apply even when a dialog or form owns input.
+        context.keymap.layer(() => ({
+          mode: "global", priority: 10, enabled: active,
+          commands: [
+            { bind: "ctrl+c", title: "Interrupt this subagent", run: async () => {
+              try { await context.client.session.interrupt({ sessionID }); }
+              catch (error) {
+                context.ui.toast.show({ message: `Could not interrupt subagent: ${String(error)}`, variant: "error" });
+              }
+            } },
+            { bind: "escape", run: () => {} },
+          ],
+        }));
+        for (const mode of ["base", "modal"]) {
+          context.keymap.layer(() => ({
+            mode, priority: 10, enabled: active,
+            commands: mode === "modal"
+              ? [{ bind: "ctrl+g", title: "Close dialog", run: () => context.ui.dialog.clear() }]
+              : [{ id: "session.parent", title: "Parent navigation disabled", run: () => {} }],
+          }));
+        }
+        cleanups.push(context.ui.slot({ after: "app", render: () => (
+          <Show when={active()}><ViewerStatus context={context} sessionID={sessionID} /></Show>
+        ) }));
         // Navigating away releases the view so reconnecting parents do not reuse a person's tab.
         cleanups.push(context.ui.slot({ append: "app", render: () => {
           const [released, setReleased] = createSignal(false);

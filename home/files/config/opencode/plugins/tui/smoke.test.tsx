@@ -6,6 +6,9 @@ import { BoxRenderable, ScrollBoxRenderable, TextRenderable } from "@opentui/cor
 import { render } from "@opentui/solid";
 import { createSignal } from "solid-js";
 import { parseThemeDocument, resolveThemeDocument } from "@opencode/theme/tui";
+import type { KeymapLayer } from "@opencode/plugin/tui/context";
+import { registerEnabledFields } from "@opentui/keymap/addons";
+import { createTestKeymap } from "@opentui/keymap/testing";
 import plugin from "./tui";
 import theme from "../../themes/catppuccin-mocha-mauve.json";
 
@@ -21,6 +24,7 @@ it("never suppresses the host's editor context and interrupt confirmation", () =
     const cleanup = plugin.setup({
       options: {},
       ui,
+      keymap: { layer: () => assert.fail("Main shortcuts must stay host-owned") },
     } as never);
     assert(claims.some((claim) => claim.append === "prompt.footer.status"));
     assert(!claims.some((claim) => claim.replace === "prompt.footer" || claim.replace?.startsWith("prompt.footer.")));
@@ -32,6 +36,7 @@ it("never suppresses the host's editor context and interrupt confirmation", () =
     process.env.HC_TERMINAL_ID = "slim-test";
     const cleanupSlim = plugin.setup({
       options: { herdrViews: false }, ui,
+      keymap: { layer: () => assert.fail("Slim shortcuts must stay host-owned") },
       storage: { memory: () => assert.fail("Slim must not start a second pane manager") },
       data: { on: () => assert.fail("Slim must not register native child-view handlers") },
     } as never);
@@ -40,6 +45,216 @@ it("never suppresses the host's editor context and interrupt confirmation", () =
     cleanupSlim();
     assert.equal(disposed, claims.length, "Slim must remove every registered slot too");
   } finally {
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+});
+
+it("keeps emergency controls in every input mode and blocks the parent command", async () => {
+  const keys = ["HERDR_ENV", "HC_TERMINAL_ID", "OPENCODE_HERDR_VIEWER", "OPENCODE_HERDR_SESSION"];
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  process.env.HERDR_ENV = "1";
+  delete process.env.HC_TERMINAL_ID;
+  process.env.OPENCODE_HERDR_VIEWER = "1";
+  process.env.OPENCODE_HERDR_SESSION = "child";
+  const test = createTestKeymap({ defaultKeys: true });
+  registerEnabledFields(test.keymap);
+  let mode = "composer";
+  let sessionID = "child";
+  let hostCalls = 0;
+  let dialogsClosed = 0;
+  let listMoves = 0;
+  let fail = false;
+  const interrupted: string[] = [];
+  const errors: unknown[] = [];
+  const leave = () => { hostCalls++; sessionID = "parent"; };
+  test.keymap.registerLayer({
+    priority: 1,
+    commands: [{ name: "session.parent", run: leave }],
+    bindings: [
+      { key: "ctrl+c", cmd: leave },
+      { key: "escape", cmd: () => { if (mode === "modal") dialogsClosed++; else leave(); } },
+      { key: "up", cmd: () => { if (mode === "composer") listMoves++; else test.keymap.dispatchCommand("session.parent"); } },
+    ],
+  });
+  try {
+    plugin.setup({
+      options: {},
+      ui: { slot: () => () => {}, router: { current: () => ({ type: "session", sessionID }) },
+        dialog: { clear: () => { dialogsClosed++; mode = "composer"; } },
+        toast: { show: (error: unknown) => errors.push(error) } },
+      data: { session: { get: (id: string) => id === "child" ? { parentID: "parent" } : {} } },
+      client: { session: { interrupt: async (input: { sessionID: string }) => {
+        interrupted.push(input.sessionID);
+        if (fail) throw new Error("offline");
+      } } },
+      keymap: { layer: (factory: () => KeymapLayer) => {
+        const layer = factory();
+        test.keymap.registerLayer({
+          priority: layer.priority,
+          enabled: () => (layer.mode === "global" || mode === (layer.mode ?? "base")) &&
+            (typeof layer.enabled === "function" ? layer.enabled() : layer.enabled !== false),
+          commands: layer.commands?.filter((command) => command.id).map((command) => ({
+            name: command.id!, run: () => command.run(),
+          })),
+          bindings: layer.commands?.flatMap((command) => {
+            const key = command.bind ?? (command.id === "session.parent" ? "up" : false);
+            return key ? [{ key, cmd: command.id ?? (() => command.run()) }] : [];
+          }),
+        });
+      } },
+    } as never);
+    test.host.press("c", { ctrl: true });
+    test.host.press("escape");
+    test.host.press("up");
+    assert.equal(sessionID, "child");
+    assert.deepEqual(interrupted, ["child"]);
+    assert.equal(listMoves, 1, "composer list navigation must remain usable");
+    mode = "base";
+    test.host.press("up");
+    assert.equal(hostCalls, 0, "the configured parent shortcut must not leave the child");
+    mode = "modal";
+    test.host.press("escape");
+    assert.equal(dialogsClosed, 0, "Escape must be disabled inside dialogs too");
+    test.host.press("c", { ctrl: true });
+    assert.deepEqual(interrupted, ["child", "child"], "dialogs must not hide emergency stop");
+    test.host.press("g", { ctrl: true });
+    assert.equal(dialogsClosed, 1);
+    mode = "permission";
+    test.host.press("escape");
+    test.host.press("c", { ctrl: true });
+    assert.equal(hostCalls, 0, "permission prompts must not bypass child controls");
+    assert.deepEqual(interrupted, ["child", "child", "child"]);
+    mode = "composer";
+    fail = true;
+    test.host.press("c", { ctrl: true });
+    await Bun.sleep(0);
+    assert.equal(errors.length, 1, "a rejected interrupt must be visible");
+    sessionID = "parent"; // A manual session change must not leave child controls active.
+    test.host.press("c", { ctrl: true });
+    assert.equal(hostCalls, 1);
+    assert.deepEqual(interrupted, ["child", "child", "child", "child"], "never interrupt the parent from a stale child view");
+    assert.deepEqual(test.diagnostics.errors, []);
+  } finally {
+    test.cleanup();
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+});
+
+it("shows current execution telemetry without stale tools, fabricated activity, or replacing the composer", async () => {
+  const keys = ["HERDR_ENV", "HC_TERMINAL_ID", "OPENCODE_HERDR_VIEWER", "OPENCODE_HERDR_SESSION"];
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  process.env.HERDR_ENV = "1";
+  delete process.env.HC_TERMINAL_ID;
+  process.env.OPENCODE_HERDR_VIEWER = "1";
+  process.env.OPENCODE_HERDR_SESSION = "child";
+  const test = await createTestRenderer({ width: 160, height: 8 });
+  const resolved = resolveThemeDocument(parseThemeDocument(theme), "dark");
+  const started = Date.now() - 84_000;
+  const [running, setRunning] = createSignal(true);
+  const [waiting, setWaiting] = createSignal("");
+  const [route, setRoute] = createSignal("child");
+  const [modelName, setModelName] = createSignal("Test Model");
+  let slot: (() => unknown) | undefined;
+  let receive: ((event: { details: any }) => void) | undefined;
+  let unsubscribed = 0;
+  const cleanup = plugin.setup({
+    options: {}, theme: resolved, keymap: { layer: () => {} },
+    ui: {
+      slot: (claim: { after?: string; render: typeof slot }) => {
+        if (claim.after === "app") slot = claim.render;
+        return () => {};
+      },
+      router: { current: () => ({ type: "session", sessionID: route() }) },
+    },
+    data: {
+      listen: (handler: typeof receive) => { receive = handler; return () => { unsubscribed++; }; },
+      location: {
+        model: { list: () => [{ id: "model", providerID: "test", name: modelName() }] },
+        provider: { list: () => [{ id: "test", name: "Test Provider" }] },
+      },
+      session: {
+        get: () => ({ parentID: "parent", agent: "explore", model: { id: "model", providerID: "test" },
+          location: { directory: "/repo" }, outcome: "interrupted",
+          time: { created: started - 3_600_000, busy: started, idle: running() ? started - 1000 : started + 2000 } }),
+        status: () => running() ? "running" : "idle",
+        permission: { list: () => waiting() === "approval" ? [{}] : [] },
+        form: { list: () => waiting() === "answer" ? [{}] : [] },
+        message: { list: () => [{ type: "assistant", content: [
+          { type: "tool", name: "stale-tool", time: { created: started - 10_000 }, state: { status: "running" } },
+          { type: "tool", name: "shell", time: { created: started + 1 }, state: { status: "running" } },
+        ] }] },
+      },
+    },
+  } as never);
+  try {
+    assert(slot);
+    await render(() => <box width="100%" height="100%" flexDirection="column">
+      <box flexGrow={1} minHeight={0} paddingBottom={1}>
+        <box flexGrow={1} minHeight={0}><text>Transcript</text></box>
+        <box id="native-composer" height={3} flexShrink={0} backgroundColor={resolved.background.raised.base}>
+          <text>Native composer</text>
+        </box>
+      </box>
+      {slot!() as never}
+    </box>, test.renderer);
+    await test.renderOnce();
+    let frame = test.captureCharFrame();
+    assert.match(frame, /Test Model Test Provider  Elapsed 01:.*RUNNING  explore  Tool shell  Last activity -/);
+    assert.doesNotMatch(frame, /stale-tool|INTERRUPTED|Ctrl\+/);
+    const status = test.renderer.root.findDescendantById("viewer-status") as BoxRenderable;
+    const composer = test.renderer.root.findDescendantById("native-composer") as BoxRenderable;
+    const identity = test.renderer.root.findDescendantById("viewer-identity") as TextRenderable;
+    const metrics = test.renderer.root.findDescendantById("viewer-metrics") as TextRenderable;
+    assert.match(identity.plainText, /^Test Model Test Provider  Elapsed 01:/);
+    assert.equal(metrics.plainText, "RUNNING  explore  Tool shell  Last activity -");
+    const checkAlignment = () => {
+      assert(identity.x + identity.width <= metrics.x, "identity and metrics must not overlap");
+      assert.equal(status.x + status.width - (metrics.x + metrics.width), identity.x - status.x,
+        "metrics must align to the right with the same inset as the left identity");
+    };
+    assert(status.backgroundColor.equals(resolved.background.base));
+    assert.equal(status.y, composer.y + composer.height, "the footer must touch the composer without a blank row or overlap");
+    assert(status.y + status.height < test.renderer.height, "the normal footer gap belongs below the status");
+    checkAlignment();
+    receive!({ details: { type: "session.text.delta", data: { sessionID: "other" } } });
+    await test.renderOnce();
+    assert.match(metrics.plainText, /Last activity -$/);
+    receive!({ details: { type: "session.text.delta", data: { sessionID: "child" } } });
+    await test.renderOnce();
+    assert.match(test.captureCharFrame(), /Last activity \d+s ago/);
+    setWaiting("approval");
+    await test.renderOnce();
+    assert.match(test.captureCharFrame(), /WAITING FOR APPROVAL/);
+    setWaiting("answer");
+    await test.renderOnce();
+    assert.match(test.captureCharFrame(), /WAITING FOR ANSWER/);
+    setWaiting("");
+    setRunning(false);
+    await test.renderOnce();
+    frame = test.captureCharFrame();
+    assert.match(frame, /Elapsed 00:02.*INTERRUPTED/);
+    assert.match(metrics.plainText, /Tool -  Last activity /);
+    setModelName("Very long model name ".repeat(12));
+    for (const width of [60, 32, 160]) {
+      test.resize(width, 12);
+      await test.renderOnce();
+      assert.match(test.captureCharFrame(), /Native composer/);
+      assert.equal(status.y, composer.y + composer.height, "resizing must keep the footer adjacent to the composer");
+      checkAlignment();
+    }
+    setRoute("parent");
+    await test.renderOnce();
+    assert.doesNotMatch(test.captureCharFrame(), /INTERRUPTED|Elapsed|Last activity/);
+    assert.equal(unsubscribed, 1, "leaving the pinned view must release its event subscription");
+  } finally {
+    cleanup();
+    test.renderer.destroy();
     for (const key of keys) {
       if (saved[key] === undefined) delete process.env[key];
       else process.env[key] = saved[key];
