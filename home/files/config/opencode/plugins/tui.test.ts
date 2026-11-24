@@ -1,7 +1,8 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "bun:test";
 import { buildTodoView } from "./tui/lib/todo-overlay";
-import { bodyHeight, latestTodos, popupWidth, recoverTodos, MAX_BODY_HEIGHT, MAX_PANEL_WIDTH } from "./tui/tui";
+import { popupWidth, MAX_PANEL_WIDTH } from "./tui/hud/layout";
+import { bodyHeight, latestTodos, recoverTodos, MAX_BODY_HEIGHT } from "./tui/hud/todo";
 
 const todos = [
   { content: "finish report", status: "completed" },

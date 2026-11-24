@@ -522,6 +522,8 @@ in
           package.json
           bun.lock
           tui.tsx
+          hud/layout.tsx
+          hud/todo.tsx
           lib/todo-overlay.ts
           lib/herdr-views.ts
         )

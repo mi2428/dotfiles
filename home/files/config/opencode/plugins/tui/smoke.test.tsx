@@ -4,7 +4,8 @@ import { it, mock, spyOn } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
 import { BoxRenderable, ScrollBoxRenderable, TextRenderable } from "@opentui/core";
 import { render } from "@opentui/solid";
-import { createSignal } from "solid-js";
+import { Show, createSignal } from "solid-js";
+import { HudCard, HudStack } from "./hud/layout";
 import { parseThemeDocument, resolveThemeDocument } from "@opencode/theme/tui";
 import type { KeymapLayer } from "@opencode/plugin/tui/context";
 import { registerEnabledFields } from "@opentui/keymap/addons";
@@ -390,6 +391,54 @@ it("shows current execution telemetry without stale tools, fabricated activity, 
   }
 });
 
+it("stacks independent HUD cards and closes empty gaps without remounting on resize", async () => {
+  const test = await createTestRenderer({ width: 80, height: 20 });
+  const context = { renderer: test.renderer, theme: resolveThemeDocument(parseThemeDocument(theme), "dark") } as never;
+  const [mounted, setMounted] = createSignal(true);
+  const [first, setFirst] = createSignal(true);
+  const [second, setSecond] = createSignal(true);
+  const listeners = test.renderer.listenerCount("resize");
+  try {
+    await render(() => <Show when={mounted()}>
+      <HudStack context={context}>{() => <>
+        <Show when={first()}><HudCard context={context} id="first-card" title="First"><text>first body</text></HudCard></Show>
+        <Show when={second()}><HudCard context={context} id="second-card" title="Second"><text>second body</text></HudCard></Show>
+      </>}</HudStack>
+    </Show>, test.renderer);
+    await test.renderOnce();
+    const stack = test.renderer.root.findDescendantById("hud-stack") as BoxRenderable;
+    const a = test.renderer.root.findDescendantById("first-card") as BoxRenderable;
+    const b = test.renderer.root.findDescendantById("second-card") as BoxRenderable;
+    assert.equal(a.x, b.x);
+    assert.equal(a.width, b.width);
+    assert(b.y >= a.y + a.height, "cards must not overlap");
+    const top = a.y;
+    setFirst(false);
+    await test.renderOnce();
+    assert.equal(b.y, top, "remaining cards must move up when the first card disappears");
+    assert.equal(test.renderer.listenerCount("resize"), listeners + 1, "cards share one width observer");
+    setFirst(false);
+    await test.renderOnce();
+    assert.equal(b.y, stack.y, "the remaining card moves up without a placeholder");
+    for (const width of [60, 120, 80]) {
+      test.resize(width, 20);
+      await test.renderOnce();
+      assert.equal(stack.visible, width >= 80);
+      assert.equal(test.renderer.root.findDescendantById("second-card"), b);
+      if (width < 80) assert.doesNotMatch(test.captureCharFrame(), /second body/);
+      else assert.match(test.captureCharFrame(), /second body/);
+    }
+    setSecond(false);
+    await test.renderOnce();
+    assert.equal(stack.visible, false, "no card means no overlay area");
+    setMounted(false);
+    await test.renderOnce();
+    assert.equal(test.renderer.listenerCount("resize"), listeners, "unmounting releases the width observer");
+  } finally {
+    test.renderer.destroy();
+  }
+});
+
 it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
   const test = await createTestRenderer({ width: 80, height: 20 });
   const resolved = resolveThemeDocument(parseThemeDocument(theme), "dark");
@@ -460,6 +509,7 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
     assert.match(frame, /next/);
     assert.doesNotMatch(frame, /oldest|older/);
     const panel = test.renderer.root.findDescendantById("todo-panel") as BoxRenderable;
+    const stack = test.renderer.root.findDescendantById("hud-stack") as BoxRenderable;
     assert(panel);
     assert.equal(panel.width, 68);
     assert(panel.backgroundColor.equals(resolved.background.raised.base));
@@ -493,7 +543,7 @@ it("renders the v2 HUD with actual OpenTUI 0.7 renderables", async () => {
       await test.renderOnce();
       await test.renderer.idle();
       await test.renderOnce();
-      assert.equal(panel.visible, width >= 80);
+      assert.equal(stack.visible, width >= 80);
       if (width < 80) assert.doesNotMatch(test.captureCharFrame(), /Todo ·|current work/);
       else assert.match(test.captureCharFrame(), /Todo · 5 of 9/);
       assert.equal(test.renderer.root.findDescendantById("todo-scroll"), todos, "resize retains the HUD instance");
