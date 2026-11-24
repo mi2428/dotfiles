@@ -8,10 +8,21 @@ import { createSignal } from "solid-js";
 import { parseThemeDocument, resolveThemeDocument } from "@opencode/theme/tui";
 import { AgentsHud } from "./agents";
 import { ShellHud } from "./shell";
-import { ChangesHud, GitStatus, watchGit, type GitSnapshot } from "./git";
+import { ChangesHud, GitStatus, shortenPath, watchGit, type GitSnapshot } from "./git";
 import { MIN_HUD_HEIGHT, HudStack } from "./layout";
 import * as views from "../lib/herdr-views";
 import theme from "../../../themes/catppuccin-mocha-mauve.json";
+
+it("shortens parent directories from left to right without splitting Unicode characters or the filename", () => {
+  assert.equal(shortenPath("/hoge/fuga/poyo", 15), "/hoge/fuga/poyo");
+  assert.equal(shortenPath("/hoge/fuga/poyo", 12), "/h/fuga/poyo");
+  assert.equal(shortenPath("/hoge/fuga/poyo", 9), "/h/f/poyo");
+  assert.equal(shortenPath("/hoge/fuga/poyo", 4), "/h/…", "truncate the tail only after shortening every directory");
+  assert.equal(shortenPath("日本語/家族/poyo", 10), "日/家/poyo");
+  assert.equal(shortenPath("e\u0301cole/family/poyo", 13), "e\u0301/family/poyo");
+  assert.equal(shortenPath("👨‍👩‍👧‍👦family/directory/poyo", 10), "👨‍👩‍👧‍👦/d/poyo");
+  assert.equal(shortenPath("filename-that-cannot-fit", 4), "fil…");
+});
 
 it("updates live agents and shells, removes stopped work and never mixes session families", async () => {
   const test = await createTestRenderer({ width: 120, height: MIN_HUD_HEIGHT });
@@ -153,7 +164,7 @@ it("shares one Git reader, clears both views after commit and rejects stale or f
       watchGit(context, setGit);
       return <>
         <GitStatus context={context} snapshot={git()} />
-        <HudStack context={context}>{(layout) => <ChangesHud context={context} snapshot={git()} />}</HudStack>
+        <HudStack context={context}>{(layout) => <ChangesHud context={context} snapshot={git()} width={layout.width} />}</HudStack>
       </>;
     }, test.renderer);
     await test.renderOnce();
@@ -164,6 +175,15 @@ it("shares one Git reader, clears both views after commit and rejects stale or f
     await test.renderOnce();
     assert.match(test.captureCharFrame(), /󰈙 live.tsx\s+\+12 -3/);
     assert(test.renderer.root.findDescendantById("git-status"));
+    read.mockResolvedValue({ data: [{
+      file: `hoge/fuga/${"x".repeat(200)}.tsx`, additions: 1234, deletions: 567, status: "modified",
+    }] });
+    await refresh!();
+    await test.renderOnce();
+    const longRow = test.captureCharFrame().split("\n").find((line) => line.includes("󰈙 h/f/"))!;
+    assert(longRow, "all parent directories shorten before an overlong filename is truncated");
+    assert.match(longRow, /\+1234 -567/, "line counts must survive filename truncation");
+    assert.doesNotMatch(longRow, /\.tsx/, "the filename tail must be truncated when even the abbreviated path cannot fit");
     const many = Array.from({ length: 12 }, (_, i) => ({ file: `file${i}.ts`, additions: i, deletions: 1, status: "modified" as const }));
     read.mockResolvedValue({ data: many.slice(0, 8) });
     await refresh!();
@@ -272,7 +292,7 @@ it("limits child Changes to successful own writes, restores old edits and never 
     await render(() => {
       watchGit(context, setGit);
       return <HudStack context={context}>{(layout) =>
-        <ChangesHud context={context} snapshot={git()} />
+        <ChangesHud context={context} snapshot={git()} width={layout.width} />
       }</HudStack>;
     }, test.renderer);
     await Bun.sleep(0);

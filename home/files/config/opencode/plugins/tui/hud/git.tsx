@@ -2,7 +2,7 @@
 import type { Context } from "@opencode/plugin/tui/context";
 import { resolve } from "node:path";
 import { Show, createEffect, createMemo, onCleanup } from "solid-js";
-import { HudCard, HudRows } from "./layout";
+import { CARD_INSET, HudCard, HudRows } from "./layout";
 
 export type GitSnapshot = {
   files: Awaited<ReturnType<Context["client"]["vcs"]["status"]>>["data"];
@@ -139,19 +139,40 @@ export function GitStatus(props: { context: Context; snapshot: GitSnapshot }) {
   </>;
 }
 
-export function ChangesHud(props: { context: Context; snapshot: GitSnapshot }) {
+export function shortenPath(path: string, width: number): string {
+  const parts = path.replace(/\s+/g, " ").split("/");
+  const characters = new Intl.Segmenter();
+  for (let index = 0; index < parts.length - 1 && Bun.stringWidth(parts.join("/")) > width; index++) {
+    parts[index] = characters.segment(parts[index]!).containing(0)?.segment ?? "";
+  }
+  const result = parts.join("/");
+  if (Bun.stringWidth(result) <= width) return result;
+  let shortened = "";
+  for (const { segment } of characters.segment(result)) {
+    if (Bun.stringWidth(shortened + segment + "…") > width) break;
+    shortened += segment;
+  }
+  return shortened + "…";
+}
+
+export function ChangesHud(props: { context: Context; snapshot: GitSnapshot; width: number }) {
   const context = props.context;
   return <Show when={props.snapshot.failed || props.snapshot.files.length}>
     <HudCard context={context} id="changes-panel" accent={context.theme.diff.text.added}>
       <Show when={props.snapshot.failed} fallback={
-        <HudRows context={context} items={props.snapshot.files}>{(file) =>
-          <text fg={context.theme.text.base} height={1} wrapMode="none" truncate>
-            {`󰈙 ${file.file.replace(/\s+/g, " ")}  `}
-            <span style={{ fg: context.theme.diff.text.added }}>{`+${file.additions}`}</span>
-            {" "}
-            <span style={{ fg: context.theme.diff.text.removed }}>{`-${file.deletions}`}</span>
-          </text>
-        }</HudRows>
+        <HudRows context={context} items={props.snapshot.files}>{(file) => {
+          const pathWidth = () => Math.max(1, props.width - CARD_INSET - Bun.stringWidth(`󰈙   +${file.additions} -${file.deletions}`));
+          return <box height={1} width="100%" flexDirection="row">
+            <text fg={context.theme.text.base} minWidth={0} flexShrink={1} height={1} wrapMode="none" truncate>
+              {`󰈙 ${shortenPath(file.file, pathWidth())}`}
+            </text>
+            <text flexShrink={0} height={1} wrapMode="none">
+              {"  "}<span style={{ fg: context.theme.diff.text.added }}>{`+${file.additions}`}</span>
+              {" "}
+              <span style={{ fg: context.theme.diff.text.removed }}>{`-${file.deletions}`}</span>
+            </text>
+          </box>;
+        }}</HudRows>
       }>
         <text fg={context.theme.text.feedback.error.base} height={1} wrapMode="none">󰈙 Git status unavailable</text>
       </Show>

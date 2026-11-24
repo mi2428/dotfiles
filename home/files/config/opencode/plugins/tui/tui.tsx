@@ -83,7 +83,7 @@ export default Plugin.define({
           {(id) => <>
             <AgentsHud context={context} sessionID={id()} />
             <ShellHud context={context} sessionID={id()} />
-            <ChangesHud context={context} snapshot={git()} />
+            <ChangesHud context={context} snapshot={git()} width={layout.width} />
           </>}
         </Show>
       </>}</HudStack>
