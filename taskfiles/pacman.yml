@@ -19,6 +19,18 @@ tasks:
         # Rust AUR builds require an initialized rustup toolchain.
         packages=$(cat "$@" "$repo_root/packages/aur.txt")
         printf '%s\n' "$packages" | sort -u | xargs -r -o yay -Syu --needed --
+        # The rustup package installs no default toolchain, so cargo/rustc fail
+        # until one is selected. Keep an existing default if the user chose one.
+        if command -v rustup >/dev/null 2>&1; then
+          if ! rustup show active-toolchain >/dev/null 2>&1; then
+            rustup toolchain list | grep -q '^stable' || rustup toolchain install stable --profile minimal
+            rustup default stable
+          fi
+          rustup component add rustfmt clippy
+          # Aya builds eBPF object code with nightly build-std and rust-src.
+          rustup toolchain list | grep -q '^nightly' || rustup toolchain install nightly --profile minimal --component rust-src
+          rustup component add rust-src --toolchain nightly
+        fi
         # Prime Omarchy's lazy tools in dependency order instead of relying on shims.
         if printf '%s\n' "$repos" | grep -qx omarchy; then
           mise install node
