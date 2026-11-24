@@ -65,6 +65,7 @@ it("adds Git line counts to Main without replacing native status, or leaking sta
   const [sessionID, setSessionID] = createSignal("first");
   const [repository, setRepository] = createSignal(true);
   let slot: (() => unknown) | undefined;
+  let watcher: (() => unknown) | undefined;
   let refresh: () => Promise<void>;
   const interval = globalThis.setInterval;
   const timers = spyOn(globalThis, "setInterval").mockImplementation((...args) => {
@@ -79,6 +80,7 @@ it("adds Git line counts to Main without replacing native status, or leaking sta
     options: { herdrViews: false }, theme: resolved,
     ui: {
       slot: (claim: { append?: string; render: typeof slot }) => {
+        if (claim.append === "app" && !watcher) watcher = claim.render;
         if (claim.append === "prompt.footer.status") slot = claim.render;
         return () => {};
       },
@@ -92,11 +94,12 @@ it("adds Git line counts to Main without replacing native status, or leaking sta
   } as never);
   try {
     assert(slot);
-    await render(() => <box width="100%" height={1} flexDirection="row" gap={2}>
-      <text flexGrow={1} flexShrink={1} minWidth={0} truncate wrapMode="none">Path branch esc interrupt</text>
-      {slot!() as never}
-      <text flexShrink={0}>ctrl+p commands</text>
-    </box>, test.renderer);
+    assert(watcher);
+    await render(() => <>{watcher!() as never}<box width="100%" height={1} flexDirection="row" gap={2}>
+        <text flexGrow={1} flexShrink={1} minWidth={0} truncate wrapMode="none">Path branch esc interrupt</text>
+        {slot!() as never}
+        <text flexShrink={0}>ctrl+p commands</text>
+      </box></>, test.renderer);
     await test.renderOnce();
     await refresh!();
     assert.equal(read.mock.calls.length, 1, "polling must skip a read still in flight");
@@ -139,6 +142,96 @@ it("adds Git line counts to Main without replacing native status, or leaking sta
     test.renderer.destroy();
     timers.mockRestore();
     errors.mockRestore();
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+});
+
+it("shows all four HUDs in child viewers without adding a Main footer", async () => {
+  const keys = ["HERDR_ENV", "OPENCODE_HERDR_VIEWER", "OPENCODE_HERDR_SESSION"];
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  process.env.HERDR_ENV = "1";
+  process.env.OPENCODE_HERDR_VIEWER = "1";
+  process.env.OPENCODE_HERDR_SESSION = "child";
+  const test = await createTestRenderer({ width: 120, height: MIN_HUD_HEIGHT });
+  const slots: Array<{ append?: string; render: () => unknown }> = [];
+  const [running, setRunning] = createSignal(true);
+  const sync = async () => {};
+  const started = Date.now() - 1000;
+  const names = spyOn(herdrViews, "animalName").mockReturnValue("Fox");
+  const read = mock(async () => ({ data: [
+    { file: "child-change.ts", additions: 1, deletions: 0, status: "modified" },
+  ] }));
+  const cleanup = plugin.setup({
+    options: {}, renderer: test.renderer, theme: resolveThemeDocument(parseThemeDocument(theme), "dark"),
+    keymap: { layer: () => {} },
+    ui: {
+      router: { current: () => ({ type: "session", sessionID: "child" }) },
+      slot: (claim: typeof slots[number]) => { slots.push(claim); return () => {}; },
+    },
+    data: {
+      on: () => () => {},
+      location: { vcs: { info: () => ({ provider: "git" }) } },
+      session: {
+        family: () => ["parent", "child", "grandchild"],
+        get: (id: string) => ({ parentID: id === "parent" ? undefined : "parent",
+          time: { busy: started }, location: { directory: "/child-repo" } }),
+        status: () => running() ? "running" : "idle",
+        sync, invalidate: () => {},
+        permission: { sync, list: () => [] },
+        form: { sync, list: () => [] },
+        message: { sync, list: () => [{ type: "assistant", content: [
+          { type: "tool", name: "todowrite", time: { created: started }, state: { status: "completed", input: { todos: [
+            { content: "child current", status: "in_progress" },
+            { content: "child next", status: "pending" },
+          ] } } },
+        ] }] },
+      },
+      shell: { sync, list: () => [
+        { status: running() ? "running" : "exited", command: "child-shell", metadata: { sessionID: "child" } },
+        { status: "running", command: "parent-shell", metadata: { sessionID: "parent" } },
+      ] },
+    },
+    client: { vcs: { status: read }, message: { list: async () => ({ data: [
+      { id: "child-edit", type: "assistant", content: [
+        { type: "tool", name: "patch", state: { status: "completed", metadata: { files: [{ file: "child-change.ts" }] } } },
+      ] },
+    ], cursor: {} }) } },
+  } as never);
+  try {
+    assert(!slots.some((slot) => slot.append === "prompt.footer.status"), "Main footer stays Main-only");
+    await render(() => <For each={slots.filter((slot) => slot.append === "app")}>{(slot) => slot.render() as never}</For>, test.renderer);
+    await Bun.sleep(0);
+    await test.renderOnce();
+    for (const card of ["todo-panel", "agents-panel", "shell-panel", "changes-panel"]) {
+      assert(test.renderer.root.findDescendantById(card), `${card} must be available in child viewers`);
+    }
+    const frame = test.captureCharFrame();
+    assert.match(frame, /child current/);
+    assert.match(frame, /child next/);
+    assert.match(frame, /󰚩  Fox/);
+    assert.match(frame, /  child-shell/);
+    assert.match(frame, /child-change.ts/);
+    assert.doesNotMatch(frame, /parent-shell/);
+    assert.equal(names.mock.calls.length, 1, "Agents excludes the current child and the root");
+    assert.deepEqual(read.mock.calls, [[{ location: { directory: "/child-repo" } }]]);
+    test.resize(79, MIN_HUD_HEIGHT);
+    await test.renderOnce();
+    assert.equal((test.renderer.root.findDescendantById("hud-stack") as BoxRenderable).visible, false);
+    test.resize(120, MIN_HUD_HEIGHT);
+    setRunning(false);
+    await test.renderOnce();
+    assert(!test.renderer.root.findDescendantById("agents-panel"));
+    assert(!test.renderer.root.findDescendantById("shell-panel"));
+    assert.match(test.captureCharFrame(), /child-change.ts/);
+  } finally {
+    cleanup();
+    const destroyed = new Promise<void>((resolve) => test.renderer.once("destroy", resolve));
+    test.renderer.destroy();
+    await destroyed;
+    names.mockRestore();
     for (const key of keys) {
       if (saved[key] === undefined) delete process.env[key];
       else process.env[key] = saved[key];

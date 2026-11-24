@@ -524,6 +524,9 @@ in
           tui.tsx
           hud/layout.tsx
           hud/todo.tsx
+          hud/agents.tsx
+          hud/shell.tsx
+          hud/git.tsx
           lib/execution.ts
           lib/todo-overlay.ts
           lib/herdr-views.ts
