@@ -353,6 +353,7 @@ let
   obsidianExportPlugin = ../../files/config/opencode/plugins/obsidian-export.js;
   obsidianExportSkill = ../../files/agents/skills/obsidian-export;
   showmeSkill = ../../files/agents/skills/showme;
+  omoWatchSkill = ../../files/agents/skills/omo-watch;
   slimOpenCodePluginConfig = ../../files/config/opencode/profiles/slim/oh-my-opencode-slim.jsonc;
   ensureOpenCodeServices = ../../../scripts/ensure-opencode-services.sh;
 
@@ -466,6 +467,7 @@ in
       ".agents/skills/showme" = mkLink showmeSkill;
       ".agents/skills/pr-review" = mkLink ../../files/agents/skills/pr-review;
       ".agents/skills/repo-qa" = mkLink ../../files/agents/skills/repo-qa;
+      ".agents/skills/omo-watch" = mkLink omoWatchSkill;
       ".claude/skills/herdr-agent-layout" = mkLink herdrAgentLayoutSkill;
     };
 
