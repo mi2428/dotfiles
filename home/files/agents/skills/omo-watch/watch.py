@@ -58,6 +58,8 @@ PROMPT_HEAD = (
 )
 # The TUI footer shows ``effort <level>``; these are omo's --thinking levels.
 EFFORT_RE = re.compile(r"effort\s+(off|minimal|low|medium|high|xhigh|max)\b")
+# omo's goal loop parks in this state when it needs a human decision.
+BLOCKED_RE = re.compile(r"Goal blocked:.*waiting_human")
 
 
 class Foreground(TypedDict, total=False):
@@ -116,6 +118,7 @@ class Target:
     fatal_sig: str | None = None
     fatal_since: float | None = None
     frozen_since: float | None = None
+    blocked_since: float | None = None
     recoveries: list[float] = field(default_factory=list[float])
     last_status: str | None = None
     thinking: str | None = None
@@ -454,6 +457,14 @@ def pane_fatal(text: str) -> list[str]:
     return [line.strip() for line in lines[-15:] if FATAL_RE.search(line)][-3:]
 
 
+def pane_blocked(text: str) -> str | None:
+    """Return the footer line when omo's goal loop waits on a human decision."""
+    for line in reversed(text.splitlines()):
+        if BLOCKED_RE.search(line):
+            return line.strip()[-300:]
+    return None
+
+
 def fallback_error(mode: str, evidence: dict[str, Any]) -> str:
     """Describe a trigger in prose when no log error line is available."""
     if mode == "omo-absent":
@@ -474,6 +485,12 @@ def fallback_error(mode: str, evidence: dict[str, Any]) -> str:
         return (
             f"TUI が 'Working' 表示のまま {evidence.get('frozen_seconds')}秒 "
             f"応答していません (herdr status={evidence.get('state')})"
+        )
+    if mode == "blocked-at-prompt":
+        return (
+            f"ゴール継続が人間待ちのまま {evidence.get('blocked_seconds')}秒 "
+            f"停止しています (herdr status={evidence.get('state')}, "
+            f"footer={evidence.get('blocked')})"
         )
     return f"{mode}: {json.dumps(evidence, ensure_ascii=False)}"
 
@@ -735,6 +752,7 @@ def evaluate(
                 target.fatal_sig = None
                 target.fatal_since = None
                 target.frozen_since = None
+                target.blocked_since = None
                 log(f"{address}: omo pid {pid} session={target.session}")
             current_fingerprint = fingerprint(target)
             changed = current_fingerprint != target.fingerprint
@@ -751,6 +769,7 @@ def evaluate(
                 target.fatal_sig = None
                 target.fatal_since = None
                 target.frozen_since = None
+                target.blocked_since = None
             text = pane_text(address, 120)
             effort = EFFORT_RE.search(text)
             if effort:
@@ -761,6 +780,7 @@ def evaluate(
                 target.fatal_sig = None
                 target.fatal_since = None
                 target.frozen_since = None
+                target.blocked_since = None
                 if now - target.last_progress >= args.stall:
                     actions.append(
                         (
@@ -804,6 +824,26 @@ def evaluate(
                     )
                 continue
             target.frozen_since = None
+            blocked = pane_blocked(text)
+            if blocked:
+                target.blocked_since = target.blocked_since or now
+                if now - target.blocked_since >= args.blocked_grace:
+                    actions.append(
+                        (
+                            address,
+                            target,
+                            "blocked-at-prompt",
+                            {
+                                "blocked_seconds": int(now - target.blocked_since),
+                                "state": state,
+                                "blocked": blocked,
+                                "last_event": last_event(target.session),
+                                "pane_status": pane_status(text),
+                            },
+                        )
+                    )
+                continue
+            target.blocked_since = None
             fatal = pane_fatal(text)
             if fatal:
                 signature = " | ".join(fatal)
@@ -827,6 +867,7 @@ def evaluate(
                 target.fatal_since = None
         else:
             target.pid = None
+            target.blocked_since = None
             foreground_name = os.path.basename(foreground.get("name") or "")
             if foreground_name in SHELLS or not foreground.get("pid"):
                 if target.absent_since is None:
@@ -971,6 +1012,7 @@ def recover(
     target.fatal_sig = None
     target.fatal_since = None
     target.frozen_since = None
+    target.blocked_since = None
 
 
 def select(
@@ -1054,6 +1096,7 @@ def run(args: argparse.Namespace) -> int:
                     target.fatal_sig = None
                     target.fatal_since = None
                     target.frozen_since = None
+                    target.blocked_since = None
                     target.cpu = None
                     target.boot_until = max(
                         target.boot_until, resume_at + args.absent_grace
@@ -1109,6 +1152,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--absent-grace", type=float, default=30)
     parser.add_argument("--fatal-grace", type=float, default=30)
     parser.add_argument("--frozen-grace", type=float, default=60)
+    parser.add_argument("--blocked-grace", type=float, default=600)
     parser.add_argument("--busy-pct", type=float, default=2.0)
     parser.add_argument("--max-recoveries", type=int, default=3)
     parser.add_argument("--ready-timeout", type=float, default=120)

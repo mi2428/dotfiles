@@ -54,6 +54,7 @@ projects) if you need the handoff to name the exact predecessor session.
 | `status=working` with no progress | `--stall` seconds (default 900) |
 | fatal provider/compaction text at the prompt | persists `--fatal-grace` seconds (default 30) |
 | `Working (Ns` visible while status is not working | persists `--frozen-grace` seconds (default 60) |
+| `Goal blocked: … waiting_human` in the footer | persists `--blocked-grace` seconds (default 600) |
 
 Progress is the captured session JSONL's size/mtime plus CPU of the omo
 process tree (streaming model or a tool build). The herdr turn number is
@@ -106,7 +107,8 @@ python3 ~/.agents/skills/omo-watch/watch.py --pane "$pane" --poll 15 --stall 900
 
 Useful flags: `--name`, `--project`, `--launch`, `--force`, `--once`,
 `--dry-run`, `--poll`, `--stall`, `--absent-grace`, `--fatal-grace`,
-`--frozen-grace`, `--busy-pct`, `--max-recoveries`, `--ready-timeout`.
+`--frozen-grace`, `--blocked-grace`, `--busy-pct`, `--max-recoveries`,
+`--ready-timeout`.
 
 `--force` needs `--pane` or `--name` and touches only those targets (the
 intersection when both are given); it never recovers every discovered omo.
