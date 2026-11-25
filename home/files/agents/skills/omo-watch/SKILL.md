@@ -2,12 +2,13 @@
 name: omo-watch
 description: >
   Watch omo terminals hosted by herdr-core (hc) and recover one that died,
-  froze, hit a provider/compaction stall, or shows a fatal message at the
-  prompt. Recovery keeps the pane's shell alive, kills only the omo process
-  tree, restarts omo with the previous thinking level, and submits a mass-ulw
-  handoff prompt naming the predecessor's error and session file. Use when
-  asked to babysit, watch, supervise, or auto-recover omo, or when a long omo
-  run must survive provider stalls and crashes.
+  froze, hit a provider/compaction stall, shows a fatal message at the prompt,
+  or parks its goal loop with `Goal blocked ... waiting_human`. Recovery keeps
+  the pane's shell alive, kills only the omo process tree, restarts omo with
+  the previous thinking level, and submits a mass-ulw handoff prompt naming the
+  predecessor's error and session file. Use when asked to babysit, watch,
+  supervise, or auto-recover omo, or when a long omo run must survive provider
+  stalls and crashes.
 argument-hint: "[--pane ADDR] [--name NAME] [--project DIR]"
 ---
 
@@ -102,7 +103,7 @@ As an omp background service (this is the normal mode):
 ```bash
 # bash tool: name=omo-watch, pty=false, ready log="watchdog start",
 # notify regex="TRIGGER|RECOVER|recover error"
-python3 ~/.agents/skills/omo-watch/watch.py --pane "$pane" --poll 15 --stall 900
+python3 ~/.agents/skills/omo-watch/watch.py --pane "$pane" --poll 15 --stall 900 --blocked-grace 600
 ```
 
 Useful flags: `--name`, `--project`, `--launch`, `--force`, `--once`,
