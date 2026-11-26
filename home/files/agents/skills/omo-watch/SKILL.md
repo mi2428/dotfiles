@@ -11,7 +11,10 @@ description: >
   handoff prompt naming the predecessor's error, session file, and last
   intention. The skill also documents a periodic progress reporter (bash +
   hc + jq) so the agent can summarize what is moving in chat, because a
-  watcher that only logs heartbeats goes silent. Use when asked to babysit,
+  watcher that only logs heartbeats goes silent. For an operator who is away
+  it also defines a viewport-based approval proxy: detect `Permission
+  required:`, press `Allow once` only while the `→` selection is on it, and
+  hold anything that touches another session. Use when asked to babysit,
   watch, supervise, or auto-recover omo, or when a long omo run must survive
   provider stalls and crashes.
 argument-hint: "[--pane ADDR] [--name NAME] [--project DIR] [--launch-pane ADDR=CMD]"
@@ -23,6 +26,26 @@ The watcher is a skill, not a system daemon. Run it from this agent as an omp
 background service (or a foreground shell) so it lives with the session that
 owns it. Runtime state and logs go under `$XDG_RUNTIME_DIR/omo-watch`; nothing
 is installed into `~/.local` or systemd.
+
+## Fast path: arm first, analyze later
+
+Arm detection in about 90 seconds. Everything the first live event can teach
+you is learned there, not here.
+
+1. Resolve the pane. Filter `hc ls --json` by the herdr space (`.where` prefix
+   plus the app name; see Field shapes) and keep the address.
+2. Operator away? Start the approval detector as a second service: read the
+   viewport every ~5s, notify on `Permission required:` + `Allow once`, one
+   notify per dialog hash (see Approval proxy).
+3. Start the recovery watcher with `--pane <addr> --project <dir>`, and a
+   runtime root of its own when the default lock is busy (see Run it).
+
+Before step 3 is running, do not read omo's bundle or permission-system
+source, inspect `settings.json` or preset names, enumerate `herdr
+workspace`/`herdr tab`, read session JSONL or shell history, or run
+`--once --dry-run` (that only debugs `watch.py`). The screen is the contract:
+the first real dialog defines its own layout, and the detection strings above
+are all the watcher needs.
 
 ## What it watches
 
@@ -61,6 +84,18 @@ more than one; a same-project pair is still ambiguous when files run out, so
 give each pane a stable `hc run --name` (or use different projects) if you need
 the handoff to name the exact predecessor session.
 
+## Field shapes (do not rediscover)
+
+`hc ls --json` and `hc get <addr> --json` do not share a shape, and getting
+this wrong costs a watcher restart:
+
+- `hc ls --json`: `.status` is a string (`"working"`), `.agent` names the app,
+  `.where` is `"<space> / <tab>"`, `.labels["herdr.space"]` is the space id.
+- `hc get <addr> --json`: `.status` is `{"app":"omo","state":"working"}`,
+  `.foreground.pid` and `.foreground.cwd` are the live process.
+- A space filter is a `.where` prefix match. Never enumerate `herdr workspace`
+  or `herdr tab` to find a monitored pane.
+
 ## Detection
 
 | Signal | Trigger |
@@ -70,6 +105,9 @@ the handoff to name the exact predecessor session.
 | fatal provider/compaction text at the prompt | persists `--fatal-grace` seconds (default 300) |
 | `Working (Ns` visible while status is not working | persists `--frozen-grace` seconds (default 600) |
 | `Goal blocked: … waiting_human` in the footer | persists `--blocked-grace` seconds (default 600) |
+
+A visible `Permission required:` dialog is user-wait, not a death signal:
+timers must not count it as a stall, and recovery must never touch it.
 
 Progress is the captured session JSONL's size/mtime plus CPU of the omo
 process tree (streaming model or a tool build). The herdr turn number is
@@ -85,7 +123,8 @@ work panel, then decides whether to defer or recover:
 - **defer** when the pane names a future wake (`Stall backstop ready …`,
   `goal continues in …`, `Cache-warm wait` with a wake source), shows active
   work (compaction, a running DAG wave or subagent, a `mon_` monitor, a CI/PR
-  watch), or CPU/session progress happened within `--context-grace`
+  watch), shows a `Permission required:` dialog (a human wait, never a
+  recovery), or CPU/session progress happened within `--context-grace`
   (default 180s)
 - **recover** when none of those hold
 
@@ -100,6 +139,45 @@ This is local reasoning over the TUI and session signals, not a model call: a
 watchdog must keep working while the provider path it watches is stalled. The
 intent lines, wake time, and active work are copied into the trigger evidence
 and the handoff prompt, so the successor knows what the predecessor was doing.
+
+## Approval proxy (operator away)
+
+When the operator leaves and asks for approvals to be proxied, run a second
+background service next to the recovery watcher. It is a string detector, not
+a model: poll the **viewport** (`hc read <addr>` without `--lines`; history
+still holds dialogs that were already answered) every ~5s and emit one notify
+line when the text contains both `Permission required:` and `Allow once`. Hash
+the dialog block so one dialog notifies once, and reset the hash when those
+strings disappear.
+
+The dialog is a TUI select: title `Permission required: <permission>`, body
+`Description:` / `Command:` / `File:` / `Path:` / `Directory:`, options in
+order `Allow once`, `Allow always`, [`Allow <tool> on <origin> always in this
+project`], `Deny`, `Deny with feedback`. The selected row is prefixed `→ `,
+and the default selection is `Allow once`, so approval is one `enter`.
+
+Invariants:
+
+- Read the dialog before pressing anything. Press `enter` only while the
+  viewport shows `→ Allow once`; re-read after the keypress.
+- Reply per request, not per notification: a second dialog after a fast
+  answer is a new hash.
+- Approval never substitutes for recovery. A dialog is a human wait; if the
+  operator is unreachable, report it instead of guessing.
+
+Standing policy unless the operator overrides:
+
+| Request | Action |
+|---|---|
+| `read`/`list`/`glob`/`grep`, `websearch`/`codesearch` | `Allow once` |
+| `edit`/`bash` inside the watched project or its `/tmp` workdir | `Allow once` |
+| read-only device probes (ssh, EDID, ddcutil, package metadata) | `Allow once` |
+| any other pane or process (`hc`, `herdr`, `kill`, `pkill`) | hold and report |
+| another project's worktree, another session's `~/.omo` data, global config or services | hold and report |
+
+The default permission preset is `full-access`, so a healthy session usually
+shows no dialog at all. Do not audit the preset or read omo's permission
+source to predict prompts; the screen is the contract.
 
 ## Known provider issues
 
@@ -162,9 +240,19 @@ compaction attempt.
 6. Verify the prompt is visible and the new turn is working. Recovery is
    capped at `--max-recoveries` per target per hour.
 
+### Adoption guard
+
+If the foreground pid and session file change without a `TRIGGER`/`RECOVER`
+line, the pane was restarted by something else (herdr keep, `hc run`, or the
+operator typing `omo`). Adopt the new session and do not hand off. Before any
+forced handoff, check `hc get` status/turn and the new session's first user
+message: a fresh session that already has user input or is running belongs to
+the operator, not to a corpse.
+
 ## Run it
 
-Dry run first:
+Dry run only while changing `watch.py`: it rehearses recovery, and is not a
+prerequisite for watching.
 
 ```bash
 pane=<address>  # from `hc ls --json`: .terminals[].address
@@ -179,6 +267,11 @@ As an omp background service (this is the normal mode):
 # notify regex="TRIGGER|DEFER|RECOVER|recover error"
 python3 ~/.agents/skills/omo-watch/watch.py --poll 15 --stall 900 --blocked-grace 600
 ```
+
+One watcher per runtime root: the default root's `lock` is single-owner. When
+another pane's watcher already holds it, give this pane its own root
+(`OMO_WATCH_RUNTIME=$XDG_RUNTIME_DIR/omo-watch-<addr>`); claims stay shared in
+`.../omo-watch/claims`, so the split cannot double-recover a pane.
 
 No `--pane` and no `--launch`: discovery follows every live omo, and each
 recovery restarts in that pane's own project. Add `--pane "$pane"` only when a
