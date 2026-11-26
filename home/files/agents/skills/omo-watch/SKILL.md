@@ -3,12 +3,14 @@ name: omo-watch
 description: >
   Watch omo terminals hosted by herdr-core (hc) and recover one that died,
   froze, hit a provider/compaction stall, shows a fatal message at the prompt,
-  or parks its goal loop with `Goal blocked ... waiting_human`. Recovery keeps
-  the pane's shell alive, kills only the omo process tree, restarts omo with
-  the previous thinking level, and submits a mass-ulw handoff prompt naming the
-  predecessor's error and session file. Use when asked to babysit, watch,
-  supervise, or auto-recover omo, or when a long omo run must survive provider
-  stalls and crashes.
+  or parks its goal loop with `Goal blocked ... waiting_human`. Timer triggers
+  are gated by pane context (Now/Next/Thought, scheduled wakes, running DAG
+  waves and monitors) so active work is given time before declaring death.
+  Recovery keeps the pane's shell alive, kills only the omo process tree,
+  restarts omo with the previous thinking level, and submits a mass-ulw
+  handoff prompt naming the predecessor's error, session file, and last
+  intention. Use when asked to babysit, watch, supervise, or auto-recover omo,
+  or when a long omo run must survive provider stalls and crashes.
 argument-hint: "[--pane ADDR] [--name NAME] [--project DIR]"
 ---
 
@@ -62,6 +64,31 @@ process tree (streaming model or a tool build). The herdr turn number is
 reported in the trigger evidence but is not a progress signal. TUI animation
 alone must not count: root CPU below 2% and no log growth is not progress.
 
+## Context gate
+
+A fired timer does not recover immediately. The watcher reads the last 80 pane
+lines, including `Now:`, `Next:`, `Thought:`, the footer, and the background
+work panel, then decides whether to defer or recover:
+
+- **defer** when the pane names a future wake (`Stall backstop ready …`,
+  `goal continues in …`, `Cache-warm wait` with a wake source), shows active
+  work (compaction, a running DAG wave or subagent, a `mon_` monitor, a CI/PR
+  watch), or CPU/session progress happened within `--context-grace`
+  (default 180s)
+- **recover** when none of those hold
+
+Each deferral is logged as
+`DEFER <pane> <mode>: <reason> | now=…; next=…; recheck in Ns`; the timer is
+re-checked after the named wake time or `--context-grace`. Every trigger mode
+gets `--context-max-defers` deferrals (default 3), and a single deferral is
+capped at `--context-max-wait` (default 1800s). A `Goal achieved` footer
+always defers, because a finished session has nothing to hand off.
+
+This is local reasoning over the TUI and session signals, not a model call: a
+watchdog must keep working while the provider path it watches is stalled. The
+intent lines, wake time, and active work are copied into the trigger evidence
+and the handoff prompt, so the successor knows what the predecessor was doing.
+
 ## Recovery
 
 1. Capture the pane tail, session path, last event, and recent error lines.
@@ -102,14 +129,15 @@ As an omp background service (this is the normal mode):
 
 ```bash
 # bash tool: name=omo-watch, pty=false, ready log="watchdog start",
-# notify regex="TRIGGER|RECOVER|recover error"
+# notify regex="TRIGGER|DEFER|RECOVER|recover error"
 python3 ~/.agents/skills/omo-watch/watch.py --pane "$pane" --poll 15 --stall 900 --blocked-grace 600
 ```
 
 Useful flags: `--name`, `--project`, `--launch`, `--force`, `--once`,
 `--dry-run`, `--poll`, `--stall`, `--absent-grace`, `--fatal-grace`,
-`--frozen-grace`, `--blocked-grace`, `--busy-pct`, `--max-recoveries`,
-`--ready-timeout`.
+`--frozen-grace`, `--blocked-grace`, `--context-grace`,
+`--context-max-wait`, `--context-max-defers`, `--busy-pct`,
+`--max-recoveries`, `--ready-timeout`.
 
 `--force` needs `--pane` or `--name` and touches only those targets (the
 intersection when both are given); it never recovers every discovered omo.

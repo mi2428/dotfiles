@@ -30,7 +30,7 @@ import sys
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, TypedDict, cast
 
 HOME = os.path.expanduser("~")
@@ -60,6 +60,29 @@ PROMPT_HEAD = (
 EFFORT_RE = re.compile(r"effort\s+(off|minimal|low|medium|high|xhigh|max)\b")
 # omo's goal loop parks in this state when it needs a human decision.
 BLOCKED_RE = re.compile(r"Goal blocked:.*waiting_human")
+# Context signals: what omo says it is doing, and when it expects a wake.
+BACKSTOP_RE = re.compile(
+    r"Stall backstop ready\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::(\d{2}))?"
+    r"\s*(?:GMT([+-]\d{1,2}))?"
+)
+WAKE_IN_RE = re.compile(r"goal continues in\s+([0-9][0-9ms\s.]{0,20})")
+CACHE_WARM_RE = re.compile(r"Cache-warm wait|wake source on duty", re.IGNORECASE)
+COMPACTING_RE = re.compile(
+    r"Compacting context|Compaction (?:in progress|running)", re.IGNORECASE
+)
+BACKGROUND_RE = re.compile(
+    r"(?:\bwave\s+\d+/\d+\b"
+    r"|\b\d+/\d+\s+done,\s+\d+\s+running\b"
+    r"|^[\s]*[▶⏵⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏].*\b(?:running|pending)\b"
+    r"|\bmon_[A-Za-z0-9]+\b"
+    r"|\bwatching\s+.*\b(?:CI|checks|PR)\b"
+    r"|\bbackground\b.*\b(?:job|task|process|wave)s?\b.*\b(?:running|active|pending)\b)",
+    re.IGNORECASE | re.MULTILINE,
+)
+ACHIEVED_RE = re.compile(r"Goal achieved", re.IGNORECASE)
+INTENT_RE = re.compile(r"^[\s]*(Now|Next)[\s]*:[\s]*(.+)$")
+THOUGHT_RE = re.compile(r"^[\s]*Thought[\s]*:")
+DURATION_TOKEN_RE = re.compile(r"(\d+)\s*([ms])", re.IGNORECASE)
 
 
 class Foreground(TypedDict, total=False):
@@ -122,6 +145,10 @@ class Target:
     recoveries: list[float] = field(default_factory=list[float])
     last_status: str | None = None
     thinking: str | None = None
+    # Context gate: a fired timer may be deferred while the pane shows work.
+    defer_until: float = 0.0
+    defers: dict[str, int] = field(default_factory=dict[str, int])
+    last_context: dict[str, Any] = field(default_factory=dict[str, Any])
 
 
 @dataclass(frozen=True)
@@ -465,6 +492,195 @@ def pane_blocked(text: str) -> str | None:
     return None
 
 
+def parse_duration(text: str) -> float | None:
+    """Return seconds for tokens such as ``4m 30s`` or a truncated ``1m 2``."""
+    total = 0.0
+    found = False
+    for amount, unit in DURATION_TOKEN_RE.findall(text):
+        found = True
+        total += int(amount) * (60 if unit.lower() == "m" else 1)
+    return total if found else None
+
+
+def parse_backstop(line: str) -> float | None:
+    """Parse omo's ``Stall backstop ready <date> <time> GMT+9`` footer."""
+    match = BACKSTOP_RE.search(line)
+    if not match:
+        return None
+    date, hour_minute, seconds, offset = match.groups()
+    try:
+        stamp = datetime.strptime(f"{date} {hour_minute}", "%Y-%m-%d %H:%M")
+        if seconds:
+            stamp = stamp.replace(second=int(seconds))
+        if offset:
+            tz = timezone(timedelta(hours=int(offset)))
+        else:
+            tz = datetime.now().astimezone().tzinfo
+        return stamp.replace(tzinfo=tz).timestamp()
+    except ValueError:
+        return None
+
+
+def pane_context(text: str, now: float) -> dict[str, Any]:
+    """Extract what omo says it is doing and when it expects to wake up."""
+    lines = [line.rstrip() for line in text.splitlines()]
+    tail = lines[-80:]
+    active: list[str] = []
+    wake_epoch: float | None = None
+    wake_reason: str | None = None
+    for line in tail:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if wake_epoch is None:
+            parsed = parse_backstop(stripped)
+            if parsed is not None and parsed > now:
+                wake_epoch = parsed
+                wake_reason = stripped[:200]
+        if wake_epoch is None:
+            match = WAKE_IN_RE.search(stripped)
+            if match:
+                seconds = parse_duration(match.group(1))
+                if seconds:
+                    wake_epoch = now + seconds
+                    wake_reason = stripped[:200]
+        if (
+            CACHE_WARM_RE.search(stripped)
+            or COMPACTING_RE.search(stripped)
+            or BACKGROUND_RE.search(stripped)
+        ) and stripped not in active:
+            active.append(stripped[:200])
+    intent: dict[str, str] = {}
+    for line in tail:
+        match = INTENT_RE.match(line)
+        if match:
+            intent[match.group(1).lower()] = match.group(2).strip()[:300]
+    thought: str | None = None
+    for index in range(len(lines) - 1, -1, -1):
+        if not THOUGHT_RE.match(lines[index]):
+            continue
+        chunk: list[str] = []
+        for follow in lines[index + 1 : index + 5]:
+            if (
+                not follow.strip()
+                or INTENT_RE.match(follow)
+                or THOUGHT_RE.match(follow)
+            ):
+                break
+            chunk.append(follow.strip())
+        thought = " ".join(chunk)[:400] or None
+        break
+    footer = "\n".join([line for line in lines if line.strip()][-8:])
+    return {
+        "wake_at": (
+            datetime.fromtimestamp(wake_epoch, timezone.utc)
+            .astimezone()
+            .isoformat(timespec="seconds")
+            if wake_epoch
+            else None
+        ),
+        "wake_epoch": wake_epoch,
+        "wake_reason": wake_reason,
+        "active": active[:4],
+        "goal_achieved": bool(ACHIEVED_RE.search(footer)),
+        "intent": intent or None,
+        "thought": thought,
+    }
+
+
+def session_age(target: Target, now: float) -> float | None:
+    """Seconds since the session JSONL was last written, if it exists."""
+    if not target.session:
+        return None
+    try:
+        return max(0.0, now - os.stat(target.session).st_mtime)
+    except OSError:
+        return None
+
+
+def infer_context(
+    args: argparse.Namespace,
+    target: Target,
+    mode: str,
+    ctx: dict[str, Any],
+    now: float,
+) -> tuple[str, float, str]:
+    """Decide whether a fired timer should wait for context or recover now."""
+    if ctx.get("goal_achieved"):
+        return (
+            "wait",
+            now + args.context_max_wait,
+            "goal achieved; leaving the finished session alone",
+        )
+    defers = target.defers.get(mode, 0)
+    if defers >= args.context_max_defers:
+        return (
+            "recover",
+            0.0,
+            f"context deferrals exhausted ({defers}/{args.context_max_defers})",
+        )
+    wake_epoch = ctx.get("wake_epoch")
+    if isinstance(wake_epoch, (int, float)) and wake_epoch > now:
+        until = min(wake_epoch + 60.0, now + args.context_max_wait)
+        return "wait", until, f"scheduled wake: {ctx.get('wake_reason')}"
+    active = cast(list[str], ctx.get("active") or [])
+    if active:
+        return (
+            "wait",
+            now + args.context_grace,
+            "pane shows active work: " + " | ".join(item[:120] for item in active[:2]),
+        )
+    if now - target.last_progress < args.context_grace:
+        return (
+            "wait",
+            now + args.context_grace,
+            f"CPU/session progress {int(now - target.last_progress)}s ago",
+        )
+    age = session_age(target, now)
+    if age is not None and age < args.context_grace:
+        return "wait", now + args.context_grace, f"session written {int(age)}s ago"
+    return (
+        "recover",
+        0.0,
+        "no scheduled wake, active work, or recent progress in the pane",
+    )
+
+
+def gate_action(
+    args: argparse.Namespace,
+    target: Target,
+    mode: str,
+    evidence: dict[str, Any],
+    text: str,
+    now: float,
+) -> dict[str, Any] | None:
+    """Defer a fired timer when the pane context says work is still coming."""
+    if now < target.defer_until:
+        return None
+    ctx = pane_context(text, now)
+    decision, until, reason = infer_context(args, target, mode, ctx, now)
+    if decision == "wait":
+        if not ctx.get("goal_achieved"):
+            target.defers[mode] = target.defers.get(mode, 0) + 1
+        target.defer_until = max(now + 1.0, until)
+        target.last_context = ctx
+        hint = cast(dict[str, str], ctx.get("intent") or {})
+        focus = "; ".join(
+            f"{key}={value[:100]}" for key, value in hint.items() if value
+        )
+        log(
+            f"DEFER {target.addr} {mode}: {reason}"
+            + (f" | {focus}" if focus else "")
+            + f"; recheck in {int(target.defer_until - now)}s"
+        )
+        return None
+    target.defer_until = 0.0
+    gated = dict(evidence)
+    gated["context"] = ctx
+    gated["context_verdict"] = reason
+    return gated
+
+
 def fallback_error(mode: str, evidence: dict[str, Any]) -> str:
     """Describe a trigger in prose when no log error line is available."""
     if mode == "omo-absent":
@@ -608,6 +824,8 @@ def build_prompt(
         f"- 端末/旧PID: {addr} / {evidence.get('old_pid')}\n"
         f"- 旧セッション: {target.session or '(none)'}\n"
         f"- 最後のイベント: {last_event(target.session)}\n"
+        f"- 文脈判定: {evidence.get('context_verdict', '(none)')}\n"
+        f"- ペイン文脈: {json.dumps(evidence.get('context', {}), ensure_ascii=False)[:500]}\n"
         f"- 作業ディレクトリ: {target.project}\n"
         f"- 詳細ログ: {handoff}\n\n"
         "未完了タスクを特定し、mass ultrawork (mass-ulw) の依存グラフで、"
@@ -753,6 +971,8 @@ def evaluate(
                 target.fatal_since = None
                 target.frozen_since = None
                 target.blocked_since = None
+                target.defer_until = 0.0
+                target.defers.clear()
                 log(f"{address}: omo pid {pid} session={target.session}")
             current_fingerprint = fingerprint(target)
             changed = current_fingerprint != target.fingerprint
@@ -760,6 +980,8 @@ def evaluate(
             root_pct, other_pct, pids = cpu_activity(target, pid)
             if changed or root_pct >= args.busy_pct or other_pct >= 0.5:
                 target.last_progress = now
+                target.defer_until = 0.0
+                target.defers.clear()
             previous_state = target.last_status
             state = status_state(discovered.info)
             target.last_status = state
@@ -770,6 +992,8 @@ def evaluate(
                 target.fatal_since = None
                 target.frozen_since = None
                 target.blocked_since = None
+                target.defer_until = 0.0
+                target.defers.clear()
             text = pane_text(address, 120)
             effort = EFFORT_RE.search(text)
             if effort:
@@ -782,66 +1006,62 @@ def evaluate(
                 target.frozen_since = None
                 target.blocked_since = None
                 if now - target.last_progress >= args.stall:
-                    actions.append(
-                        (
-                            address,
-                            target,
-                            "no-progress",
-                            {
-                                "stalled_seconds": int(now - target.last_progress),
-                                "turn": next(
-                                    (
-                                        row.get("turn")
-                                        for row in ls_terms()
-                                        if row.get("address") == address
-                                    ),
-                                    None,
-                                ),
-                                "root_cpu_pct": round(root_pct, 2),
-                                "children_cpu_pct": round(other_pct, 2),
-                                "processes": pids,
-                                "last_event": last_event(target.session),
-                                "pane_status": pane_status(text),
-                            },
-                        )
+                    evidence = {
+                        "stalled_seconds": int(now - target.last_progress),
+                        "turn": next(
+                            (
+                                row.get("turn")
+                                for row in ls_terms()
+                                if row.get("address") == address
+                            ),
+                            None,
+                        ),
+                        "root_cpu_pct": round(root_pct, 2),
+                        "children_cpu_pct": round(other_pct, 2),
+                        "processes": pids,
+                        "last_event": last_event(target.session),
+                        "pane_status": pane_status(text),
+                    }
+                    gated = gate_action(
+                        args, target, "no-progress", evidence, text, now
                     )
+                    if gated is not None:
+                        actions.append((address, target, "no-progress", gated))
                 continue
             if re.search(r"Working \(\d+s", text):
                 target.frozen_since = target.frozen_since or now
                 if now - target.frozen_since >= args.frozen_grace:
-                    actions.append(
-                        (
-                            address,
-                            target,
-                            "frozen-working",
-                            {
-                                "frozen_seconds": int(now - target.frozen_since),
-                                "state": state,
-                                "last_event": last_event(target.session),
-                                "pane_status": pane_status(text),
-                            },
-                        )
+                    evidence = {
+                        "frozen_seconds": int(now - target.frozen_since),
+                        "state": state,
+                        "last_event": last_event(target.session),
+                        "pane_status": pane_status(text),
+                    }
+                    gated = gate_action(
+                        args, target, "frozen-working", evidence, text, now
                     )
+                    if gated is not None:
+                        actions.append((address, target, "frozen-working", gated))
                 continue
             target.frozen_since = None
             blocked = pane_blocked(text)
             if blocked:
                 target.blocked_since = target.blocked_since or now
                 if now - target.blocked_since >= args.blocked_grace:
-                    actions.append(
-                        (
-                            address,
-                            target,
-                            "blocked-at-prompt",
-                            {
-                                "blocked_seconds": int(now - target.blocked_since),
-                                "state": state,
-                                "blocked": blocked,
-                                "last_event": last_event(target.session),
-                                "pane_status": pane_status(text),
-                            },
-                        )
+                    evidence = {
+                        "blocked_seconds": int(now - target.blocked_since),
+                        "state": state,
+                        "blocked": blocked,
+                        "last_event": last_event(target.session),
+                        "pane_status": pane_status(text),
+                    }
+                    gated = gate_action(
+                        args, target, "blocked-at-prompt", evidence, text, now
                     )
+                    if gated is not None:
+                        actions.append(
+                            (address, target, "blocked-at-prompt", gated)
+                        )
                 continue
             target.blocked_since = None
             fatal = pane_fatal(text)
@@ -850,18 +1070,18 @@ def evaluate(
                 if signature != target.fatal_sig:
                     target.fatal_sig, target.fatal_since = signature, now
                 if now - (target.fatal_since or now) >= args.fatal_grace:
-                    actions.append(
-                        (
-                            address,
-                            target,
-                            "fatal-at-prompt",
-                            {
-                                "fatal": fatal,
-                                "last_event": last_event(target.session),
-                                "pane_status": pane_status(text),
-                            },
-                        )
+                    evidence = {
+                        "fatal": fatal,
+                        "last_event": last_event(target.session),
+                        "pane_status": pane_status(text),
+                    }
+                    gated = gate_action(
+                        args, target, "fatal-at-prompt", evidence, text, now
                     )
+                    if gated is not None:
+                        actions.append(
+                            (address, target, "fatal-at-prompt", gated)
+                        )
             else:
                 target.fatal_sig = None
                 target.fatal_since = None
@@ -1013,6 +1233,8 @@ def recover(
     target.fatal_since = None
     target.frozen_since = None
     target.blocked_since = None
+    target.defer_until = 0.0
+    target.defers.clear()
 
 
 def select(
@@ -1053,6 +1275,7 @@ def run(args: argparse.Namespace) -> int:
         log(
             f"watchdog start: pane={args.pane or '-'} name={args.name or '-'} "
             f"project={args.project or '-'} poll={args.poll} stall={args.stall} "
+            f"context={args.context_grace}s/{args.context_max_defers} "
             f"dry_run={args.dry_run}"
         )
         states: dict[str, Target] = {}
@@ -1097,6 +1320,8 @@ def run(args: argparse.Namespace) -> int:
                     target.fatal_since = None
                     target.frozen_since = None
                     target.blocked_since = None
+                    target.defer_until = 0.0
+                    target.defers.clear()
                     target.cpu = None
                     target.boot_until = max(
                         target.boot_until, resume_at + args.absent_grace
@@ -1153,6 +1378,21 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--fatal-grace", type=float, default=300)
     parser.add_argument("--frozen-grace", type=float, default=600)
     parser.add_argument("--blocked-grace", type=float, default=600)
+    parser.add_argument(
+        "--context-grace",
+        type=float,
+        default=180,
+        help="extra wait when the pane shows active work or a scheduled wake",
+    )
+    parser.add_argument(
+        "--context-max-wait", type=float, default=1800, help="cap for one deferral"
+    )
+    parser.add_argument(
+        "--context-max-defers",
+        type=int,
+        default=3,
+        help="context deferrals allowed per trigger before recovering",
+    )
     parser.add_argument("--busy-pct", type=float, default=2.0)
     parser.add_argument("--max-recoveries", type=int, default=3)
     parser.add_argument("--ready-timeout", type=float, default=120)
