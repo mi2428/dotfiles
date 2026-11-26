@@ -9,10 +9,11 @@ description: >
   Recovery keeps the pane's shell alive, kills only the omo process tree,
   restarts omo with the previous thinking level, and submits a mass-ulw
   handoff prompt naming the predecessor's error, session file, and last
-  intention. A companion reporter prints one progress summary per interval,
-  because a watcher that only logs heartbeats goes silent in chat. Use when
-  asked to babysit, watch, supervise, or auto-recover omo, or when a long omo
-  run must survive provider stalls and crashes.
+  intention. The skill also documents a periodic progress reporter (bash +
+  hc + jq) so the agent can summarize what is moving in chat, because a
+  watcher that only logs heartbeats goes silent. Use when asked to babysit,
+  watch, supervise, or auto-recover omo, or when a long omo run must survive
+  provider stalls and crashes.
 argument-hint: "[--pane ADDR] [--name NAME] [--project DIR] [--launch-pane ADDR=CMD]"
 ---
 
@@ -200,25 +201,37 @@ would use without killing or sending.
 ## Periodic reporting
 
 A watcher that only writes heartbeats to `watch.log` leaves the chat silent for
-hours. The owning agent reports progress on a cadence, so run `report.py` as a
-second background service next to the watcher:
+hours. The owning agent reports progress on a cadence, but that does not need a
+maintained program: run the snippet as a second background service and adapt
+its fields to the pane.
 
 ```bash
-# bash tool: name=omo-report, pty=false, ready log="REPORT", notify regex="REPORT "
-python3 ~/.agents/skills/omo-watch/report.py --pane "$pane" --interval 600
+# bash tool: name=omo-report, pty=false, ready log="REPORT ", notify regex="REPORT "
+addr=<pane address>
+sess_dir=~/.omo/agent/sessions/--<project path with / as ->--
+prev=
+while :; do
+  st=$(hc get "$addr" --json | jq -r 'if (.status|type)=="string" then .status else .status.state end')
+  tail=$(hc read "$addr" --lines 40)
+  ctx=$(printf '%s\n' "$tail" | grep -oE '[0-9]+K/1M \([0-9.]+%\)' | tail -1)
+  dag=$(printf '%s\n' "$tail" | grep -oE '[0-9]+/[0-9]+ done, *[0-9]+ running' | tail -1)
+  act=$(printf '%s\n' "$tail" | grep -E '^ *▶ ' | tail -1 | sed -E 's/^ *▶ ([^ ]+).*· *(([0-9]+m )?[0-9]+s)$/\1 \2/')
+  goal=$(printf '%s\n' "$tail" | grep -oE 'goal continues in [0-9]+m? ?[0-9]*s?' | tail -1)
+  sess=$(stat -c %s "$(ls -t "$sess_dir"/*.jsonl | head -1)")
+  grow=$([ -n "$prev" ] && echo $((sess - prev)) || echo 0); prev=$sess
+  printf 'REPORT %s | state=%s | ctx=%s | dag=%s | active=%s | %s | session=%+dB\n' \
+    "$(date +%H:%M)" "$st" "$ctx" "$dag" "$act" "$goal" "$grow"
+  sleep 600
+done
 ```
 
-Each interval it prints one `REPORT` line: herdr state and pid, footer context
-and effort, session JSONL growth since the previous report, running DAG wave,
-active item and age, goal state, `Now:`/`Next:` intent, and the watcher's last
-log line. The notify regex delivers that line to the agent, which posts a short
-chat summary; `--once` prints a single snapshot. Pass `--runtime` when the
-watcher uses an `OMO_WATCH_RUNTIME` other than the default so `watch=` reads the
-right log.
-
-Report immediately on `TRIGGER`, `DEFER`, and `RECOVER`, and keep the interval
-at or below `--stall` (900s) so a stall is visible in chat before recovery
-fires.
+Each line is delivered by the notify regex; post a short chat summary from it,
+adding `Now:`/`Next:` or the watcher's last log line when they matter. Keep the
+interval at or below `--stall` (900s) so a stall is visible in chat before
+recovery fires, and report `TRIGGER`/`DEFER`/`RECOVER` immediately instead of
+waiting for the next tick. Bash + `hc` + `jq` are enough: the pane text and
+`hc ls/get --json` are the whole interface, so extra fields or filters stay a
+one-line edit.
 
 ## Operate
 
@@ -236,6 +249,8 @@ fires.
   like a stall or a crash.
 - Force a handoff now: `--force --pane <addr>` or `--force --name <name>`
   (omit `--dry-run` to act).
+- No test suite ships with the skill: after changing `watch.py`, verify with
+  `--once --dry-run` plus a live `--once` probe instead of unit tests.
 - The service dies with the owning omp session. That is deliberate: the
   watcher is the agent's job, not a machine-wide daemon. Restart it from the
   skill when a new session takes over.
