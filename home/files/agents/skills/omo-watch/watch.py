@@ -24,6 +24,7 @@ import json
 import os
 import re
 import shutil
+import shlex
 import signal
 import subprocess
 import sys
@@ -681,6 +682,18 @@ def gate_action(
     return gated
 
 
+def launch_cwd(launch: str) -> str | None:
+    """Return the directory a launch command cd's into, if it names one."""
+    try:
+        tokens = shlex.split(launch)
+    except ValueError:
+        return None
+    for index, token in enumerate(tokens[:-1]):
+        if token == "cd":
+            return os.path.expanduser(tokens[index + 1])
+    return None
+
+
 def fallback_error(mode: str, evidence: dict[str, Any]) -> str:
     """Describe a trigger in prose when no log error line is available."""
     if mode == "omo-absent":
@@ -1167,6 +1180,22 @@ def recover(
         level = effort.group(1) if effort else target.thinking
         if level:
             launch = f"omo --thinking {level}"
+    expected_cwd = launch_cwd(launch) or target.project
+    if mode == "omo-absent":
+        current = get_term(addr) or {}
+        current_fg = current.get("foreground") or {}
+        if is_omo(current_fg):
+            log(
+                f"{addr}: omo is already back (pid {current_fg.get('pid')}, "
+                f"cwd={current_fg.get('cwd')}); skipping absent recovery"
+            )
+            target.absent_since = None
+            target.boot_until = now + 120
+            return
+    if expected_cwd and not os.path.isdir(expected_cwd):
+        log(f"{addr}: launch cwd {expected_cwd} does not exist; recovery aborted")
+        target.boot_until = now + 300
+        return
     handoff = os.path.join(
         RUNTIME,
         "handoffs",
@@ -1205,6 +1234,20 @@ def recover(
     log(f"{addr}: launched `{launch}`")
     if not wait_omo(addr, args.ready_timeout):
         log(f"{addr}: omo did not become ready")
+        target.boot_until = now + 120
+        return
+    info = get_term(addr) or {}
+    actual_fg = info.get("foreground") or {}
+    actual_cwd = actual_fg.get("cwd") or ""
+    if (
+        expected_cwd
+        and actual_cwd
+        and os.path.realpath(actual_cwd) != os.path.realpath(expected_cwd)
+    ):
+        log(
+            f"{addr}: omo started in {actual_cwd}, expected {expected_cwd}; "
+            "handoff aborted"
+        )
         target.boot_until = now + 120
         return
     log(f"{addr}: submitting handoff prompt")

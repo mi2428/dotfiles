@@ -120,6 +120,11 @@ class PaneContextTest(unittest.TestCase):
         self.assertEqual(decision, "recover")
         self.assertIn("deferrals exhausted", reason)
 
+    def test_launch_cwd_parses_cd_target(self):
+        self.assertEqual(W.launch_cwd("cd /a/b && omo --thinking max"), "/a/b")
+        self.assertEqual(W.launch_cwd("cd '/a b' && omo"), "/a b")
+        self.assertIsNone(W.launch_cwd("omo --thinking max"))
+
     def test_gate_defers_three_times_then_recovers(self):
         original_log = W.log
         W.log = lambda _message: None

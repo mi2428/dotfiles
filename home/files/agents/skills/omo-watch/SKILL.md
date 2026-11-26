@@ -120,11 +120,16 @@ compaction attempt.
 ## Recovery
 
 1. Capture the pane tail, session path, last event, and recent error lines.
-2. Write the evidence and prompt to
+2. Verify the launch target: a `cd` path in `--launch` must exist, and for an
+   absent omo the foreground is re-checked so an omo the operator just started
+   is not killed. After the TUI returns, the new omo's cwd must match the launch
+   `cd` target (or the target project); otherwise the handoff is aborted instead
+   of being typed into a different workspace.
+3. Write the evidence and prompt to
    `$XDG_RUNTIME_DIR/omo-watch/handoffs/handoff-*.md`.
-3. SIGTERM then SIGKILL the foreground omo process tree. The pane's fish
+4. SIGTERM then SIGKILL the foreground omo process tree. The pane's fish
    process is not a descendant and survives.
-4. Wait for the shell, run `omo --thinking <level>`: the level comes from the
+5. Wait for the shell, run `omo --thinking <level>`: the level comes from the
    footer in the pane tail, else the last level captured while that omo was
    alive, else plain `omo`. A custom `--launch` is used as-is. Wait for the
    TUI, and submit:
