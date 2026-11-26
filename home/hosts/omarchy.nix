@@ -26,6 +26,15 @@ in
   home.homeDirectory = homeDirectory;
   home.stateVersion = "25.05";
   xdg.configFile."ghostty/config".text = lib.mkAfter "\nfont-size = 12\n";
+  # Keep the Herdr app tab-bar clone in dotfiles: new spaces open Files and Git.
+  xdg.configFile."herdr-app/mods/tabs-files/main.js" = {
+    source = ../files/config/herdr-app/mods/tabs-files/main.js;
+    force = true;
+  };
+  xdg.configFile."herdr-app/mods/tabs-files/mod.json" = {
+    source = ../files/config/herdr-app/mods/tabs-files/mod.json;
+    force = true;
+  };
   # Activation integrations use OS-managed Herdr and AI tools from the caller's PATH.
   home.emptyActivationPath = false;
   # Secret archives may contain a macOS-only pinentry path.
