@@ -89,6 +89,34 @@ watchdog must keep working while the provider path it watches is stalled. The
 intent lines, wake time, and active work are copied into the trigger evidence
 and the handoff prompt, so the successor knows what the predecessor was doing.
 
+## Known provider issues
+
+### Sakura AI: compaction stalls
+
+With `sakura` as the LLM provider (observed with `preview/GLM-5.3-Flash`),
+context compaction often hangs without any provider events:
+
+- `Compaction rejected: compaction generator failed: Summarization stream
+  stalled: no provider events for 300000ms; treating the request as dead`
+- `Provider stream start timed out after 300000ms`
+- followed by `System operation aborted`, then another
+  `Compacting context...` retry
+
+The failure looks provider-side, not local. omo's stall backstop wakes the goal,
+compaction retries, and the same 5-minute silence can repeat while the session
+sits at high context (observed at ~76%, 766k tokens). The context gate sees
+`Compacting context...` and `Cache-warm wait` and therefore defers; that is the
+correct default for a transient provider hiccup, but it cannot fix a compaction
+path that fails every time.
+
+Operational guidance: once the same session logs a compaction stall twice,
+prefer an explicit forced handoff (`--force --pane <addr>`) over waiting for
+`--stall`. A fresh session starts well below the compaction threshold, and the
+handoff prompt already carries the predecessor's session path so the successor
+can read only the last todo and `git status/diff`. Recording the exact error
+lines above in the handoff makes the successor avoid re-entering the same
+compaction attempt.
+
 ## Recovery
 
 1. Capture the pane tail, session path, last event, and recent error lines.
