@@ -8,6 +8,13 @@ if set -q DOTFILES_RESOLVED_HISTORY_FILE
     set -e DOTFILES_RESOLVED_HISTORY_FILE
 end
 set -l helper_file (path resolve "$__dotfiles_gh_review_script_dir/../home/files/config/fish/lib/dotfiles_git_ui_helpers.fish")
+if not test -f "$helper_file"
+    set -l config_home "$HOME/.config"
+    if set -q XDG_CONFIG_HOME; and test -n "$XDG_CONFIG_HOME"
+        set config_home "$XDG_CONFIG_HOME"
+    end
+    set helper_file "$config_home/fish/lib/dotfiles_git_ui_helpers.fish"
+end
 
 source "$helper_file"; or begin
     printf 'gh-review: failed to source helper: %s\n' "$helper_file" >&2

@@ -3,6 +3,13 @@
 set -g __dotfiles_git_b_self_path (path resolve (status filename))
 set -l script_dir (path dirname "$__dotfiles_git_b_self_path")
 set -l helper_file (path resolve "$script_dir/../home/files/config/fish/lib/dotfiles_git_ui_helpers.fish")
+if not test -f "$helper_file"
+    set -l config_home "$HOME/.config"
+    if set -q XDG_CONFIG_HOME; and test -n "$XDG_CONFIG_HOME"
+        set config_home "$XDG_CONFIG_HOME"
+    end
+    set helper_file "$config_home/fish/lib/dotfiles_git_ui_helpers.fish"
+end
 
 source "$helper_file"; or begin
     printf 'git-b: failed to source helper: %s\n' "$helper_file" >&2
