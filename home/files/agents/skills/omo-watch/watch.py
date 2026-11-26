@@ -1150,8 +1150,8 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--stall", type=float, default=900, help="working turn with no progress"
     )
     parser.add_argument("--absent-grace", type=float, default=30)
-    parser.add_argument("--fatal-grace", type=float, default=30)
-    parser.add_argument("--frozen-grace", type=float, default=60)
+    parser.add_argument("--fatal-grace", type=float, default=300)
+    parser.add_argument("--frozen-grace", type=float, default=600)
     parser.add_argument("--blocked-grace", type=float, default=600)
     parser.add_argument("--busy-pct", type=float, default=2.0)
     parser.add_argument("--max-recoveries", type=int, default=3)

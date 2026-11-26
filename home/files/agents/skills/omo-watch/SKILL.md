@@ -53,8 +53,8 @@ projects) if you need the handoff to name the exact predecessor session.
 |---|---|
 | omo foreground gone, shell remains | `--absent-grace` seconds (default 30) |
 | `status=working` with no progress | `--stall` seconds (default 900) |
-| fatal provider/compaction text at the prompt | persists `--fatal-grace` seconds (default 30) |
-| `Working (Ns` visible while status is not working | persists `--frozen-grace` seconds (default 60) |
+| fatal provider/compaction text at the prompt | persists `--fatal-grace` seconds (default 300) |
+| `Working (Ns` visible while status is not working | persists `--frozen-grace` seconds (default 600) |
 | `Goal blocked: … waiting_human` in the footer | persists `--blocked-grace` seconds (default 600) |
 
 Progress is the captured session JSONL's size/mtime plus CPU of the omo
