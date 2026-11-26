@@ -87,7 +87,6 @@ in
       force = true;
       source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/home/files/config/fcitx5/conf/classicui.conf";
     };
-    "fcitx5/themes/catppuccin-mocha-mauve" = mkLink fcitx5Theme;
     "fzf" = mkLink ../../files/config/fzf;
     "ghostty/config" = {
       force = true;
@@ -107,6 +106,11 @@ in
     "starship" = mkLink ../../files/config/starship;
     "tuicr/config.toml" = mkLink ../../files/config/tuicr/config.toml;
     "yazi" = mkLink yaziConfig;
+  };
+
+  # Fcitx5 loads themes from the XDG data directories, not the config ones.
+  xdg.dataFile = {
+    "fcitx5/themes/catppuccin-mocha-mauve" = mkLink fcitx5Theme;
   };
 
   home = {
