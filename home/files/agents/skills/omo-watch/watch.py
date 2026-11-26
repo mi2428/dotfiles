@@ -13,6 +13,11 @@ handoff prompt naming the predecessor's error and session file.
 Runtime state: ``$XDG_RUNTIME_DIR/omo-watch`` (log, lock, handoffs, paused);
 ``OMO_WATCH_RUNTIME`` overrides it.  A dry run takes ``lock-dry``, a real run
 takes ``lock``.  No systemd unit, no ``~/.local`` install.
+
+Each target restarts in its own project directory with the thinking level from
+its own footer, so one watcher supervises omos from different projects.  Pane
+claims (``.../omo-watch/claims``) are shared across runtime roots, so a second
+watcher skips panes the first one already owns instead of double-recovering.
 """
 
 from __future__ import annotations
@@ -44,8 +49,13 @@ HC = (
 )
 HC_ENV = dict(os.environ)
 HC_ENV.pop("HC_TERMINAL_ID", None)  # no <hc from=...> tags on typed commands
-RUNTIME = os.environ.get("OMO_WATCH_RUNTIME") or os.path.join(
-    os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/omo-watch-{os.getuid()}", "omo-watch"
+XDG_RUNTIME = os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/omo-watch-{os.getuid()}"
+RUNTIME = os.environ.get("OMO_WATCH_RUNTIME") or os.path.join(XDG_RUNTIME, "omo-watch")
+# Pane claims are shared across runtime roots: two watchers (any --pane filters)
+# may never recover the same terminal.  Locks live in a fixed directory so a
+# split runtime cannot split ownership.
+CLAIMS = os.environ.get("OMO_WATCH_CLAIMS") or os.path.join(
+    XDG_RUNTIME, "omo-watch", "claims"
 )
 SHELLS = {"fish", "bash", "zsh", "sh", "dash", "nu", "elvish", "ksh"}
 FATAL_RE = re.compile(
@@ -146,6 +156,8 @@ class Target:
     recoveries: list[float] = field(default_factory=list[float])
     last_status: str | None = None
     thinking: str | None = None
+    # flock held on this pane's claim file for this watcher's lifetime.
+    claim_fd: int | None = None
     # Context gate: a fired timer may be deferred while the pane shows work.
     defer_until: float = 0.0
     defers: dict[str, int] = field(default_factory=dict[str, int])
@@ -694,6 +706,40 @@ def launch_cwd(launch: str) -> str | None:
     return None
 
 
+def thinking_level(pane: str, target: Target) -> str | None:
+    """Return the footer's ``effort`` level, else the last level seen."""
+    effort = EFFORT_RE.search(pane)
+    return effort.group(1) if effort else target.thinking
+
+
+def launch_command(
+    args: argparse.Namespace, addr: str, target: Target, pane: str
+) -> str:
+    """Return the restart command for one target.
+
+    A plain ``--launch`` and the ``omo`` default are per-target: the command
+    cd's into the target's project and inherits the footer thinking level, so
+    one watcher can restart panes from different projects.  A custom
+    ``--launch`` only applies to panes the caller named with ``--pane`` (or
+    ``--name``); dynamically discovered panes keep their own project.
+    ``--launch-pane ADDR=CMD`` overrides one address explicitly.
+    """
+    override = args.launch_pane.get(addr)
+    if override:
+        return override
+    named = addr in args.pane or (
+        args.name is not None and target.name == args.name
+    )
+    custom = (args.launch or "").strip()
+    if custom and custom != "omo" and named:
+        return custom
+    level = thinking_level(pane, target)
+    command = "omo" if level is None else f"omo --thinking {level}"
+    if target.project:
+        return f"cd {shlex.quote(target.project)} && {command}"
+    return command
+
+
 def fallback_error(mode: str, evidence: dict[str, Any]) -> str:
     """Describe a trigger in prose when no log error line is available."""
     if mode == "omo-absent":
@@ -910,6 +956,83 @@ def discover(
     return found
 
 
+def claim_target(addr: str) -> tuple[int | None, int | None, str | None]:
+    """Claim ``addr`` for this watcher.
+
+    Returns ``(fd, holder_pid, error)``: an owned fd on success, the foreign
+    pid when another live watcher holds the pane, or an error string when the
+    claim directory is unusable (the caller then watches the pane unclaimed).
+    The flock dies with the process, so a crashed watcher never leaves a pane
+    stuck.
+    """
+    try:
+        os.makedirs(CLAIMS, mode=0o700, exist_ok=True)
+        path = os.path.join(CLAIMS, f"{addr}.claim")
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    except OSError as exc:
+        return None, None, str(exc)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        holder: int | None = None
+        try:
+            raw = os.pread(fd, 32, 0).strip()
+            holder = int(raw) if raw else None
+        except (OSError, ValueError):
+            pass
+        os.close(fd)
+        return None, holder, None
+    try:
+        os.ftruncate(fd, 0)
+        os.write(fd, f"{os.getpid()}\n".encode())
+    except OSError:
+        pass
+    return fd, None, None
+
+
+def release_claim(target: Target) -> None:
+    """Release this watcher's claim on ``target``'s pane."""
+    fd = target.claim_fd
+    target.claim_fd = None
+    if fd is None:
+        return
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    except OSError:
+        pass
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+
+
+def ensure_target(
+    args: argparse.Namespace,
+    states: dict[str, Target],
+    address: str,
+    discovered: DiscoveredTerminal,
+) -> Target | None:
+    """Return the tracked target, claiming its pane for this watcher first."""
+    target = states.get(address)
+    if target is not None:
+        return target
+    fd: int | None = None
+    if not args.dry_run:
+        fd, holder, error = claim_target(address)
+        if fd is None and holder is not None:
+            log(f"{address}: watched by another omo-watch (pid {holder}); skipping")
+            return None
+        if fd is None:
+            log(f"{address}: claim unavailable ({error}); watching unclaimed")
+    target = Target(address, discovered.project, discovered.name, claim_fd=fd)
+    states[address] = target
+    log(
+        f"{address}: watching (project={discovered.project}, "
+        f"name={discovered.name})"
+    )
+    return target
+
+
 def fingerprint(target: Target) -> tuple[int, int]:
     """Return the session file's size/mtime pair used to detect progress."""
     if not target.session:
@@ -951,17 +1074,12 @@ def evaluate(
             continue
         if info.get("state") != "live":
             log(f"{address}: target gone; dropping")
-            del states[address]
+            release_claim(states.pop(address))
     actions: list[Action] = []
     for address, discovered in seen.items():
-        target = states.get(address)
+        target = ensure_target(args, states, address, discovered)
         if target is None:
-            target = Target(address, discovered.project, discovered.name)
-            states[address] = target
-            log(
-                f"{address}: watching (project={discovered.project}, "
-                f"name={discovered.name})"
-            )
+            continue
         foreground = discovered.foreground
         if discovered.omo_running:
             target.absent_since = None
@@ -1174,12 +1292,7 @@ def recover(
         errors = pane_fatal(pane)
     if not errors:
         errors = [fallback_error(mode, evidence)]
-    launch = args.launch
-    if launch.strip() == "omo":
-        effort = EFFORT_RE.search(pane)
-        level = effort.group(1) if effort else target.thinking
-        if level:
-            launch = f"omo --thinking {level}"
+    launch = launch_command(args, addr, target, pane)
     expected_cwd = launch_cwd(launch) or target.project
     if mode == "omo-absent":
         current = get_term(addr) or {}
@@ -1331,10 +1444,9 @@ def run(args: argparse.Namespace) -> int:
             if not targets:
                 log("--force: no matching target")
             for address, discovered in targets.items():
-                target = states.get(address) or Target(
-                    address, discovered.project, discovered.name
-                )
-                states[address] = target
+                target = ensure_target(args, states, address, discovered)
+                if target is None:
+                    continue
                 if not target.session:
                     session = newest_session(
                         target.project, claimed_sessions(states, address)
@@ -1439,7 +1551,17 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--busy-pct", type=float, default=2.0)
     parser.add_argument("--max-recoveries", type=int, default=3)
     parser.add_argument("--ready-timeout", type=float, default=120)
-    parser.add_argument("--launch", default="omo", help="command used to start omo")
+    parser.add_argument("--launch", default="omo", help=(
+        "restart command for the panes named by --pane/--name; other panes "
+        "restart with `cd <project> && omo --thinking <footer level>`"
+    ))
+    parser.add_argument(
+        "--launch-pane",
+        action="append",
+        default=[],
+        metavar="ADDR=CMD",
+        help="restart command for one pane address (repeatable)",
+    )
     parser.add_argument(
         "--force",
         action="store_true",
@@ -1447,7 +1569,15 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     )
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    overrides: dict[str, str] = {}
+    for pair in args.launch_pane:
+        addr, sep, command = pair.partition("=")
+        if not sep or not addr.strip() or not command.strip():
+            parser.error(f"--launch-pane expects ADDR=CMD, got {pair!r}")
+        overrides[addr.strip()] = command.strip()
+    args.launch_pane = overrides
+    return args
 
 
 def main(argv: Sequence[str]) -> int:

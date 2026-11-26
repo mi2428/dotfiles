@@ -11,7 +11,7 @@ description: >
   handoff prompt naming the predecessor's error, session file, and last
   intention. Use when asked to babysit, watch, supervise, or auto-recover omo,
   or when a long omo run must survive provider stalls and crashes.
-argument-hint: "[--pane ADDR] [--name NAME] [--project DIR]"
+argument-hint: "[--pane ADDR] [--name NAME] [--project DIR] [--launch-pane ADDR=CMD]"
 ---
 
 # omo-watch
@@ -44,10 +44,19 @@ omo is restarted there. If the whole terminal disappears, the watcher cannot
 know where to recreate it; pass `--pane` for the pane that must be recovered.
 
 Multiple omos are monitored independently, with per-target timers, recovery
-budget, and thinking level. Each target claims a different session file while
-the project has more than one; a same-project pair is still ambiguous when
-files run out, so give each pane a stable `hc run --name` (or use different
-projects) if you need the handoff to name the exact predecessor session.
+budget, thinking level, and restart command: a recovered target is relaunched
+as `cd <its project> && omo --thinking <its footer level>`, so one watcher can
+supervise panes from different projects. A custom `--launch` (or a per-pane
+`--launch-pane ADDR=CMD`) applies only to panes the caller named with
+`--pane`/`--name` and never leaks onto a dynamically discovered pane in another
+project. Pane claims (`$XDG_RUNTIME_DIR/omo-watch/claims/<addr>.claim`, flock)
+are shared across runtime roots: a second watcher logs
+`watched by another omo-watch (pid N); skipping` and leaves the pane alone, so
+start one watcher without `--pane`/`--launch` and it owns every omo on the
+machine. Each target also claims a different session file while the project has
+more than one; a same-project pair is still ambiguous when files run out, so
+give each pane a stable `hc run --name` (or use different projects) if you need
+the handoff to name the exact predecessor session.
 
 ## Detection
 
@@ -129,10 +138,12 @@ compaction attempt.
    `$XDG_RUNTIME_DIR/omo-watch/handoffs/handoff-*.md`.
 4. SIGTERM then SIGKILL the foreground omo process tree. The pane's fish
    process is not a descendant and survives.
-5. Wait for the shell, run `omo --thinking <level>`: the level comes from the
+5. Wait for the shell and start the target's launch command: by default
+   `cd <project> && omo --thinking <level>`, where the level comes from the
    footer in the pane tail, else the last level captured while that omo was
-   alive, else plain `omo`. A custom `--launch` is used as-is. Wait for the
-   TUI, and submit:
+   alive, else plain `omo`. A custom `--launch` is used as-is for the panes
+   named by `--pane`/`--name`; `--launch-pane ADDR=CMD` overrides one address.
+   Wait for the TUI, and submit:
 
    ```text
    mass ulw で作業を引き継いでください。前任者は以下のエラーで停止していました
@@ -145,7 +156,7 @@ compaction attempt.
    - 詳細ログ: ...
    ```
 
-5. Verify the prompt is visible and the new turn is working. Recovery is
+6. Verify the prompt is visible and the new turn is working. Recovery is
    capped at `--max-recoveries` per target per hour.
 
 ## Run it
@@ -163,10 +174,16 @@ As an omp background service (this is the normal mode):
 ```bash
 # bash tool: name=omo-watch, pty=false, ready log="watchdog start",
 # notify regex="TRIGGER|DEFER|RECOVER|recover error"
-python3 ~/.agents/skills/omo-watch/watch.py --pane "$pane" --poll 15 --stall 900 --blocked-grace 600
+python3 ~/.agents/skills/omo-watch/watch.py --poll 15 --stall 900 --blocked-grace 600
 ```
 
-Useful flags: `--name`, `--project`, `--launch`, `--force`, `--once`,
+No `--pane` and no `--launch`: discovery follows every live omo, and each
+recovery restarts in that pane's own project. Add `--pane "$pane"` only when a
+terminal must be recreated after it disappears; a custom `--launch` belongs
+with it.
+
+Useful flags: `--name`, `--project`, `--launch`, `--launch-pane`, `--force`,
+`--once`,
 `--dry-run`, `--poll`, `--stall`, `--absent-grace`, `--fatal-grace`,
 `--frozen-grace`, `--blocked-grace`, `--context-grace`,
 `--context-max-wait`, `--context-max-defers`, `--busy-pct`,
@@ -185,6 +202,9 @@ would use without killing or sending.
 - `hc` is resolved from `PATH`; `OMO_WATCH_HC` pins an explicit binary.
 - Locks: `lock` for a real run, `lock-dry` for `--dry-run`, so a rehearsal
   never blocks the service (or vice versa). The lock file records the pid.
+- Claims: `.../omo-watch/claims/<addr>.claim` is flocked per pane and lives
+  outside `OMO_WATCH_RUNTIME`, so split runtime roots still cannot
+  double-recover one terminal.
 - Log: `.../watch.log` (heartbeat every 10 minutes).
 - Pause recovery but keep polling: `touch .../paused`; remove the file to
   resume. Every target is re-armed on resume, so a long pause cannot look
