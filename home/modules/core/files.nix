@@ -22,6 +22,28 @@ let
     rev = "6810349b28055dce54076712fc05fc68da4b8ec0";
     hash = "sha256-lJapSgRVENTrbmpVyn+UQabC9fpV1G1e+CdlJ090uvg=";
   };
+  catppuccinFcitx5 = pkgs.fetchFromGitHub {
+    owner = "catppuccin";
+    repo = "fcitx5";
+    rev = "393845cf3ed0e0000bfe57fe1b9ad75748e2547f";
+    hash = "sha256-ss0kW+ulvMhxeZKBrjQ7E5Cya+02eJrGsE4OLEkqKks=";
+  };
+  # Fcitx5 has no line-height option: each candidate row is the font height plus
+  # InputPanel/TextMargin top/bottom. Shrink those, and the matching highlight
+  # margins, to tighten vertical spacing.
+  fcitx5ThemeConf = pkgs.writeText "fcitx5-catppuccin-mocha-mauve-theme.conf" (
+    lib.replaceStrings
+      [ "Top=8" "Bottom=8" ]
+      [ "Top=3" "Bottom=3" ]
+      (builtins.readFile "${catppuccinFcitx5}/src/catppuccin-mocha-mauve/theme.conf")
+  );
+  fcitx5Theme = pkgs.runCommandLocal "fcitx5-catppuccin-mocha-mauve" { } ''
+    mkdir -p $out
+    for file in arrow.png highlight.svg panel.svg radio.png; do
+      ln -s ${catppuccinFcitx5}/src/catppuccin-mocha-mauve/$file $out/$file
+    done
+    ln -s ${fcitx5ThemeConf} $out/theme.conf
+  '';
   yaziConfig = pkgs.runCommandLocal "dotfiles-yazi-config" { } ''
     mkdir -p "$out"
     ln -s "${../../files/config/yazi/theme.toml}" "$out/theme.toml"
@@ -60,6 +82,12 @@ in
     "btop" = mkLink ../../files/config/btop;
     "e1s/config.yml" = mkLink ../../files/config/e1s/config.yml;
     "eza" = mkLink ../../files/config/eza;
+    # Fcitx5 rewrites classicui.conf in place, so keep the link writable.
+    "fcitx5/conf/classicui.conf" = {
+      force = true;
+      source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/home/files/config/fcitx5/conf/classicui.conf";
+    };
+    "fcitx5/themes/catppuccin-mocha-mauve" = mkLink fcitx5Theme;
     "fzf" = mkLink ../../files/config/fzf;
     "ghostty/config" = {
       force = true;
