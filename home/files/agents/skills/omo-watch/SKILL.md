@@ -215,7 +215,7 @@ while :; do
   tail=$(hc read "$addr" --lines 40)
   ctx=$(printf '%s\n' "$tail" | grep -oE '[0-9]+K/1M \([0-9.]+%\)' | tail -1)
   dag=$(printf '%s\n' "$tail" | grep -oE '[0-9]+/[0-9]+ done, *[0-9]+ running' | tail -1)
-  act=$(printf '%s\n' "$tail" | grep -E '^ *▶ ' | tail -1 | sed -E 's/^ *▶ ([^ ]+).*· *(([0-9]+m )?[0-9]+s)$/\1 \2/')
+  act=$(printf '%s\n' "$tail" | grep -E '^ *▶ ' | tail -1 | sed -E 's/^ *▶ ([^ ]+).*/\1/')
   goal=$(printf '%s\n' "$tail" | grep -oE 'goal continues in [0-9]+m? ?[0-9]*s?' | tail -1)
   sess=$(stat -c %s "$(ls -t "$sess_dir"/*.jsonl | head -1)")
   grow=$([ -n "$prev" ] && echo $((sess - prev)) || echo 0); prev=$sess
