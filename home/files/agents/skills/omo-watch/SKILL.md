@@ -9,8 +9,10 @@ description: >
   Recovery keeps the pane's shell alive, kills only the omo process tree,
   restarts omo with the previous thinking level, and submits a mass-ulw
   handoff prompt naming the predecessor's error, session file, and last
-  intention. Use when asked to babysit, watch, supervise, or auto-recover omo,
-  or when a long omo run must survive provider stalls and crashes.
+  intention. A companion reporter prints one progress summary per interval,
+  because a watcher that only logs heartbeats goes silent in chat. Use when
+  asked to babysit, watch, supervise, or auto-recover omo, or when a long omo
+  run must survive provider stalls and crashes.
 argument-hint: "[--pane ADDR] [--name NAME] [--project DIR] [--launch-pane ADDR=CMD]"
 ---
 
@@ -194,6 +196,29 @@ intersection when both are given); it never recovers every discovered omo.
 Add `--once` for a one-shot forced handoff, otherwise the normal watch loop
 continues after it. `--dry-run` writes the handoff and logs the launch it
 would use without killing or sending.
+
+## Periodic reporting
+
+A watcher that only writes heartbeats to `watch.log` leaves the chat silent for
+hours. The owning agent reports progress on a cadence, so run `report.py` as a
+second background service next to the watcher:
+
+```bash
+# bash tool: name=omo-report, pty=false, ready log="REPORT", notify regex="REPORT "
+python3 ~/.agents/skills/omo-watch/report.py --pane "$pane" --interval 600
+```
+
+Each interval it prints one `REPORT` line: herdr state and pid, footer context
+and effort, session JSONL growth since the previous report, running DAG wave,
+active item and age, goal state, `Now:`/`Next:` intent, and the watcher's last
+log line. The notify regex delivers that line to the agent, which posts a short
+chat summary; `--once` prints a single snapshot. Pass `--runtime` when the
+watcher uses an `OMO_WATCH_RUNTIME` other than the default so `watch=` reads the
+right log.
+
+Report immediately on `TRIGGER`, `DEFER`, and `RECOVER`, and keep the interval
+at or below `--stall` (900s) so a stall is visible in chat before recovery
+fires.
 
 ## Operate
 
