@@ -294,36 +294,48 @@ would use without killing or sending.
 ## Periodic reporting
 
 A watcher that only writes heartbeats to `watch.log` leaves the chat silent for
-hours. The owning agent reports progress on a cadence, but that does not need a
-maintained program: run the snippet as a second background service and adapt
-its fields to the pane.
+hours. The owning agent reports progress, but the notification layer disables
+`notify` for a job that matches too often — so emit on change and cap the
+cadence instead of printing unconditionally every 10 minutes. Run this snippet
+as a second background service:
 
 ```bash
 # bash tool: name=omo-report, pty=false, ready log="REPORT ", notify regex="REPORT "
 addr=<pane address>
 sess_dir=~/.omo/agent/sessions/--<project path with / as ->--
-prev=
+prev_size= last_emit=0 last_sig=
+FLOOR=300        # seconds between transition-driven reports
+ACTIVE_GAP=1200  # progress summary while the session grows
+IDLE_GAP=3600    # liveness line when nothing changes
 while :; do
-  st=$(hc get "$addr" --json | jq -r 'if (.status|type)=="string" then .status else .status.state end')
+  now=$(date +%s)
+  st=$(hc get "$addr" --json | jq -r 'if (.status|type)=="string" then .status else (.status.state // "?") end')
   tail=$(hc read "$addr" --lines 40)
   ctx=$(printf '%s\n' "$tail" | grep -oE '[0-9]+K/1M \([0-9.]+%\)' | tail -1)
   dag=$(printf '%s\n' "$tail" | grep -oE '[0-9]+/[0-9]+ done, *[0-9]+ running' | tail -1)
   act=$(printf '%s\n' "$tail" | grep -E '^ *▶ ' | tail -1 | sed -E 's/^ *▶ ([^ ]+).*/\1/')
   goal=$(printf '%s\n' "$tail" | grep -oE 'goal continues in [0-9]+m? ?[0-9]*s?' | tail -1)
   sess=$(stat -c %s "$(ls -t "$sess_dir"/*.jsonl | head -1)")
-  grow=$([ -n "$prev" ] && echo $((sess - prev)) || echo 0); prev=$sess
-  printf 'REPORT %s | state=%s | ctx=%s | dag=%s | active=%s | %s | session=%+dB\n' \
-    "$(date +%H:%M)" "$st" "$ctx" "$dag" "$act" "$goal" "$grow"
-  sleep 600
+  grow=0; [ -n "$prev_size" ] && grow=$((sess - prev_size)); prev_size=$sess
+  sig="$st|$dag|$act"; emit=0
+  if [ "$sig" != "$last_sig" ] && [ $((now - last_emit)) -ge $FLOOR ]; then emit=1; fi
+  if [ "$grow" -ne 0 ] && [ $((now - last_emit)) -ge $ACTIVE_GAP ]; then emit=1; fi
+  if [ $((now - last_emit)) -ge $IDLE_GAP ]; then emit=1; fi
+  if [ $emit -eq 1 ]; then
+    printf 'REPORT %s | state=%s | ctx=%s | dag=%s | active=%s | %s | session=%+dB\n' \
+      "$(date +%H:%M)" "$st" "$ctx" "$dag" "$act" "$goal" "$grow"
+    last_emit=$now; last_sig=$sig
+  fi
+  sleep 60
 done
 ```
 
 Each line is delivered by the notify regex; post a short chat summary from it,
-adding `Now:`/`Next:` or the watcher's last log line when they matter. Keep the
-interval at or below `--stall` (900s) so a stall is visible in chat before
-recovery fires, and report `TRIGGER`/`DEFER`/`RECOVER` immediately instead of
-waiting for the next tick. Bash + `hc` + `jq` are enough: the pane text and
-`hc ls/get --json` are the whole interface, so extra fields or filters stay a
+adding `Now:`/`Next:` or the watcher's last log line when they matter. Report
+`TRIGGER`/`DEFER`/`RECOVER` immediately instead of waiting for the next tick,
+and keep the progress gap at or below `--stall` (900s) so a stall is visible in
+chat while it matters. Bash + `hc` + `jq` are enough: the pane text and
+`hc get --json` are the whole interface, so extra fields or filters stay a
 one-line edit.
 
 ## Operate
