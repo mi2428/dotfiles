@@ -214,7 +214,10 @@ run_omp() {
     config_tmp=$(mktemp "$agent_dir/config.yml.XXXXXX")
     install -m 0600 "$source_dir/config.yml" "$config_tmp"
     mv -f "$config_tmp" "$agent_dir/config.yml"
-    ensure_link "$agent_dir/.env" "$source_dir/telemetry.env"
+    # Older revisions linked an OTLP exporter env here; drop the stale link.
+    if [ -L "$agent_dir/.env" ]; then
+        rm -f "$agent_dir/.env"
+    fi
     for file in models.yml AGENTS.md RULES.md; do
         ensure_link "$agent_dir/$file" "$source_dir/$file"
     done

@@ -4,7 +4,6 @@ let
 in
 {
   home.file = {
-    ".omp/agent/.env".source = source + /telemetry.env;
     ".omp/agent/models.yml".source = source + /models.yml;
     ".omp/agent/AGENTS.md".source = source + /AGENTS.md;
     ".omp/agent/RULES.md".source = source + /RULES.md;

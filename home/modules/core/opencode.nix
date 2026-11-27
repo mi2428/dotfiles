@@ -144,19 +144,9 @@ let
     }
   ];
 
-  opencodeOtelPlugin = {
-    package = "@devtheops/opencode-plugin-otel";
-    options = {
-      enabled = true;
-      endpoint = "https://signoz.tailef845a.ts.net";
-      protocol = "http/protobuf";
-      logsEnabled = true;
-    };
-  };
-
   commonOpenCodeConfig = {
     "$schema" = "https://opencode.ai/config.json";
-    plugins = [ opencodeOtelPlugin ];
+    plugins = [ ];
     mcp.servers.browse = {
       type = "local";
       command = [

@@ -139,7 +139,8 @@
         "surveyPromptDate": "2026-09-24T03:24:21.782Z",
         "surveyPromptIgnoredCount": 0
     },
-    "redhat.telemetry.enabled": true,
+    "redhat.telemetry.enabled": false,
+    "telemetry.telemetryLevel": "off",
     "githubPullRequests.pullBranch": "never",
     "claudeCode.preferredLocation": "panel",
     "python.defaultInterpreterPath": "/opt/homebrew/bin/python3",
