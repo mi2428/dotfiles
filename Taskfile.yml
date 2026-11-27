@@ -39,12 +39,6 @@ includes:
     vars:
       REPO_ROOT:
         ref: .REPO_ROOT
-  herdr:
-    taskfile: ./taskfiles/herdr.yml
-    flatten: true
-    vars:
-      REPO_ROOT:
-        ref: .REPO_ROOT
   secrets:
     taskfile: ./taskfiles/secrets.yml
     flatten: true
@@ -89,7 +83,6 @@ tasks:
         printf "$task_fmt" "$green" 'brew.sync' "$reset" 'Update Homebrew, then upgrade and apply the repo-managed Brewfile'
         printf "$task_fmt" "$green" 'pacman.sync' "$reset" 'Update and install repository and AUR packages with interactive review'
         printf "$task_fmt" "$green" 'fonts.install' "$reset" 'Build, check, and install the pinned Summer Ghost font'
-        printf "$task_fmt" "$green" 'herdr.theme' "$reset" 'Install the latest Herdr Omarchy Catppuccin layout and managed settings'
         printf "$task_fmt" "$green" 'ai.check' "$reset" 'Check AI executables, OMO config, and OpenCode/Herdr profiles'
         printf "$task_fmt" "$green" 'ai.upgrade' "$reset" 'Upgrade external AI harnesses and OpenCode, then refresh the exact Slim pin'
         printf "$task_fmt" "$green" 'secrets.encrypt' "$reset" 'Encrypt ssh and/or gnupg into chezmoi source state'

@@ -56,7 +56,6 @@ Tasks
   brew.sync          Update Homebrew, then upgrade and apply the repo-managed Brewfile
   pacman.sync        Update and install repository and AUR packages with interactive review
   fonts.install      Build, check, and install the pinned Summer Ghost font
-  herdr.theme        Install the latest Herdr Omarchy Catppuccin layout and managed settings
   ai.check           Check AI executables, OMO config, and OpenCode/Herdr profiles
   ai.upgrade         Upgrade external AI harnesses and OpenCode, then refresh the exact Slim pin
   secrets.encrypt    Encrypt ssh and/or gnupg into chezmoi source state
@@ -203,6 +202,14 @@ Old iTerm2 preferences worth remembering:
 - Under `Appearance / Dimming`, keep inactive split dimming disabled.
 - Under `Advanced / Hotkey`, set the hotkey window animation duration to `0`.
 - Under `Advanced / Session`, keep "Allow sessions to survive logging out and back in" set to `No`.
+
+#### Herdr app
+
+The Omarchy Catppuccin theme comes from its own repository; this repo only keeps the personal JSON in `assets/herdr-app/`.
+
+1. Install the theme from https://github.com/mi2428/herdr-omarchy-catppuccin and select the `omarchy-catppuccin` layout.
+2. Merge `assets/herdr-app/settings.json` into `~/.config/herdr-app/settings.json` by hand; Herdr rewrites that file.
+3. Merge `assets/herdr-app/programs.json` into `~/.config/herdr-app/programs.json` by hand; it maps `omo` to the Pi icon.
 
 ## References
 

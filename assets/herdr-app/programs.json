@@ -1,0 +1,9 @@
+{
+  "programs": {
+    "omo": {
+      "name": "omo",
+      "icon": "icons/pi.svg",
+      "tint": true
+    }
+  }
+}
