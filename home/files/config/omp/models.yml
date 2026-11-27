@@ -8,6 +8,9 @@ providers:
         name: Sakura DeepSeek V4.1 Flash 1017
         reasoning: true
         input: [text, image]
+        # Sakura AI Engine rejects prompts with more than 3 images total.
+        # OMP drops the oldest images once this budget is exceeded.
+        imageCountBudget: 3
         contextWindow: 1048576
         maxTokens: 32768
         compat:
