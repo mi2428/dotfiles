@@ -1,6 +1,13 @@
 -- Use Omarchy's input-language switcher instead of its terminal-prefix pass-through.
 o.rebind("CTRL + SPACE", "Toggle Japanese input", "omarchy-input-method cycle")
 
+-- Walker launcher on Super+Space; the full Omarchy menu stays on Super+Alt+Space.
+o.rebind("SUPER + SPACE", "Launcher", "walker")
+o.rebind("SUPER + ALT + SPACE", "Omarchy menu", { menu = "root" })
+
+-- Skip the compositor's layer fade: Walker should appear and disappear instantly.
+hl.layer_rule({ match = { namespace = "walker" }, no_anim = true, animation = "none" })
+
 -- Disable launch shortcuts for the removed HEY web app.
 hl.unbind("SUPER + SHIFT + C")
 hl.unbind("SUPER + SHIFT + E")

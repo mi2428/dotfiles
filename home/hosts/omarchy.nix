@@ -25,6 +25,8 @@ in
   home.username = userName;
   home.homeDirectory = homeDirectory;
   home.stateVersion = "25.05";
+  # Walker launcher, its Elephant provider, and the Loupe image viewer.
+  home.packages = [ pkgs.walker pkgs.elephant pkgs.loupe ];
   xdg.configFile."ghostty/config".text = lib.mkAfter "\nfont-size = 12\n";
   # Activation integrations use OS-managed Herdr and AI tools from the caller's PATH.
   home.emptyActivationPath = false;
@@ -42,6 +44,9 @@ in
     source = ../files/config/hypr/omarchy/bindings.lua;
     force = true;
   };
+  xdg.configFile."walker/config.toml".source = ../files/config/walker/config.toml;
+  xdg.configFile."walker/themes/catppuccin-mocha/style.css".source =
+    ../files/config/walker/themes/catppuccin-mocha/style.css;
   # Source through the project's local .envrc, not the global shell environment.
   # Store references keep QEMU's guest libraries alive across Nix garbage collection.
   xdg.dataFile."dropcheck-agent/env.sh".text = ''
@@ -86,6 +91,35 @@ in
       exit 1
     }
   '';
+  # Walker needs Elephant and its GApplication service in the graphical session.
+  systemd.user.services.elephant = {
+    Unit = {
+      Description = "Elephant data provider";
+      After = [ "graphical-session.target" ];
+      PartOf = [ "graphical-session.target" ];
+    };
+    Service = {
+      ExecStart = "${pkgs.elephant}/bin/elephant";
+      Restart = "on-failure";
+      RestartSec = 2;
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+  systemd.user.services.walker = {
+    Unit = {
+      Description = "Walker launcher service";
+      After = [ "graphical-session.target" "elephant.service" ];
+      PartOf = [ "graphical-session.target" ];
+      Requires = [ "elephant.service" ];
+    };
+    Service = {
+      ExecStart = "${pkgs.walker}/bin/walker --gapplication-service";
+      Restart = "on-failure";
+      RestartSec = 2;
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
   systemd.user.services.omarchy-awake-reset-idle = {
     Unit.Description = "Restore Omarchy idle after awake mode ends on reboot";
     Service = {
