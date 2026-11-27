@@ -1,0 +1,7 @@
+version: '3'
+
+tasks:
+  herdr.theme:
+    desc: Install the latest Herdr Omarchy Catppuccin layout and managed settings
+    cmds:
+      - bash '{{.REPO_ROOT}}/scripts/install-herdr-theme.sh'

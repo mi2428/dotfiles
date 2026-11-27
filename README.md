@@ -53,7 +53,10 @@ Tasks
   hm.update          Update Nix inputs in flake.lock and apply the current host activation
   hm.gc              Delete old generations and collect Nix garbage (run without sudo)
   brew.check         Check the repo-managed Brewfile against the local Homebrew state
-  brew.sync          Update and upgrade Homebrew, then apply the repo-managed Brewfile
+  brew.sync          Update Homebrew, then upgrade and apply the repo-managed Brewfile
+  pacman.sync        Update and install repository and AUR packages with interactive review
+  fonts.install      Build, check, and install the pinned Summer Ghost font
+  herdr.theme        Install the latest Herdr Omarchy Catppuccin layout and managed settings
   ai.check           Check AI executables, OMO config, and OpenCode/Herdr profiles
   ai.upgrade         Upgrade external AI harnesses and OpenCode, then refresh the exact Slim pin
   secrets.encrypt    Encrypt ssh and/or gnupg into chezmoi source state
