@@ -1,2 +1,6 @@
 theme = "catppuccin-mocha"
 hide_action_hints = true
+hide_quick_activation = true
+
+[keybinds]
+quick_activate = []
