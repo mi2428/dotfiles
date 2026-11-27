@@ -12,3 +12,6 @@ claude-code
 openai-codex-bin
 ghostty
 visual-studio-code-bin
+walker
+elephant-all
+loupe

@@ -25,8 +25,6 @@ in
   home.username = userName;
   home.homeDirectory = homeDirectory;
   home.stateVersion = "25.05";
-  # Walker launcher, its Elephant provider, and the Loupe image viewer.
-  home.packages = [ pkgs.walker pkgs.elephant pkgs.loupe ];
   xdg.configFile."ghostty/config".text = lib.mkAfter "\nfont-size = 12\n";
   # Activation integrations use OS-managed Herdr and AI tools from the caller's PATH.
   home.emptyActivationPath = false;
@@ -91,7 +89,8 @@ in
       exit 1
     }
   '';
-  # Walker needs Elephant and its GApplication service in the graphical session.
+  # Walker, Elephant, and Loupe are pacman-owned; run task pacman.sync before
+  # switching profiles. Walker needs Elephant's GApplication service.
   systemd.user.services.elephant = {
     Unit = {
       Description = "Elephant data provider";
@@ -99,7 +98,7 @@ in
       PartOf = [ "graphical-session.target" ];
     };
     Service = {
-      ExecStart = "${pkgs.elephant}/bin/elephant";
+      ExecStart = "/usr/bin/elephant";
       Restart = "on-failure";
       RestartSec = 2;
     };
@@ -113,7 +112,7 @@ in
       Requires = [ "elephant.service" ];
     };
     Service = {
-      ExecStart = "${pkgs.walker}/bin/walker --gapplication-service";
+      ExecStart = "/usr/bin/walker --gapplication-service";
       Restart = "on-failure";
       RestartSec = 2;
     };
