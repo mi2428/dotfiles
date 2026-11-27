@@ -26,7 +26,8 @@ map_macos_serial_to_host() {
 
 map_linux_machine_id_to_host() {
   case "$(printf '%s' "${1:-}" | sha256sum | cut -d ' ' -f 1)" in
-    fc17a89aa012b8f7294aa060bc16bc52f7a0a254d575c20ef67de2e1cbeb0cbb)
+    fc17a89aa012b8f7294aa060bc16bc52f7a0a254d575c20ef67de2e1cbeb0cbb|\
+    4cba055a3749b73cb864afbae3fb25ef788f30b3b27fa7f62fab9bb8be4b5d68)
       printf '%s\n' 'omarchy'
       return 0
       ;;
