@@ -45,6 +45,7 @@ in
   xdg.configFile."walker/config.toml".source = ../files/config/walker/config.toml;
   xdg.configFile."walker/themes/catppuccin-mocha/style.css".source =
     ../files/config/walker/themes/catppuccin-mocha/style.css;
+  xdg.configFile."elephant/runner.toml".source = ../files/config/elephant/runner.toml;
   # Source through the project's local .envrc, not the global shell environment.
   # Store references keep QEMU's guest libraries alive across Nix garbage collection.
   xdg.dataFile."dropcheck-agent/env.sh".text = ''

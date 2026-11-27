@@ -1,0 +1,83 @@
+generic_text = 'run: '
+history = true
+history_when_empty = false
+
+[Config]
+hide_from_providerlist = false
+icon = 'utilities-terminal'
+min_score = 50
+name_pretty = ''
+
+# Curated commands shown in walker without the ">" runner prefix.
+# Any other command still runs through the ">" prefix.
+[[explicits]]
+exec = 'omarchy-toggle-nightlight'
+alias = 'Toggle Nightlight'
+
+[[explicits]]
+exec = 'omarchy-toggle-notification-silencing'
+alias = 'Toggle Notifications (DND)'
+
+[[explicits]]
+exec = 'omarchy-toggle-bar'
+alias = 'Toggle Bar'
+
+[[explicits]]
+exec = 'omarchy-toggle-animations'
+alias = 'Toggle Animations'
+
+[[explicits]]
+exec = 'omarchy-toggle-fullscreen-desktop'
+alias = 'Toggle Fullscreen Desktop'
+
+[[explicits]]
+exec = 'omarchy-toggle-idle'
+alias = 'Toggle Idle (stay awake)'
+
+[[explicits]]
+exec = 'omarchy-toggle-screensaver'
+alias = 'Toggle Screensaver'
+
+[[explicits]]
+exec = 'omarchy-launch-screensaver force'
+alias = 'Screensaver'
+
+[[explicits]]
+exec = 'omarchy-system-lock'
+alias = 'Lock Screen'
+
+[[explicits]]
+exec = 'omarchy-system reboot'
+alias = 'Reboot'
+
+[[explicits]]
+exec = 'omarchy-system shutdown'
+alias = 'Shutdown'
+
+[[explicits]]
+exec = 'omarchy-toggle-suspend'
+alias = 'Toggle Suspend'
+
+[[explicits]]
+exec = 'omarchy-sleep-display'
+alias = 'Sleep Display'
+
+[[explicits]]
+exec = 'omarchy-toggle-theme-sync'
+alias = 'Toggle Theme Sync'
+
+[[explicits]]
+exec = 'omarchy-toggle-touchpad'
+alias = 'Toggle Touchpad'
+
+[[explicits]]
+exec = 'omarchy-toggle-touchscreen'
+alias = 'Toggle Touchscreen'
+
+[[explicits]]
+exec = 'omarchy-toggle-hybrid-gpu'
+alias = 'Toggle Hybrid GPU'
+
+[[explicits]]
+exec = 'omarchy-toggle-crash-capture'
+alias = 'Toggle Crash Capture'

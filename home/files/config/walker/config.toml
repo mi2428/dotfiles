@@ -4,3 +4,6 @@ hide_quick_activation = true
 
 [keybinds]
 quick_activate = []
+
+[providers]
+default = ["desktopapplications", "calc", "runner", "websearch"]
