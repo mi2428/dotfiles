@@ -7,6 +7,7 @@ in
   xdg.configFile."mise/conf.d/50-dotfiles-ai.toml".source =
     ../../files/config/mise/conf.d/50-dotfiles-ai.toml;
 
+  home.file.".omo/agent/AGENTS.md".source = source + /AGENTS.md;
   home.file.".omo/agent/themes/catppuccin-mocha.json".source =
     source + /themes/catppuccin-mocha.json;
 
