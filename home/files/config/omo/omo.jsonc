@@ -5,6 +5,14 @@
   // starts on GLM max, disables cross-model fallback, telemetry, and the
   // device service. The main session needs settings.json because OmO's
   // interactive TUI ignores model_profile.
+  // Official Sakura spec (updated 2026-11-18): GLM and DeepSeek each have
+  // 1,048,575 context and max_tokens <= 32,000; input + max_tokens must fit
+  // the context. Source: https://manual.sakura.ad.jp/cloud/ai-engine/chat-models.html
+  // Local probes (2026-11-28): GLM accepted 984,297 input tokens but hung
+  // near 1M twice and stopped output around 23.8K; DeepSeek accepted
+  // 1,046,810 input tokens and generated 32,000 output tokens in 279.6s.
+  // These are observations, not reliable operating budgets; requests have
+  // an official ~5-minute processing limit. models.json holds the numeric caps.
   "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/omo.schema.json",
   "models": {
     "glm": { "model": "sakura/preview/GLM-5.3-Flash", "reasoning": "max" },

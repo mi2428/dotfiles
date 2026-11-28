@@ -11,8 +11,14 @@ providers:
         # Sakura AI Engine rejects prompts with more than 3 images total.
         # OMP drops the oldest images once this budget is exceeded.
         imageCountBudget: 3
-        contextWindow: 1048576
-        maxTokens: 32768
+        # Official spec (updated 2026-11-18): DeepSeek context 1,048,575,
+        # max_tokens <= 32,000, and input tokens + max_tokens <= context.
+        # https://manual.sakura.ad.jp/cloud/ai-engine/chat-models.html
+        # Live probe (2026-11-28): 1,046,810 input tokens accepted (29.9s TTFT);
+        # 32,000 output tokens took 279.6s, near the ~5-minute request limit.
+        # These observed limits are not a safe target for routine agent turns.
+        contextWindow: 1048575
+        maxTokens: 32000
         compat:
           # The gateway supplies its default reasoning effort; OMP owns tools.
           supportsReasoningParams: false
