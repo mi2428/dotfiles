@@ -170,6 +170,9 @@ class Target:
     defer_until: float = 0.0
     defers: dict[str, int] = field(default_factory=dict[str, int])
     last_context: dict[str, Any] = field(default_factory=dict[str, Any])
+    # Last time each DEFER (mode|reason) was logged, so a deferral that is
+    # re-armed by ongoing progress does not log every poll.
+    defer_log: dict[str, float] = field(default_factory=dict[str, float])
     # Last logged human-wait or parked-goal signature, to log each once.
     wait_sig: str | None = None
     stop_sig: str | None = None
@@ -692,11 +695,16 @@ def gate_action(
         focus = "; ".join(
             f"{key}={value[:100]}" for key, value in hint.items() if value
         )
-        log(
-            f"DEFER {target.addr} {mode}: {reason}"
-            + (f" | {focus}" if focus else "")
-            + f"; recheck in {int(target.defer_until - now)}s"
-        )
+        # Progress re-arms the gate every poll, so the same deferral recurs
+        # without changing meaning; log it once per 10 minutes.
+        key = f"{mode}|{reason}"
+        if now - target.defer_log.get(key, 0.0) >= 600.0:
+            target.defer_log[key] = now
+            log(
+                f"DEFER {target.addr} {mode}: {reason}"
+                + (f" | {focus}" if focus else "")
+                + f"; recheck in {int(target.defer_until - now)}s"
+            )
         return None
     target.defer_until = 0.0
     gated = dict(evidence)

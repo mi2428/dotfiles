@@ -143,11 +143,13 @@ work panel, then decides whether to defer or recover:
 - **recover** when none of those hold
 
 Each deferral is logged as
-`DEFER <pane> <mode>: <reason> | now=…; next=…; recheck in Ns`; the timer is
-re-checked after the named wake time or `--context-grace`. Every trigger mode
-gets `--context-max-defers` deferrals (default 3), and a single deferral is
-capped at `--context-max-wait` (default 1800s). A `Goal achieved` footer
-always defers, because a finished session has nothing to hand off.
+`DEFER <pane> <mode>: <reason> | now=…; next=…; recheck in Ns`, at most once
+per 10 minutes per (mode, reason): progress re-arms the gate every poll, so the
+same deferral would otherwise log every 15s and get the notify regex disabled.
+Every trigger mode gets `--context-max-defers` deferrals (default 3) per
+progress episode — a new progress sample resets the counters — and a single
+deferral is capped at `--context-max-wait` (default 1800s). A `Goal achieved`
+footer always defers, because a finished session has nothing to hand off.
 
 This is local reasoning over the TUI and session signals, not a model call: a
 watchdog must keep working while the provider path it watches is stalled. The
