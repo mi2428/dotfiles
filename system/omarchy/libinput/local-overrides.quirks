@@ -1,0 +1,16 @@
+# Apple MTP trackpad palm rejection (MacBook Pro 14", M1/M2).
+#
+# libinput's stock Apple MTP quirk sets AttrPalmSizeThreshold=1600 and marks the
+# device ModelAppleTouchpad, which disables libinput's edge palm exclusion zones.
+# Lower the size threshold so a resting palm is classified before
+# ABS_MT_TOUCH_MAJOR ramps up, and clear the model quirk so a contact starting at
+# the top or side edge is rejected as a palm instead of moving the cursor.
+#
+# Install as /etc/libinput/local-overrides.quirks, then log out and back in.
+# libinput loads the quirks database once per compositor context; re-binding the
+# trackpad HID device alone does not pick up a new override file.
+[Apple MTP stricter palm rejection]
+MatchUdevType=touchpad
+MatchName=Apple*MTP*
+ModelAppleTouchpad=0
+AttrPalmSizeThreshold=1000
