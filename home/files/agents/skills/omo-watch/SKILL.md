@@ -102,17 +102,31 @@ this wrong costs a watcher restart:
 |---|---|
 | omo foreground gone, shell remains | `--absent-grace` seconds (default 30) |
 | `status=working` with no progress | `--stall` seconds (default 900) |
-| fatal provider/compaction text at the prompt | persists `--fatal-grace` seconds (default 300) |
+| fatal provider/compaction text at the prompt, in either state | persists `--fatal-grace` seconds (default 300) |
 | `Working (Ns` visible while status is not working | persists `--frozen-grace` seconds (default 600) |
 | `Goal blocked: … waiting_human` in the footer | persists `--blocked-grace` seconds (default 600) |
 
-A visible `Permission required:` dialog is user-wait, not a death signal:
-timers must not count it as a stall, and recovery must never touch it.
+The fatal line is scanned **while `status=working` too**. A dead provider does
+not idle the process: the retry loop keeps root CPU above `--busy-pct`, so
+`last_progress` keeps refreshing, `--stall` never arms, and a scan that only
+ran for non-working states would never see the failure. When the same fatal
+line is already visible twice, the trigger skips the context gate: a scheduled
+wake cannot revive a provider that dropped two identical requests.
+
+A visible `Permission required:` dialog or `Question pending (N unanswered)`
+is user-wait, not a death signal: timers must not count it as a stall, recovery
+must never touch it, and the watcher logs `WAIT <pane>` once per wait.
+
+A parked goal, `Goal stopped: no progress`, is logged once as
+`DEFER <pane> goal-stop` and never recovered here: the goal wakes on its own
+backstop, and a handoff would discard live context. Escalate it in chat instead.
 
 Progress is the captured session JSONL's size/mtime plus CPU of the omo
 process tree (streaming model or a tool build). The herdr turn number is
 reported in the trigger evidence but is not a progress signal. TUI animation
 alone must not count: root CPU below 2% and no log growth is not progress.
+CPU above the threshold is a weak signal on its own: a retrying provider client
+also spends CPU, which is why the fatal scan does not depend on it.
 
 ## Context gate
 
@@ -192,12 +206,22 @@ context compaction often hangs without any provider events:
 - followed by `System operation aborted`, then another
   `Compacting context...` retry
 
-The failure looks provider-side, not local. omo's stall backstop wakes the goal,
-compaction retries, and the same 5-minute silence can repeat while the session
-sits at high context (observed at ~76%, 766k tokens). The context gate sees
-`Compacting context...` and `Cache-warm wait` and therefore defers; that is the
-correct default for a transient provider hiccup, but it cannot fix a compaction
-path that fails every time.
+### Sakura AI: request accepted, no response (mid-turn)
+
+A separate symptom, seen without compaction at 67% context: the provider
+accepts the request and never starts the stream. omo shows it at the prompt as
+
+- `The provider for sakura/preview/GLM-5.3-Flash accepted the request but
+  never started sending a response within 5m, so the request was cancelled.`
+- with `provider_error kind=stall` in the session JSONL at
+  `"error":"Provider stream start timed out after 300000ms"`
+
+The request retries about every 5 minutes, and the process keeps 6% CPU while
+doing so, so the TUI still reports `working`: a CPU-based stall timer never
+fires. Observed once as five consecutive cancellations over 24 minutes; the
+session file stopped growing after the second one. `omo --thinking max` at 67%
+context did not recover by waiting; a forced handoff fixed it and the
+successor resumed from the handoff prompt.
 
 Operational guidance: once the same session logs a compaction stall twice,
 prefer an explicit forced handoff (`--force --pane <addr>`) over waiting for

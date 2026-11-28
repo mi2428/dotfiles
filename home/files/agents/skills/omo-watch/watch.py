@@ -60,7 +60,9 @@ CLAIMS = os.environ.get("OMO_WATCH_CLAIMS") or os.path.join(
 SHELLS = {"fish", "bash", "zsh", "sh", "dash", "nu", "elvish", "ksh"}
 FATAL_RE = re.compile(
     r"(System operation aborted|Summarization stream stalled|Compaction rejected|"
-    r"no provider events for|provider\s+\S+\s+stalled|provider error|model call failed)",
+    r"no provider events for|provider\s+\S+\s+stalled|provider error|model call failed|"
+    r"accepted the request but never started sending a response|"
+    r"stream start timed out)",
     re.IGNORECASE,
 )
 CLK_TCK = os.sysconf("SC_CLK_TCK")
@@ -71,6 +73,12 @@ PROMPT_HEAD = (
 EFFORT_RE = re.compile(r"effort\s+(off|minimal|low|medium|high|xhigh|max)\b")
 # omo's goal loop parks in this state when it needs a human decision.
 BLOCKED_RE = re.compile(r"Goal blocked:.*waiting_human")
+# An unanswered question or an approval dialog is a human wait: never a stall,
+# never a recovery. A parked goal loop is reported but not recovered; the goal
+# wakes on its own backstop, and a handoff here would discard live context.
+ASK_RE = re.compile(r"Question pending \(\d+ unanswered\)")
+PERMISSION_RE = re.compile(r"Permission required:")
+GOAL_STOP_RE = re.compile(r"Goal stopped: no progress")
 # Context signals: what omo says it is doing, and when it expects a wake.
 BACKSTOP_RE = re.compile(
     r"Stall backstop ready\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::(\d{2}))?"
@@ -162,6 +170,9 @@ class Target:
     defer_until: float = 0.0
     defers: dict[str, int] = field(default_factory=dict[str, int])
     last_context: dict[str, Any] = field(default_factory=dict[str, Any])
+    # Last logged human-wait or parked-goal signature, to log each once.
+    wait_sig: str | None = None
+    stop_sig: str | None = None
 
 
 @dataclass(frozen=True)
@@ -494,7 +505,7 @@ def recent_errors(session: str | None) -> list[str]:
 def pane_fatal(text: str) -> list[str]:
     """Return up to three fatal provider/compaction lines near the prompt."""
     lines = [line for line in text.splitlines() if line.strip()]
-    return [line.strip() for line in lines[-15:] if FATAL_RE.search(line)][-3:]
+    return [line.strip() for line in lines[-40:] if FATAL_RE.search(line)][-3:]
 
 
 def pane_blocked(text: str) -> str | None:
@@ -1131,11 +1142,62 @@ def evaluate(
                 target.thinking = effort.group(1)
             if now < target.boot_until:
                 continue
+            waiting = ASK_RE.search(text) or PERMISSION_RE.search(text)
+            if waiting:
+                # omo is blocked on a human (a question or an approval dialog).
+                # Timers must not count that as a stall, and recovery must never
+                # type into the dialog.
+                target.last_progress = now
+                if waiting.group(0) != target.wait_sig:
+                    target.wait_sig = waiting.group(0)
+                    log(f"WAIT {address}: {waiting.group(0)} — human decision pending")
+                continue
+            target.wait_sig = None
             if state == "working":
-                target.fatal_sig = None
-                target.fatal_since = None
                 target.frozen_since = None
                 target.blocked_since = None
+                # A dead provider keeps the TUI at `working`: the retry loop
+                # holds CPU above --busy-pct, so `no-progress` never arms and
+                # the fatal scan below this branch is never reached. Scan here.
+                fatal_working = pane_fatal(text)
+                if fatal_working:
+                    signature = " | ".join(fatal_working)
+                    if signature != target.fatal_sig:
+                        target.fatal_sig, target.fatal_since = signature, now
+                    if now - (target.fatal_since or now) >= args.fatal_grace:
+                        repeated = (
+                            sum(
+                                1
+                                for line in text.splitlines()
+                                if any(part[:40] in line for part in fatal_working)
+                            )
+                            >= 2
+                        )
+                        evidence = {
+                            "fatal": fatal_working,
+                            "last_event": last_event(target.session),
+                            "pane_status": pane_status(text),
+                        }
+                        gated = (
+                            evidence
+                            if repeated
+                            else gate_action(
+                                args, target, "fatal-at-prompt", evidence, text, now
+                            )
+                        )
+                        if gated is not None:
+                            if repeated:
+                                gated["context_verdict"] = (
+                                    "the provider repeated the same failure; "
+                                    "a scheduled wake cannot revive it"
+                                )
+                            actions.append(
+                                (address, target, "fatal-at-prompt", gated)
+                            )
+                            continue
+                else:
+                    target.fatal_sig = None
+                    target.fatal_since = None
                 if now - target.last_progress >= args.stall:
                     evidence = {
                         "stalled_seconds": int(now - target.last_progress),
@@ -1175,6 +1237,20 @@ def evaluate(
                         actions.append((address, target, "frozen-working", gated))
                 continue
             target.frozen_since = None
+            stopped = GOAL_STOP_RE.search(text)
+            if stopped:
+                # A parked goal loop ("Goal stopped: no progress") is reported
+                # once and left alone: its backstop wakes it, and a handoff here
+                # would discard live context. The operator decides otherwise.
+                target.last_progress = now
+                if stopped.group(0) != target.stop_sig:
+                    target.stop_sig = stopped.group(0)
+                    log(
+                        f"DEFER {address} goal-stop: {stopped.group(0)} "
+                        "— reporting only, not recovering"
+                    )
+                continue
+            target.stop_sig = None
             blocked = pane_blocked(text)
             if blocked:
                 target.blocked_since = target.blocked_since or now
